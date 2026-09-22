@@ -1161,8 +1161,8 @@ function render(t){
  const V=mLookAt(cx,cy,cz, cx*.25,cy*.25,-30);
  const P=mPerspective(FOV,aspect,.1,220);
  const VP=mMul(P,V);
- // --- scene pass ---
- gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+ // --- scene pass (direct to screen - FBO bypassed for iOS compatibility) ---
+ gl.bindFramebuffer(gl.FRAMEBUFFER,null);
  gl.viewport(0,0,W,H);
  gl.disable(gl.DEPTH_TEST);
  gl.enable(gl.BLEND);
@@ -1221,23 +1221,8 @@ function render(t){
   gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
  }
  gl.disableVertexAttribArray(qA.pos);gl.disableVertexAttribArray(qA.uv);
- // --- post pass ---
- gl.bindFramebuffer(gl.FRAMEBUFFER,null);
- gl.viewport(0,0,W,H);
- gl.disable(gl.BLEND);
- gl.useProgram(pPost);
- gl.bindBuffer(gl.ARRAY_BUFFER,postVBO);
- gl.enableVertexAttribArray(ptA.pos);
- gl.vertexAttribPointer(ptA.pos,2,gl.FLOAT,false,8,0);
- gl.activeTexture(gl.TEXTURE0);
- gl.bindTexture(gl.TEXTURE_2D,fboTex);
- gl.uniform1i(ptU.tex,0);
- gl.uniform1f(ptU.time,t);
- gl.uniform1f(ptU.exposure,.92+live.glow*.38);
- gl.uniform1f(ptU.grain,.045);
- gl.uniform2f(ptU.res,W,H);
- gl.drawArrays(gl.TRIANGLES,0,3);
- gl.disableVertexAttribArray(ptA.pos);
+ // --- post pass SKIPPED (drawing direct to screen for iOS) ---
+ // (post-processing disabled: FBO bypassed)
 }
 
 /* ================= seeds ================= */
