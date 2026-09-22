@@ -43,7 +43,8 @@ select{width:100%;background:#101722;border:1px solid #233143;color:#dfe8f4;bord
   <button class="btn" id="randomBtn">🎲 Random</button>
   <button class="btn" id="remixBtn">↻ Remix</button>
   <button class="btn" id="shareBtn">Share</button>
-  <button class="btn" id="exportBtn">Export</button>
+  <button class="btn" id="exportBtn">PNG</button>
+  <button class="btn" id="dataBtn">Data</button>
   <button class="btn" id="menuBtn">Layers</button>
 </header>
 <main>
@@ -94,6 +95,8 @@ select{width:100%;background:#101722;border:1px solid #233143;color:#dfe8f4;bord
       <div class="metric"><strong id="mAccess">—</strong><span>access score</span></div>
       <div class="metric"><strong id="mRoad">—</strong><span>road km</span></div>
       <div class="metric"><strong id="mNodes">—</strong><span>junctions</span></div>
+      <div class="metric"><strong id="mBridge">—</strong><span>bridges</span></div>
+      <div class="metric"><strong id="mLoop">—</strong><span>loop ratio</span></div>
     </div>
   </div>
   <div class="section">
@@ -138,7 +141,10 @@ function clamp(v,a,b){return v<a?a:v>b?b:v}
 function lerp(a,b,t){return a+(b-a)*t}
 function dist(a,b){var x=a.x-b.x,y=a.y-b.y;return Math.hypot(x,y)}
 function segDistN(p,a,b){var dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy;if(l2<1e-12)return dist(p,a);var t=clamp(((p.x-a.x)*dx+(p.y-a.y)*dy)/l2,0,1);return Math.hypot(p.x-(a.x+dx*t),p.y-(a.y+dy*t))}
-function nearestRoadInfo(u,v,N){var p={x:u,y:v},best={d:1e9,ang:0,road:null};for(var ri=0;ri<N.roads.length;ri++){var r=N.roads[ri];for(var i=1;i<r.path.length;i++){var a=r.path[i-1],b=r.path[i],d=segDistN(p,a,b);if(d<best.d){best={d:d,ang:Math.atan2(b.y-a.y,b.x-a.x),road:r}}}}return best}
+function nearestRoadInfo(u,v,N){var p={x:u,y:v},best={d:1e9,ang:0,road:null,seg:-1};for(var ri=0;ri<N.roads.length;ri++){var r=N.roads[ri];for(var i=1;i<r.path.length;i++){var a=r.path[i-1],b=r.path[i],d=segDistN(p,a,b);if(d<best.d){best={d:d,ang:Math.atan2(b.y-a.y,b.x-a.x),road:r,seg:i-1}}}}return best}
+function roadPathLength(path){var n=0;for(var i=1;i<path.length;i++)n+=dist(path[i-1],path[i]);return n}
+function pathWaterRuns(path,F){var runs=[],start=-1,peak=0;for(var i=0;i<path.length;i++){var w=fieldSample(F.water,path[i].x,path[i].y,F.GW,F.GH);if(w>.26){if(start<0)start=i;peak=Math.max(peak,w)}else if(start>=0){if(i-start>=2)runs.push({a:start,b:i-1,peak:peak});start=-1;peak=0}}if(start>=0&&path.length-start>=2)runs.push({a:start,b:path.length-1,peak:peak});return runs}
+function rotatedPoint(cx,cy,x,y,a){var c=Math.cos(a||0),sn=Math.sin(a||0);return{x:cx+x*c-y*sn,y:cy+x*sn+y*c}}
 function noise2(x,y,s){var n=Math.sin(x*127.1+y*311.7+s*74.7)*43758.5453;return n-Math.floor(n)}
 function smooth(t){return t*t*(3-2*t)}
 function valueNoise(x,y,s){var xi=Math.floor(x),yi=Math.floor(y),fx=x-xi,fy=y-yi,u=smooth(fx),v=smooth(fy);var a=noise2(xi,yi,s),b=noise2(xi+1,yi,s),c=noise2(xi,yi+1,s),d=noise2(xi+1,yi+1,s);return lerp(lerp(a,b,u),lerp(c,d,u),v)}
@@ -240,10 +246,11 @@ function buildNetwork(F){
    if(isTree&&(important||e.d>.22))return"arterial";
    return"collector";
  }
- tree.forEach(function(e){roads.push({cls:roadClass(e,true),a:e.a,b:e.b,path:astar(pts[e.a],pts[e.b],F)})});
- loops.forEach(function(e){roads.push({cls:roadClass(e,false),a:e.a,b:e.b,path:astar(pts[e.a],pts[e.b],F)})});
- var degree=new Int16Array(pts.length);roads.forEach(function(r){degree[r.a]++;degree[r.b]++});
- return{points:pts,roads:roads,degree:degree};
+ tree.forEach(function(e){var path=astar(pts[e.a],pts[e.b],F),cls=roadClass(e,true);roads.push({cls:cls,a:e.a,b:e.b,path:path,len:roadPathLength(path),bridges:pathWaterRuns(path,F)})});
+ loops.forEach(function(e){var path=astar(pts[e.a],pts[e.b],F),cls=roadClass(e,false);roads.push({cls:cls,a:e.a,b:e.b,path:path,len:roadPathLength(path),bridges:pathWaterRuns(path,F),loop:1})});
+ var degree=new Int16Array(pts.length),adj=pts.map(function(){return[]});
+ roads.forEach(function(r,ri){degree[r.a]++;degree[r.b]++;var impedance=r.len*(r.cls==="arterial"?.86:1);adj[r.a].push({to:r.b,w:impedance,ri:ri});adj[r.b].push({to:r.a,w:impedance,ri:ri})});
+ return{points:pts,roads:roads,degree:degree,adj:adj,loopCount:loops.length};
 }
 function buildTransit(F){
  var hubs=F.anchors.filter(function(a){return a.type==="transit"||a.type==="downtown"}),routes=[];
@@ -251,6 +258,21 @@ function buildTransit(F){
  var used=[0],left=[];for(var i=1;i<hubs.length;i++)left.push(i);
  while(left.length){var bi=-1,bj=-1,bd=1e9;for(var u=0;u<used.length;u++)for(var l=0;l<left.length;l++){var d=dist(hubs[used[u]],hubs[left[l]]);if(d<bd){bd=d;bi=used[u];bj=l}}var ni=left.splice(bj,1)[0];routes.push(astar(hubs[bi],hubs[ni],F));used.push(ni)}
  return routes;
+}
+function blockClear(z,F,N){
+ var cx=z.x+z.w*.5,cy=z.y+z.h*.5,a=z.ang||0,pts=[
+  {x:cx,y:cy},
+  rotatedPoint(cx,cy,-z.w*.5,-z.h*.5,a),rotatedPoint(cx,cy,z.w*.5,-z.h*.5,a),
+  rotatedPoint(cx,cy,z.w*.5,z.h*.5,a),rotatedPoint(cx,cy,-z.w*.5,z.h*.5,a),
+  rotatedPoint(cx,cy,0,-z.h*.5,a),rotatedPoint(cx,cy,0,z.h*.5,a)
+ ];
+ for(var i=0;i<pts.length;i++){
+   if(pts[i].x<.015||pts[i].y<.015||pts[i].x>.985||pts[i].y>.985)return false;
+   if(fieldSample(F.water,pts[i].x,pts[i].y,F.GW,F.GH)>.17)return false;
+   var near=nearestRoadInfo(pts[i].x,pts[i].y,N),clearance=near.road&&near.road.cls==="arterial"?.0125:.009;
+   if(near.d<clearance)return false;
+ }
+ return true
 }
 function makeBlocks(F,N){
  var r=rngFor("blocks"),blocks=[],locals=[],families=Math.round((18+N.points.length*.75)*state.density);
@@ -264,7 +286,7 @@ function makeBlocks(F,N){
    var rects=[{x:cx-w/2,y:cy-h/2,w:w,h:h,d:0,ang:state.grammar==="grid"?0:near.ang}];
    while(rects.length){
      var z=rects.shift(),zc={x:z.x+z.w*.5,y:z.y+z.h*.5};
-     if(z.d>=depth||z.w*z.h<.00028){if(fieldSample(F.water,zc.x,zc.y,F.GW,F.GH)<.2&&nearestRoadInfo(zc.x,zc.y,N).d>.008)blocks.push(z);continue}
+     if(z.d>=depth||z.w*z.h<.00028){if(blockClear(z,F,N))blocks.push(z);continue}
      var split=(z.w>z.h)||r()>.55;
      if(split){
        var f=.36+r()*.28,xs=z.x+z.w*f;
@@ -279,10 +301,30 @@ function makeBlocks(F,N){
  }
  return{blocks:blocks,locals:locals}
 }
-function computeAccessibility(F,N){
- var A=new Float32Array(F.GW*F.GH),max=0;for(var y=0;y<F.GH;y++)for(var x=0;x<F.GW;x++){var u=x/(F.GW-1),v=y/(F.GH-1),s=0;for(var i=0;i<F.anchors.length;i++){var a=F.anchors[i],w=a.type==="hospital"?1.25:a.type==="school"?.7:a.type==="transit"?1.1:1.4;s+=w/(.035+Math.hypot(u-a.x,v-a.y))}A[y*F.GW+x]=s;if(s>max)max=s}for(var q=0;q<A.length;q++)A[q]/=max;return A
+function dijkstra(N,start){
+ var n=N.points.length,D=new Float32Array(n),used=new Uint8Array(n);for(var i=0;i<n;i++)D[i]=1e9;D[start]=0;
+ for(var k=0;k<n;k++){var u=-1,b=1e9;for(var j=0;j<n;j++)if(!used[j]&&D[j]<b){b=D[j];u=j}if(u<0)break;used[u]=1;var es=N.adj[u];for(var e=0;e<es.length;e++){var q=es[e],nd=D[u]+q.w;if(nd<D[q.to])D[q.to]=nd}}
+ return D
 }
-function regenerate(){data={};data.F=createFields();data.N=buildNetwork(data.F);data.transit=buildTransit(data.F);data.B=makeBlocks(data.F,data.N);data.access=computeAccessibility(data.F,data.N);updateMetrics();render()}
+function computeAccessibility(F,N){
+ var nodeScore=new Float32Array(N.points.length),anchorCount=Math.min(F.anchors.length,N.points.length);
+ for(var ai=0;ai<anchorCount;ai++){
+   var a=F.anchors[ai],weight=a.type==="hospital"?1.3:a.type==="school"?.65:a.type==="transit"?1.15:a.type==="downtown"?1.45:.6,D=dijkstra(N,ai);
+   for(var j=0;j<nodeScore.length;j++)nodeScore[j]+=weight/(.035+D[j]);
+ }
+ var maxNode=0;for(var n=0;n<nodeScore.length;n++)maxNode=Math.max(maxNode,nodeScore[n]);if(maxNode>0)for(var nn=0;nn<nodeScore.length;nn++)nodeScore[nn]/=maxNode;
+ var A=new Float32Array(F.GW*F.GH),max=0;
+ for(var y=0;y<F.GH;y++)for(var x=0;x<F.GW;x++){
+   var u=x/(F.GW-1),v=y/(F.GH-1),best=1e9,bestNode=0;
+   for(var pi=0;pi<N.points.length;pi++){var dd=Math.hypot(u-N.points[pi].x,v-N.points[pi].y);if(dd<best){best=dd;bestNode=pi}}
+   var roadNear=nearestRoadInfo(u,v,N).d,walk=Math.min(best,roadNear),localPenalty=Math.exp(-walk*11);
+   var score=nodeScore[bestNode]*localPenalty*(.72+.28*fieldSample(F.pop,u,v,F.GW,F.GH));
+   A[y*F.GW+x]=score;if(score>max)max=score;
+ }
+ if(max>0)for(var q=0;q<A.length;q++)A[q]/=max;
+ return{field:A,nodeScore:nodeScore}
+}
+function regenerate(){data={};data.F=createFields();data.N=buildNetwork(data.F);data.transit=buildTransit(data.F);data.B=makeBlocks(data.F,data.N);var acc=computeAccessibility(data.F,data.N);data.access=acc.field;data.nodeAccess=acc.nodeScore;updateMetrics();render()}
 function colorRamp(t,kind,a){
  t=clamp(t,0,1);var c;if(kind==="terrain")c=[30+170*t,45+125*t,42+50*t];else if(kind==="water")c=[22+20*t,60+90*t,95+145*t];else if(kind==="pop")c=[35+205*t,45+180*t,85-45*t];else if(kind==="demand")c=[55+170*t,35+55*t,80+160*t];else if(kind==="cost")c=[32+220*t,62+65*(1-t),75-20*t];else c=[33+70*t,45+190*t,95+105*t];return"rgba("+c.map(Math.round).join(",")+","+(a==null?.7:a)+")"
 }
@@ -292,15 +334,37 @@ function drawField(arr,kind,x,y,w,h,alpha){
  oc.putImageData(im,0,0);ctx.save();ctx.globalAlpha=alpha==null?1:alpha;ctx.imageSmoothingEnabled=true;ctx.drawImage(off,x,y,w,h);ctx.restore()
 }
 function tracePath(path,sx,sy){ctx.beginPath();path.forEach(function(p,i){if(!i)ctx.moveTo(p.x*sx,p.y*sy);else ctx.lineTo(p.x*sx,p.y*sy)})}
+function roadPxWidth(r){var mid=r.path[(r.path.length/2)|0],dem=fieldSample(data.F.demand,mid.x,mid.y,data.F.GW,data.F.GH);return(r.cls==="arterial"?9.4:6.4)*(1+.28*dem)*dpr}
 function drawRoads(box,alpha){
  var N=data.N,sx=box.w,sy=box.h;ctx.save();ctx.translate(box.x,box.y);ctx.lineCap="round";ctx.lineJoin="round";
- data.B.locals.forEach(function(L){ctx.beginPath();ctx.moveTo(L[0].x*sx,L[0].y*sy);ctx.lineTo(L[1].x*sx,L[1].y*sy);ctx.strokeStyle="rgba(4,8,12,"+(alpha*.86)+")";ctx.lineWidth=4.2*dpr;ctx.stroke();ctx.strokeStyle="rgba(104,126,151,"+(alpha*.5)+")";ctx.lineWidth=1.05*dpr;ctx.stroke()});
- data.N.roads.forEach(function(r){tracePath(r.path,sx,sy);ctx.shadowBlur=0;ctx.strokeStyle="rgba(3,7,11,"+(alpha*.96)+")";ctx.lineWidth=(r.cls==="arterial"?9.2:6.2)*dpr;ctx.stroke();tracePath(r.path,sx,sy);ctx.strokeStyle=r.cls==="arterial"?"rgba(91,232,208,"+(alpha*.98)+")":"rgba(103,158,232,"+(alpha*.91)+")";ctx.lineWidth=(r.cls==="arterial"?3.4:2.25)*dpr;ctx.shadowBlur=r.cls==="arterial"?9:5;ctx.shadowColor=ctx.strokeStyle;ctx.stroke();tracePath(r.path,sx,sy);ctx.shadowBlur=0;ctx.strokeStyle="rgba(222,255,249,"+(alpha*(r.cls==="arterial"?.22:.12))+")";ctx.lineWidth=.72*dpr;ctx.stroke()});
+ data.B.locals.forEach(function(L){ctx.beginPath();ctx.moveTo(L[0].x*sx,L[0].y*sy);ctx.lineTo(L[1].x*sx,L[1].y*sy);ctx.strokeStyle="rgba(4,8,12,"+(alpha*.9)+")";ctx.lineWidth=4.6*dpr;ctx.stroke();ctx.strokeStyle="rgba(100,123,148,"+(alpha*.44)+")";ctx.lineWidth=1*dpr;ctx.stroke()});
+ data.N.roads.forEach(function(r){
+   var rw=roadPxWidth(r);
+   tracePath(r.path,sx,sy);ctx.shadowBlur=0;ctx.strokeStyle="rgba(1,5,9,"+(alpha*.98)+")";ctx.lineWidth=rw+3.4*dpr;ctx.stroke();
+   tracePath(r.path,sx,sy);ctx.strokeStyle="rgba(13,26,36,"+(alpha*.98)+")";ctx.lineWidth=rw;ctx.stroke();
+   tracePath(r.path,sx,sy);ctx.strokeStyle=r.cls==="arterial"?"rgba(75,225,204,"+(alpha*.72)+")":"rgba(91,151,219,"+(alpha*.6)+")";ctx.lineWidth=1.25*dpr;ctx.shadowBlur=5;ctx.shadowColor=ctx.strokeStyle;ctx.stroke();
+   ctx.shadowBlur=0;ctx.setLineDash(r.cls==="arterial"?[8*dpr,7*dpr]:[5*dpr,8*dpr]);tracePath(r.path,sx,sy);ctx.strokeStyle="rgba(223,238,241,"+(alpha*(r.cls==="arterial"?.34:.2))+")";ctx.lineWidth=.7*dpr;ctx.stroke();ctx.setLineDash([]);
+   drawBridgesForRoad(r,box,alpha);
+ });
  drawIntersections(box,alpha);ctx.restore()
+}
+function drawBridgesForRoad(r,box,alpha){
+ if(!r.bridges||!r.bridges.length)return;
+ r.bridges.forEach(function(run){var a=Math.max(0,run.a-1),b=Math.min(r.path.length-1,run.b+1),sub=r.path.slice(a,b+1);tracePath(sub,box.w,box.h);ctx.strokeStyle="rgba(239,199,116,"+(alpha*.9)+")";ctx.lineWidth=roadPxWidth(r)+4*dpr;ctx.shadowBlur=5;ctx.shadowColor="rgba(239,199,116,.4)";ctx.stroke();tracePath(sub,box.w,box.h);ctx.shadowBlur=0;ctx.strokeStyle="rgba(19,28,33,"+(alpha*.98)+")";ctx.lineWidth=roadPxWidth(r);ctx.stroke();ctx.setLineDash([5*dpr,5*dpr]);tracePath(sub,box.w,box.h);ctx.strokeStyle="rgba(252,225,162,"+(alpha*.72)+")";ctx.lineWidth=.9*dpr;ctx.stroke();ctx.setLineDash([])})
+}
+function incidentDirections(nodeIndex){
+ var dirs=[],p=data.N.points[nodeIndex];
+ data.N.roads.forEach(function(r){var path=r.path,q=null;if(r.a===nodeIndex&&path.length>1)q=path[1];else if(r.b===nodeIndex&&path.length>1)q=path[path.length-2];if(q){var ang=Math.atan2(q.y-p.y,q.x-p.x),w=roadPxWidth(r);dirs.push({ang:ang,w:w,road:r})}});
+ dirs.sort(function(a,b){return a.ang-b.ang});return dirs
 }
 function drawIntersections(box,alpha){
  var sx=box.w,sy=box.h;
- data.N.points.forEach(function(p,i){var deg=data.N.degree[i]||0;if(deg<2)return;var x=p.x*sx,y=p.y*sy,r=(deg>=4?5.4:deg===3?4.2:3.1)*dpr;ctx.fillStyle="rgba(3,8,12,"+(alpha*.98)+")";ctx.beginPath();ctx.arc(x,y,r*1.75,0,TAU);ctx.fill();ctx.fillStyle=deg>=4?"rgba(150,249,229,"+(alpha*.94)+")":"rgba(112,183,226,"+(alpha*.86)+")";ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();if(deg>=5){ctx.strokeStyle="rgba(235,255,250,"+(alpha*.58)+")";ctx.lineWidth=.8*dpr;ctx.beginPath();ctx.arc(x,y,r*1.35,0,TAU);ctx.stroke()}})
+ data.N.points.forEach(function(p,i){
+   var dirs=incidentDirections(i),deg=dirs.length;if(deg<2)return;var x=p.x*sx,y=p.y*sy,verts=[];
+   for(var d=0;d<deg;d++){var a=dirs[d].ang,b=dirs[(d+1)%deg].ang;if(d===deg-1)b+=TAU;var gap=clamp(b-a,.18,Math.PI*1.45),bis=a+gap*.5,half=Math.max(dirs[d].w,dirs[(d+1)%deg].w)*.58,rad=clamp(half/Math.max(.24,Math.sin(gap*.5)),half*1.05,18*dpr);verts.push({x:x+Math.cos(bis)*rad,y:y+Math.sin(bis)*rad})}
+   ctx.beginPath();ctx.moveTo(verts[0].x,verts[0].y);for(var v=1;v<verts.length;v++)ctx.lineTo(verts[v].x,verts[v].y);ctx.closePath();ctx.fillStyle="rgba(8,19,27,"+(alpha*.99)+")";ctx.fill();ctx.strokeStyle=deg>=4?"rgba(105,227,207,"+(alpha*.66)+")":"rgba(100,160,219,"+(alpha*.5)+")";ctx.lineWidth=1*dpr;ctx.stroke();
+   dirs.forEach(function(dr){var nx=Math.cos(dr.ang),ny=Math.sin(dr.ang),px=-ny,py=nx,off=dr.w*.58,far=dr.w*1.45;ctx.beginPath();ctx.moveTo(x+nx*far+px*off,y+ny*far+py*off);ctx.lineTo(x+nx*far-px*off,y+ny*far-py*off);ctx.strokeStyle="rgba(220,235,237,"+(alpha*.23)+")";ctx.lineWidth=.75*dpr;ctx.stroke()});
+ })
 }
 function drawTransit(box,alpha){
  if(!data.transit)return;ctx.save();ctx.translate(box.x,box.y);ctx.setLineDash([8*dpr,6*dpr]);ctx.lineCap="round";data.transit.forEach(function(path){tracePath(path,box.w,box.h);ctx.strokeStyle="rgba(255,180,79,"+(alpha*.9)+")";ctx.lineWidth=1.8*dpr;ctx.shadowBlur=7;ctx.shadowColor="rgba(255,180,79,.55)";ctx.stroke()});ctx.setLineDash([]);ctx.restore()
@@ -320,6 +384,7 @@ function city(){
  var b=fitBox();ctx.fillStyle="#071018";ctx.fillRect(b.x,b.y,b.w,b.h);
  if(state.visible.terrain)drawField(data.F.terrain,"terrain",b.x,b.y,b.w,b.h,.28);else{ctx.fillStyle="#0b1219";ctx.fillRect(b.x,b.y,b.w,b.h)}
  if(state.visible.pop)drawField(data.F.pop,"pop",b.x,b.y,b.w,b.h,.14);
+ if(state.visible.access)drawField(data.access,"access",b.x,b.y,b.w,b.h,.2);
  if(state.visible.demand)drawField(data.F.demand,"demand",b.x,b.y,b.w,b.h,.18);
  if(state.visible.cost)drawField(data.F.cost.map?data.F.cost:data.F.cost,"cost",b.x,b.y,b.w,b.h,.16);
  if(state.visible.water)drawWater(b,.85);
@@ -351,7 +416,7 @@ function blocksMode(){
 }
 function render(){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#070a0f";ctx.fillRect(0,0,canvas.width,canvas.height);if(!data)return;if(state.mode==="atlas")atlas();else if(state.mode==="blocks")blocksMode();else city()}
 function resize(){var r=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(r.width*dpr));canvas.height=Math.max(1,Math.round(r.height*dpr));render()}
-function updateMetrics(){var roads=data.N.roads,junc=data.N.points.length,len=0;roads.forEach(function(r){for(var i=1;i<r.path.length;i++)len+=dist(r.path[i-1],r.path[i])});var avg=0;for(var i=0;i<data.access.length;i++)avg+=data.access[i];avg/=data.access.length;document.getElementById("mConn").textContent="100%";document.getElementById("mAccess").textContent=Math.round(avg*100);document.getElementById("mRoad").textContent=(len*28).toFixed(0);document.getElementById("mNodes").textContent=junc}
+function updateMetrics(){var roads=data.N.roads,junc=data.N.points.length,len=0,bridges=0;roads.forEach(function(r){len+=r.len||roadPathLength(r.path);bridges+=(r.bridges||[]).length});var avg=0;for(var i=0;i<data.access.length;i++)avg+=data.access[i];avg/=data.access.length;document.getElementById("mConn").textContent="100%";document.getElementById("mAccess").textContent=Math.round(avg*100);document.getElementById("mRoad").textContent=(len*28).toFixed(0);document.getElementById("mNodes").textContent=junc;document.getElementById("mBridge").textContent=bridges;document.getElementById("mLoop").textContent=Math.round(100*(data.N.loopCount||0)/Math.max(1,roads.length))+"%"}
 function setupLayers(){var el=document.getElementById("layers");layers.forEach(function(L){var row=document.createElement("div");row.className="layer "+(state.visible[L[0]]?"on":"");row.innerHTML='<span class="swatch" style="color:'+L[2]+';background:'+L[2]+'"></span><span class="lname">'+L[1]+'</span><span class="lmini">'+(state.visible[L[0]]?"ON":"OFF")+'</span>';row.onclick=function(){state.visible[L[0]]=state.visible[L[0]]?0:1;row.classList.toggle("on",!!state.visible[L[0]]);row.querySelector(".lmini").textContent=state.visible[L[0]]?"ON":"OFF";render()};el.appendChild(row)})}
 function sync(){document.getElementById("seedTxt").textContent="seed "+state.seed;document.getElementById("terrainW").value=state.terrainW;document.getElementById("waterW").value=state.waterW;document.getElementById("demandW").value=state.demandW;document.getElementById("densityW").value=state.density;document.getElementById("vTerrain").textContent=state.terrainW.toFixed(1);document.getElementById("vWater").textContent=state.waterW.toFixed(1);document.getElementById("vDemand").textContent=state.demandW.toFixed(1);document.getElementById("vDensity").textContent=state.density.toFixed(2)}
 function bindRange(id,key,valId){var e=document.getElementById(id);e.oninput=function(){state[key]=+e.value;document.getElementById(valId).textContent=key==="density"?state[key].toFixed(2):state[key].toFixed(1)};e.onchange=regenerate}
@@ -360,6 +425,12 @@ document.getElementById("randomBtn").onclick=function(){state.seed=String(Math.f
 document.getElementById("remixBtn").onclick=function(){state.seed=state.seed+"-"+Math.floor(Math.random()*9999);history.replaceState(null,"","?seed="+encodeURIComponent(state.seed));sync();regenerate()}
 document.getElementById("shareBtn").onclick=async function(){var u=location.origin+location.pathname+"?seed="+encodeURIComponent(state.seed);try{await navigator.clipboard.writeText(u);this.textContent="Copied";var self=this;setTimeout(function(){self.textContent="Share"},900)}catch(e){}}
 document.getElementById("exportBtn").onclick=function(){var a=document.createElement("a");a.download="road-atlas-"+state.seed+".png";a.href=canvas.toDataURL("image/png");a.click()}
+document.getElementById("dataBtn").onclick=function(){
+ var payload={version:2,seed:state.seed,settings:{terrainW:state.terrainW,waterW:state.waterW,demandW:state.demandW,density:state.density,grammar:state.grammar},
+ anchors:data.F.anchors,roads:data.N.roads.map(function(r){return{class:r.cls,a:r.a,b:r.b,length:r.len,bridges:r.bridges,path:r.path}}),transit:data.transit,blocks:data.B.blocks,
+ metrics:{junctions:data.N.points.length,loops:data.N.loopCount}};
+ var blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="road-atlas-"+state.seed+".json";a.click();setTimeout(function(){URL.revokeObjectURL(url)},1500)
+}
 document.getElementById("menuBtn").onclick=function(){document.getElementById("leftPanel").classList.toggle("open")}
 document.getElementById("grammar").onchange=function(){state.grammar=this.value;regenerate()}
 canvas.addEventListener("pointerdown",function(ev){
