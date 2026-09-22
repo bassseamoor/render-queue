@@ -155,6 +155,39 @@ function mixHex(h1,h2,t){const a=hexRGB(h1),b=hexRGB(h2);return '#'+a.map((v,i)=
 function makeNoise1D(r){const g=new Float32Array(256);for(let i=0;i<256;i++)g[i]=r();return function(x){const xi=Math.floor(x),xf=x-xi;const a=g[xi&255],b=g[(xi+1)&255];const u=xf*xf*(3-2*xf);return a+(b-a)*u;};}
 /* 2-D-ish pseudo noise for flow fields */
 function fieldAngle(x,y,s){return (Math.sin(x*1.7+s)*1.3+Math.cos(y*2.3-s*0.7)*1.1+Math.sin((x+y)*0.9+s*1.3))*1.2;}
+/* Seeded 2-D value noise + fbm — the detail engine. Deterministic per seed. */
+function makeNoise2D(seed){
+ const r=rngFrom('n2d'+seed);
+ const perm=new Uint8Array(256);
+ for(let i=0;i<256;i++)perm[i]=i;
+ for(let i=255;i>0;i--){const j=Math.floor(r()*(i+1));const t=perm[i];perm[i]=perm[j];perm[j]=t;}
+ const P=new Uint8Array(512);
+ for(let i=0;i<512;i++)P[i]=perm[i&255];
+ function n2(x,y){
+  const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
+  const ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);
+  const X=ix&255,Y=iy&255;
+  const a=P[(P[X]+Y)&255]/255,b=P[(P[X+1]+Y)&255]/255;
+  const c=P[(P[X]+Y+1)&255]/255,d=P[(P[X+1]+Y+1)&255]/255;
+  return a+(b-a)*ux+(c-a)*uy+(a-b-c+d)*ux*uy;
+ }
+ function fbm(x,y,oct){let v=0,a=.5,f=1,nm=0;for(let i=0;i<oct;i++){v+=a*n2(x*f,y*f);nm+=a;a*=.5;f*=2.03;}return v/nm;}
+ return {n2,fbm};
+}
+/* Small reusable detail tile: fbm rock grain, drawn with 'overlay' */
+function detailTile(seed){
+ const S=256,cv=document.createElement('canvas');cv.width=cv.height=S;
+ const g=cv.getContext('2d'),nz=makeNoise2D('dt'+seed),id=g.createImageData(S,S),d=id.data;
+ for(let y=0;y<S;y++)for(let x=0;x<S;x++){
+  const i=(y*S+x)*4;
+  let v=nz.fbm(x*.05,y*.05,4)*.65+nz.fbm(x*.15+31,y*.15+7,2)*.35;
+  v=v*255; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+ }
+ g.putImageData(id,0,0);return cv;
+}
+/* Debounced re-render: sliders stay fluid, full bake lands right after */
+let renderT=null;
+function renderSoon(){clearTimeout(renderT);renderT=setTimeout(()=>{try{render();}catch(e){}},130);}
 
 /* ---------- palettes ---------- */
 const PALETTES=[
@@ -173,8 +206,8 @@ const PALETTES=[
    Param def: {k, label, t:'range'|'seg'|'color', min,max,step, opts:[...] } */
 const LAYER_TYPES = {
 sky:{name:'Sky',glyph:'🌅',
- defaults(r){return {style:pick(r,['linear','linear','horizon','radial']),pal:ri(r,0,PALETTES.length-1),horizon:rr(r,.45,.75),soft:rr(r,.2,1)};},
- schema:[{k:'style',label:'Style',t:'seg',opts:['linear','horizon','radial']},{k:'pal',label:'Colors',t:'pal'},{k:'horizon',label:'Horizon height',t:'range',min:.2,max:.9,step:.01},{k:'soft',label:'Blend softness',t:'range',min:0,max:1,step:.01}],
+ defaults(r){return {style:pick(r,['linear','linear','horizon','radial']),pal:ri(r,0,PALETTES.length-1),horizon:rr(r,.45,.75),soft:rr(r,.2,1),clouds:rr(r,.25,.8),coverage:rr(r,.3,.65)};},
+ schema:[{k:'style',label:'Style',t:'seg',opts:['linear','horizon','radial']},{k:'pal',label:'Colors',t:'pal'},{k:'horizon',label:'Horizon height',t:'range',min:.2,max:.9,step:.01},{k:'soft',label:'Blend softness',t:'range',min:0,max:1,step:.01},{k:'clouds',label:'Cloud detail',t:'range',min:0,max:1,step:.01},{k:'coverage',label:'Cloud cover',t:'range',min:0,max:1,step:.01}],
  render(c,W,H,rng,P,pal){
   const cols=pal.sky;let g;
   if(P.style==='radial'){g=c.createRadialGradient(W/2,H*P.horizon,10,W/2,H*P.horizon,Math.max(W,H)*.75);}
@@ -182,7 +215,31 @@ sky:{name:'Sky',glyph:'🌅',
   const h0=P.horizon;
   if(P.style==='horizon'){g.addColorStop(0,cols[0]);g.addColorStop(Math.max(0,h0-.18*P.soft),mixHex(cols[0],cols[1],.5));g.addColorStop(h0,cols[1]);g.addColorStop(Math.min(1,h0+.12*P.soft+.02),cols[2]);g.addColorStop(1,mixHex(cols[2],'#000000',.35));}
   else{g.addColorStop(0,cols[0]);g.addColorStop(clamp(h0,0,1),cols[1]);g.addColorStop(1,cols[2]);}
-  c.fillStyle=g;c.fillRect(0,0,W,H);}},
+  c.fillStyle=g;c.fillRect(0,0,W,H);
+  /* baked clouds: fbm, domain-warped, lit from the palette */
+  if(P.clouds>0.02){
+   const nz=makeNoise2D('sky'+Math.floor(rng()*1e9));
+   const cw=Math.max(160,Math.floor(W/3)),ch=Math.max(120,Math.floor(H/3));
+   const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;
+   const gx=cv.getContext('2d'),id=gx.createImageData(cw,ch),dd=id.data;
+   const wx=rng()*40,wy=rng()*40;
+   const hi=mixHex(cols[2],'#ffffff',.55),lo=mixHex(cols[0],'#000000',.25);
+   const hir=hexRGB(hi),lor=hexRGB(lo);
+   for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){
+    const u=x/cw*5+wx,vv=y/ch*3.2+wy;
+    const warp=nz.fbm(u*.9+13.7,vv*.9+7.1,2);
+    let m=nz.fbm(u+warp*1.6,vv+warp*1.6,4);
+    m=clamp((m-(1-P.coverage)*.85)/(P.coverage*.9+.05),0,1);
+    m=Math.pow(m,1.25)*P.clouds;
+    const shade=nz.n2(u*2.2+40,vv*2.2);
+    const t=clamp(.35+shade*.65,0,1);
+    const i=(y*cw+x)*4;
+    dd[i]=lerp(lor[0],hir[0],t);dd[i+1]=lerp(lor[1],hir[1],t);dd[i+2]=lerp(lor[2],hir[2],t);
+    dd[i+3]=m*235;
+   }
+   gx.putImageData(id,0,0);
+   c.save();c.globalAlpha=.9;c.drawImage(cv,0,0,cw,ch,0,0,W,H*.92);c.restore();
+  }}},
 orb:{name:'Sun / Moon',glyph:'🌞',
  defaults(r){return {x:rr(r,.15,.85),y:rr(r,.12,.5),size:rr(r,.04,.13),glow:rr(r,.5,1),warm:r()<.7,col:pick(r,['#fff6d8','#ffe9b8','#ffffff','#ffd9a0'])};},
  schema:[{k:'x',label:'Across',t:'range',min:0,max:1,step:.01},{k:'y',label:'Height',t:'range',min:0,max:1,step:.01},{k:'size',label:'Size',t:'range',min:.02,max:.2,step:.005},{k:'glow',label:'Glow',t:'range',min:0,max:1,step:.01},{k:'warm',label:'Tone',t:'seg',opts:['warm','cool']},{k:'col',label:'Color',t:'color'}],
@@ -201,24 +258,76 @@ stars:{name:'Stars',glyph:'✨',
    const a=P.tw?.35+.65*Math.abs(Math.sin(i*12.9898)*43758.5453%1):.9;
    c.fillStyle='rgba(255,255,255,'+a.toFixed(2)+')';c.beginPath();c.arc(x,y,s,0,7);c.fill();}}},
 terrain:{name:'Mountains',glyph:'⛰️',
- defaults(r){return {bands:ri(r,1,3),rough:rr(r,.3,1),base:rr(r,.55,.8),pal:ri(r,0,PALETTES.length-1),haze:rr(r,0,.7)};},
- schema:[{k:'bands',label:'Ridges',t:'range',min:1,max:4,step:1},{k:'rough',label:'Roughness',t:'range',min:.1,max:1.2,step:.01},{k:'base',label:'Height',t:'range',min:.35,max:.9,step:.01},{k:'pal',label:'Colors',t:'pal'},{k:'haze',label:'Haze',t:'range',min:0,max:1,step:.01}],
+ defaults(r){return {bands:ri(r,1,3),rough:rr(r,.3,1),base:rr(r,.55,.8),pal:ri(r,0,PALETTES.length-1),haze:rr(r,0,.7),snow:rr(r,0,.8),detail:rr(r,.4,1)};},
+ schema:[{k:'bands',label:'Ridges',t:'range',min:1,max:4,step:1},{k:'rough',label:'Roughness',t:'range',min:.1,max:1.2,step:.01},{k:'base',label:'Height',t:'range',min:.35,max:.9,step:.01},{k:'pal',label:'Colors',t:'pal'},{k:'haze',label:'Haze',t:'range',min:0,max:1,step:.01},{k:'snow',label:'Snow caps',t:'range',min:0,max:1,step:.01},{k:'detail',label:'Rock detail',t:'range',min:0,max:1,step:.01}],
  render(c,W,H,rng,P,pal){
   const lp=PALETTES[P.pal].land;
+  const nz=makeNoise2D('terr'+Math.floor(rng()*1e9));
+  const dt=detailTile(Math.floor(rng()*1e9));
+  const steps=Math.max(90,Math.floor(W/12));
   for(let b=0;b<P.bands;b++){
-   const t=b/(P.bands);const n=makeNoise1D(rng);
-   const yBase=H*(P.base - (P.bands-1-b)*.09);
-   const col=mixHex(lp[0],lp[1],P.bands===1?.5:t*.85);
-   c.fillStyle=col;c.beginPath();c.moveTo(0,H);
-   const steps=Math.max(60,Math.floor(W/14));
-   for(let i=0;i<=steps;i++){const x=i/steps*W;
-    const y=yBase - n(i/steps*4+b*13.7)*H*.28*P.rough - Math.sin(i/steps*Math.PI)*H*.04;
-    c.lineTo(x,y);}
-   c.lineTo(W,H);c.closePath();c.fill();
-   if(P.haze>0){c.fillStyle='rgba(200,220,240,'+(P.haze*.18*(1-t)).toFixed(3)+')';c.fillRect(0,0,W,H);}}}},
+   const t=P.bands===1?.5:b/(P.bands-1);
+   const n1=makeNoise1D(rng);
+   const yBase=H*(P.base-(P.bands-1-b)*.09);
+   const ridge=new Float32Array(steps+1);
+   for(let i=0;i<=steps;i++){
+    const u=i/steps;
+    ridge[i]=yBase-(n1(u*4+b*13.7)*.72+nz.fbm(u*7+b*31.7,.5,3)*.28)*H*.30*P.rough-Math.sin(u*Math.PI)*H*.04;
+   }
+   const col=mixHex(lp[0],lp[1],t*.85);
+   /* silhouette */
+   c.save();c.beginPath();c.moveTo(0,H);
+   for(let i=0;i<=steps;i++)c.lineTo(i/steps*W,ridge[i]);
+   c.lineTo(W,H);c.closePath();
+   c.fillStyle=col;c.fill();c.clip();
+   /* baked rock detail: fbm tile stamped with overlay */
+   if(P.detail>.02){
+    c.save();c.globalCompositeOperation='overlay';c.globalAlpha=.34*P.detail;
+    c.drawImage(dt,0,0,256,256,0,0,W,H);c.restore();
+    /* strata bands */
+    c.save();c.globalCompositeOperation='overlay';c.globalAlpha=.20*P.detail;
+    c.strokeStyle='#ffffff';c.lineWidth=1.2;
+    const sy0=Math.min.apply(null,ridge);
+    for(let s=0;s<7;s++){const yy=sy0+20+s*(H-sy0)/7+nz.n2(s*3.1,b)*30;
+     c.beginPath();
+     for(let i=0;i<=steps;i+=2){const x=i/steps*W,y=yy+nz.n2(i*.05,s*9.4)*26;
+      i?c.lineTo(x,y):c.moveTo(x,y);}
+     c.stroke();}
+    c.restore();
+   }
+   /* snow caps: noisy band under the crest */
+   if(P.snow>.03){
+    const g2=c.createLinearGradient(0,0,0,H*.4);
+    const sc=mixHex(pal.sky[2],'#ffffff',.72);
+    g2.addColorStop(0,sc);g2.addColorStop(1,sc+'00');
+    c.save();c.globalAlpha=.85*P.snow;c.fillStyle=g2;c.beginPath();
+    let started=false;
+    for(let i=0;i<=steps;i++){
+     const x=i/steps*W,depth=(26+nz.fbm(i*.09,b*7.7+3,3)*70)*(0.4+P.snow);
+     const y=ridge[i]+depth;
+     if(!started){c.moveTo(x,ridge[i]);started=true;}
+     c.lineTo(x,y);
+    }
+    for(let i=steps;i>=0;i--)c.lineTo(i/steps*W,ridge[i]);
+    c.closePath();c.fill();c.restore();
+   }
+   /* crest light: thin lit edge along the ridge */
+   c.save();c.globalCompositeOperation='screen';c.globalAlpha=.5;
+   c.strokeStyle=mixHex(pal.sky[2],'#ffffff',.5);c.lineWidth=Math.max(1.2,W/900);
+   c.beginPath();
+   for(let i=0;i<=steps;i++){const x=i/steps*W,y=ridge[i]-1;i?c.lineTo(x,y):c.moveTo(x,y);}
+   c.stroke();c.restore();
+   /* ambient occlusion: depth darkening toward the base */
+   const ao=c.createLinearGradient(0,yBase-H*.25,0,H);
+   ao.addColorStop(0,'rgba(0,0,0,0)');ao.addColorStop(1,'rgba(0,0,0,.42)');
+   c.fillStyle=ao;c.fillRect(0,0,W,H);
+   c.restore();
+   /* aerial haze between bands */
+   if(P.haze>0){c.fillStyle='rgba(200,220,240,'+(P.haze*.16*(1-t*.6)).toFixed(3)+')';c.fillRect(0,0,W,H);}
+  }}},
 water:{name:'Water',glyph:'🌊',
- defaults(r){return {y:rr(r,.6,.85),ripple:rr(r,.3,1),shimmer:rr(r,.3,1),dark:rr(r,.1,.5)};},
- schema:[{k:'y',label:'Water line',t:'range',min:.4,max:.95,step:.01},{k:'ripple',label:'Ripples',t:'range',min:0,max:1,step:.01},{k:'shimmer',label:'Shimmer',t:'range',min:0,max:1,step:.01},{k:'dark',label:'Depth',t:'range',min:0,max:.8,step:.01}],
+ defaults(r){return {y:rr(r,.6,.85),ripple:rr(r,.3,1),shimmer:rr(r,.3,1),dark:rr(r,.1,.5),glitter:rr(r,.4,1),glitterX:rr(r,.3,.7),foam:rr(r,.2,.8)};},
+ schema:[{k:'y',label:'Water line',t:'range',min:.4,max:.95,step:.01},{k:'ripple',label:'Ripples',t:'range',min:0,max:1,step:.01},{k:'shimmer',label:'Shimmer',t:'range',min:0,max:1,step:.01},{k:'dark',label:'Depth',t:'range',min:0,max:.8,step:.01},{k:'glitter',label:'Light path',t:'range',min:0,max:1,step:.01},{k:'glitterX',label:'Path position',t:'range',min:0,max:1,step:.01},{k:'foam',label:'Foam',t:'range',min:0,max:1,step:.01}],
  render(c,W,H,rng,P,pal){
   const y0=P.y*H;
   c.save();c.beginPath();c.rect(0,y0,W,H-y0);c.clip();
@@ -232,7 +341,48 @@ water:{name:'Water',glyph:'🌊',
    if(off>0.5)c.drawImage(c.canvas,0,sy,W,1,off-W,y0+j*3,W,3);
    else if(off<-0.5)c.drawImage(c.canvas,0,sy,W,1,off+W,y0+j*3,W,3);
   }
-  c.fillStyle='rgba(4,10,20,'+P.dark.toFixed(2)+')';c.fillRect(0,y0,W,H-y0);
+  /* depth: darker with distance from the viewer */
+  const dg=c.createLinearGradient(0,y0,0,H);
+  dg.addColorStop(0,'rgba(4,10,20,'+(P.dark*.35).toFixed(2)+')');
+  dg.addColorStop(1,'rgba(2,6,14,'+P.dark.toFixed(2)+')');
+  c.fillStyle=dg;c.fillRect(0,y0,W,H-y0);
+  /* glitter path: broken specular column under the light */
+  if(P.glitter>.02){
+   const nz=makeNoise2D('glit'+Math.floor(rng()*1e9));
+   const gx=P.glitterX*W;
+   c.save();c.globalCompositeOperation='screen';
+   const slices=70;
+   for(let j=0;j<slices;j++){
+    const yy=y0+(j/slices)*(H-y0);
+    const spread=(0.02+ (j/slices)*.16)*W*(0.6+P.glitter*.8);
+    const wob=nz.fbm(j*.12,3.3,2)*spread;
+    const a=P.glitter*(1-j/slices*.75)*(.35+.65*nz.n2(j*.3,9.1));
+    const grad=c.createLinearGradient(gx-spread+wob,0,gx+spread+wob,0);
+    const hc=mixHex(pal.sky[2],'#ffffff',.6);
+    grad.addColorStop(0,hc+'00');grad.addColorStop(.5,hc);grad.addColorStop(1,hc+'00');
+    c.globalAlpha=clamp(a,0,1)*.5;c.fillStyle=grad;
+    c.fillRect(gx-spread+wob,yy,spread*2,(H-y0)/slices+1);
+   }
+   c.restore();
+  }
+  /* foam: fbm-broken lace along the waterline */
+  if(P.foam>.02){
+   const nz2=makeNoise2D('foam'+Math.floor(rng()*1e9));
+   const fh=Math.max(8,(H-y0)*.09);
+   const fw=Math.max(200,Math.floor(W/4));
+   const cv=document.createElement('canvas');cv.width=fw;cv.height=Math.ceil(fh);
+   const fx=cv.getContext('2d'),id=fx.createImageData(fw,cv.height),dd=id.data;
+   for(let yy=0;yy<cv.height;yy++)for(let x=0;x<fw;x++){
+    const m=nz2.fbm(x*.06,yy*.09+4.4,3);
+    const edge=1-yy/cv.height;
+    const on=clamp((m-.42)*4,0,1)*edge*P.foam;
+    const i=(yy*fw+x)*4;dd[i]=dd[i+1]=dd[i+2]=235;dd[i+3]=on*200;
+   }
+   fx.putImageData(id,0,0);
+   c.save();c.globalAlpha=.8;
+   c.drawImage(cv,0,0,fw,cv.height,0,y0-2,W,fh+2);
+   c.restore();
+  }
   if(P.shimmer>0){c.fillStyle='rgba(255,255,255,'+(P.shimmer*.06).toFixed(3)+')';
    for(let i=0;i<40*P.shimmer;i++){const x=rng()*W,y=y0+rng()*(H-y0);
     c.fillRect(x,y,rr(rng,4,40),1.5);}}
@@ -352,6 +502,11 @@ function render(){
   ctx.restore();
  }
  drawStrokes(ctx,W,H);
+ /* finish: gentle filmic grade baked over the whole picture */
+ try{
+  ctx.save();ctx.filter='saturate(1.12) contrast(1.045) brightness(1.015)';
+  ctx.drawImage(canvas,0,0);ctx.restore();ctx.filter='none';
+ }catch(e){}
  document.getElementById('seedtxt').textContent='#'+state.masterSeed;
 }
 function drawStrokes(c,W,H){
@@ -485,7 +640,7 @@ function renderLayerPane(){
  el.querySelectorAll('input[type=range][data-k]').forEach(inp=>inp.oninput=()=>{
   sel.params[inp.dataset.k]=parseFloat(inp.value);
   inp.closest('.srow').querySelector('b').textContent=fmtVal(parseFloat(inp.value));
-  render();
+  renderSoon();
  });
  el.querySelectorAll('.seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{
   let v=b.dataset.v;if(v!==''&&!isNaN(v))v=parseFloat(v);
@@ -493,8 +648,8 @@ function renderLayerPane(){
   if(seg.dataset.k==='warm')sel.params[seg.dataset.k]=(v==='warm');
   render();renderLayerPane();
  }));
- el.querySelectorAll('input[type=color]').forEach(inp=>inp.oninput=()=>{sel.params[inp.dataset.k]=inp.value;render();});
- const op=el.querySelector('input[data-op]');if(op)op.oninput=()=>{sel.opacity=parseFloat(op.value);render();
+ el.querySelectorAll('input[type=color]').forEach(inp=>inp.oninput=()=>{sel.params[inp.dataset.k]=inp.value;renderSoon();});
+ const op=el.querySelector('input[data-op]');if(op)op.oninput=()=>{sel.opacity=parseFloat(op.value);renderSoon();
   op.closest('.srow').querySelector('b').textContent=Math.round(sel.opacity*100)+'%';};
  const rr2=el.querySelector('#rerollLayer');if(rr2)rr2.onclick=()=>{
   const T=LAYER_TYPES[sel.type];sel.seed=randSeed();
