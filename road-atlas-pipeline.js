@@ -6,7 +6,7 @@
  */
 (function () {
 'use strict';
-var VERSION='2.3.0', oldRegenerate=regenerate;
+var VERSION='2.2.0', oldRegenerate=regenerate;
 var mode=new URLSearchParams(location.search).get('pipeline')==='legacy'?'legacy':'ordered';
 var trace=[], failures=[], generated=null;
 var originalMakeRng=makeRng;
@@ -249,7 +249,7 @@ function sizeWorld(){WEXT=extentOf(P.cityScale);WORLD_W=Math.round(1600*WEXT);WO
  ACOLS=Math.max(24,Math.round(WORLD_W/ACELL));AROWS=Math.max(16,Math.round(WORLD_H/ACELL));BCOLS=Math.max(60,Math.round(WORLD_W/BCELL));BROWS=Math.max(40,Math.round(WORLD_H/BCELL));
  OCCW=Math.max(40,Math.round(WORLD_W/OCCCELL));OCCH=Math.max(28,Math.round(WORLD_H/OCCCELL));AGW=Math.max(12,Math.round(WORLD_W/AGCELL));AGH=Math.max(8,Math.round(WORLD_H/AGCELL));}
 function regenerateOrdered(){
- if(mode==='legacy'){oldRegenerate();status('Original V1 build order. No ordered-graph metrics.');generated=null;if(window.RoadAtlasConditions)RoadAtlasConditions.refresh();if(window.RoadAtlasUrban)RoadAtlasUrban.refresh();return;}
+ if(mode==='legacy'){oldRegenerate();status('Original V1 build order. No ordered-graph metrics.');generated=null;if(window.RoadAtlasConditions)RoadAtlasConditions.refresh();return;}
  trace=[];failures=[];var t0=performance.now(),prior=world,priorCanvas=worldCanvas;
  var priorSize=[WEXT,WORLD_W,WORLD_H,ACOLS,AROWS,BCOLS,BROWS,OCCW,OCCH,AGW,AGH];
  try{
@@ -270,7 +270,6 @@ function regenerateOrdered(){
     occNear:function(x,y,r){return !!idx.near({x:x,y:y},r,-1);},network:N,conditions:blocks.conditions};
   W.layers=stage('Accessibility and transit on actual streets',function(){return layersFromNetwork(F,G,N,W);});
   if(W.conditions)stage('Civic markers inside assigned parcels',function(){RoadAtlasConditions.finalizeLayers(W);});
-  if(W.conditions&&window.RoadAtlasUrban)stage('District charters and supported site massing',function(){RoadAtlasUrban.compile(W);});
   W.names=stage('Labels on final geometry',function(){
    // Splitting a corridor must not turn every piece into a separately named
    // street. Use its unsplit, already routed lineage, then reject close labels.
@@ -278,13 +277,13 @@ function regenerateOrdered(){
    names.streets=names.streets.filter(function(s){if(placed.some(function(p){return dist2(s.x,s.y,p.x,p.y)<120*120;}))return false;placed.push(s);return true;});
    return names;
   });
-  var metrics=stage('Validate committed scene',function(){var m=validate(N,W);if(W.conditions)m.conditions=RoadAtlasConditions.validate(W);if(W.urban)m.urban=RoadAtlasUrban.validate(W);return m;});
+  var metrics=stage('Validate committed scene',function(){var m=validate(N,W);if(W.conditions)m.conditions=RoadAtlasConditions.validate(W);return m;});
   // Base rendering is unchanged. Draw to a new buffer before publishing.
   var next=document.createElement('canvas');next.width=WORLD_W;next.height=WORLD_H;
   stage('V1 cartographic rendering',function(){renderWorld(next.getContext('2d'),W);});
   metrics.stageOrder=trace.map(function(t){return t.name;});
   W.pipeline={version:VERSION,metrics:metrics,trace:trace.slice(),warnings:failures.slice()};world=W;worldCanvas=next;generated=W.pipeline;
-  refreshAnalysisPanel();if(window.RoadAtlasConditions)RoadAtlasConditions.refresh();if(window.RoadAtlasUrban)RoadAtlasUrban.refresh();renderOverlays();drawStatic();document.getElementById('err').style.display='none';
+  refreshAnalysisPanel();if(window.RoadAtlasConditions)RoadAtlasConditions.refresh();renderOverlays();drawStatic();document.getElementById('err').style.display='none';
   document.getElementById('genmeta').textContent='Ordered · '+((performance.now()-t0)/1000).toFixed(2)+'s · '+N.roads.length+' segments · '+blocks.buildings.length+' buildings';
   status(N.components.length+' network component'+(N.components.length===1?'':'s')+' · '+(metrics.largestComponentLengthShare*100).toFixed(1)+'% of road length in largest component. '+(failures.length?failures.join('; '):'Validated finite edges and shared endpoints.'));
  }catch(e){world=prior;worldCanvas=priorCanvas;
@@ -300,12 +299,12 @@ var share=document.getElementById('shareBtn');if(share){var fresh=share.cloneNod
  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u.href).then(function(){toast('Exact recipe + build order copied');},function(){prompt('Copy this link:',u.href);});else prompt('Copy this link:',u.href);
 });}
 function exportData(){if(!world)return null;var N=world.network;
- return {format:'MOOR-RoadAtlas-2.3',pipeline:mode,engineVersion:VERSION,seed:state.seed,params:Object.assign({},P),extent:{width:WORLD_W,height:WORLD_H,units:'V1 world units'},
+ return {format:'MOOR-RoadAtlas-2.2',pipeline:mode,engineVersion:VERSION,seed:state.seed,params:Object.assign({},P),extent:{width:WORLD_W,height:WORLD_H,units:'V1 world units'},
   network:N?{nodes:N.nodes,edges:N.roads.map(function(r){return {from:r.from,to:r.to,class:r.cls,length:r.length,points:r.pts,source:r.source};})}:null,
   roads:world.roads.map(function(r){return {class:r.cls,points:r.pts,from:r.from,to:r.to,bridges:r.bridges};}),
   intersections:world.nodes,buildings:world.blocks.buildings,parks:world.blocks.parks,
   fields:{population:{w:world.layers.pop.w,h:world.layers.pop.h,data:Array.from(world.layers.pop.data)},accessibility:{w:world.layers.acc.w,h:world.layers.acc.h,data:Array.from(world.layers.acc.data)}},
-  transit:world.layers.transit,pois:world.layers.pois,conditions:window.RoadAtlasConditions?RoadAtlasConditions.exportData(world):null,urban:window.RoadAtlasUrban?RoadAtlasUrban.exportData(world):null,diagnostics:generated};}
+  transit:world.layers.transit,pois:world.layers.pois,conditions:window.RoadAtlasConditions?RoadAtlasConditions.exportData(world):null,diagnostics:generated};}
 var dataBtn=document.getElementById('dataBtn');if(dataBtn){var button=dataBtn.cloneNode(true);dataBtn.replaceWith(button);button.addEventListener('click',function(){var data=exportData();if(!data)return;
  var blob=new Blob([JSON.stringify(data)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='road-atlas-'+state.seed+'-'+mode+'.json';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1500);
 });}

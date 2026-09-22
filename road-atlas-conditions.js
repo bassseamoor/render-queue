@@ -305,12 +305,6 @@ var renderConditionalWorld=Function("view","drawTopo","pathRings","ruralAllowed"
   "      if(W.conditions&&!ruralAllowed(W.conditions,rect(rx2,ry2,10,10,0)))continue;\n"
  ],
  [
-  4058,
-  4058,
-  "",
-  "    if(W.urban&&W.urban.enabled&&b.architecture&&window.RoadAtlasUrban){RoadAtlasUrban.drawBuilding(ctx,W,b);return;}\n"
- ],
- [
   4211,
   4272,
   "    ctx.save(); ctx.translate(b.cx,b.cy); ctx.rotate(b.ang);\n",
@@ -374,7 +368,7 @@ function inspectAt(x,y){var d=inspect(x,y);if(!d)return;selected={seed:world.see
  var fields=[['Elevation',d.elevation.toFixed(3)+' relative'],['Slope index',d.slopeIndex.toFixed(3)+' / max '+d.policy.slopeLimit.toFixed(2)],['District',d.district],['Boundary',d.source||'No parcel'],['Block',d.blockId>=0?String(d.blockId):'Frontage / open land'],['Road setback',d.policy.setback+' additional world units']];
  if(d.building)fields.push(['Fitted footprint',d.building.footprintWidth.toFixed(1)+' × '+d.building.footprintDepth.toFixed(1)],['Scale from candidate',(d.building.placement.scale*100).toFixed(0)+'%']);
  var dl=document.getElementById('conditionValues');dl.replaceChildren();fields.forEach(function(kv){var dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=kv[0];dd.textContent=kv[1];dl.append(dt,dd);});
- document.getElementById('conditionReason').textContent=d.reasons.join(' · ')+(d.building?' · '+d.building.placement.rule:'');if(window.RoadAtlasUrban)RoadAtlasUrban.onInspect(d);redraw(false);
+ document.getElementById('conditionReason').textContent=d.reasons.join(' · ')+(d.building?' · '+d.building.placement.rule:'');redraw(false);
 }
 function exportConditions(W){if(!W.conditions)return null;var C=W.conditions,T=C.topography;
  return {version:VERSION,policy:Object.assign({},C.policy),views:Object.assign({},view),units:'V1 world units; elevation is relative; slopeIndex is not a surveyed grade',resolution:C.cell,
@@ -387,7 +381,7 @@ function refreshUI(){selected=null;var ins=document.getElementById('conditionIns
  if(!world||!world.conditions){e.textContent='Original V1 comparison: conditions and topo are not applied.';return;}
  var C=world.conditions;e.textContent=C.parcels.length+' parcels · '+C.counts.accepted+' fitted buildings · '+C.counts.resized+' resized candidates. Boundaries use '+C.cell+'-unit cells; slope is an index, not a surveyed grade.';
 }
-function queryParameters(u){u.searchParams.set('setback',settings.setback);u.searchParams.set('slopeLimit',settings.slopeLimit);u.searchParams.set('topo',view.topo?'1':'0');u.searchParams.set('contour',view.interval);u.searchParams.set('topoOpacity',view.opacity);u.searchParams.set('contourLabels',view.labels?'1':'0');if(window.RoadAtlasUrban)RoadAtlasUrban.queryParameters(u);return u;}
+function queryParameters(u){u.searchParams.set('setback',settings.setback);u.searchParams.set('slopeLimit',settings.slopeLimit);u.searchParams.set('topo',view.topo?'1':'0');u.searchParams.set('contour',view.interval);u.searchParams.set('topoOpacity',view.opacity);u.searchParams.set('contourLabels',view.labels?'1':'0');return u;}
 function persist(){try{localStorage.setItem('ra.conditions.v1',JSON.stringify({topo:view.topo,labels:view.labels}));}catch(e){}}
 function installUI(){
  var style=document.createElement('style');style.textContent='.cond-detail{border-top:1px solid #ffffff1c;padding-top:9px;margin-top:4px}.cond-detail summary{cursor:pointer;color:#b7c9d7;font-size:12px;padding:6px 0}.cond-detail label{display:block;font-size:12px;margin:9px 0}.cond-detail select{display:block;width:100%;padding:8px;background:#152129;color:#e2ecf3;border:1px solid #50606c;border-radius:7px;margin-top:5px}.cond-detail input[type=range]{width:100%;accent-color:#80b998}.cond-detail input[type=checkbox]{accent-color:#80b998}.cond-note{font-size:11px;line-height:1.5;color:#9bafbd}.cond-inspector{position:fixed;right:12px;bottom:80px;z-index:1400;width:min(320px,calc(100vw - 48px));max-height:45vh;overflow:auto;padding:14px;background:rgba(10,18,23,.95);color:#dce8ef;border:1px solid #55706c;border-radius:13px;box-shadow:0 12px 40px #0008}.cond-inspector[hidden]{display:none}.cond-inspector h3{font-size:14px;margin:0 28px 9px 0}.cond-inspector dl{display:grid;grid-template-columns:1fr 1.35fr;gap:6px;font-size:11px;line-height:1.5}.cond-inspector dt{color:#96acb7}.cond-inspector dd{margin:0}.cond-inspector .close{float:right;background:transparent;color:#dce8ef;border:0;padding:6px;cursor:pointer}.cond-inspector p{font-size:11px;line-height:1.6;color:#aac7b8}#layersPanel{max-height:calc(100dvh - 175px);overflow:auto;min-width:230px;width:min(284px,calc(100vw - 48px))}#analysisPanel{max-height:calc(100dvh - 175px);overflow:auto}#conditionsStatus{font-size:11px;line-height:1.6;color:#a5beb0;margin-top:10px}@media(max-width:720px){#layersPanel,#analysisPanel{max-height:calc(100dvh - 205px)}.cond-detail select{font-size:16px}.cond-inspector{max-height:34vh;bottom:78px}#topbar .tbtn{min-height:40px}}';style.textContent+='#stage{top:var(--ra-bar-bottom,52px)}#layersPanel,#analysisPanel{top:calc(var(--ra-bar-bottom,52px) + 8px);max-height:calc(100dvh - var(--ra-bar-bottom,52px) - 96px)}#layersPanel .lchip{width:100%;min-height:40px}';document.head.appendChild(style);
