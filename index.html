@@ -97,6 +97,10 @@ const OWNER = "bassseamoor", REPO = "render-queue";
 const STUDIOS = {
   "turtle-life":  { name: "Turtle Life \u25cf renders now", url: "https://bassseamoor.github.io/turtle-life-studio/turtle-life-studio.html", renders: true },
   "rain-window":  { name: "Rain Window (render soon)",       url: "https://bassseamoor.github.io/rain-window-studio/rain-window-studio.html", renders: false },
+  "molten":       { name: "Molten (render soon)",            url: "https://bassseamoor.github.io/render-queue/molten.html", renders: false },
+  "aquarium":     { name: "Aquarium (render soon)",           url: "https://bassseamoor.github.io/render-queue/aquarium.html", renders: false },
+  "alien-planet": { name: "Alien Planet (render soon)",       url: "https://bassseamoor.github.io/render-queue/alien-planet.html", renders: false },
+  "rainforest":   { name: "Rainforest (render soon)",         url: "https://bassseamoor.github.io/render-queue/rainforest.html", renders: false },
 };
 const $ = id => document.getElementById(id);
 const getToken = () => localStorage.getItem("rq_token") || "";
@@ -160,12 +164,15 @@ function render() {
       '<div class="meta">' + fmtDur(it.seconds) + ' · ' + it.fps + 'fps · ' + (it.q === "1920x1080" ? "1080p" : "720p") +
       (it.note ? " · " + esc(it.note) : "") +
       (it.created ? " · " + new Date(it.created).toLocaleDateString() : "") + '</div>' +
-      '<div class="actions"><button class="btn-render">▶ Render this</button>' +
+      '<div class="actions">' + (st.renders
+        ? '<button class="btn-render">▶ Render this</button>'
+        : '<button class="btn-ghost btn-soon" style="flex:1">Render soon</button>') +
       (it.status !== "done"
         ? '<button class="btn-ghost btn-done">✓ Done</button>'
         : "") +
       '<button class="btn-ghost btn-del">✕</button></div>';
-    d.querySelector(".btn-render").onclick = () => {
+    const br = d.querySelector(".btn-render");
+    if (br) br.onclick = () => {
       it.status = "rendering";
       const wh = (it.q || "1280x720").split("x");
       const url = st.url + "?render=1&seed=" + encodeURIComponent(it.seed) +
@@ -173,6 +180,8 @@ function render() {
         "&w=" + wh[0] + "&h=" + wh[1];
       location.href = url;
     };
+    const bs = d.querySelector(".btn-soon");
+    if (bs) bs.onclick = () => alert("One-tap render is built for Turtle Life so far — this studio's turn is coming. Open it from its name link above to hunt for seeds.");
     const bd = d.querySelector(".btn-done");
     if (bd) bd.onclick = async () => { it.status = "done"; if (await saveQueue()) render(); };
     d.querySelector(".btn-del").onclick = async () => {
