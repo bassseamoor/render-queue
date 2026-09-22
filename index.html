@@ -15,6 +15,7 @@
   .item { background: #121826; border: 1px solid #1e2740; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
   .item .row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .item .studio { font-weight: 700; font-size: 16px; }
+  .studiolink { font-weight: 700; font-size: 16px; color: #9cc3ff; text-decoration: none; border-bottom: 1px dotted #4a6ea9; }
   .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
   .pill.queued { background: #1d3a6e; color: #9cc3ff; }
   .pill.rendering { background: #6e4d1d; color: #ffd79c; }
@@ -60,6 +61,7 @@
   <p class="hint">Paste a seed from any studio. Tip: in a studio, copy its <b>?seed=</b> link and paste it below — the form fills itself in.</p>
   <label for="fStudio">Studio</label>
   <select id="fStudio"></select>
+  <div style="margin-top:6px"><a id="openStudio" class="hint" href="#" target="_blank" rel="noopener" style="color:#9cc3ff">Open studio ↗</a></div>
   <label for="fSeed">Seed (or full ?seed= link)</label>
   <input id="fSeed" placeholder="e.g. TURTLE-8F3K2 or https://…?seed=TURTLE-8F3K2" autocomplete="off">
   <label for="fNote">Note (optional)</label>
@@ -137,8 +139,10 @@ function fmtDur(s) { s = +s; return s >= 60 ? (s / 60) + " min" : s + " sec"; }
 function render() {
   const el = $("list");
   const items = [...(queue.items || [])].reverse();
+  const studioLinks = Object.values(STUDIOS).filter(s => s.url)
+    .map(s => '<a class="studiolink" href="' + esc(s.url) + '" target="_blank" rel="noopener" style="font-size:14px">' + esc(s.name.replace(" \u25cf renders now", "")) + ' ↗</a>').join(" &nbsp;·&nbsp; ");
   if (!items.length) {
-    el.innerHTML = '<div class="empty">Nothing queued yet.<br>Tap <b>+</b> to save a seed from any studio.</div>';
+    el.innerHTML = '<div class="empty">Nothing queued yet.<br>Tap <b>+</b> to save a seed from any studio.<br><br>' + studioLinks + '</div>';
     return;
   }
   el.innerHTML = "";
@@ -146,8 +150,11 @@ function render() {
     const st = STUDIOS[it.studio] || { name: it.studio };
     const d = document.createElement("div");
     d.className = "item";
+    const studioHead = st.url
+      ? '<a class="studiolink" href="' + esc(st.url) + '" target="_blank" rel="noopener">' + esc(st.name) + ' ↗</a>'
+      : '<span class="studio">' + esc(st.name) + '</span>';
     d.innerHTML =
-      '<div class="row1"><span class="studio">' + esc(st.name) + '</span>' +
+      '<div class="row1">' + studioHead +
       '<span class="pill ' + it.status + '">' + it.status + '</span></div>' +
       '<div class="seed">seed ' + esc(it.seed) + '</div>' +
       '<div class="meta">' + fmtDur(it.seconds) + ' · ' + it.fps + 'fps · ' + (it.q === "1920x1080" ? "1080p" : "720p") +
@@ -178,9 +185,18 @@ function render() {
 }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
+function syncOpenStudioLink() {
+  const k = $("fStudio").value, s = STUDIOS[k];
+  const a = $("openStudio");
+  if (s && s.url) { a.href = s.url; a.style.display = ""; }
+  else { a.style.display = "none"; }
+}
+
 function openSheet() {
   const sel = $("fStudio");
   sel.innerHTML = Object.entries(STUDIOS).map(([k, v]) => '<option value="' + k + '">' + esc(v.name) + "</option>").join("");
+  sel.onchange = syncOpenStudioLink;
+  syncOpenStudioLink();
   const h = location.hash.match(/add/i);
   $("sheet").classList.add("open"); $("scrim").classList.add("open");
 }
