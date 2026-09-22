@@ -69,6 +69,8 @@
       <select id="fSecs"><option value="30">30 sec</option><option value="300" selected>5 min</option><option value="1800">30 min</option></select></div>
     <div><label for="fFps">FPS</label>
       <select id="fFps"><option value="30" selected>30</option><option value="60">60</option></select></div>
+    <div><label for="fQ">Quality</label>
+      <select id="fQ"><option value="1280x720" selected>HD 720p</option><option value="1920x1080">Full HD 1080p</option></select></div>
   </div>
   <div style="display:flex;gap:8px;margin-top:18px">
     <button class="btn-ghost" id="cancelAdd" style="flex:1">Cancel</button>
@@ -152,7 +154,7 @@ function render() {
       '<div class="row1"><span class="studio">' + esc(st.name) + '</span>' +
       '<span class="pill ' + it.status + '">' + it.status + '</span></div>' +
       '<div class="seed">seed ' + esc(it.seed) + '</div>' +
-      '<div class="meta">' + fmtDur(it.seconds) + ' · ' + it.fps + 'fps' +
+      '<div class="meta">' + fmtDur(it.seconds) + ' · ' + it.fps + 'fps · ' + (it.q === "1920x1080" ? "1080p" : "720p") +
       (it.note ? " · " + esc(it.note) : "") +
       (it.created ? " · " + new Date(it.created).toLocaleDateString() : "") + '</div>' +
       '<div class="actions"><button class="btn-render">▶ Render this</button>' +
@@ -162,8 +164,10 @@ function render() {
       '<button class="btn-ghost btn-del">✕</button></div>';
     d.querySelector(".btn-render").onclick = () => {
       it.status = "rendering";
+      const wh = (it.q || "1280x720").split("x");
       const url = st.url + "?render=1&seed=" + encodeURIComponent(it.seed) +
-        "&fps=" + it.fps + "&seconds=" + it.seconds + "&qid=" + it.id;
+        "&fps=" + it.fps + "&seconds=" + it.seconds + "&qid=" + it.id +
+        "&w=" + wh[0] + "&h=" + wh[1];
       location.href = url;
     };
     const bd = d.querySelector(".btn-done");
@@ -220,6 +224,7 @@ $("saveAdd").onclick = async () => {
     note: $("fNote").value.trim(),
     seconds: +$("fSecs").value,
     fps: +$("fFps").value,
+    q: $("fQ").value,
     status: "queued",
     created: new Date().toISOString(),
   };
