@@ -437,15 +437,46 @@ function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.l
  if(family===1)s.geo[2]=3+r()*4;if(family===5)s.geo[2]=-4+r()*5;
  s.palette=family===5?[[.76,.71,.57],[.69,.39,.20],[.14,.29,.34]]:family===2?[[.43,.48,.48],[.29,.32,.31],[.10,.24,.31]]:family===3?[[.58,.56,.44],[.39,.25,.16],[.18,.32,.28]]:family===4?[[.73,.67,.49],[.37,.23,.14],[.12,.32,.39]]:[[.62,.61,.53],[.42,.22,.13],[.20,.34,.38]];
  s.landTint=family===5?[.32,.34,.20]:[.13,.22,.14];s.waterTint=family===5?[.045,.25,.32]:family===4?[.065,.23,.20]:[.055,.19,.21];
- function road(a,b,width){const length=Math.hypot(b[0]-a[0],b[1]-a[1]),steps=Math.ceil(length/.75);let open=null;for(let k=0;k<steps;k++){const t0=k/steps,t1=(k+1)/steps,p=[mix(a[0],b[0],t0),mix(a[1],b[1],t0)],q=[mix(a[0],b[0],t1),mix(a[1],b[1],t1)],x=(p[0]+q[0])/2,z=(p[1]+q[1])/2;const land=cityLand(s,x,z)>.18&&!cityPark(s,x,z);if(land){if(!open)open=p;}if(open&&(!land||k===steps-1)){const end=land?q:p;s.roads.push({a:open,b:end,width,y:.012});if(Math.hypot(end[0]-open[0],end[1]-open[1])>1.2)s.traffic.push({a:open,b:end});open=null;}}}
+ function roadPath(pts,width,opts){opts=opts||{};const seq=[pts[0].slice()];
+  for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/.8));
+   for(let k=1;k<=n;k++)seq.push([mix(a[0],b[0],k/n),mix(a[1],b[1],k/n)]);}
+  let open=null,bridging=false;
+  const isLand=(x,z)=>cityLand(s,x,z)>.18&&!cityPark(s,x,z);
+  const pushRun=(a,b,bridge)=>{const len=Math.hypot(b[0]-a[0],b[1]-a[1]);if(len<.5)return;
+   s.roads.push({a:a.slice(),b:b.slice(),width:bridge?width*.94:width,y:bridge?.065:.012,bridge:bridge,cls:opts.cls||''});
+   if(len>1.4)s.traffic.push({a:a.slice(),b:b.slice()});};
+  for(let k=0;k<seq.length-1;k++){const p=seq[k],q=seq[k+1],mx=(p[0]+q[0])/2,mz=(p[1]+q[1])/2;
+   const land=isLand(mx,mz),water=!land&&opts.bridge&&cityLand(s,mx,mz)<-.28,br=water&&!land;
+   if(land||water){if(!open){open=p;bridging=br;}else if(br!==bridging){pushRun(open,p,bridging);open=p;bridging=br;}}
+   if(open&&((!land&&!water)||k===seq.length-2)){pushRun(open,(land||water)?q:p,bridging);open=null;}}
+ }
+ function road(a,b,width,opts){roadPath([a,b],width,opts);}
  function lot(x,z,w,d,angle,id){const reach=Math.hypot(w,d)*.53;if(cityLand(s,x,z)<reach||cityPark(s,x,z))return;const cluster=Math.exp(-((x-s.cx)**2+(z-s.cz)**2)/(family===2?85:50));const district=hash(c.layout+':district:'+Math.floor(x/5)+':'+Math.floor(z/5))%5;let style=family===5?(r()<.74?2:1):family===2?(r()<.65?0:4):family===3?(r()<.55?1:3):district;
  let h=(.5+r()*1.5+cluster*(1+r()*4));if(family===2)h*=1.75;if(family===5)h*=.55;if(family===4)h*=1.15;if(style===2)h*=.70;const existing=r()<(family===5?.50:.28);let birth=existing?-35000:r()*19800; if(!existing&&r()>.91)birth=29000+r()*28000;const duration=1500+h*630+r()*800;s.lots.push({id,x:x-w/2,z:z-d/2,y:0,width:w,depth:d,height:h,birth,duration,phase:r()*100,style,landmark:0,row:Math.floor((z+20)/s.sz),col:Math.floor((x+20)/s.sx),angle,existing,lod:Math.hypot(x,z)>22?1:0});}
  if(family===3){const rings=13+Math.floor(r()*2),spacing=2.0+r()*.4;for(let ring=0;ring<rings;ring++){const radius=4.8+ring*spacing,count=Math.floor(TAU*radius/(2.0+r()*.45)),offset=r()*TAU;
  for(let k=0;k<count;k++){const a=k/count*TAU+offset,px=Math.cos(a)*radius,pz=Math.sin(a)*radius;const spoke=Math.abs(Math.sin(a*3));if(spoke>.16)lot(px,pz,1.25+r()*.38,1.18+r()*.35,-a+Math.PI/2,'r'+ring+':'+k);const b=(k+1)/count*TAU+offset;road([Math.cos(a)*(radius+spacing*.48),Math.sin(a)*(radius+spacing*.48)],[Math.cos(b)*(radius+spacing*.48),Math.sin(b)*(radius+spacing*.48)],.30);}
  }for(let k=0;k<6;k++){const a=k/6*TAU;road([Math.cos(a)*3.4,Math.sin(a)*3.4],[Math.cos(a)*37,Math.sin(a)*37],.46);}}
- else{const shift=r()*.7;for(let row=-9;row<23;row++){const z=(row-6.5)*s.sz,offset=family===5?Math.sin(row*.47+s.phase)*1.2:family===4?(row%2)*s.sx*.35:Math.sin(row*.23+s.phase)*shift;
- road([-43,z+s.sz*.48],[43,z+s.sz*.48],family===2?.48:.32);
- for(let col=-9;col<24;col++){const x=(col-7)*s.sx+offset,w=s.sx*(.57+r()*.14),d=s.sz*(.55+r()*.16);lot(x,z,w,d,0,'g'+row+':'+col);if(row<22)road([x+s.sx*.48,z-s.sz*.50],[x+s.sx*.48,z+s.sz*.50],.26);}}
+ else{const shift=r()*.7,wob=(hash(c.layout+':road-wob')%628)/100,wobAmp=.45+(hash(c.layout+':road-amp')%90)/100,wob2=(hash(c.layout+':road-wob2')%628)/100;
+  const hCurve=(z)=>{const pts=[];for(let x=-44;x<=44;x+=3.2)pts.push([x,z+Math.sin(x*.085+wob)*wobAmp+Math.sin(x*.031+wob2)*wobAmp*.55]);return pts;};
+  const vCurve=(x,z0,z1)=>{const pts=[];for(let z=z0;z<=z1;z+=2.2)pts.push([x+Math.sin(z*.11+wob2)*wobAmp*.6,z]);return pts;};
+  for(let row=-9;row<23;row++){const z=(row-6.5)*s.sz,offset=family===5?Math.sin(row*.47+s.phase)*1.2:family===4?(row%2)*s.sx*.35:Math.sin(row*.23+s.phase)*shift;
+   const blvd=row%4===1;
+   roadPath(hCurve(z+s.sz*.48),blvd?.5:(family===2?.42:.3),{bridge:blvd,cls:blvd?'blvd':'street'});
+   for(let col=-9;col<24;col++){const x=(col-7)*s.sx+offset,w=s.sx*(.57+r()*.14),d=s.sz*(.55+r()*.16);lot(x,z,w,d,0,'g'+row+':'+col);if(row<22)roadPath(vCurve(x+s.sx*.48,z-s.sz*.5,z+s.sz*.5),.22,{cls:'lane'});}}
+  if(family===0||family===4){
+   // Quay boulevards trace both banks of each waterway; landmark bridges join them.
+   const[type,phase,offset,water]=s.geo,[bend,amp,slope]=s.map,riverX=z=>offset+Math.sin(z*bend+phase)*amp+z*slope;
+   for(const side of[-1,1]){const pts=[],off=water+1.15;
+    for(let i=0;i<=28;i++){const z=-40+80*i/28;pts.push([riverX(z)+side*off,z]);}
+    roadPath(pts,.44,{cls:'quay'});}
+   for(let j=0;j<6;j++){const z=-20+j*7.5+(hash(c.layout+':br'+j)%40)/10,cx=riverX(z),span=water+2.6,wobZ=Math.sin(j*2.1)*1.2;
+    roadPath([[cx-span,z+wobZ],[cx+span,z+wobZ]],.34,{bridge:true,cls:'bridge'});}
+   if(family===4){const cw=water*.72,canalZ=x=>offset*.7+Math.sin(x*.12+phase)*2;
+    for(const side of[-1,1]){const pts=[];for(let i=0;i<=26;i++){const x=-40+80*i/26;pts.push([x,canalZ(x)+side*(cw+1.15)]);}
+     roadPath(pts,.4,{cls:'quay'});}
+    for(let j=0;j<5;j++){const x=-18+j*8+(hash(c.layout+':cb'+j)%40)/10,cz=canalZ(x),span=cw+2.4,ox=Math.sin(j*1.7);
+     roadPath([[x+ox,cz-span],[x+ox,cz+span]],.3,{bridge:true,cls:'bridge'});}}
+  }
  }
  // Landmark positions are selected from each city's actual land parcels.
  const candidates=s.lots.filter(l=>Math.hypot(l.x-s.cx,l.z-s.cz)<8).sort((a,b)=>hash(c.layout+a.id)-hash(c.layout+b.id));
@@ -576,10 +607,23 @@ function architectureBuilding(m,l,s,c,stone,brick,glass){
 function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(c.detail+':photo-finish:'+index));
  if(index===1){m.material=11;m.face([-65,-.055,-65],[65,-.055,-65],[65,-.055,65],[-65,-.055,65],s.landTint,[0,1,0]);m.material=0;
 
- for(const p of s.roads)cityRoad(m,p.a,p.b,p.width,p.y,[.095,.12,.135]);
+ for(const p of s.roads){
+  const col=p.cls==='quay'?[.13,.135,.12]:p.cls==='blvd'?[.105,.115,.125]:p.cls==='bridge'?[.16,.15,.13]:[.095,.11,.125];
+  cityRoad(m,p.a,p.b,p.width,p.y,col);
+  if(p.bridge){
+   const dx=p.b[0]-p.a[0],dz=p.b[1]-p.a[1],len=Math.hypot(dx,dz)||1,nx=-dz/len,nz=dx/len;
+   for(const sd of[-1,1]){const o=p.width*.5*sd;
+    cityRoad(m,[p.a[0]+nx*o,p.a[1]+nz*o],[p.b[0]+nx*o,p.b[1]+nz*o],.07,p.y+.14,[.60,.58,.52],0);}
+   if(len>4){const n=Math.floor(len/4);for(let i=1;i<=n;i++){const t=i/(n+1),px=mix(p.a[0],p.b[0],t),pz=mix(p.a[1],p.b[1],t);
+    m.box(px-.18,-.05,pz-.18,.36,p.y+.05,.36,[.45,.44,.40],0);}}
+  }else if(p.width>=.38){
+   const dx=p.b[0]-p.a[0],dz=p.b[1]-p.a[1],len=Math.hypot(dx,dz);
+   if(len>2){const n=Math.floor(len/1.15);for(let i=0;i<n;i++){const t0=(i+.30)/n,t1=(i+.70)/n;
+    cityRoad(m,[mix(p.a[0],p.b[0],t0),mix(p.a[1],p.b[1],t0)],[mix(p.a[0],p.b[0],t1),mix(p.a[1],p.b[1],t1)],.05,p.y+.002,[.55,.55,.48],0);}}
+  }
+ }
  for(let i=0;i<s.green.length;i++)cityTree(m,...s.green[i],r);
  // Waterfront crossings vary with each plan, and are separate from the streets.
- if(s.family===0||s.family===4){for(let j=0;j<4;j++){const z=-12+j*8,x=s.geo[2]+Math.sin(z*s.map[0]+s.geo[1])*s.map[1]+z*s.map[2],half=s.geo[3]+.6;cityRoad(m,[x-half,z],[x+half,z],.50,.18,[.62,.58,.48],0);m.box(x-half,.18,z-.27,half*2,.13,.035,[.71,.68,.57],0);m.box(x-half,.18,z+.24,half*2,.13,.035,[.71,.68,.57],0);}}
  if(s.family===1||s.family===5){for(let j=0;j<5;j++){const z=-12+j*5,x=s.geo[2]+Math.sin(z*.09+s.geo[1])*4;if(s.family===1){cityRoad(m,[x-.6,z],[x+2.5,z],.32,.07,[.42,.32,.20],0);for(let k=0;k<4;k++)m.box(x+k*.6,.06,z-.19,.035,.18,.035,[.29,.25,.17],0);}}}
  }
  const lots=cityLots(c,index);m.lots=lots;
