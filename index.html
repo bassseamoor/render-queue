@@ -57,9 +57,22 @@
   .bactions .bmore { flex: 0 0 52px; }
   .ovfrow button { display: flex; width: 100%; text-align: left; background: #1a2236; color: #e8ecf4; margin-bottom: 8px; padding: 14px; font-size: 15px; font-weight: 700; align-items: center; gap: 10px; }
   .ovfrow button small { font-weight: 400; color: #8b95ab; margin-left: auto; font-size: 12px; }
-  .varstrip { display: flex; gap: 8px; margin-top: 12px; }
-  .varbtn { flex: 1; background: #1a2236; color: #c6cfe4; font-size: 15px; padding: 12px 4px; border: 1px solid #263052; }
-  .varbtn.cur { border-color: #2f7bff; box-shadow: 0 0 0 2px rgba(47,123,255,.5); color: #fff; }
+  .varcar { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; margin-top: 12px; padding: 2px 2px 10px; -webkit-overflow-scrolling: touch; }
+  .varcard { flex: 0 0 76%; scroll-snap-align: center; background: #141b30; border: 1px solid #263052; border-radius: 14px; overflow: hidden; }
+  .varcard.cur { border-color: #2f7bff; box-shadow: 0 0 0 2px rgba(47,123,255,.5); }
+  .varcard .vimg { position: relative; aspect-ratio: 16/9; background: #1a2236; }
+  .varcard .vimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .varcard .vimg.loading img { opacity: .45; }
+  .varcard .vimg.loading::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 30%, rgba(156,195,255,.14) 50%, transparent 70%); background-size: 200% 100%; animation: vshim 1.4s infinite; }
+  @keyframes vshim { from { background-position: 180% 0; } to { background-position: -80% 0; } }
+  .vletter { position: absolute; top: 8px; left: 8px; width: 30px; height: 30px; border-radius: 999px; background: rgba(8,12,24,.8); border: 1px solid #2f7bff; color: #fff; font-weight: 800; font-size: 15px; display: flex; align-items: center; justify-content: center; }
+  .vspin { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 12px; color: #9cc3ff; font-weight: 700; text-shadow: 0 1px 4px #000; pointer-events: none; }
+  .vemptytxt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: #5a6378; font-size: 13px; line-height: 1.5; }
+  .varbody { padding: 10px 12px 12px; }
+  .vseed { font-family: ui-monospace, monospace; font-size: 11px; color: #9cc3ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vardelta { font-size: 13px; color: #dbe3f5; margin: 6px 0 10px; line-height: 1.45; min-height: 38px; }
+  .varuse { width: 100%; font-size: 15px; padding: 12px; font-weight: 800; }
+  .vonbench { text-align: center; font-size: 14px; font-weight: 800; color: #7dffab; padding: 10px; }
   .lockrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 2px; border-bottom: 1px solid #1c2333; font-size: 14px; }
   .lockrow .lk { font-size: 12px; padding: 6px 12px; border-radius: 999px; font-weight: 700; }
   .lockrow .lk.on { background: #2f7bff; color: #fff; } .lockrow .lk.off { background: #1a2236; color: #8b95ab; }
@@ -613,6 +626,21 @@ const REALMS = [
 /* ================= STORE ================= */
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+// Save jobs, but if storage is full, drop cached preview images (oldest first)
+// and retry — previews are just a cache and get re-captured on demand.
+function saveJobsSafe() {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try { localStorage.setItem("rq_jobs", JSON.stringify(JOBS)); break; }
+    catch (e) {
+      const victims = (JOBS || []).filter(j => j.thumb && j.thumb.indexOf("data:") === 0)
+        .sort((a, b) => (a.updated || "").localeCompare(b.updated || ""));
+      if (!victims.length) break;
+      // Clear the oldest quarter of cached previews each round.
+      const n = Math.max(1, Math.ceil(victims.length / 4));
+      for (let i = 0; i < n; i++) { victims[i].thumb = null; victims[i].thumbSeed = null; }
+    }
+  }
+}
 function uid(p) { return (p || "j") + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
 
 let JOBS = lsGet("rq_jobs", null);
@@ -620,7 +648,7 @@ let COLLECTIONS = lsGet("rq_collections", null);
 let SYSTEMS = lsGet("rq_systems", null);
 
 const STATUS_FLOW = ["DRAFT", "READY", "RENDERING", "REVIEW", "APPROVED", "PUBLISHED"];
-function saveJobs() { lsSet("rq_jobs", JOBS); renderJobsBadge(); }
+function saveJobs() { saveJobsSafe(); renderJobsBadge(); }
 function getJob(id) { return (JOBS || []).find(j => j.id === id); }
 function getBenchId() { return lsGet("rq_bench", null); }
 function setBenchId(id) { lsSet("rq_bench", id); renderBench(); renderFavPicker(); }
@@ -643,7 +671,7 @@ function makeJob(studio, seed, intentId, opts) {
     seconds: intent.seconds || 0, camera: intent.camera || "", loop: !!intent.loop,
     audio: intent.audio || "", destination: opts.destination || "",
     status: opts.status || "DRAFT", tier: opts.tier || "preview",
-    thumb: opts.thumb || st.thumb || null, note: opts.note || "",
+    thumb: opts.thumb || st.thumb || null, thumbSeed: opts.thumbSeed || null, note: opts.note || "",
     parent: opts.parent || null, children: [], locks: opts.locks || {},
     batch: opts.batch || null,
     collections: opts.collections || [], qc: [], results: { views: 0, ctr: 0, watch: 0 },
@@ -661,7 +689,7 @@ function migrateLegacy() {
   try {
     const s = JSON.parse(localStorage.getItem("rq_stage") || "null");
     if (s && STUDIOS[s.studio]) {
-      const job = makeJob(s.studio, s.seed, "yt-ambient", { status: "DRAFT", thumb: s.thumb || null });
+      const job = makeJob(s.studio, s.seed, "yt-ambient", { status: "DRAFT", thumb: s.thumb || null, thumbSeed: s.thumb ? s.seed : null });
       job.name = cleanName((STUDIOS[s.studio] || {}).name) + " · " + s.seed.slice(0, 14);
       JOBS.push(job); lsSet("rq_bench", job.id);
       localStorage.removeItem("rq_stage");
@@ -680,7 +708,7 @@ function migrateLegacy() {
   if (SYSTEMS === null) SYSTEMS = [];
   saveAll();
 }
-function saveAll() { lsSet("rq_jobs", JOBS); lsSet("rq_collections", COLLECTIONS); lsSet("rq_systems", SYSTEMS); renderJobsBadge(); }
+function saveAll() { saveJobsSafe(); lsSet("rq_collections", COLLECTIONS); lsSet("rq_systems", SYSTEMS); renderJobsBadge(); }
 
 // ---- Shared queue.json sync (keeps the old shared file working) ----
 let fileSha = null;
@@ -695,7 +723,7 @@ async function loadQueueRemote() {
       if (!it || !it.id || getJob("q-" + it.id)) continue;
       const key = resolveStudioKey(it.studio, it.seed);
       if (!STUDIOS[key]) continue;
-      const job = makeJob(key, it.seed, "yt-ambient", { status: map[it.status] || "READY", thumb: it.thumb || null, note: it.note || "" });
+      const job = makeJob(key, it.seed, "yt-ambient", { status: map[it.status] || "READY", thumb: it.thumb || null, thumbSeed: it.thumb ? it.seed : null, note: it.note || "" });
       job.id = "q-" + it.id; job.w = 1920; job.h = 1080; job.fps = it.fps || 30; job.seconds = it.seconds || 300;
       job.created = it.created || job.created;
       JOBS.push(job); added++;
@@ -851,7 +879,7 @@ function renderFavPicker() {
 }
 function benchFavorite(f) {
   let job = JOBS.find(j => j.seed === f.seed && j.studio === f.studio);
-  if (!job) { job = makeJob(f.studio, f.seed, "yt-ambient", { status: "DRAFT", thumb: f.thumb || null }); JOBS.push(job); saveAll(); }
+  if (!job) { job = makeJob(f.studio, f.seed, "yt-ambient", { status: "DRAFT", thumb: f.thumb || null, thumbSeed: f.thumb ? f.seed : null }); JOBS.push(job); saveAll(); }
   setBenchId(job.id);
 }
 function renderBench() {
@@ -885,11 +913,26 @@ function renderBench() {
     '</div>' +
     '<div id="bQCout" style="margin-top:8px"></div>' +
     (job.studio === "road-atlas" && job.recipe ? '<details id="bLocks" style="margin-top:10px"><summary class="hint" style="cursor:pointer;font-weight:700;color:#c6cfe4">🔒 Traits — tap to lock for breeding</summary><div style="margin-top:6px">' + lockRows(job) + '</div></details>' : "") +
-    '<div class="hint" style="margin:14px 0 6px;font-weight:700;color:#c6cfe4">Variations</div>' +
-    '<div class="varstrip" id="varStrip">' + ["A", "B", "C", "D", "E"].map((L, i) => {
-      const k = vars[i];
-      return '<button class="varbtn' + (k && k.id === job.id ? " cur" : "") + '" data-vi="' + i + '">' + (k ? esc(k.seed.slice(-4)) : L) + '</button>';
-    }).join("") + '</div>' +
+    (vars.length ?
+      '<div class="hint" style="margin:14px 0 6px;font-weight:700;color:#c6cfe4">Variations <span style="font-weight:400;color:#8b95ab">— swipe to compare · tap a preview to enlarge</span></div>' +
+      '<div class="varcar" id="varCar">' + ["A", "B", "C", "D", "E"].map(function (L, i) {
+        const k = vars[i];
+        if (!k) return "";
+        const live = !!(k.thumb && k.thumbSeed === k.seed);
+        return '<div class="varcard' + (k.id === job.id ? " cur" : "") + '" data-jid="' + k.id + '">' +
+          '<div class="vimg' + (live ? "" : " loading") + '">' +
+          '<img data-vimg src="' + esc(k.thumb || PLACEHOLDER) + '" alt="Variation ' + L + '">' +
+          '<span class="vletter">' + L + '</span>' +
+          (live ? "" : '<span class="vspin">Capturing preview…</span>') +
+          '</div>' +
+          '<div class="varbody">' +
+          '<div class="vseed">' + esc(shortSeed(k.seed)) + '</div>' +
+          '<div class="vardelta">' + esc(varDelta(k)) + '</div>' +
+          (k.id === job.id ? '<div class="vonbench">✓ On the bench</div>'
+            : '<button class="btn-ghost varuse" data-vuse="' + k.id + '">Use this one</button>') +
+          '</div></div>';
+      }).join("") + '</div>'
+      : '<div class="hint" style="margin-top:12px">No variations yet — tap <b>♻ More like this</b> below to breed some.</div>') +
     '<button class="btn-ghost" id="bMore" style="width:100%;margin-top:8px">♻ More like this — breed 5 children</button>' +
     '</div></div>';
   $("bFav").onclick = () => favBenchSeed(job);
@@ -898,11 +941,18 @@ function renderBench() {
   $("bRender").onclick = () => openTierSheet(job);
   $("bMore2").onclick = () => openBenchOverflow(job);
   $("bMore").onclick = () => breedChildren(job, 5);
-  wrap.querySelectorAll(".varbtn").forEach(b => b.onclick = () => {
-    const k = vars[+b.getAttribute("data-vi")];
-    if (k) setBenchId(k.id);
-    else breedChildren(job, 5);
+  wrap.querySelectorAll(".varuse").forEach(b => b.onclick = (e) => { e.stopPropagation(); setBenchId(b.getAttribute("data-vuse")); });
+  wrap.querySelectorAll("[data-vimg]").forEach(im => im.onclick = () => {
+    const card = im.closest(".varcard"); const j = card && getJob(card.getAttribute("data-jid"));
+    if (!j || !j.thumb) return;
+    openSheet('<h2>Variation preview</h2><p class="hint">' + esc(cleanName((STUDIOS[j.studio] || {}).name)) + " · " + esc(shortSeed(j.seed)) + "</p>" +
+      '<img src="' + esc(j.thumb) + '" style="width:100%;border-radius:12px;display:block;background:#1a2236">' +
+      '<p class="hint" style="margin:10px 0 2px">' + esc(varDelta(j)) + "</p>" +
+      '<div class="mrow" style="margin-top:10px"><button class="btn-render" id="vUseBig">Use this one ✓</button><button class="btn-ghost" id="shClose">Close</button></div>');
+    $("shClose").onclick = closeSheet;
+    $("vUseBig").onclick = () => { closeSheet(); setBenchId(j.id); };
   });
+  vars.forEach(v => { if (v) enqueueCapture(v); });
   wrap.querySelectorAll(".lockrow .lk").forEach(b => b.onclick = () => {
     const k = b.getAttribute("data-k");
     job.locks[k] = !job.locks[k]; job.updated = new Date().toISOString();
@@ -949,17 +999,18 @@ function remixBench(job) {
   let seed;
   if (job.studio === "road-atlas") seed = raBreed(job.seed, { theme: true, labelsOn: true }, "remix" + Math.floor(rng() * 1e6));
   else seed = genSeed(job.studio, rng);
-  const child = makeJob(job.studio, seed, job.intent, { status: "DRAFT", parent: job.id, thumb: job.thumb, locks: Object.assign({}, job.locks), note: "remix of " + job.seed.slice(0, 12) });
+  const child = makeJob(job.studio, seed, job.intent, { status: "DRAFT", parent: job.id, locks: Object.assign({}, job.locks), note: "remix of " + job.seed.slice(0, 12) });
   JOBS.push(child); saveAll(); setBenchId(child.id);
 }
 function breedChildren(job, n) {
   const made = [];
+  const batchId = uid("b");
   for (let i = 0; i < n; i++) {
     let seed;
     if (job.studio === "road-atlas") seed = raBreed(job.seed, job.locks, "c" + i);
     else seed = childSeed(job.studio, job.seed, i);
     if (!seed || JOBS.find(j => j.seed === seed && j.studio === job.studio)) continue;
-    const child = makeJob(job.studio, seed, job.intent, { status: "DRAFT", parent: job.id, thumb: job.thumb, locks: Object.assign({}, job.locks), collections: job.collections.slice() });
+    const child = makeJob(job.studio, seed, job.intent, { status: "DRAFT", parent: job.id, batch: batchId, locks: Object.assign({}, job.locks), collections: job.collections.slice() });
     JOBS.push(child); made.push(child);
   }
   saveAll(); renderBench(); renderRecent();
@@ -971,6 +1022,140 @@ function advanceStatus(job) {
   if (i < 0 || i >= STATUS_FLOW.length - 1) return;
   job.status = STATUS_FLOW[i + 1]; job.updated = new Date().toISOString();
   saveAll(); saveQueueRemote(); renderBench(); renderJobs();
+}
+/* ================= LIVE VARIATION CAPTURES =================
+   Every studio lives on the same origin (bassseamoor.github.io), so the shell
+   can load a studio with ?seed= in a hidden iframe and read its pixels back.
+   Captures run one at a time; each finished capture is stored on the job as
+   thumb (+ thumbSeed marker) so previews always show the job's own seed. */
+const CAP = { q: [], busy: false, busyId: null, failAt: {} };
+function needCapture(j) {
+  if (!j || !j.id || !STUDIOS[j.studio]) return false;
+  if (j.thumb && j.thumbSeed === j.seed) return false; // already have this seed's real preview
+  const fa = CAP.failAt[j.id];
+  if (fa && Date.now() - fa < 10 * 60 * 1000) return false; // don't hammer failing studios
+  return true;
+}
+function enqueueCapture(j) {
+  if (!needCapture(j)) return;
+  if (CAP.busyId === j.id || CAP.q.some(x => x.id === j.id)) return;
+  CAP.q.push(j); pumpCapture();
+}
+function pumpCapture() {
+  if (CAP.busy) return;
+  let job = null;
+  while (CAP.q.length) { const c = CAP.q.shift(); if (needCapture(c)) { job = c; break; } }
+  if (!job) return;
+  CAP.busy = true; CAP.busyId = job.id;
+  captureSeedThumb(job.studio, job.seed, (url) => {
+    CAP.busy = false; CAP.busyId = null;
+    const j = getJob(job.id);
+    if (url && j) { j.thumb = url; j.thumbSeed = j.seed; j.updated = new Date().toISOString(); saveAll(); refreshCapturedThumb(job.id); }
+    else CAP.failAt[job.id] = Date.now();
+    pumpCapture();
+  });
+}
+// Render one frame of (studio, seed) in a hidden same-origin iframe and snap it.
+// Reads the studio's own render canvas (__renderCanvas hook or first <canvas>);
+// same-origin makes the pixel readback legal.
+function captureSeedThumb(studio, seed, cb) {
+  const st = STUDIOS[studio];
+  if (!st) { cb(null); return; }
+  const W = 480, H = 270;
+  const f = document.createElement("iframe");
+  f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
+  f.style.cssText = "position:fixed;left:-10000px;top:0;width:" + W + "px;height:" + H + "px;border:0;pointer-events:none;";
+  let done = false, tries = 0;
+  const finish = (url) => { if (done) return; done = true; clearTimeout(timer); try { f.remove(); } catch (e) {} cb(url); };
+  const timer = setTimeout(() => finish(null), 30000);
+  const retry = () => { if (!done) tries < 6 ? setTimeout(attempt, 2000) : finish(null); };
+  const attempt = () => {
+    if (done) return;
+    tries++;
+    let rc = null;
+    try {
+      const w = f.contentWindow;
+      rc = w && (w.__renderCanvas || (w.document && w.document.querySelector("canvas")));
+    } catch (e) { rc = null; }
+    if (!rc || !rc.width || !rc.height) { retry(); return; }
+    try {
+      // Inside rAF the canvas holds its last presented frame, so even
+      // WebGL canvases without preserveDrawingBuffer read back correctly.
+      f.contentWindow.requestAnimationFrame(() => {
+        if (done) return;
+        let url = null;
+        try { url = rc.toDataURL("image/jpeg", 0.62); } catch (e) { url = null; }
+        if (url) thumbIsBlank(url, (blank) => { if (!done) blank ? retry() : finish(url); });
+        else retry();
+      });
+    } catch (e) { retry(); }
+  };
+  f.onload = () => setTimeout(attempt, 2500);
+  f.onerror = () => finish(null);
+  f.src = st.url + "?seed=" + encodeURIComponent(seed);
+  document.body.appendChild(f);
+}
+// Is this captured JPEG just a blank/loading screen? (async: decodes the image)
+function thumbIsBlank(url, cb) {
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas"); c.width = 48; c.height = 27;
+      const g = c.getContext("2d"); g.drawImage(img, 0, 0, 48, 27);
+      const d = g.getImageData(0, 0, 48, 27).data;
+      let sum = 0, sum2 = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { const v = (d[i] + d[i + 1] + d[i + 2]) / 3; sum += v; sum2 += v * v; n++; }
+      const mean = sum / n;
+      cb(n ? (sum2 / n - mean * mean) < 30 : true);
+    } catch (e) { cb(true); }
+  };
+  img.onerror = () => cb(true);
+  img.src = url;
+}
+// Swap a freshly captured preview into the variation card (and bench hero) in place.
+function refreshCapturedThumb(jobId) {
+  const j = getJob(jobId); if (!j || !j.thumb) return;
+  const card = document.querySelector('.varcard[data-jid="' + jobId + '"]');
+  if (card) {
+    const img = card.querySelector("[data-vimg]");
+    if (img) img.src = j.thumb;
+    const vimg = card.querySelector(".vimg");
+    if (vimg) vimg.classList.remove("loading");
+    const spin = card.querySelector(".vspin");
+    if (spin) spin.remove();
+  }
+  if (getBenchId() === jobId) {
+    const bp = document.querySelector("#benchCard img.bprev");
+    if (bp) bp.src = j.thumb;
+  }
+}
+/* ================= VARIATION DELTA LABELS ================= */
+function shortSeed(s) { s = String(s == null ? "" : s); return s.length > 12 ? s.slice(0, 10) + "…" : s; }
+function raDeltaText(pr, a, b) {
+  if (pr.key === "theme") return "Theme → " + (["Paper", "Midnight", "Blueprint"][b] || b);
+  if (pr.key === "labelsOn") return b ? "Labels on" : "Labels off";
+  return pr.label + " " + (b > a ? "up" : "down");
+}
+// Plain-language answer to "what's different about this variation?"
+function varDelta(job) {
+  const p = job.parent ? getJob(job.parent) : null;
+  if (job.studio === "road-atlas" && p && p.recipe && job.recipe) {
+    const diffs = [];
+    for (const pr of RA_PARAMS) {
+      if (job.locks && job.locks[pr.key]) continue;
+      if (p.recipe[pr.key] !== job.recipe[pr.key]) diffs.push(raDeltaText(pr, p.recipe[pr.key], job.recipe[pr.key]));
+    }
+    if (!diffs.length) return "Subtle remix · " + shortSeed(job.seed);
+    return diffs.slice(0, 3).join(" · ") + (diffs.length > 3 ? " · +" + (diffs.length - 3) + " more" : "");
+  }
+  if ((job.studio === "parallax" || job.studio === "canal-metropolis") && p && p.seed && job.seed) {
+    const rp = /^PX1-(\d)-/.exec(p.seed), rc = /^PX1-(\d)-/.exec(job.seed);
+    if (rp && rc && rp[1] !== rc[1]) {
+      const realm = REALMS.filter(r => r.seed.indexOf("PX1-" + rc[1] + "-") === 0)[0];
+      return "New realm · " + (realm ? realm.name : "realm " + rc[1]);
+    }
+  }
+  return "Fresh take · " + shortSeed(job.seed);
 }
 /* ================= RENDER TIERS ================= */
 function openTierSheet(job) {
@@ -1160,13 +1345,14 @@ function breedFromCollection(c) {
   const parents = c.jobs.map(getJob).filter(j => j && STUDIOS[j.studio]);
   if (!parents.length) { alert("Add some scenes to this collection first."); return; }
   const made = [];
+  const batchId = uid("b");
   for (let i = 0; i < 5; i++) {
     const p = parents[i % parents.length];
     let seed;
     if (p.studio === "road-atlas") seed = raBreed(p.seed, p.locks, "col" + i);
     else seed = childSeed(p.studio, p.seed, 100 + i);
     if (!seed || JOBS.find(j => j.seed === seed && j.studio === p.studio)) continue; // avoid duplicates
-    const child = makeJob(p.studio, seed, p.intent, { status: "DRAFT", parent: p.id, thumb: p.thumb, locks: Object.assign({}, p.locks), collections: [c.id], note: "inspired by “" + c.name + "”" });
+    const child = makeJob(p.studio, seed, p.intent, { status: "DRAFT", parent: p.id, batch: batchId, locks: Object.assign({}, p.locks), collections: [c.id], note: "inspired by “" + c.name + "”" });
     c.jobs.push(child.id);
     JOBS.push(child); made.push(child);
   }
@@ -1361,7 +1547,7 @@ function renderStudios() {
         rc.querySelector(".b-open").onclick = () => window.open(deep, "_blank", "noopener");
         rc.querySelector(".b-queue").onclick = () => {
           let job = JOBS.find(j => j.seed === r.seed);
-          if (!job) { job = makeJob("parallax", r.seed, "yt-ambient", { status: "DRAFT", thumb: "thumbs/realm-" + r.slug + ".png", name: r.name }); JOBS.push(job); saveAll(); }
+          if (!job) { job = makeJob("parallax", r.seed, "yt-ambient", { status: "DRAFT", thumb: "thumbs/realm-" + r.slug + ".png", thumbSeed: r.seed, name: r.name }); JOBS.push(job); saveAll(); }
           setBenchId(job.id); showTab("bench");
         };
         rc.querySelector(".b-rep").onclick = () => openReport("parallax", r);
@@ -1403,7 +1589,7 @@ function openReport(studioKey, realm) {
   $("reportWrap").setAttribute("aria-hidden", "false");
   $("repClose").onclick = closeReport;
   const bb = $("repBench");
-  if (bb) bb.onclick = () => { closeReport(); let job = JOBS.find(j => j.seed === realm.seed); if (!job) { job = makeJob("parallax", realm.seed, "yt-ambient", { status: "DRAFT", thumb: "thumbs/realm-" + realm.slug + ".png", name: realm.name }); JOBS.push(job); saveAll(); } setBenchId(job.id); showTab("bench"); };
+  if (bb) bb.onclick = () => { closeReport(); let job = JOBS.find(j => j.seed === realm.seed); if (!job) { job = makeJob("parallax", realm.seed, "yt-ambient", { status: "DRAFT", thumb: "thumbs/realm-" + realm.slug + ".png", thumbSeed: realm.seed, name: realm.name }); JOBS.push(job); saveAll(); } setBenchId(job.id); showTab("bench"); };
 }
 function closeReport() { $("reportWrap").classList.remove("open"); $("reportWrap").setAttribute("aria-hidden", "true"); }
 $("reportScrim").onclick = closeReport;
