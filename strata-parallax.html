@@ -1252,7 +1252,10 @@ function applySeed(s){
  if(bl)bl.classList.remove('hidden');
  // let the loading UI paint before the blocking bake
  setTimeout(function(){
-  try{bakeAll();}finally{
+  try{
+   fitCanvas(); // ensure canvas is final size BEFORE GL init (resize wipes GL)
+   bakeAll();
+  }finally{
    var b2=document.getElementById('bakeload');
    if(b2)b2.classList.add('hidden');
   }
@@ -1356,7 +1359,13 @@ function fitCanvas(){
  }
  const dpr=Math.min(window.devicePixelRatio||1,1.5);
  const w=Math.max(2,Math.round(innerWidth*dpr/2)*2),h=Math.max(2,Math.round(innerHeight*dpr/2)*2);
- if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+ if(canvas.width!==w||canvas.height!==h){
+  canvas.width=w;canvas.height=h;
+  // Canvas resize resets the WebGL context, wiping all GL objects.
+  // Force re-init and re-bake so we don't go black.
+  gl=null;fbo=null;
+  if(state.seedStr){try{bakeAll();}catch(e){console.error(e);}}
+ }
 }
 function frame(now){
  requestAnimationFrame(frame);
