@@ -1,4 +1,20 @@
-# Road Atlas 2.4 — connected street fabric and parametric junctions
+# Road Atlas 2.5 — hierarchy-first street realism
+
+## What changed in 2.5
+
+The road-kit pass remains parametric, but the city now establishes a small set of long primary corridors before neighborhood fabric. Corridor placement comes from the distribution of generated districts and shared planning-axis zones, not fixed road tiles. Collectors are then selected using turn-aware shortest paths, and locals remain subordinate. This targets the specific failure visible in the mobile close-ups: local-looking segments were being promoted after generation into zigzag arterials, and nearby districts independently invented orientations.
+
+Street-axis zones now share orientation across multiple districts; steep terrain can rotate the fabric toward contours within a bounded amount. Redundant short triangular cycles are removed, short split links contract more aggressively, and optional district loops are only added when they materially shorten an existing detour. Degree-three junctions identify a dominant through pair so minor approaches read as T-junctions when appropriate. Crosswalk generation follows that priority and avoids Y/complex junctions. Residential dead ends can receive deterministic cul-de-sac bulbs, but only on sufficiently long local streets.
+
+Primary corridors are derived from district projections along the dominant city axes. A line-attraction cost field lets them adapt to terrain/water while remaining substantially straighter than local fabric. They are generated before V1 district grids and stay arterial; edge access and district connections are collectors unless no viable primary corridor exists.
+
+Metrics now include mean arterial deflection, primary-corridor segment count and removed tiny cycles. These are diagnostics, not civil-engineering guarantees.
+
+## Validation delta
+
+The fast 2.5 suite passed 46 checks on the default seed and the user's mobile screenshot seed, including independent junction/crosswalk/building geometry, deterministic regeneration, map coverage, previous-mode comparison, all corner-radius fixtures, touch navigation and fail-closed integration. The existing ordered suite also passed all 53 checks. A full legacy 2.4 regression run is expensive on the largest generated seed and was not completed in this session; the geometry test on the two targeted seeds independently validates every exported building volume.
+
+## 2.4 implementation notes (retained)
 
 ## Scope and source of truth
 
