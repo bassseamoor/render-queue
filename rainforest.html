@@ -363,7 +363,10 @@ if(document.modelContext?.registerTool){let lifeCycle=new AbortController();for(
 async function boot(){if(!gl)return;try{meshP=program(meshVS,meshFS);shadowP=program(meshVS,shadowFS);skyP=program(fullVS,skyFS);postP=program(fullVS,postFS);particlesP=program(particlesVS,particlesFS);rainP=program(rainVS,rainFS);quadVAO=gl.createVertexArray();initMaterials();shadowTargets=[makeTarget(1024,1024,true),makeTarget(1024,1024,true)];shadowTarget=shadowTargets[0];generateWorld();engineReady=true;applyQuality();new ResizeObserver(()=>{if(!recording)resize()}).observe(canvas);window.addEventListener('resize',()=>{if(!recording)resize()});if(cfg.weather!=='auto'){weatherName=cfg.weather;wx={...weatherStates[cfg.weather]};weatherWetness=wx.rain}raf=requestAnimationFrame(frame)}catch(e){fatal(e)}}
 setTimeout(boot,60);
 </script><script>
-/* Seed Console v1 — one consistent generation console for all ambient studios.
+/* Seed Console v2 — one consistent generation console for all ambient studios.
+ * v2 adds: a PNG/JPEG thumbnail snapshot is captured from the render canvas
+ * whenever a seed is favorited (stored as f.thumb), so pickers elsewhere
+ * (e.g. the Render Queue) can show visual favorite cards.
  * USAGE: inline this entire file in a <script> block near </body>, then define
  * window.SeedConsoleAdapter (see interface below) in a following <script> block,
  * then call SeedConsole.init(window.SeedConsoleAdapter).
@@ -420,6 +423,7 @@ setTimeout(boot,60);
     '.sc-item:active{background:rgba(255,255,255,.12)}',
     '.sc-item .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.sc-item .meta{color:#9aa0a6;font-size:11px}',
+    '.sc-thumb{width:54px;height:31px;object-fit:cover;border-radius:6px;background:#1a1f2b;flex:none}',
     '.sc-param{margin:10px 0}',
     '.sc-param .top{display:flex;align-items:center;gap:8px;margin-bottom:4px}',
     '.sc-param label{flex:1;font-size:13px}',
@@ -685,22 +689,63 @@ setTimeout(boot,60);
     },
 
     toggleFav: function (b) {
+      var self = this;
       var s = this.A.getSeed();
       var favs = this.favs.get([]);
       var i = favs.findIndex(function (f) { return f.seed === s; });
+      if (i !== -1) {
+        favs.splice(i, 1);
+        this.favs.set(favs.slice(0, 100));
+        this.renderFavs(); this.updateFavBtn();
+        this.toast('Removed from favorites');
+        return;
+      }
       var snap = {};
       try {
         (this.A.params || []).forEach(function (p) { snap[p.key] = p.get(); });
       } catch (e) {}
-      if (i === -1) {
-        favs.unshift({ seed: s, params: snap, ts: Date.now() });
-        this.toast('⭐ Saved to favorites');
-      } else {
-        favs.splice(i, 1);
-        this.toast('Removed from favorites');
+      // Capture a small thumbnail on the next painted frame so WebGL
+      // drawing buffers are fresh, then save the favorite with it.
+      function save(thumb) {
+        var entry = { seed: s, params: snap, ts: Date.now() };
+        if (thumb) entry.thumb = thumb;
+        var list = self.favs.get([]);
+        list.unshift(entry);
+        list = list.slice(0, 100);
+        try {
+          self.favs.set(list);
+        } catch (e) {
+          // localStorage full (thumbs are the bulk): strip thumbs, retry once
+          try {
+            list.forEach(function (f) { delete f.thumb; });
+            self.favs.set(list);
+          } catch (e2) {}
+        }
+        self.renderFavs(); self.updateFavBtn();
+        self.toast('⭐ Saved to favorites');
       }
-      this.favs.set(favs.slice(0, 100));
-      this.renderFavs(); this.updateFavBtn();
+      try {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () { save(self.captureThumb()); });
+        });
+      } catch (e) { save(null); }
+    },
+    captureThumb: function () {
+      // Small 240px-wide JPEG snapshot of the current render for favorite cards.
+      var canvas = null;
+      try { canvas = this.A.canvas(); } catch (e) {}
+      if (!canvas || !canvas.width) return null;
+      try {
+        var w = 240, h = Math.max(1, Math.round(w * canvas.height / canvas.width));
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        var ctx = c.getContext('2d');
+        ctx.drawImage(canvas, 0, 0, w, h);
+        var url = c.toDataURL('image/jpeg', 0.72);
+        // sanity: reject empty/degenerate captures
+        if (!url || url.length < 2000) return null;
+        return url;
+      } catch (e) { return null; }
     },
     updateFavBtn: function () {
       var s = this.A.getSeed();
@@ -716,7 +761,10 @@ setTimeout(boot,60);
       if (!favs.length) box.innerHTML = '<div class="meta" style="color:#9aa0a6;font-size:12px">Nothing saved yet — tap ☆ on a seed you love.</div>';
       favs.forEach(function (f) {
         var it = el('div', 'sc-item');
-        it.innerHTML = '<span class="grow">' + esc(f.seed) + '</span><span class="meta">' +
+        var img = f.thumb
+          ? '<img class="sc-thumb" src="' + f.thumb + '" alt="">'
+          : '<span class="sc-thumb" style="display:flex;align-items:center;justify-content:center;color:#5a6378;font-size:14px">⭐</span>';
+        it.innerHTML = img + '<span class="grow">' + esc(f.seed) + '</span><span class="meta">' +
           new Date(f.ts).toLocaleDateString() + '</span>';
         it.addEventListener('click', function () {
           self.applySeed(f.seed);
@@ -843,9 +891,7 @@ setTimeout(boot,60);
   };
 
   window.SeedConsole = SeedConsole;
-})();
-
-</script>
+})();</script>
 <script>
 /* Seed Console adapter: Rainforest Studio.
  * The studio's single generation path is generateWorld(), which rebuilds the
