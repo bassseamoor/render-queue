@@ -259,12 +259,13 @@ function buildTransit(F){
  while(left.length){var bi=-1,bj=-1,bd=1e9;for(var u=0;u<used.length;u++)for(var l=0;l<left.length;l++){var d=dist(hubs[used[u]],hubs[left[l]]);if(d<bd){bd=d;bi=used[u];bj=l}}var ni=left.splice(bj,1)[0];routes.push(astar(hubs[bi],hubs[ni],F));used.push(ni)}
  return routes;
 }
+function worldPointInBlockFamily(z,x,y){var ox=z.ox==null?(z.x+z.w*.5):z.ox,oy=z.oy==null?(z.y+z.h*.5):z.oy;return rotatedPoint(ox,oy,x-ox,y-oy,z.ang||0)}
 function blockClear(z,F,N){
- var cx=z.x+z.w*.5,cy=z.y+z.h*.5,a=z.ang||0,pts=[
-  {x:cx,y:cy},
-  rotatedPoint(cx,cy,-z.w*.5,-z.h*.5,a),rotatedPoint(cx,cy,z.w*.5,-z.h*.5,a),
-  rotatedPoint(cx,cy,z.w*.5,z.h*.5,a),rotatedPoint(cx,cy,-z.w*.5,z.h*.5,a),
-  rotatedPoint(cx,cy,0,-z.h*.5,a),rotatedPoint(cx,cy,0,z.h*.5,a)
+ var cx=z.x+z.w*.5,cy=z.y+z.h*.5,pts=[
+  worldPointInBlockFamily(z,cx,cy),
+  worldPointInBlockFamily(z,z.x,z.y),worldPointInBlockFamily(z,z.x+z.w,z.y),
+  worldPointInBlockFamily(z,z.x+z.w,z.y+z.h),worldPointInBlockFamily(z,z.x,z.y+z.h),
+  worldPointInBlockFamily(z,cx,z.y),worldPointInBlockFamily(z,cx,z.y+z.h)
  ];
  for(var i=0;i<pts.length;i++){
    if(pts[i].x<.015||pts[i].y<.015||pts[i].x>.985||pts[i].y>.985)return false;
@@ -283,19 +284,19 @@ function makeBlocks(F,N){
    if(wv>.16||near.d<.012)continue;
    var base=.038+.048*(1-pv*.45)+.025*r(),w=base*(.9+r()*.9),h=base*(.72+r()*.65),depth=state.grammar==="recursive"?4:state.grammar==="grid"?3:(pv>.55?3:2);
    if(state.grammar==="organic"){w*=1.18;h*=.82}
-   var rects=[{x:cx-w/2,y:cy-h/2,w:w,h:h,d:0,ang:state.grammar==="grid"?0:near.ang}];
+   var familyAng=state.grammar==="grid"?0:near.ang,rects=[{x:cx-w/2,y:cy-h/2,w:w,h:h,d:0,ang:familyAng,ox:cx,oy:cy}];
    while(rects.length){
      var z=rects.shift(),zc={x:z.x+z.w*.5,y:z.y+z.h*.5};
      if(z.d>=depth||z.w*z.h<.00028){if(blockClear(z,F,N))blocks.push(z);continue}
      var split=(z.w>z.h)||r()>.55;
      if(split){
        var f=.36+r()*.28,xs=z.x+z.w*f;
-       rects.push({x:z.x,y:z.y,w:z.w*f,h:z.h,d:z.d+1,ang:z.ang},{x:xs,y:z.y,w:z.w*(1-f),h:z.h,d:z.d+1,ang:z.ang});
-       locals.push([{x:xs,y:z.y},{x:xs,y:z.y+z.h}]);
+       rects.push({x:z.x,y:z.y,w:z.w*f,h:z.h,d:z.d+1,ang:z.ang,ox:z.ox,oy:z.oy},{x:xs,y:z.y,w:z.w*(1-f),h:z.h,d:z.d+1,ang:z.ang,ox:z.ox,oy:z.oy});
+       locals.push({a:{x:xs,y:z.y},b:{x:xs,y:z.y+z.h},ang:z.ang,ox:z.ox,oy:z.oy});
      }else{
        var f2=.36+r()*.28,ys=z.y+z.h*f2;
-       rects.push({x:z.x,y:z.y,w:z.w,h:z.h*f2,d:z.d+1,ang:z.ang},{x:z.x,y:ys,w:z.w,h:z.h*(1-f2),d:z.d+1,ang:z.ang});
-       locals.push([{x:z.x,y:ys},{x:z.x+z.w,y:ys}]);
+       rects.push({x:z.x,y:z.y,w:z.w,h:z.h*f2,d:z.d+1,ang:z.ang,ox:z.ox,oy:z.oy},{x:z.x,y:ys,w:z.w,h:z.h*(1-f2),d:z.d+1,ang:z.ang,ox:z.ox,oy:z.oy});
+       locals.push({a:{x:z.x,y:ys},b:{x:z.x+z.w,y:ys},ang:z.ang,ox:z.ox,oy:z.oy});
      }
    }
  }
@@ -337,7 +338,7 @@ function tracePath(path,sx,sy){ctx.beginPath();path.forEach(function(p,i){if(!i)
 function roadPxWidth(r){var mid=r.path[(r.path.length/2)|0],dem=fieldSample(data.F.demand,mid.x,mid.y,data.F.GW,data.F.GH);return(r.cls==="arterial"?9.4:6.4)*(1+.28*dem)*dpr}
 function drawRoads(box,alpha){
  var N=data.N,sx=box.w,sy=box.h;ctx.save();ctx.translate(box.x,box.y);ctx.lineCap="round";ctx.lineJoin="round";
- data.B.locals.forEach(function(L){ctx.beginPath();ctx.moveTo(L[0].x*sx,L[0].y*sy);ctx.lineTo(L[1].x*sx,L[1].y*sy);ctx.strokeStyle="rgba(4,8,12,"+(alpha*.9)+")";ctx.lineWidth=4.6*dpr;ctx.stroke();ctx.strokeStyle="rgba(100,123,148,"+(alpha*.44)+")";ctx.lineWidth=1*dpr;ctx.stroke()});
+ data.B.locals.forEach(function(L){var a=rotatedPoint(L.ox,L.oy,L.a.x-L.ox,L.a.y-L.oy,L.ang||0),b=rotatedPoint(L.ox,L.oy,L.b.x-L.ox,L.b.y-L.oy,L.ang||0);ctx.beginPath();ctx.moveTo(a.x*sx,a.y*sy);ctx.lineTo(b.x*sx,b.y*sy);ctx.strokeStyle="rgba(4,8,12,"+(alpha*.9)+")";ctx.lineWidth=4.6*dpr;ctx.stroke();ctx.strokeStyle="rgba(100,123,148,"+(alpha*.44)+")";ctx.lineWidth=1*dpr;ctx.stroke()});
  data.N.roads.forEach(function(r){
    var rw=roadPxWidth(r);
    tracePath(r.path,sx,sy);ctx.shadowBlur=0;ctx.strokeStyle="rgba(1,5,9,"+(alpha*.98)+")";ctx.lineWidth=rw+3.4*dpr;ctx.stroke();
@@ -371,7 +372,7 @@ function drawTransit(box,alpha){
 }
 function drawBlocks(box,alpha){
  ctx.save();ctx.translate(box.x,box.y);ctx.strokeStyle="rgba(135,157,181,"+(alpha*.31)+")";ctx.fillStyle="rgba(92,112,134,"+(alpha*.055)+")";ctx.lineWidth=.9*dpr;
- data.B.blocks.forEach(function(b){var cx=(b.x+b.w*.5)*box.w,cy=(b.y+b.h*.5)*box.h;ctx.save();ctx.translate(cx,cy);if(b.ang&&state.grammar!=="recursive")ctx.rotate(b.ang);ctx.beginPath();ctx.rect(-b.w*box.w*.5,-b.h*box.h*.5,b.w*box.w,b.h*box.h);ctx.fill();ctx.stroke();ctx.restore()});ctx.restore()
+ data.B.blocks.forEach(function(b){var c=worldPointInBlockFamily(b,b.x+b.w*.5,b.y+b.h*.5),cx=c.x*box.w,cy=c.y*box.h;ctx.save();ctx.translate(cx,cy);if(b.ang)ctx.rotate(b.ang);ctx.beginPath();ctx.rect(-b.w*box.w*.5,-b.h*box.h*.5,b.w*box.w,b.h*box.h);ctx.fill();ctx.stroke();ctx.restore()});ctx.restore()
 }
 function drawPOI(box,alpha){
  ctx.save();ctx.translate(box.x,box.y);data.F.anchors.forEach(function(a){var x=a.x*box.w,y=a.y*box.h;if(a.type==="hospital"){ctx.strokeStyle="rgba(255,95,95,"+alpha+")";ctx.lineWidth=2*dpr;ctx.beginPath();ctx.moveTo(x-5*dpr,y);ctx.lineTo(x+5*dpr,y);ctx.moveTo(x,y-5*dpr);ctx.lineTo(x,y+5*dpr);ctx.stroke()}else if(a.type==="school"){ctx.fillStyle="rgba(121,169,255,"+alpha+")";ctx.beginPath();ctx.arc(x,y,3.2*dpr,0,TAU);ctx.fill()}else if(a.type==="transit"){ctx.fillStyle="rgba(255,187,89,"+alpha+")";ctx.beginPath();ctx.arc(x,y,4*dpr,0,TAU);ctx.fill()}else if(a.type==="downtown"){ctx.strokeStyle="rgba(255,255,255,"+alpha+")";ctx.lineWidth=1.5*dpr;ctx.strokeRect(x-5*dpr,y-5*dpr,10*dpr,10*dpr)}});ctx.restore()
@@ -412,7 +413,7 @@ function atlas(){
  })
 }
 function blocksMode(){
- var b=fitBox();ctx.fillStyle="#080d12";ctx.fillRect(b.x,b.y,b.w,b.h);drawBlocks(b,2.2);data.B.locals.forEach(function(L){ctx.beginPath();ctx.moveTo(b.x+L[0].x*b.w,b.y+L[0].y*b.h);ctx.lineTo(b.x+L[1].x*b.w,b.y+L[1].y*b.h);ctx.strokeStyle="rgba(218,227,238,.68)";ctx.lineWidth=1*dpr;ctx.stroke()});ctx.strokeStyle="#2d3c4f";ctx.strokeRect(b.x,b.y,b.w,b.h)
+ var b=fitBox();ctx.fillStyle="#080d12";ctx.fillRect(b.x,b.y,b.w,b.h);drawBlocks(b,2.2);data.B.locals.forEach(function(L){var a=rotatedPoint(L.ox,L.oy,L.a.x-L.ox,L.a.y-L.oy,L.ang||0),q=rotatedPoint(L.ox,L.oy,L.b.x-L.ox,L.b.y-L.oy,L.ang||0);ctx.beginPath();ctx.moveTo(b.x+a.x*b.w,b.y+a.y*b.h);ctx.lineTo(b.x+q.x*b.w,b.y+q.y*b.h);ctx.strokeStyle="rgba(218,227,238,.68)";ctx.lineWidth=1*dpr;ctx.stroke()});ctx.strokeStyle="#2d3c4f";ctx.strokeRect(b.x,b.y,b.w,b.h)
 }
 function render(){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#070a0f";ctx.fillRect(0,0,canvas.width,canvas.height);if(!data)return;if(state.mode==="atlas")atlas();else if(state.mode==="blocks")blocksMode();else city()}
 function resize(){var r=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(r.width*dpr));canvas.height=Math.max(1,Math.round(r.height*dpr));render()}
