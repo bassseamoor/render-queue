@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Render Queue</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #0b0e14; color: #e8ecf4; min-height: 100vh; }
+  header { position: sticky; top: 0; z-index: 5; background: rgba(11,14,20,.92); backdrop-filter: blur(12px); padding: 14px 16px 10px; border-bottom: 1px solid #1c2333; }
+  header h1 { margin: 0; font-size: 20px; letter-spacing: .3px; }
+  header p { margin: 4px 0 0; font-size: 13px; color: #8b95ab; }
+  main { padding: 14px 14px 110px; max-width: 640px; margin: 0 auto; }
+  .item { background: #121826; border: 1px solid #1e2740; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .item .row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .item .studio { font-weight: 700; font-size: 16px; }
+  .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+  .pill.queued { background: #1d3a6e; color: #9cc3ff; }
+  .pill.rendering { background: #6e4d1d; color: #ffd79c; }
+  .pill.done { background: #1d6e3a; color: #9cffbe; }
+  .item .seed { font-family: ui-monospace, monospace; font-size: 13px; color: #9cc3ff; margin-top: 8px; word-break: break-all; }
+  .item .meta { font-size: 12px; color: #8b95ab; margin-top: 6px; }
+  .item .actions { display: flex; gap: 8px; margin-top: 12px; }
+  button { font-size: 15px; border: 0; border-radius: 12px; padding: 12px 16px; font-weight: 700; cursor: pointer; }
+  .btn-render { background: #2f7bff; color: #fff; flex: 1; }
+  .btn-render:active { background: #1f5fd0; }
+  .btn-ghost { background: #1a2236; color: #c6cfe4; }
+  .btn-danger { background: #3a1d1d; color: #ff9c9c; }
+  .empty { text-align: center; color: #8b95ab; padding: 60px 20px; font-size: 15px; line-height: 1.6; }
+  #addFab { position: fixed; right: 18px; bottom: 24px; width: 62px; height: 62px; border-radius: 50%; background: #2f7bff; color: #fff; font-size: 30px; line-height: 1; box-shadow: 0 6px 24px rgba(47,123,255,.45); }
+  #sheet { position: fixed; inset: auto 0 0 0; background: #121826; border-top: 1px solid #263052; border-radius: 18px 18px 0 0; padding: 18px 16px calc(20px + env(safe-area-inset-bottom)); transform: translateY(105%); transition: transform .25s ease; z-index: 20; max-height: 88vh; overflow-y: auto; }
+  #sheet.open { transform: none; }
+  #scrim { position: fixed; inset: 0; background: rgba(0,0,0,.55); opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 15; }
+  #scrim.open { opacity: 1; pointer-events: auto; }
+  label { display: block; font-size: 13px; color: #8b95ab; margin: 14px 0 6px; font-weight: 600; }
+  input, select { width: 100%; font-size: 16px; padding: 12px; border-radius: 12px; border: 1px solid #263052; background: #0b0e14; color: #e8ecf4; }
+  .formrow { display: flex; gap: 10px; } .formrow > div { flex: 1; }
+  #sheet h2 { margin: 0 0 4px; font-size: 18px; }
+  .hint { font-size: 13px; color: #8b95ab; line-height: 1.55; }
+  .tokenrow { display: flex; gap: 8px; margin-top: 8px; } .tokenrow input { flex: 1; }
+  footer { max-width: 640px; margin: 0 auto; padding: 0 14px 40px; }
+  .tokbox { background: #121826; border: 1px solid #1e2740; border-radius: 14px; padding: 14px; }
+  .tokbox h3 { margin: 0 0 6px; font-size: 15px; }
+  .ok { color: #7dffab; font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Render Queue</h1>
+  <p>Save seeds. Tap one on any phone. Get a video for your SSD.</p>
+</header>
+<main id="list"><div class="empty">Loading queue…</div></main>
+
+<button id="addFab" aria-label="Add seed">+</button>
+
+<div id="scrim"></div>
+<div id="sheet">
+  <h2>Queue a seed</h2>
+  <p class="hint">Paste a seed from any studio. Tip: in a studio, copy its <b>?seed=</b> link and paste it below — the form fills itself in.</p>
+  <label for="fStudio">Studio</label>
+  <select id="fStudio"></select>
+  <label for="fSeed">Seed (or full ?seed= link)</label>
+  <input id="fSeed" placeholder="e.g. TURTLE-8F3K2 or https://…?seed=TURTLE-8F3K2" autocomplete="off">
+  <label for="fNote">Note (optional)</label>
+  <input id="fNote" placeholder="e.g. sunset lagoon attempt" autocomplete="off">
+  <div class="formrow">
+    <div><label for="fSecs">Length</label>
+      <select id="fSecs"><option value="30">30 sec</option><option value="300" selected>5 min</option><option value="1800">30 min</option></select></div>
+    <div><label for="fFps">FPS</label>
+      <select id="fFps"><option value="30" selected>30</option><option value="60">60</option></select></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:18px">
+    <button class="btn-ghost" id="cancelAdd" style="flex:1">Cancel</button>
+    <button class="btn-render" id="saveAdd" style="flex:2">Add to queue</button>
+  </div>
+</div>
+
+<footer>
+  <div class="tokbox">
+    <h3>🔑 Phone access</h3>
+    <p class="hint" style="margin:0">To add or finish items from this phone, paste a GitHub token once. It stays on this phone only. The queue itself is readable without it.</p>
+    <div class="tokenrow">
+      <input id="token" type="password" placeholder="GitHub token (Contents: read+write on render-queue)" autocomplete="off">
+      <button class="btn-ghost" id="saveToken">Save</button>
+    </div>
+    <div id="tokStatus" class="hint"></div>
+  </div>
+</footer>
+
+<script>
+const OWNER = "bassseamoor", REPO = "render-queue";
+const STUDIOS = {
+  "turtle-life":  { name: "Turtle Life",  url: "https://bassseamoor.github.io/turtle-life-studio/turtle-life-studio.html" },
+  "rain-window":  { name: "Rain Window",  url: "https://bassseamoor.github.io/rain-window-studio/rain-window-studio.html" },
+  "molten":       { name: "Molten",       url: "https://bassseamoor.github.io/molten-studio/molten-studio.html" },
+  "aquarium":     { name: "Aquarium",     url: "https://bassseamoor.github.io/aquarium-studio/aquarium-studio.html" },
+  "alien-planet": { name: "Alien Planet", url: "https://bassseamoor.github.io/alien-planet-studio/alien-planet-studio.html" },
+  "rainforest":   { name: "Rainforest",   url: "https://bassseamoor.github.io/rainforest-studio/rainforest-studio.html" },
+};
+const $ = id => document.getElementById(id);
+const getToken = () => localStorage.getItem("rq_token") || "";
+let queue = { items: [] }, fileSha = null;
+
+async function loadQueue() {
+  try {
+    const r = await fetch("queue.json", { cache: "no-store" });
+    if (r.ok) queue = await r.json();
+  } catch (e) {}
+  try {
+    const t = getToken();
+    const r = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/queue.json`,
+      t ? { headers: { Authorization: "Bearer " + t } } : {});
+    if (r.ok) { const j = await r.json(); fileSha = j.sha; }
+  } catch (e) {}
+  render();
+}
+
+async function saveQueue() {
+  const t = getToken();
+  if (!t) { alert("Add your GitHub token below first (one time)."); return false; }
+  const body = {
+    message: "Update render queue",
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(queue, null, 2)))),
+  };
+  if (fileSha) body.sha = fileSha;
+  const r = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/queue.json`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + t, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { alert("Couldn't save (" + r.status + "). Check the token."); return false; }
+  const j = await r.json(); fileSha = j.content.sha;
+  return true;
+}
+
+function fmtDur(s) { s = +s; return s >= 60 ? (s / 60) + " min" : s + " sec"; }
+
+function render() {
+  const el = $("list");
+  const items = [...(queue.items || [])].reverse();
+  if (!items.length) {
+    el.innerHTML = '<div class="empty">Nothing queued yet.<br>Tap <b>+</b> to save a seed from any studio.</div>';
+    return;
+  }
+  el.innerHTML = "";
+  for (const it of items) {
+    const st = STUDIOS[it.studio] || { name: it.studio };
+    const d = document.createElement("div");
+    d.className = "item";
+    d.innerHTML =
+      '<div class="row1"><span class="studio">' + esc(st.name) + '</span>' +
+      '<span class="pill ' + it.status + '">' + it.status + '</span></div>' +
+      '<div class="seed">seed ' + esc(it.seed) + '</div>' +
+      '<div class="meta">' + fmtDur(it.seconds) + ' · ' + it.fps + 'fps' +
+      (it.note ? " · " + esc(it.note) : "") +
+      (it.created ? " · " + new Date(it.created).toLocaleDateString() : "") + '</div>' +
+      '<div class="actions"><button class="btn-render">▶ Render this</button>' +
+      (it.status !== "done"
+        ? '<button class="btn-ghost btn-done">✓ Done</button>'
+        : "") +
+      '<button class="btn-ghost btn-del">✕</button></div>';
+    d.querySelector(".btn-render").onclick = () => {
+      it.status = "rendering";
+      const url = st.url + "?render=1&seed=" + encodeURIComponent(it.seed) +
+        "&fps=" + it.fps + "&seconds=" + it.seconds + "&qid=" + it.id;
+      location.href = url;
+    };
+    const bd = d.querySelector(".btn-done");
+    if (bd) bd.onclick = async () => { it.status = "done"; if (await saveQueue()) render(); };
+    d.querySelector(".btn-del").onclick = async () => {
+      if (!confirm("Remove this from the queue?")) return;
+      queue.items = queue.items.filter(x => x.id !== it.id);
+      if (await saveQueue()) render();
+    };
+    el.appendChild(d);
+  }
+}
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function openSheet() {
+  const sel = $("fStudio");
+  sel.innerHTML = Object.entries(STUDIOS).map(([k, v]) => '<option value="' + k + '">' + esc(v.name) + "</option>").join("");
+  const h = location.hash.match(/add/i);
+  $("sheet").classList.add("open"); $("scrim").classList.add("open");
+}
+function closeSheet() { $("sheet").classList.remove("open"); $("scrim").classList.remove("open"); }
+
+$("addFab").onclick = openSheet;
+$("cancelAdd").onclick = closeSheet;
+$("scrim").onclick = closeSheet;
+
+$("fSeed").addEventListener("input", e => {
+  const m = String(e.target.value).match(/[?&]seed=([^&#]+)/);
+  if (m) {
+    e.target.value = decodeURIComponent(m[1]);
+    for (const [k, v] of Object.entries(STUDIOS)) {
+      if (String(e.target.value).startsWith(v.url) || document.referrer.startsWith(v.url)) { $("fStudio").value = k; break; }
+    }
+    const um = String(arguments[0] || "").match(/https?:\/\/[^/]+/) ;
+  }
+});
+// detect studio from a pasted full URL
+$("fSeed").addEventListener("change", e => {
+  const v = String(e.target.value);
+  for (const [k, s] of Object.entries(STUDIOS)) {
+    try { if (v.includes(new URL(s.url).hostname) && v.includes(k.split("-")[0])) { $("fStudio").value = k; break; } } catch (err) {}
+  }
+  const m = v.match(/[?&]seed=([^&#]+)/);
+  if (m) e.target.value = decodeURIComponent(m[1]);
+});
+
+$("saveAdd").onclick = async () => {
+  const seed = $("fSeed").value.trim();
+  if (!seed) { alert("Paste a seed first."); return; }
+  const it = {
+    id: "q" + Date.now().toString(36),
+    studio: $("fStudio").value,
+    seed,
+    note: $("fNote").value.trim(),
+    seconds: +$("fSecs").value,
+    fps: +$("fFps").value,
+    status: "queued",
+    created: new Date().toISOString(),
+  };
+  queue.items = queue.items || [];
+  queue.items.push(it);
+  if (await saveQueue()) { closeSheet(); $("fSeed").value = ""; $("fNote").value = ""; render(); }
+};
+
+$("saveToken").onclick = () => {
+  const v = $("token").value.trim();
+  if (!v) return;
+  localStorage.setItem("rq_token", v);
+  $("token").value = "";
+  $("tokStatus").innerHTML = '<span class="ok">✓ Token saved on this phone.</span>';
+  loadQueue();
+};
+if (getToken()) $("tokStatus").innerHTML = '<span class="ok">✓ Token is saved on this phone.</span>';
+
+// pre-fill from #add=studio&seed=... links (sent from studios)
+(function () {
+  const m = location.hash.match(/studio=([^&]+).*?seed=([^&]+)|seed=([^&]+).*?studio=([^&]+)/);
+  if (m) {
+    const studio = decodeURIComponent(m[1] || m[4] || ""), seed = decodeURIComponent(m[2] || m[3] || "");
+    if (STUDIOS[studio] && seed) {
+      openSheet();
+      setTimeout(() => { $("fStudio").value = studio; $("fSeed").value = seed; }, 50);
+    }
+  }
+})();
+
+loadQueue();
+</script>
+</body>
+</html>
