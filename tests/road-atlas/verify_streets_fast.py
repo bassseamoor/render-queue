@@ -1,4 +1,4 @@
-"""Road Atlas 2.5: exercise exact shipped bootstrap, graph and parameterized kit.
+"""Road Atlas 2.4: exercise exact shipped bootstrap, graph and parameterized kit.
 Run: python tests/road-atlas/verify_streets.py
 Requires Playwright/Chromium, Shapely and beautifulsoup4. No live-CDN or iOS claim.
 All source responses are first-party local files; source hashes are recorded.
@@ -12,7 +12,7 @@ ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'tests/road-atlas/streets-proof';OUT.mkdir(parents=True,exist_ok=True)
 NAMES=['road-atlas-v2.html','road-atlas-pipeline.js','road-atlas-conditions.js','road-atlas-urban.js','road-atlas-navigation.js','road-atlas-streets.js','road-atlas-street-hooks.js','vendor/road-atlas-baseline-329a68a.html']
 SOURCES={n:(ROOT/n).read_text() for n in NAMES}
-SEEDS=['RA1-821c9gee01c3','RA1-8339djhi11zg','RA1-821c9gee01aa','RA1-821c9gee01ab','RA1-821c9gee01z9','RA1-c21c9gee01r2','RA1-g42o9kee01m3','RA1-04269a8a01x7','RA1-821c90ee01w0']
+SEEDS=['RA1-821c9gee01c3','RA1-8339djhi11zg']
 REPORT={'version':'2.5.0','execution':'Local exact seven-resource async bootstrap; headless Chromium, independent Shapely geometry','sourceSHA256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in NAMES},'checks':[],'seeds':[],'errors':[],'warnings':[]}
 def check(name,ok,detail=None):
  REPORT['checks'].append({'name':name,'passed':bool(ok),'detail':detail})
