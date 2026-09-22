@@ -944,6 +944,18 @@ function initGL(){
   document.body.innerHTML='<div style="color:#fff;font-family:system-ui;padding:40px">This world needs WebGL.</div>';
   throw new Error('no webgl');
  }
+canvas.addEventListener('webglcontextlost',function(e){
+ e.preventDefault();
+ gl=null;fbo=null;
+ var ds=document.getElementById('dbgstat');
+ if(ds)ds.textContent='CONTEXT LOST - recovering...';
+},false);
+canvas.addEventListener('webglcontextrestored',function(){
+ var ds=document.getElementById('dbgstat');
+ if(ds)ds.textContent='context restored, re-baking...';
+ if(state.seedStr){try{bakeAll();}catch(e){}}
+ if(ds)ds.textContent='re-bake done';
+},false);
 function sh(type,src){
  const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s)+'\n'+src.slice(0,200));
@@ -1077,7 +1089,11 @@ const state={
 let simT=0, lastNow=0;
 const live={mist:.55,drift:.6,glow:.6};
 
-function planeTexW(){return 1536;}
+function planeTexW(){
+ // iOS Safari has strict WebGL memory limits; use lower res on mobile
+ var isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+ return isMobile?1024:1536;
+}
 function bakeAll(){
  initGL();
  // dispose old GL textures
