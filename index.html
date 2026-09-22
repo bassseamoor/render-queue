@@ -53,6 +53,45 @@
   .tokbox { background: #121826; border: 1px solid #1e2740; border-radius: 14px; padding: 14px; }
   .tokbox h3 { margin: 0 0 6px; font-size: 15px; }
   .ok { color: #7dffab; font-size: 13px; margin-top: 8px; }
+  /* ---- Studios browser ---- */
+  #studios { max-width: 640px; margin: 6px auto 0; padding: 0 14px 8px; }
+  #studios h2 { font-size: 17px; margin: 18px 0 4px; }
+  #studios .sub { font-size: 13px; color: #8b95ab; margin: 0 0 12px; }
+  .scard { background: #121826; border: 1px solid #1e2740; border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
+  .scard img.sthumb { width: 100%; height: 150px; object-fit: cover; display: block; background: #1a2236; }
+  .scard .sbody { padding: 12px 14px 14px; }
+  .scard .srow1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .scard .sname { font-weight: 700; font-size: 16px; }
+  .chip { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 700; white-space: nowrap; background: #1d3a6e; color: #9cc3ff; }
+  .scard .sdesc { font-size: 13px; color: #8b95ab; margin-top: 6px; line-height: 1.5; }
+  .scard .sactions { display: flex; gap: 8px; margin-top: 12px; }
+  .scard .sactions button { flex: 1; }
+  .realms { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .rcard { background: #0b0e14; border: 1px solid #263052; border-radius: 12px; overflow: hidden; }
+  .rcard img { width: 100%; height: 84px; object-fit: cover; display: block; background: #1a2236; }
+  .rcard .rb { padding: 8px 9px 10px; }
+  .rcard .rn { font-size: 13px; font-weight: 700; }
+  .rcard .rm { font-size: 11px; color: #8b95ab; margin-top: 2px; font-style: italic; line-height: 1.4; }
+  .rcard .ractions { display: flex; gap: 6px; margin-top: 8px; }
+  .rcard .ractions button { flex: 1; font-size: 13px; padding: 9px 6px; border-radius: 10px; }
+  .realmToggle { width: 100%; margin-top: 10px; background: #1a2236; color: #c6cfe4; font-size: 14px; padding: 11px; }
+  /* ---- Report modal ---- */
+  #reportWrap { position: fixed; inset: 0; z-index: 40; display: none; }
+  #reportWrap.open { display: block; }
+  #reportScrim { position: absolute; inset: 0; background: rgba(0,0,0,.65); }
+  #report { position: absolute; inset: auto 0 0 0; max-height: 88vh; overflow-y: auto; background: #121826; border-top: 1px solid #263052; border-radius: 18px 18px 0 0; padding: 16px 16px calc(22px + env(safe-area-inset-bottom)); }
+  #report img.rthumb { width: 100%; height: 140px; object-fit: cover; border-radius: 12px; background: #1a2236; }
+  #report h2 { margin: 12px 0 2px; font-size: 19px; }
+  #report h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #8b95ab; margin: 18px 0 8px; }
+  #report .rsec { font-size: 14px; line-height: 1.6; }
+  #report ul.gen { margin: 6px 0; padding-left: 20px; font-size: 14px; line-height: 1.7; }
+  #report table.vars { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #report table.vars th { text-align: left; color: #8b95ab; font-weight: 600; font-size: 12px; padding: 6px 6px; border-bottom: 1px solid #263052; }
+  #report table.vars td { padding: 7px 6px; border-bottom: 1px solid #1a2236; vertical-align: top; }
+  #report table.vars td.v { font-family: ui-monospace, monospace; color: #9cc3ff; white-space: nowrap; }
+  #report .seedbox { font-family: ui-monospace, monospace; font-size: 12px; background: #0b0e14; border: 1px solid #263052; border-radius: 10px; padding: 10px 12px; word-break: break-all; color: #9cc3ff; }
+  #report .ractions2 { display: flex; gap: 8px; margin-top: 16px; }
+  #report .ractions2 button, #report .ractions2 a.btn { flex: 1; text-align: center; text-decoration: none; display: block; font-size: 15px; border: 0; border-radius: 12px; padding: 12px 16px; font-weight: 700; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -61,6 +100,12 @@
   <p>Save seeds. Tap one on any phone. Get a video for your SSD.</p>
 </header>
 <main id="list"><div class="empty">Loading queue…</div></main>
+
+<section id="studios">
+  <h2>🎥 Studios</h2>
+  <p class="sub">Every renderer, as a card. Scroll, gander, open one — or read its scene report.</p>
+  <div id="studioCards"></div>
+</section>
 
 <button id="addFab" aria-label="Add seed">+</button>
 
@@ -105,22 +150,231 @@
   </div>
 </footer>
 
+<div id="reportWrap" aria-hidden="true">
+  <div id="reportScrim"></div>
+  <div id="report" role="dialog" aria-modal="true"></div>
+</div>
+
 <script>
 const OWNER = "bassseamoor", REPO = "render-queue";
 const STUDIOS = {
-  "turtle-life":  { name: "Turtle Life \u25cf render testing", url: "https://bassseamoor.github.io/turtle-life-studio/turtle-life-studio.html", renders: true },
-  "rain-window":  { name: "Rain Window \u25cf render testing",       url: "https://bassseamoor.github.io/rain-window-studio/rain-window-studio.html", renders: true },
-  "molten":       { name: "Molten \u25cf render testing",      url: "https://bassseamoor.github.io/render-queue/molten.html", renders: true },
-  "aquarium":     { name: "Aquarium \u25cf render testing",     url: "https://bassseamoor.github.io/render-queue/aquarium.html", renders: true },
-  "alien-planet": { name: "Alien Planet \u25cf render testing", url: "https://bassseamoor.github.io/render-queue/alien-planet.html", renders: true },
-  "rainforest":   { name: "Rainforest \u25cf render testing",   url: "https://bassseamoor.github.io/render-queue/rainforest.html", renders: true },
-  "parallax":     { name: "Parallax Engine \u25cf render testing", url: "https://bassseamoor.github.io/render-queue/parallax-engine.html", renders: true },
+  "turtle-life":  { name: "Turtle Life \u25cf render testing", url: "https://bassseamoor.github.io/turtle-life-studio/turtle-life-studio.html", renders: true, thumb: "thumbs/turtle-life.png", desc: "A sea turtle's life, from egg to ocean. Hatchlings crawl, predators hunt, the reef glows." },
+  "rain-window":  { name: "Rain Window \u25cf render testing",       url: "https://bassseamoor.github.io/rain-window-studio/rain-window-studio.html", renders: true, thumb: "thumbs/rain-window.png", desc: "A rainy city street seen through glass. Streaks, droplets, mist, and lamplight." },
+  "molten":       { name: "Molten \u25cf render testing",      url: "https://bassseamoor.github.io/render-queue/molten.html", renders: true, thumb: "thumbs/molten.png", desc: "A lava lamp studio. Sculpt light in liquid wax, drifting and glowing." },
+  "aquarium":     { name: "Aquarium \u25cf render testing",     url: "https://bassseamoor.github.io/render-queue/aquarium.html", renders: true, thumb: "thumbs/aquarium.png", desc: "A living reef tank. Articulated fish, jellyfish, swaying plants, rising bubbles." },
+  "alien-planet": { name: "Alien Planet \u25cf render testing", url: "https://bassseamoor.github.io/render-queue/alien-planet.html", renders: true, thumb: "thumbs/alien-planet.png", desc: "An alien forest floor. Strange flora, drifting spores, alien wildlife." },
+  "rainforest":   { name: "Rainforest \u25cf render testing",   url: "https://bassseamoor.github.io/render-queue/rainforest.html", renders: true, thumb: "thumbs/rainforest.png", desc: "A deep jungle. Light shafts, fluttering leaves, mist, hidden wildlife." },
+  "parallax":     { name: "Parallax Engine \u25cf render testing", url: "https://bassseamoor.github.io/render-queue/parallax-engine.html", renders: true, thumb: "thumbs/parallax.png", desc: "Six miniature worlds on drifting parallax planes. Each realm below opens as its own scene." },
 };
 const $ = id => document.getElementById(id);
 const getToken = () => localStorage.getItem("rq_token") || "";
 // seed-console studio id -> STUDIOS key (rain-window's adapter uses 'rainwindow')
 const FSC = { "turtle-life": "turtle-life", "rainwindow": "rain-window", "molten": "molten", "aquarium": "aquarium", "alien-planet": "alien-planet", "rainforest": "rainforest", "parallax": "parallax" };
 let pickedFav = null;
+
+// ---- Scene reports: what each renderer generates (standardized) ----
+const REPORTS = {
+  "turtle-life": {
+    blurb: "A full life cycle on a procedural beach: eggs hatch, hatchlings crawl to the surf, predators hunt, and the reef glows at night.",
+    generators: ["1 hero turtle + 7 hatchlings (dotted sand-trails behind each)", "Predators that commit to hunts", "Caustic light flicker on the sand", "Drifting plankton particles", "Breathing rocks + shoreline surf", "Day/night sky and ocean"],
+    seedFormat: "# + 8 hex digits (e.g. #00E7AA2D)", seedExample: "#00E7AA2D",
+    params: [
+      { label: "Time of day", key: "light", min: 0, max: 3, step: 1, now: 1 },
+      { label: "Biome", key: "biome", min: 0, max: 3, step: 1, now: 0 },
+      { label: "Fish density", key: "fish", min: 0, max: 2, step: 1, now: 1 },
+      { label: "Plant density", key: "plants", min: 0, max: 2, step: 1, now: 1 },
+      { label: "Coral density", key: "corals", min: 0, max: 2, step: 1, now: 1 },
+      { label: "Water clarity", key: "clarity", min: 0, max: 2, step: 1, now: 0 },
+      { label: "Scene energy", key: "motion", min: 0, max: 3, step: 1, now: 0 },
+      { label: "Reef glow", key: "reefGlow", min: 0, max: 100, step: 1, now: 75 },
+    ],
+  },
+  "rain-window": {
+    blurb: "A rainy city street viewed through a window pane: rain streaks outside, droplets crawling down the glass, mist and lamplight.",
+    generators: ["Rain streak layers (near + far)", "Glass droplets that merge and run down", "Breathing mist on the glass", "Droplet edge fringing / refraction", "City street: buildings, lamps, cars, trees", "Lightning flashes"],
+    seedFormat: "RW- + base36 (from ?seed= link)", seedExample: "(copy the ?seed= link from the studio)",
+    params: [
+      { label: "Downpour", key: "rain", min: 0.25, max: 2, step: 0.01, now: 1.35 },
+      { label: "Droplets on glass", key: "drops", min: 0, max: 2, step: 0.01, now: 1 },
+      { label: "Misted edges", key: "fogging", min: 0, max: 1, step: 0.01, now: 0.16 },
+      { label: "Light bloom", key: "bloom", min: 0, max: 1, step: 0.01, now: 0.36 },
+      { label: "Distance haze", key: "atmosphere", min: 0, max: 1.5, step: 0.01, now: 0.55 },
+      { label: "Puddle coverage", key: "puddles", min: 0, max: 1, step: 0.01, now: 0.8 },
+      { label: "Dramatic lighting", key: "drama", min: 0, max: 1, step: 0.01, now: 0.7 },
+      { label: "Lighting mood", key: "light", min: 0, max: 2, step: 1, now: 1 },
+    ],
+  },
+  "molten": {
+    blurb: "A lava lamp studio: blobs of glowing wax rise, wobble and merge inside a glass vessel, with dust motes drifting in the light.",
+    generators: ["Rising / falling wax blobs (merge + split)", "Wax wobble deformation", "Dust motes in the light", "Glass vessel with specular highlights", "Custom materials + lighting moods"],
+    seedFormat: "MOLTEN- + base36 (from ?seed= link)", seedExample: "(copy the ?seed= link from the studio)",
+    params: [
+      { label: "Wax bodies", key: "count", min: 4, max: 24, step: 1, now: 13 },
+      { label: "Blob size", key: "size", min: 0.5, max: 1.65, step: 0.01, now: 1 },
+      { label: "Flow speed", key: "speed", min: 0.15, max: 3, step: 0.01, now: 1 },
+      { label: "Luminous glow", key: "glow", min: 0, max: 3, step: 0.01, now: 0.82 },
+      { label: "Fusion", key: "merge", min: 0.06, max: 0.65, step: 0.01, now: 0.25 },
+      { label: "Thermal lift", key: "heat", min: 0, max: 1, step: 0.01, now: 0.55 },
+      { label: "Color marbling", key: "marble", min: 0, max: 1, step: 0.01, now: 0.18 },
+      { label: "Surface turbulence", key: "warp", min: 0, max: 1.5, step: 0.01, now: 0.45 },
+      { label: "Brightness", key: "exposure", min: 0.35, max: 2.8, step: 0.01, now: 1.1 },
+      { label: "Framing (sculpture/liquid/macro)", key: "view", min: 0, max: 2, step: 1, now: 0 },
+    ],
+  },
+  "aquarium": {
+    blurb: "A living reef tank: articulated fish cruise with speed-driven motion, jellyfish pulse, plants sway, bubbles rise in three kinds.",
+    generators: ["Articulated fish (speed-driven tail motion)", "Jellyfish with pulsing bells", "5 swaying plants", "3 bubble kinds rising", "Distant reef silhouettes", "Water shimmer + light rays"],
+    seedFormat: "AQUA- + base36 (from ?seed= link)", seedExample: "(copy the ?seed= link from the studio)",
+    params: [
+      { label: "Biome (tropical/deep/jelly/zen)", key: "biome", min: 0, max: 3, step: 1, now: 0 },
+      { label: "Fish (low/med/high)", key: "fish", min: 0, max: 2, step: 1, now: 1 },
+      { label: "Plants (low/med/high)", key: "plants", min: 0, max: 2, step: 1, now: 1 },
+      { label: "Corals (low/med/high)", key: "corals", min: 0, max: 2, step: 1, now: 1 },
+      { label: "Clarity (crystal/natural/murky)", key: "clarity", min: 0, max: 2, step: 1, now: 1 },
+      { label: "Light (day/golden/blue/moon)", key: "light", min: 0, max: 3, step: 1, now: 0 },
+      { label: "Brightness", key: "bright", min: -50, max: 50, step: 1, now: 0 },
+      { label: "Warmth", key: "warm", min: -50, max: 50, step: 1, now: 0 },
+      { label: "Sun height", key: "sunH", min: -50, max: 50, step: 1, now: 0 },
+      { label: "Camera (drift/explore/locked/orbit)", key: "camera", min: 0, max: 3, step: 1, now: 0 },
+    ],
+  },
+  "alien-planet": {
+    blurb: "An alien forest floor: strange colony flora, undergrowth, drifting spores and mist, with alien wildlife moving through it.",
+    generators: ["Colony flora (density-driven)", "Undergrowth layer", "Drifting spores + mist", "Alien wildlife activity", "Wet sheen on surfaces", "Exotic sky + fog grading"],
+    seedFormat: "XENO- + hex (e.g. XENO-D721DA)", seedExample: "XENO-D721DA",
+    params: [
+      { label: "Colony density", key: "density", min: 0.5, max: 1.5, step: 0.1, now: 1 },
+      { label: "Undergrowth", key: "undergrowth", min: 0.4, max: 1.6, step: 0.1, now: 1 },
+      { label: "Wet sheen", key: "wetness", min: 0, max: 1, step: 0.01, now: 0.65 },
+      { label: "Wind", key: "wind", min: 0, max: 1, step: 0.01, now: 0.3 },
+      { label: "Mist", key: "mist", min: 0, max: 1, step: 0.01, now: 0.22 },
+      { label: "Wildlife activity", key: "life", min: 0, max: 1, step: 0.01, now: 0.45 },
+      { label: "Exposure", key: "exposure", min: 0.4, max: 2, step: 0.01, now: 1.15 },
+      { label: "Forest reach", key: "distance", min: 90, max: 260, step: 10, now: 180 },
+    ],
+  },
+  "rainforest": {
+    blurb: "A deep jungle: layered canopy, god-ray light shafts, fluttering leaves, mist, and wildlife glimpsed between the trees.",
+    generators: ["Layered canopy trees (density-driven)", "Light shafts swaying", "Fluttering leaves", "Mist layers", "Wildlife glimpses", "Wet sheen on foliage"],
+    seedFormat: "VERDANT- + hex (e.g. VERDANT-2EF0E6)", seedExample: "VERDANT-2EF0E6",
+    params: [
+      { label: "Forest density", key: "density", min: 0.5, max: 1.5, step: 0.1, now: 1 },
+      { label: "Undergrowth", key: "undergrowth", min: 0.4, max: 1.6, step: 0.1, now: 1 },
+      { label: "Mist", key: "mist", min: 0, max: 1, step: 0.01, now: 0.35 },
+      { label: "Wet sheen", key: "wetness", min: 0, max: 1, step: 0.01, now: 0.65 },
+      { label: "Wind", key: "wind", min: 0, max: 1, step: 0.01, now: 0.3 },
+      { label: "Wildlife", key: "life", min: 0, max: 1, step: 0.01, now: 0.45 },
+      { label: "View distance", key: "distance", min: 90, max: 260, step: 10, now: 180 },
+      { label: "Exposure", key: "exposure", min: 0.4, max: 2, step: 0.01, now: 1.15 },
+    ],
+  },
+  "parallax": {
+    blurb: "Six miniature worlds rendered on 7+ drifting parallax depth planes with a tilt-shift lens. Pick a realm below — each opens as its own standalone scene.",
+    generators: ["6 realms (Drowned Forest, Canal Metropolis, Ember Wastes, Cloud Ocean, Mycelium Deep, Orbital Dawn)", "7+ parallax depth planes with drifting virtual camera", "City / forest / ocean meshes per realm mood", "Realm particles: rain, embers, spores, snow", "Tilt-shift lens (focus, position, width)", "Film grain + light bloom grading"],
+    seedFormat: "PX1-<realm>-<layout>-<detail>-<params>-L<lens> (realm 0–5 baked in)", seedExample: "PX1-2-11wu9fe-8zf70h-j3.e9.jk.ks.hh.jp.go.cz-L0.fk",
+    params: [
+      { label: "Life density", key: "density", min: 0.45, max: 1.5, step: 0.01, now: 1.17 },
+      { label: "Mist", key: "mist", min: 0, max: 1.6, step: 0.01, now: 0.821 },
+      { label: "Light bloom", key: "glow", min: 0.3, max: 1.7, step: 0.01, now: 1.29 },
+      { label: "Drift", key: "drift", min: 0.15, max: 1.7, step: 0.01, now: 1.31 },
+      { label: "Palette shift", key: "palette", min: -1, max: 1, step: 0.01, now: 0.258 },
+      { label: "Film grain", key: "grain", min: 0, max: 1, step: 0.01, now: 0.709 },
+      { label: "Depth of field", key: "focus", min: 0, max: 1.6, step: 0.01, now: 0.96 },
+      { label: "Light shafts", key: "rays", min: 0, max: 1.5, step: 0.01, now: 0.701 },
+    ],
+  },
+};
+// Parallax realms as standalone scenes (deep-link seeds captured 2026-09-22)
+const REALMS = [
+  { name: "Drowned Forest", slug: "drowned-forest", mood: "Water remembers what the forest forgot.", seed: "PX1-0-11wu9fe-8zf70h-j3.e9.jk.ks.hh.jp.go.cz-L0.fk" },
+  { name: "Canal Metropolis", slug: "canal-metropolis", mood: "A city in miniature. Built in light.", seed: "PX1-1-11wu9fe-8zf70h-j3.e9.jk.ks.hh.jp.go.cz-L0.fk" },
+  { name: "Ember Wastes", slug: "ember-wastes", mood: "The earth is still dreaming of fire.", seed: "PX1-2-11wu9fe-8zf70h-j3.e9.jk.ks.hh.jp.go.cz-L0.fk" },
+  { name: "Cloud Ocean", slug: "cloud-ocean", mood: "Nothing to arrive at. Only the light.", seed: "PX1-3-11wu9fe-8zf70h-j3.e9.jk.ks.hh.jp.go.cz-L0.fk" },
+  { name: "Mycelium Deep", slug: "mycelium-deep", mood: "A small, luminous intelligence beneath everything.", seed: "PX1-4-11wu9fe-8zf70h-j3.e9.jk.ks.hh.jp.go.cz-L0.fk" },
+  { name: "Orbital Dawn", slug: "orbital-dawn", mood: "The silence between one world and the next.", seed: "PX1-5-11wu9fe-8zf70h-j3.e9.jk.ks.hh.jp.go.cz-L0.fk" },
+];
+
+function renderStudios() {
+  const host = $("studioCards");
+  host.innerHTML = "";
+  for (const [key, st] of Object.entries(STUDIOS)) {
+    const rep = REPORTS[key] || {};
+    const card = document.createElement("div");
+    card.className = "scard";
+    card.innerHTML =
+      '<img class="sthumb" src="' + esc(st.thumb || "") + '" alt="' + esc(cleanName(st.name)) + '">' +
+      '<div class="sbody"><div class="srow1"><span class="sname">' + esc(cleanName(st.name)) + '</span>' +
+      '<span class="chip">render testing</span></div>' +
+      (st.desc ? '<div class="sdesc">' + esc(st.desc) + '</div>' : "") +
+      '<div class="sactions"><button class="btn-ghost btn-open">Open ↗</button>' +
+      '<button class="btn-ghost btn-report">📋 Scene report</button></div>' +
+      (key === "parallax" ? '<button class="realmToggle">▸ 6 scenes — tap to browse</button><div class="realms" style="display:none"></div>' : "") +
+      "</div>";
+    card.querySelector(".btn-open").onclick = () => window.open(st.url, "_blank", "noopener");
+    card.querySelector(".btn-report").onclick = () => openReport(key, null);
+    if (key === "parallax") {
+      const tgl = card.querySelector(".realmToggle"), grid = card.querySelector(".realms");
+      tgl.onclick = () => {
+        const open = grid.style.display !== "none";
+        grid.style.display = open ? "none" : "grid";
+        tgl.textContent = open ? "▸ 6 scenes — tap to browse" : "▾ 6 scenes";
+      };
+      for (const r of REALMS) {
+        const rc = document.createElement("div");
+        rc.className = "rcard";
+        const deep = st.url + "?seed=" + encodeURIComponent(r.seed);
+        rc.innerHTML = '<img src="thumbs/realm-' + r.slug + '.png" alt="' + esc(r.name) + '">' +
+          '<div class="rb"><div class="rn">' + esc(r.name) + '</div>' +
+          '<div class="rm">' + esc(r.mood) + '</div>' +
+          '<div class="ractions"><button class="btn-ghost b-open">Open ↗</button>' +
+          '<button class="btn-ghost b-queue">+ Queue</button>' +
+          '<button class="btn-ghost b-rep">📋</button></div></div>';
+        rc.querySelector(".b-open").onclick = () => window.open(deep, "_blank", "noopener");
+        rc.querySelector(".b-queue").onclick = () => { openSheet(); setTimeout(() => { $("fStudio").value = "parallax"; syncOpenStudioLink(); $("fSeed").value = r.seed; }, 60); };
+        rc.querySelector(".b-rep").onclick = () => openReport("parallax", r);
+        grid.appendChild(rc);
+      }
+    }
+    host.appendChild(card);
+  }
+}
+
+function openReport(studioKey, realm) {
+  const st = STUDIOS[studioKey] || {}, rep = REPORTS[studioKey] || {};
+  const title = realm ? realm.name : cleanName(st.name);
+  const thumb = realm ? "thumbs/realm-" + realm.slug + ".png" : st.thumb;
+  const deep = realm ? st.url + "?seed=" + encodeURIComponent(realm.seed) : st.url;
+  const rows = (rep.params || []).map(p =>
+    "<tr><td>" + esc(p.label) + '<div style="color:#8b95ab;font-size:11px;font-family:ui-monospace,monospace">' + esc(p.key) + "</div></td>" +
+    "<td class=\"v\">" + esc(String(p.min)) + " – " + esc(String(p.max)) + "</td>" +
+    "<td class=\"v\">" + esc(String(p.step)) + "</td>" +
+    "<td class=\"v\">" + esc(String(p.now)) + "</td></tr>").join("");
+  $("report").innerHTML =
+    '<img class="rthumb" src="' + esc(thumb || "") + '" alt="">' +
+    "<h2>📋 " + esc(title) + "</h2>" +
+    '<div class="rsec" style="color:#8b95ab">' + esc(rep.blurb || "") + "</div>" +
+    (realm ? '<div class="rsec" style="font-style:italic;color:#8b95ab;margin-top:6px">“' + esc(realm.mood) + '”</div>' : "") +
+    "<h3>What generates this scene (" + (rep.generators || []).length + " systems)</h3>" +
+    "<ul class=\"gen\">" + (rep.generators || []).map(g => "<li>" + esc(g) + "</li>").join("") + "</ul>" +
+    "<h3>Variables (" + (rep.params || []).length + ")</h3>" +
+    (rows ? '<table class="vars"><tr><th>Variable</th><th>Range</th><th>Step</th><th>Now</th></tr>' + rows + "</table>"
+          : '<div class="rsec" style="color:#8b95ab">Variable list pending — open the studio and tap 🎲 to explore.</div>') +
+    "<h3>Seed</h3>" +
+    '<div class="rsec" style="margin-bottom:6px">' + esc(rep.seedFormat || "") + "</div>" +
+    '<div class="seedbox">' + esc(realm ? realm.seed : (rep.seedExample || "")) + "</div>" +
+    '<div class="ractions2"><a class="btn btn-ghost" href="' + esc(deep) + '" target="_blank" rel="noopener">Open ↗</a>' +
+    "<button class=\"btn-ghost\" id=\"repClose\">Close</button></div>";
+  $("reportWrap").classList.add("open");
+  $("reportWrap").setAttribute("aria-hidden", "false");
+  $("repClose").onclick = closeReport;
+}
+function closeReport() {
+  $("reportWrap").classList.remove("open");
+  $("reportWrap").setAttribute("aria-hidden", "true");
+}
+$("reportScrim").onclick = closeReport;
+
+renderStudios();
 
 function loadFavorites() {
   const out = [];
