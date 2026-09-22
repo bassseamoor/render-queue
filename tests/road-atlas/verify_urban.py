@@ -150,7 +150,7 @@ with sync_playwright() as pw:
  # Actual four-file loader, parameter roundtrip, and mobile touch controls.
  for viewport in [{'width':390,'height':844},{'width':844,'height':390}]:
   page=browser.new_page(viewport=viewport,device_scale_factor=2,is_mobile=True,has_touch=True);page.set_default_timeout(120000);page.on('pageerror',lambda e:report['errors'].append(str(e)))
-  files={k:v for k,v in sources.items() if k.endswith('.js')};files['road-atlas-navigation.js']=(ROOT/'road-atlas-navigation.js').read_text();files['vendor/road-atlas-baseline-329a68a.html']=baseline
+  files={k:v for k,v in sources.items() if k.endswith('.js')};files['road-atlas-navigation.js']=(ROOT/'road-atlas-navigation.js').read_text();files['road-atlas-streets.js']=(ROOT/'road-atlas-streets.js').read_text();files['road-atlas-street-hooks.js']=(ROOT/'road-atlas-street-hooks.js').read_text();files['vendor/road-atlas-baseline-329a68a.html']=baseline
   mock='<script>window.fetch=async function(path){const f='+json.dumps(files).replace('</','<\\/')+';const k=String(path).replace(/^\\.\\//,\'\').split(\'?\')[0];return new Response(f[k]||\'missing\',{status:f[k]?200:404});};</script>'
   boot=sources['road-atlas-v2.html'].replace('<script>',mock+'<script>',1)
   # Navigation is blocked in this build environment. Supply URLSearchParams

@@ -88,17 +88,18 @@
 <script>
 /* Immutable first-party baseline, not a rewritten engine. Load its existing
    scripts in their original order, inserting the orchestration module BEFORE
-   SeedConsole.init. No server, package manager, CDN or third-party code required. */
+   SeedConsole.init. Street hook fingerprints reject unexpected first-party source changes. */
 (async function bootRoadAtlas(){
   function run(text){const s=document.createElement('script');s.textContent=text;document.body.appendChild(s);}
   try {
-    const paths=['./vendor/road-atlas-baseline-329a68a.html','./road-atlas-pipeline.js?v=2.3.0','./road-atlas-conditions.js?v=2.3.1','./road-atlas-urban.js?v=2.3.0','./road-atlas-navigation.js?v=1.0.0'];
+    const paths=['./vendor/road-atlas-baseline-329a68a.html','./road-atlas-pipeline.js?v=2.4.0','./road-atlas-conditions.js?v=2.4.0','./road-atlas-urban.js?v=2.3.0','./road-atlas-navigation.js?v=1.0.0','./road-atlas-streets.js?v=2.4.0','./road-atlas-street-hooks.js?v=2.4.0'];
     const texts=await Promise.all(paths.map(async path=>{const r=await fetch(path);if(!r.ok)throw new Error(path+' ('+r.status+')');return r.text();}));
+    run(texts[6]);[texts[1],texts[2]]=RoadAtlasStreetHooks.transform(texts[1],texts[2]);
     const parsed=new DOMParser().parseFromString(texts[0],'text/html');
     const scripts=Array.from(parsed.querySelectorAll('script'));
     if(scripts.length!==5||!scripts[0].textContent.includes('function buildFields(')||!scripts[2].textContent.includes('SeedConsole.init('))throw new Error('Unexpected baseline. Original V1 is unchanged.');
-    run(scripts[0].textContent);run(texts[1]);run(texts[2]);run(texts[3]);run(texts[4]);
-    if(!window.RoadAtlasPipeline||!window.RoadAtlasConditions||!window.RoadAtlasUrban||!window.RoadAtlasNavigation)throw new Error('Ordered pipeline did not initialize');
+    run(scripts[0].textContent);run(texts[1]);run(texts[2]);run(texts[3]);run(texts[4]);run(texts[5]);
+    if(!window.RoadAtlasPipeline||!window.RoadAtlasConditions||!window.RoadAtlasUrban||!window.RoadAtlasNavigation||!window.RoadAtlasStreets)throw new Error('Ordered pipeline did not initialize');
     for(let i=1;i<scripts.length;i++)run(scripts[i].textContent);
   }catch(error){
     const e=document.getElementById('err');e.style.display='block';e.textContent='Road Atlas could not start: '+error.message+' — original road-atlas.html remains available.';

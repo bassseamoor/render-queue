@@ -11,10 +11,10 @@ import base64, hashlib, json, os, shutil
 
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'tests/road-atlas/navigation-proof';OUT.mkdir(parents=True,exist_ok=True)
-NAMES=['road-atlas-v2.html','road-atlas-navigation.js','road-atlas-conditions.js','road-atlas-pipeline.js','road-atlas-urban.js','vendor/road-atlas-baseline-329a68a.html']
+NAMES=['road-atlas-v2.html','road-atlas-navigation.js','road-atlas-conditions.js','road-atlas-pipeline.js','road-atlas-urban.js','road-atlas-streets.js','road-atlas-street-hooks.js','vendor/road-atlas-baseline-329a68a.html']
 SOURCES={n:(ROOT/n).read_text() for n in NAMES}
 SEED='RA1-821c9gee01aa'
-REPORT={'version':'navigation-1.0.0','environment':'Headless Chromium / exact local five-file loader fixture; CDP multi-touch', 'sourceSHA256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in NAMES},'checks':[],'errors':[],'warnings':[]}
+REPORT={'version':'navigation-1.0.0','environment':'Headless Chromium / exact local seven-resource loader fixture; CDP multi-touch', 'sourceSHA256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in NAMES},'checks':[],'errors':[],'warnings':[]}
 def check(label,ok,details=None):
  REPORT['checks'].append({'name':label,'passed':bool(ok),'details':details})
  print(('PASS ' if ok else 'FAIL ')+label, details if not ok else '', flush=True)
@@ -30,7 +30,7 @@ def boot(page,query=None,nav=True):
  data={n:s for n,s in SOURCES.items() if n!='road-atlas-v2.html'}
  fixture='<script>const NativeQuery=window.URLSearchParams;window.URLSearchParams=class extends NativeQuery{constructor(input){super(input===""?'+json.dumps(query)+':input);}};window.__fetchPaths=[];window.fetch=async function(path){const files='+json.dumps(data).replace('</','<\\/')+';const k=String(path).replace(/^\\.\\//,\'\').split(\'?\')[0];window.__fetchPaths.push(k);return new Response(files[k]||\'missing\',{status:files[k]?200:404});};</script>'
  html=SOURCES['road-atlas-v2.html']
- if not nav:html=html.replace(",'./road-atlas-navigation.js?v=1.0.0'",'').replace('run(texts[4]);','').replace('||!window.RoadAtlasNavigation','')
+ if not nav:html=html.replace('run(texts[4]);','').replace('||!window.RoadAtlasNavigation','')
  page.set_content(html.replace('<script>',fixture+'<script>',1),wait_until='load',timeout=120000)
  page.wait_for_function('window.world?.urban?.enabled',timeout=120000)
  page.wait_for_timeout(250)
@@ -102,7 +102,7 @@ with sync_playwright() as pw:
  # Browser-generated touch events: genuine pinch, finger release, cancel, double tap.
  for dims in [{'width':390,'height':844},{'width':844,'height':390}]:
   label=str(dims);page=browser.new_page(viewport=dims,device_scale_factor=2,is_mobile=True,has_touch=True);events(page);boot(page)
-  check(label+' exact five-file async boot creates one camera and one seed console',page.evaluate('window.__fetchPaths.length===5&&document.querySelectorAll(".ra-camera-controls").length===1&&document.querySelectorAll(".sc-pill").length===1'))
+  check(label+' exact seven-resource async boot creates one camera and one seed console',page.evaluate('window.__fetchPaths.length===7&&document.querySelectorAll(".ra-camera-controls").length===1&&document.querySelectorAll(".sc-pill").length===1'))
   check(label+' toolbar, navigation controls and canvas fit',page.evaluate('()=>{const s=document.getElementById("stage").getBoundingClientRect(),b=document.querySelector(".ra-camera-controls").getBoundingClientRect();return document.getElementById("topbar").scrollWidth<=innerWidth&&b.right<=innerWidth&&b.top>=s.top&&getComputedStyle(scene).touchAction==="none";}'))
   page.evaluate('window.__mapTaps=0;document.getElementById("stage").addEventListener("roadatlas:maptap",()=>window.__mapTaps++)')
   cdp=page.context.new_cdp_session(page);r=page.locator('#stage').bounding_box();x=dims['width']/2;y=r['y']+r['height']*.53
