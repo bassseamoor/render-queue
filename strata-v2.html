@@ -29,13 +29,12 @@ body.rendering #dbgstat{display:none;}
 </head>
 <body>
 <canvas id="gl"></canvas>
-<div id="title">STRATA<span style="opacity:.5"> · rebuilt</span><small id="seedline"></small></div>
+<div id="title">STRATA<span style="opacity:.5"> · v2</span><small id="seedline"></small></div>
 <button id="newseed" style="position:fixed;bottom:20px;right:20px;z-index:10;padding:12px 20px;font-size:16px;border-radius:10px;border:none;background:rgba(255,255,255,.9);">🎲 New</button>
 <div id="dbgstat" style="position:fixed;bottom:10px;left:10px;z-index:10;color:#0f0;font:12px monospace;background:rgba(0,0,0,.7);padding:6px 8px;border-radius:6px;"></div>
 <script>
 'use strict';
 const canvas = document.getElementById('gl');
-
 /* ---------------- utils ---------------- */
 function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return function(){h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return (h^=h>>>16)>>>0;};}
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
@@ -91,7 +90,6 @@ function ringPath(c,nz,cx,cy,r,wob,seedOff,pts){
 }
 function mkCanvas(w,h){const c=document.createElement('canvas');c.width=Math.max(2,Math.round(w));c.height=Math.max(2,Math.round(h));return c;}
 
-
 const PALETTES=[
  {name:'Dawn Vale',sky:['#33415c','#8a9cb5','#ece7d8'],cloud:['#f4f1e8','#ccd6e2','#8ba0b8'],wall:['#d96f32','#a34a22','#5e2c16'],moss:['#c0aa4e','#6d7a2c'],tree:'#1f261a',haze:'#b9c4d4'},
  {name:'Ember Canyon',sky:['#3a2b3f','#b0563a','#f2d8a8'],cloud:['#f6e3c2','#d9b48c','#8a6a52'],wall:['#e07b2e','#9c4a1e','#542512'],moss:['#c2a13f','#77662a'],tree:'#241d14',haze:'#d8b49a'},
@@ -99,7 +97,6 @@ const PALETTES=[
  {name:'Verdant Deep',sky:['#1e3328','#5a7a52','#d8e0c0'],cloud:['#f0f2e2','#c2d0ae','#7a8a6a'],wall:['#b86a32','#7e4420','#40220f'],moss:['#cdbb4a','#7a8a2e'],tree:'#182114',haze:'#a8bc96'},
  {name:'Rose Quartz',sky:['#4a2e3f','#b06a7a','#f2d8c8'],cloud:['#f8ece2','#d8b8ac','#96707c'],wall:['#c65a3a','#8a3a24','#482016'],moss:['#b89a48','#6a5e2a'],tree:'#221a16',haze:'#cfa4a4'},
 ];
-
 
 /* ================= PRODUCTION BAKE — texture assets, one per depth plane ================= */
 function bakeSky(W,H,rng,pal,st){
@@ -386,158 +383,6 @@ function bakeDot(){
  c.fillStyle=g;c.fillRect(0,0,64,64);
  return cv;
 }
-
-/* ================= WEBGL RUNTIME — real 3D: textured quads at z-depths ================= */
-/* NOTE: every GL object is created lazily inside initGL(), which runs from
-   bakeAll() — AFTER the render controller (and any canvas resize) has run.
-   Creating GL objects at script top-level is unsafe: setting canvas.width
-   resets the WebGL context and silently wipes them (black frames). */
-let gl=null;
-let pQuad,qA,qU,pDust,dA,dU,pPost,ptA,ptU,quadVBO,postVBO;
-function initGL(){
- if(gl)return;
- try{
-  gl=canvas.getContext('webgl',{antialias:false,alpha:false,preserveDrawingBuffer:true});
- }catch(e){gl=null;}
- if(!gl){
-  document.body.innerHTML='<div style="color:#fff;font-family:system-ui;padding:40px">This world needs WebGL.</div>';
-  throw new Error('no webgl');
- }
-canvas.addEventListener('webglcontextlost',function(e){
- e.preventDefault();
- gl=null;fbo=null;
- var ds=document.getElementById('dbgstat');
- if(ds)ds.textContent='CONTEXT LOST - recovering...';
-},false);
-canvas.addEventListener('webglcontextrestored',function(){
- var ds=document.getElementById('dbgstat');
- if(ds)ds.textContent='context restored, re-baking...';
- if(state.seedStr){try{bakeAll();}catch(e){}}
- if(ds)ds.textContent='re-bake done';
-},false);
-function sh(type,src){
- const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
- if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s)+'\n'+src.slice(0,200));
- return s;
-}
-function prog(vs,fs){
- const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,vs));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
- gl.linkProgram(p);
- if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));
- return p;
-}
-/* textured quad */
-pQuad=prog(
- 'attribute vec2 aPos;attribute vec2 aUV;uniform mat4 uMVP;varying vec2 vUV;'+
- 'void main(){vUV=aUV;gl_Position=uMVP*vec4(aPos,0.,1.);}',
- 'precision mediump float;varying vec2 vUV;uniform sampler2D uTex;uniform vec2 uUVOff;uniform float uAlpha;'+
- 'void main(){vec4 c=texture2D(uTex,vUV+uUVOff);gl_FragColor=vec4(c.rgb,c.a*uAlpha);}');
-qA={pos:gl.getAttribLocation(pQuad,'aPos'),uv:gl.getAttribLocation(pQuad,'aUV')};
-qU={mvp:gl.getUniformLocation(pQuad,'uMVP'),tex:gl.getUniformLocation(pQuad,'uTex'),
- uvOff:gl.getUniformLocation(pQuad,'uUVOff'),alpha:gl.getUniformLocation(pQuad,'uAlpha')};
-/* dust points */
-pDust=prog(
- 'attribute vec3 aPos;attribute float aSize;attribute float aAlpha;'+
- 'uniform mat4 uV;uniform mat4 uP;varying float vA;'+
- 'void main(){vA=aAlpha;vec4 vp=uV*vec4(aPos,1.);float d=max(0.5,-vp.z);'+
- 'gl_PointSize=aSize/d;gl_Position=uP*vp;}',
- 'precision mediump float;varying float vA;'+
- 'void main(){vec2 q=gl_PointCoord-.5;float m=smoothstep(.5,.06,length(q));'+
- 'gl_FragColor=vec4(1.,.97,.93,m*vA);}');
-dA={pos:gl.getAttribLocation(pDust,'aPos'),size:gl.getAttribLocation(pDust,'aSize'),alpha:gl.getAttribLocation(pDust,'aAlpha')};
-dU={v:gl.getUniformLocation(pDust,'uV'),p:gl.getUniformLocation(pDust,'uP')};
-/* post */
-pPost=prog(
- 'attribute vec2 aPos;varying vec2 vUV;'+
- 'void main(){vUV=aPos*.5+.5;gl_Position=vec4(aPos,0.,1.);}',
- 'precision mediump float;varying vec2 vUV;uniform sampler2D uTex;'+
- 'uniform float uTime,uExposure,uGrain;uniform vec2 uRes;'+
- 'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}'+
- 'void main(){'+
- ' vec3 c=texture2D(uTex,vUV).rgb;'+
- ' c*=uExposure;'+
- ' c=pow(c,vec3(.99,1.,1.035));'+            // faint cool grade
- ' vec2 q=vUV-.5;c*=1.-dot(q,q)*.62;'+        // vignette
- ' c+=(hash(vUV*uRes*.6+fract(uTime)*17.31)-.5)*uGrain;'+ // animated grain
- ' gl_FragColor=vec4(c,1.);}');
-ptA={pos:gl.getAttribLocation(pPost,'aPos')};
-ptU={tex:gl.getUniformLocation(pPost,'uTex'),time:gl.getUniformLocation(pPost,'uTime'),
- exposure:gl.getUniformLocation(pPost,'uExposure'),grain:gl.getUniformLocation(pPost,'uGrain'),
- res:gl.getUniformLocation(pPost,'uRes')};
-
-/* unit quad buffers */
-quadVBO=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,quadVBO);
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-.5,-.5, 0,0,  .5,-.5, 1,0,  -.5,.5, 0,1,  .5,.5, 1,1]),gl.STATIC_DRAW);
-postVBO=gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER,postVBO);
-gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
-}
-
-/* matrices */
-function mPerspective(fov,aspect,near,far){
- const f=1/Math.tan(fov/2),nf=1/(near-far);
- return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0];
-}
-function mLookAt(ex,ey,ez,cx,cy,cz){
- let zx=ex-cx,zy=ey-cy,zz=ez-cz;
- let l=Math.hypot(zx,zy,zz);zx/=l;zy/=l;zz/=l;
- let xx=zy*0-zz*0+ (0*zz-1*zy)*-1; // cross(up=(0,1,0), z)
- // cross((0,1,0),(zx,zy,zz)) = (1*zz-0*zy, 0*zx-0*zz, 0*zy-1*zx)
- xx=zz;let xy=0,xz=-zx;
- l=Math.hypot(xx,xy,xz)||1;xx/=l;xy/=l;xz/=l;
- const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
- return [xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0, -(xx*ex+xy*ey+xz*ez),-(yx*ex+yy*ey+yz*ez),-(zx*ex+zy*ey+zz*ez),1];
-}
-function mMul(a,b){
- const o=new Array(16);
- for(let c=0;c<4;c++)for(let r=0;r<4;r++){
-  o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
- }
- return o;
-}
-function mModel(tx,ty,tz,sx,sy){
- return [sx,0,0,0, 0,sy,0,0, 0,0,1,0, tx,ty,tz,1];
-}
-
-/* FBO for post */
-let fbo=null,fboTex=null,fboDepth=null,fboW=0,fboH=0;
-function ensureFBO(w,h){
- if(fbo&&fboW===w&&fboH===h)return;
- if(fbo){gl.deleteTexture(fboTex);gl.deleteRenderbuffer(fboDepth);gl.deleteFramebuffer(fbo);}
- fboTex=gl.createTexture();
- gl.bindTexture(gl.TEXTURE_2D,fboTex);
- gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_MIN_FILTER,gl.LINEAR);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_MAG_FILTER,gl.LINEAR);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_WRAP_S,gl.CLAMP_TO_EDGE);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_WRAP_T,gl.CLAMP_TO_EDGE);
- fboDepth=gl.createRenderbuffer();
- gl.bindRenderbuffer(gl.RENDERBUFFER,fboDepth);
- gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,w,h);
- fbo=gl.createFramebuffer();
- gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
- gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,fboTex,0);
- gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,fboDepth);
- fboW=w;fboH=h;
- gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-}
-function texFromCanvas(cv,repeat){
- const t=gl.createTexture();
- gl.bindTexture(gl.TEXTURE_2D,t);
- gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,0);
- gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cv);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_MIN_FILTER,gl.LINEAR);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_MAG_FILTER,gl.LINEAR);
- const wv=repeat?gl.REPEAT:gl.CLAMP_TO_EDGE;
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_WRAP_S,wv);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEX_WRAP_T,wv);
- return t;
-}
-
-/* ================= world state ================= */
-const FOV=55*Math.PI/180, TANH=Math.tan(FOV/2);
-
 const state={
  seedStr:'', layout:0, detail:0,
  palette:0, formations:3, trees:.7, mist:.55, drift:.6, glow:.6,
@@ -548,7 +393,6 @@ const state={
 };
 let simT=0, lastNow=0;
 const live={mist:.55,drift:.6,glow:.6};
-
 function parseSeed(s){
  const m=/^SPX1\.([0-9a-z]{4})\.([0-9a-z]{4})\.([0-9a-z]{6})$/i.exec(String(s||'').trim());
  if(!m)return null;
@@ -567,8 +411,6 @@ function seedOf(st){
 function randomSeedStr(){
  return 'SPX1.'+rcN(4)+'.'+rcN(4)+'.'+B36[Math.floor(Math.random()*5)]+rcN(5);
 }
-function applySeed(s){
-
 // ===== CLEAN GL — rebuilt from working logic (strata-test-loop.html) =====
 let gl=null;
 let prog=null, aPos=-1, aUV=-1, uMVP=null, uTex=null, uAlpha=null, uUVOff=null;
@@ -637,7 +479,6 @@ function texFromCanvas(cv,repeat){
  return tx;
 }
 
-
 function mPerspective(fov,aspect,near,far){
  const f=1/Math.tan(fov/2),nf=1/(near-far);
  return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0];
@@ -663,7 +504,6 @@ function mModel(tx,ty,tz,sx,sy){
  return [sx,0,0,0, 0,sy,0,0, 0,0,1,0, tx,ty,tz,1];
 }
 
-// Simplified bakeAll (no dust, no FBO)
 function planeTexW(){
  var isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
  return isMobile?1024:1536;
@@ -678,30 +518,27 @@ function bakeAll(){
  const st={};
  const P=(tag,w,h,fn)=>{const cv=fn();const tx=texFromCanvas(cv,tag==='mist');state.oldTex.push(tx);return {cv,tx,w,h};};
  const sky=P('sky',BW,Math.round(BW/1.9),()=>bakeSky(BW,Math.round(BW/1.9),rngFrom('sky'+state.layout),pal,st));
- const far=P('far',BW,Math.round(BW/1.9),()=>bakeCliffs(BW,Math.round(BW/1.9),rngFrom('far'+state.layout),pal,st,
-   {puffs:2,rings:11,wobble:.3,drape:.5,streaks:.4,detail:.5,haze:.55}));
- const mid=P('mid',BW,Math.round(BW/1.9),()=>bakeCliffs(BW,Math.round(BW/1.9),rngFrom('mid'+state.layout+state.detail),pal,st,
-   {puffs:state.formations,rings:17,wobble:.34,drape:.62,streaks:.75,detail:.8,haze:.3}));
+ const far=P('far',BW,Math.round(BW/1.9),()=>bakeCliffs(BW,Math.round(BW/1.9),rngFrom('far'+state.layout),pal,st,{puffs:2,rings:11,wobble:.3,drape:.5,streaks:.4,detail:.5,haze:.55}));
+ const mid=P('mid',BW,Math.round(BW/1.9),()=>bakeCliffs(BW,Math.round(BW/1.9),rngFrom('mid'+state.layout+state.detail),pal,st,{puffs:state.formations,rings:17,wobble:.34,drape:.62,streaks:.75,detail:.8,haze:.3}));
  const wallSide=rD()<.5?-1:(rD()<.85?1:0);
  const wall=P('wall',BW,Math.round(BW/1.9),()=>bakeWall(BW,Math.round(BW/1.9),rngFrom('wall'+state.detail),pal,st,wallSide,.28));
- const near=P('near',BW,Math.round(BW/1.9),()=>bakeCliffs(BW,Math.round(BW/1.9),rngFrom('near'+state.detail),pal,st,
-   {puffs:state.formations+1,rings:23,wobble:.4,drape:.75,streaks:1,detail:1,haze:.08}));
+ const near=P('near',BW,Math.round(BW/1.9),()=>bakeCliffs(BW,Math.round(BW/1.9),rngFrom('near'+state.detail),pal,st,{puffs:state.formations+1,rings:23,wobble:.4,drape:.75,streaks:1,detail:1,haze:.08}));
  const treesMid=P('treesMid',BW,Math.round(BW/1.9),()=>bakeTrees(BW,Math.round(BW/1.9),rngFrom('tm'+state.layout),pal,st,Math.round(4+state.trees*10),.25,.3));
  const treesNear=P('treesNear',BW,Math.round(BW/1.9),()=>bakeTrees(BW,Math.round(BW/1.9),rngFrom('tn'+state.detail),pal,st,Math.round(3+state.trees*8),.7,.05));
  const moss=P('moss',BW,Math.round(BW/1.35),()=>bakeMoss(BW,Math.round(BW/1.35),rngFrom('moss'+state.layout),pal,st,.05));
  const mist=P('mist',1024,256,()=>bakeMist(1024,256,rngFrom('mist'+state.detail)));
  state.glowX=st.glowX||.5; state.glowY=st.glowY||.2;
  state.planes=[
-  {tag:'sky',      tx:sky.tx,   d:60, mW:1.45, mH:1.3, y:0,    alpha:1,  scroll:0},
-  {tag:'far',      tx:far.tx,   d:42, mW:1.5,  mH:1.3, y:1.2,  alpha:1,  scroll:0},
-  {tag:'mid',      tx:mid.tx,   d:30, mW:1.55, mH:1.3, y:0.6,  alpha:1,  scroll:0},
-  {tag:'wall',     tx:wall.tx,  d:22, mW:1.6,  mH:1.35,y:0,    alpha:1,  scroll:0},
-  {tag:'near',     tx:near.tx,  d:14, mW:1.65, mH:1.35,y:-0.6, alpha:1,  scroll:0},
-  {tag:'mistFar',  tx:mist.tx,  d:17, mW:1.7,  mH:1.0, y:1.8,  alpha:.5, scroll:.004, rep:1},
-  {tag:'treesMid', tx:treesMid.tx,d:11,mW:1.7,  mH:1.3, y:-1.2, alpha:1,  scroll:0},
-  {tag:'treesNear',tx:treesNear.tx,d:8, mW:1.75, mH:1.3,y:-1.6, alpha:1,  scroll:0},
-  {tag:'mistNear', tx:mist.tx,  d:9.5,mW:1.8,  mH:0.9, y:-0.6, alpha:.42,scroll:-.007,rep:1},
-  {tag:'moss',     tx:moss.tx,  d:6,  mW:1.8,  mH:1.0, y:'bottom', alpha:1, scroll:0},
+  {tag:'sky',tx:sky.tx,d:60,mW:1.45,mH:1.3,y:0,alpha:1,scroll:0},
+  {tag:'far',tx:far.tx,d:42,mW:1.5,mH:1.3,y:1.2,alpha:1,scroll:0},
+  {tag:'mid',tx:mid.tx,d:30,mW:1.55,mH:1.3,y:0.6,alpha:1,scroll:0},
+  {tag:'wall',tx:wall.tx,d:22,mW:1.6,mH:1.35,y:0,alpha:1,scroll:0},
+  {tag:'near',tx:near.tx,d:14,mW:1.65,mH:1.35,y:-0.6,alpha:1,scroll:0},
+  {tag:'mistFar',tx:mist.tx,d:17,mW:1.7,mH:1.0,y:1.8,alpha:.5,scroll:.004},
+  {tag:'treesMid',tx:treesMid.tx,d:11,mW:1.7,mH:1.3,y:-1.2,alpha:1,scroll:0},
+  {tag:'treesNear',tx:treesNear.tx,d:8,mW:1.75,mH:1.3,y:-1.6,alpha:1,scroll:0},
+  {tag:'mistNear',tx:mist.tx,d:9.5,mW:1.8,mH:0.9,y:-0.6,alpha:.42,scroll:-.007},
+  {tag:'moss',tx:moss.tx,d:6,mW:1.8,mH:1.0,y:'bottom',alpha:1,scroll:0},
  ];
 }
 
@@ -757,9 +594,6 @@ function render(t){
  }
 }
 
-
-// Simple frame loop (from working test)
-let lastNow=0, simT=0;
 function frame(now){
  requestAnimationFrame(frame);
  if(document.hidden) return;
@@ -769,8 +603,6 @@ function frame(now){
  lastNow=now; simT+=dt;
  try{render(simT);}catch(e){console.error(e);}
 }
-
-// Init
 function applySeed(s){
  const p=parseSeed(s)||parseSeed(randomSeedStr());
  state.layout=p.layout; state.detail=p.detail;
@@ -792,17 +624,13 @@ function applySeed(s){
   }
  },50);
 }
-document.getElementById('newseed').addEventListener('click',function(){
- applySeed(randomSeedStr());
-});
-// Debug
+document.getElementById('newseed').addEventListener('click',function(){applySeed(randomSeedStr());});
 setInterval(function(){
  try{
   var ds=document.getElementById('dbgstat');
-  if(ds&&state.planes) ds.textContent='planes:'+state.planes.length+' '+canvas.width+'x'+canvas.height+' t:'+simT.toFixed(1);
+  if(ds&&state.planes&&state.planes.length) ds.textContent='planes:'+state.planes.length+' '+canvas.width+'x'+canvas.height+' t:'+simT.toFixed(1);
  }catch(e){}
 },2000);
-// Start
 applySeed(randomSeedStr());
 requestAnimationFrame(frame);
 </script>
