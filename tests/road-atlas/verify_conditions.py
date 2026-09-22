@@ -126,7 +126,7 @@ with sync_playwright() as p:
  check('Legacy comparison exact pixel parity with pinned V1',legacy==base.evaluate('worldCanvas.toDataURL()'));base.close();page.close()
  # Actual async boot and touch interaction at phone size.
  page=browser.new_page(viewport={'width':390,'height':844},device_scale_factor=2,is_mobile=True,has_touch=True);page.on('pageerror',lambda e:report['errors'].append(str(e)))
- sources={'vendor/road-atlas-baseline-329a68a.html':baseline.replace('randomSeed:function(){return randomSeedStr();}',"randomSeed:function(){return '"+SEEDS[0]+"';}"),'road-atlas-pipeline.js':module,'road-atlas-conditions.js':conditions,'road-atlas-urban.js':(ROOT/'road-atlas-urban.js').read_text()}
+ sources={'vendor/road-atlas-baseline-329a68a.html':baseline.replace('randomSeed:function(){return randomSeedStr();}',"randomSeed:function(){return '"+SEEDS[0]+"';}"),'road-atlas-pipeline.js':module,'road-atlas-conditions.js':conditions,'road-atlas-urban.js':(ROOT/'road-atlas-urban.js').read_text(),'road-atlas-navigation.js':(ROOT/'road-atlas-navigation.js').read_text()}
  mock='<script>window.fetch=async function(path){const f='+json.dumps(sources).replace('</','<\\/')+';const k=String(path).replace(/^\\.\\//,\'\').split(\'?\')[0];return new Response(f[k]||\'missing\',{status:f[k]?200:404});};</script>'
  boot=(ROOT/'road-atlas-v2.html').read_text().replace('<script>',mock+'<script>',1)
  page.set_content(boot,wait_until='load');page.wait_for_function('world?.conditions && world?.pipeline')
