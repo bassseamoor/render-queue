@@ -23,6 +23,17 @@
     width:min(100vw - 16px, (100vh - 68px) * 1.6);height:auto;touch-action:pan-x pan-y;}
   #err{position:fixed;left:12px;top:60px;z-index:2000;max-width:70vw;display:none;
     background:#5a1d1d;color:#ffd9d9;border:1px solid #a33;border-radius:10px;padding:10px 14px;font-size:13px;}
+  #layersPanel{position:fixed;top:60px;right:12px;z-index:1500;display:none;flex-direction:column;gap:8px;
+    background:rgba(10,12,16,.9);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:12px;min-width:210px;
+    box-shadow:0 12px 40px rgba(0,0,0,.5);color:#e8eaed;font-size:13px;}
+  #layersPanel.open{display:flex;}
+  #layersPanel .ltitle{font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#9fb6c9;}
+  .lchip{display:flex;align-items:center;gap:9px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.05);color:#dfe8fa;border-radius:10px;padding:9px 11px;font-size:13px;cursor:pointer;}
+  .lchip .dot{width:12px;height:12px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.4);}
+  .lchip.on{background:rgba(90,160,220,.22);border-color:rgba(90,160,220,.65);}
+  #layersPanel .legend{font-size:11px;color:#8ba0b3;line-height:1.7;border-top:1px solid rgba(255,255,255,.1);padding-top:8px;}
 </style>
 </head>
 <body>
@@ -31,8 +42,17 @@
   <div class="sub">procedural city road maps</div>
   <div class="spacer"></div>
   <div class="meta" id="genmeta"></div>
+  <button class="tbtn" id="layersBtn" title="Toggle data layers">▦ Layers</button>
   <button class="tbtn" id="shareBtn" title="Copy a link to this exact map">🔗 Share</button>
 </header>
+<div id="layersPanel">
+  <div class="ltitle">Data layers</div>
+  <button class="lchip" data-layer="pop"><span class="dot" style="background:#c9d64a"></span>Population density</button>
+  <button class="lchip" data-layer="acc"><span class="dot" style="background:#3fd4a8"></span>Accessibility</button>
+  <button class="lchip" data-layer="transit"><span class="dot" style="background:#e5484d"></span>Transit lines</button>
+  <button class="lchip" data-layer="pois"><span class="dot" style="background:#4a7fd4"></span>Schools &amp; hospitals</button>
+  <div class="legend">✚ hospital &nbsp;·&nbsp; <span style="color:#7fa8ff">●</span> school<br>Accessibility = network travel cost to city anchors.</div>
+</div>
 <div id="stage"><canvas id="scene" width="1600" height="1000"></canvas></div>
 <div id="err"></div>
 <script>
@@ -45,7 +65,17 @@
    → raster block subdivision → buildings/parks → labels → themes.
    ============================================================ */
 var TAU = Math.PI * 2;
-var WORLD_W = 1600, WORLD_H = 1000;
+/* World extent scales with the City scale control: WEXT = cityScale^3, so the
+   default (1.0) keeps the classic map size while the top end (1.4) renders a
+   world ~2.75x wider — a real city instead of a town. All simulation grids
+   derive their dimensions from WORLD_W/H, which are set in regenerate(). */
+var WORLD_W = 1600, WORLD_H = 1000, WEXT = 1;
+function extentOf(s){ return s<=1?1:1+(s-1)*4.375; }
+/* dynamic grid dimensions (assigned in regenerate before generation) */
+var ACELL = 12.5, ACOLS = 128, AROWS = 80;   // A* cost grid
+var BCELL = 4, BCOLS = 400, BROWS = 250;     // block raster
+var OCCW = 160, OCCH = 100, OCCCELL = 10;   // road occupancy
+var AGW = 40, AGH = 25, AGCELL = 40;         // road-angle lookup
 
 function showErr(msg){
   var e = document.getElementById('err');
@@ -169,7 +199,10 @@ function remixSeedStr(s){
 function buildFields(seedStr){
   var rng = makeRng(seedStr, 'fields');
   var cx = WORLD_W/2, cy = WORLD_H/2;
-  var R = 430 * P.cityScale;
+  // cityScale<=1 shrinks the urban radius inside a full-size world;
+  // cityScale>1 grows the whole world (WEXT) with the radius
+  var cityFactor = P.cityScale<=1 ? P.cityScale : WEXT;
+  var R = 430 * cityFactor;
   var hseed = Math.floor(rng()*1e9), nseed = Math.floor(rng()*1e9);
 
   function heightAt(x,y){
@@ -219,8 +252,8 @@ function buildFields(seedStr){
     return waterDistTo(x,y,river,riverW,lakes);
   }
 
-  /* ---- districts: weighted Voronoi ---- */
-  var nD = Math.round(P.districtCount);
+  /* ---- districts: weighted Voronoi (count grows with world extent) ---- */
+  var nD = Math.min(24, Math.max(3, Math.round(P.districtCount * WEXT)));
   var centers = [];
   function farFromOthers(x,y,minD){
     for (var i=0;i<centers.length;i++)
@@ -286,10 +319,12 @@ function buildFields(seedStr){
     var wd = waterDist(x,y);
     var wNear = clamp(1-Math.abs(wd)/230, 0, 1);    // hug water
     var a3 = fbm(x*0.0011+7.3, y*0.0011+2.1, nseed, 2)*TAU*2; // smooth noise
-    var vx = Math.cos(a1)*0.55 + Math.cos(a1+Math.PI/2)*wNear*0.55 + Math.cos(a3)*0.5;
-    var vy = Math.sin(a1)*0.55 + Math.sin(a1+Math.PI/2)*wNear*0.55 + Math.sin(a3)*0.5;
+    var dd0 = Math.sqrt(dist2(x,y,dtc.x,dtc.y));
+    var wRad = 0.55*clamp(1.25-dd0/Math.max(1,R), 0.3, 1); // radial pull fades at the fringe → organic outskirts
+    var vx = Math.cos(a1)*wRad + Math.cos(a1+Math.PI/2)*wNear*0.55 + Math.cos(a3)*0.5;
+    var vy = Math.sin(a1)*wRad + Math.sin(a1+Math.PI/2)*wNear*0.55 + Math.sin(a3)*0.5;
     var ang = Math.atan2(vy,vx);
-    var dd = Math.sqrt(dist2(x,y,dtc.x,dtc.y));
+    var dd = dd0;
     if (dd < 200){ // downtown grid: snap toward the nearer of two perpendicular axes
       var snap = dAxis + Math.round((ang-dAxis)/(Math.PI/2))*(Math.PI/2);
       var t = 1 - dd/200; t = t*t*(3-2*t);
@@ -416,17 +451,18 @@ function buildMacroGraph(F){
     if (c.kind==='industrial'){ ind=c; addAnchor(c.x,c.y,'industry'); }
     else if (c.kind==='waterfront'){ wfg=c; addAnchor(c.x,c.y,'watergate'); }
     else if (c.kind==='commercial'){ com=c; addAnchor(c.x,c.y,'nhood'); }
-    else if (c.kind==='residential' && anchors.length < 9){ addAnchor(c.x,c.y,'nhood'); }
+    else if (c.kind==='residential' && anchors.length < Math.round(10*Math.sqrt(WEXT))){ addAnchor(c.x,c.y,'nhood'); }
   });
-  // city gates at boundary
-  for (var g=0; g<4; g++){
-    var ga = Math.PI/4 + g*Math.PI/2 + (rng()-0.5)*0.3;
+  // city gates at boundary (more gates for bigger worlds)
+  var ng = Math.max(4, Math.round(4*Math.sqrt(WEXT)));
+  for (var g=0; g<ng; g++){
+    var ga = Math.PI/ng + g*Math.PI*2/ng + (rng()-0.5)*0.3;
     var gx = F.cx+Math.cos(ga)*F.R*1.02, gy = F.cy+Math.sin(ga)*F.R*0.82;
     gx = clamp(gx, 50, WORLD_W-50); gy = clamp(gy, 50, WORLD_H-50);
     addAnchor(gx, gy, 'gate');
   }
-  // sample points
-  var S = Math.round(40*P.cityScale), guard=0;
+  // sample points (area-proportional so density stays constant)
+  var S = Math.round(44*WEXT*WEXT), guard=0;
   while (pts.length < anchors.length+S && guard++ < 900){
     var sa=rng()*TAU, sr=Math.sqrt(rng())*F.R*1.0;
     var sx=F.cx+Math.cos(sa)*sr, sy=F.cy+Math.sin(sa)*sr*0.8;
@@ -461,22 +497,13 @@ function buildMacroGraph(F){
   var adj=[]; for (var ai=0;ai<n;ai++) adj.push([]);
   mstEdges.forEach(function(e){ adj[e.a].push({to:e.b,len:e.len}); adj[e.b].push({to:e.a,len:e.len}); });
   function mstDist(s,t){
-    var dd=new Array(n).fill(1e18); dd[s]=0;
-    var vis=new Array(n).fill(false);
-    for (var it=0;it<n;it++){
-      var u=-1,best=1e18;
-      for (var v=0;v<n;v++) if(!vis[v]&&dd[v]<best){best=dd[v];u=v;}
-      if(u<0||u===t)break; vis[u]=true;
-      for (var k=0;k<adj[u].length;k++){ var nb=adj[u][k];
-        if(dd[u]+nb.len<dd[nb.to]) dd[nb.to]=dd[u]+nb.len; }
-    }
-    return dd[t];
+    return dijkstraHeap(adj, s)[t];
   }
   // loop edges: short Delaunay edges that create small detours
   var nonMST = edges.filter(function(e){ return !e.inMST; })
     .sort(function(x,y){ return x.len-y.len; });
-  var added=0;
-  for (var li2=0;li2<nonMST.length && added<10; li2++){
+  var added=0, maxLoops=Math.round(10*Math.sqrt(WEXT));
+  for (var li2=0;li2<nonMST.length && added<maxLoops; li2++){
     var le=nonMST[li2];
     var md=mstDist(le.a,le.b);
     if (md < 1e17 && le.len/md < 1.42){ le.inLoop=true; added++; }
@@ -492,18 +519,7 @@ function buildMacroGraph(F){
   graphEdges.forEach(function(e,i){ e.gi=i;
     gAdj[e.a].push({to:e.b,e:i,len:e.len}); gAdj[e.b].push({to:e.a,e:i,len:e.len}); });
   function dijkstraPath(s,t){
-    var dd=new Array(n).fill(1e18), prev=new Array(n).fill(-1), preve=new Array(n).fill(-1);
-    dd[s]=0; var vis=new Array(n).fill(false);
-    for (var it=0;it<n;it++){
-      var u=-1,best=1e18;
-      for (var v=0;v<n;v++) if(!vis[v]&&dd[v]<best){best=dd[v];u=v;}
-      if(u<0||u===t)break; vis[u]=true;
-      for (var k=0;k<gAdj[u].length;k++){ var nb=gAdj[u][k];
-        if(dd[u]+nb.len<dd[nb.to]){ dd[nb.to]=dd[u]+nb.len; prev[nb.to]=u; preve[nb.to]=nb.e; } }
-    }
-    var path=[], cur=t, guard2=0;
-    while(cur!==s && cur>=0 && guard2++<n+5){ path.push(preve[cur]); cur=prev[cur]; }
-    return path;
+    return dijkstraPathHeap(gAdj, s, t);
   }
   for (var i1=0;i1<anchorIdx.length;i1++)
     for (var i2=i1+1;i2<anchorIdx.length;i2++){
@@ -511,8 +527,8 @@ function buildMacroGraph(F){
       for (var q3=0;q3<path.length;q3++) usage[path[q3]]=(usage[path[q3]]||0)+1;
     }
   var ranked = graphEdges.slice().sort(function(a,b){ return (usage[b.gi]||0)-(usage[a.gi]||0); });
-  var nArt = Math.min(ranked.length, Math.round(P.arterialCount)*3);
-  var nRoute = Math.min(ranked.length, nArt+14); // arterials + key collectors only
+  var nArt = Math.min(ranked.length, Math.round(P.arterialCount*3*Math.sqrt(WEXT)));
+  var nRoute = Math.min(ranked.length, nArt+Math.round(14*Math.sqrt(WEXT))); // arterials + key collectors only
   for (var ri=0;ri<ranked.length;ri++){
     ranked[ri].cls = ri<nArt ? 2 : 1; // 2 arterial, 1 collector
     ranked[ri].route = ri<nRoute;
@@ -522,6 +538,74 @@ function buildMacroGraph(F){
 }
 
 function angDiff(a,b){ var d=(b-a)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+
+/* binary-heap Dijkstra over adjacency lists of {to,len} — returns dist array */
+function dijkstraHeap(adj, s){
+  var n=adj.length;
+  var dist=new Float64Array(n).fill(1e18);
+  dist[s]=0;
+  var hk=[s], hv=[0]; // heap of node ids keyed by dist
+  function push(i){
+    hk.push(i); hv.push(dist[i]);
+    var k=hk.length-1;
+    while(k>0){ var p=(k-1)>>1; if(hv[p]<=hv[k])break;
+      var t=hk[p];hk[p]=hk[k];hk[k]=t; var t2=hv[p];hv[p]=hv[k];hv[k]=t2; k=p; }
+  }
+  function pop(){
+    var top=hk[0], li=hk.length-1;
+    hk[0]=hk[li]; hv[0]=hv[li]; hk.pop(); hv.pop();
+    var k=0;
+    for(;;){ var l=2*k+1, r=l+1, m=k;
+      if(l<hk.length&&hv[l]<hv[m])m=l; if(r<hk.length&&hv[r]<hv[m])m=r;
+      if(m===k)break;
+      var t=hk[m];hk[m]=hk[k];hk[k]=t; var t2=hv[m];hv[m]=hv[k];hv[k]=t2; k=m; }
+    return top;
+  }
+  var settled=new Uint8Array(n);
+  push(s);
+  while(hk.length){
+    var u=pop();
+    if(settled[u])continue; settled[u]=1;
+    var du=dist[u], nb=adj[u];
+    for(var k=0;k<nb.length;k++){
+      var v=nb[k].to, nd=du+nb[k].len;
+      if(nd<dist[v]){ dist[v]=nd; push(v); }
+    }
+  }
+  return dist;
+}
+/* heap Dijkstra returning the edge-index path s→t (for anchor betweenness) */
+function dijkstraPathHeap(gAdj, s, t){
+  var n=gAdj.length;
+  var dist=new Float64Array(n).fill(1e18);
+  var prev=new Int32Array(n).fill(-1), preve=new Int32Array(n).fill(-1);
+  dist[s]=0;
+  var hk=[s], hv=[0];
+  function push(i){ hk.push(i); hv.push(dist[i]); var k=hk.length-1;
+    while(k>0){ var p=(k-1)>>1; if(hv[p]<=hv[k])break;
+      var t=hk[p];hk[p]=hk[k];hk[k]=t; var t2=hv[p];hv[p]=hv[k];hv[k]=t2; k=p; } }
+  function pop(){ var top=hk[0], li=hk.length-1;
+    hk[0]=hk[li]; hv[0]=hv[li]; hk.pop(); hv.pop();
+    var k=0; for(;;){ var l=2*k+1, r=l+1, m=k;
+      if(l<hk.length&&hv[l]<hv[m])m=l; if(r<hk.length&&hv[r]<hv[m])m=r;
+      if(m===k)break; var t=hk[m];hk[m]=hk[k];hk[k]=t; var t2=hv[m];hv[m]=hv[k];hv[k]=t2; k=m; }
+    return top; }
+  var settled=new Uint8Array(n);
+  push(s);
+  while(hk.length){
+    var u=pop();
+    if(settled[u])continue; settled[u]=1;
+    if(u===t)break;
+    var du=dist[u], nb=gAdj[u];
+    for(var k=0;k<nb.length;k++){
+      var e=nb[k], v=e.to, nd=du+e.len;
+      if(nd<dist[v]){ dist[v]=nd; prev[v]=u; preve[v]=e.e; push(v); }
+    }
+  }
+  var path=[], cur=t, guard=0;
+  while(cur!==s && cur>=0 && guard++<n+5){ path.push(preve[cur]); cur=prev[cur]; }
+  return path;
+}
 
 /* ============================================================
    COST FIELD + A* routing on a coarse grid
@@ -627,9 +711,15 @@ function resample(pts, ds){
   out.push({x:pts[pts.length-1].x, y:pts[pts.length-1].y});
   return out;
 }
-// clothoid-like: limit turning angle per step, 2 passes
+// clothoid-like: limit turning angle per step, 2 passes.
+// Segment lengths are measured UP FRONT from the unmoved polyline: measuring
+// them after moving points lets hairpins (≈180° turns) compound into a
+// runaway — each step's length is read off an already-displaced point.
 function clampCurvature(pts, maxTurnDeg){
   var maxT=maxTurnDeg*Math.PI/180;
+  var L0=new Array(Math.max(0,pts.length-1));
+  for(var k=0;k<pts.length-1;k++)
+    L0[k]=Math.sqrt(dist2(pts[k].x,pts[k].y,pts[k+1].x,pts[k+1].y));
   for(var pass=0;pass<2;pass++){
     if(pts.length<3)break;
     var dx=pts[1].x-pts[0].x, dy=pts[1].y-pts[0].y;
@@ -638,9 +728,8 @@ function clampCurvature(pts, maxTurnDeg){
       var want=Math.atan2(pts[i+1].y-pts[i].y, pts[i+1].x-pts[i].x);
       var turn=angDiff(heading,want);
       var use=heading+clamp(turn,-maxT,maxT);
-      var L=Math.sqrt(dist2(pts[i].x,pts[i].y,pts[i+1].x,pts[i+1].y));
-      pts[i+1].x=pts[i].x+Math.cos(use)*L;
-      pts[i+1].y=pts[i].y+Math.sin(use)*L;
+      pts[i+1].x=pts[i].x+Math.cos(use)*L0[i];
+      pts[i+1].y=pts[i].y+Math.sin(use)*L0[i];
       heading=use;
     }
   }
@@ -653,21 +742,52 @@ function clampCurvature(pts, maxTurnDeg){
 function routeRoads(F, G){
   var cost=buildCostGrid(F);
   var roads=[]; // {pts, cls, bridges:[{x,y}], name}
-  var occ=new Uint8Array(160*100); // 10px occupancy
+  var occ=new Uint8Array(OCCW*OCCH); // OCCCELL-px occupancy
   function occMark(x,y,cls){
-    var gx=clamp(Math.floor(x/10),0,159), gy=clamp(Math.floor(y/10),0,99);
-    occ[gy*160+gx]=Math.max(occ[gy*160+gx], cls+1);
+    var gx=clamp(Math.floor(x/OCCCELL),0,OCCW-1), gy=clamp(Math.floor(y/OCCCELL),0,OCCH-1);
+    var i=gy*OCCW+gx;
+    if(cls+1>occ[i])occ[i]=cls+1;
   }
   function occNear(x,y,r){
-    var r2=r/10, gx=Math.floor(x/10), gy=Math.floor(y/10);
-    for(var j=Math.max(0,gy-Math.ceil(r2));j<=Math.min(99,gy+Math.ceil(r2));j++)
-      for(var i=Math.max(0,gx-Math.ceil(r2));i<=Math.min(159,gx+Math.ceil(r2));i++)
-        if(occ[j*160+i])return true;
+    var rr=r/OCCCELL, gx=Math.floor(x/OCCCELL), gy=Math.floor(y/OCCCELL);
+    var rc=Math.ceil(rr);
+    for(var j=Math.max(0,gy-rc);j<=Math.min(OCCH-1,gy+rc);j++)
+      for(var i=Math.max(0,gx-rc);i<=Math.min(OCCW-1,gx+rc);i++)
+        if(occ[j*OCCW+i])return true;
     return false;
   }
   var maxTurn={2:7, 1:11, 0:P.curvatureLimit};
+  // grand arterials: dedicated long corridors between far-apart anchors, so the
+  // arterial network reads as sweeping cross-city routes rather than short stubs
+  (function grandArterials(){
+    var gates=G.anchors.filter(function(a){return a.role==='gate';});
+    if(!gates.length)return;
+    var dt=F.downtown;
+    var gs=gates.slice().sort(function(p,q){
+      return Math.atan2(p.y-dt.y,p.x-dt.x)-Math.atan2(q.y-dt.y,q.x-dt.x);});
+    var pairs=[[dt,gs[0]]];
+    if(gs.length>1)pairs.push([gs[0],gs[gs.length-1]]);
+    if(gs.length>2)pairs.push([dt,gs[Math.floor(gs.length/2)]]);
+    var nG=WEXT>1.5?3:2;
+    for(var gi=0;gi<Math.min(nG,pairs.length);gi++){
+      var A=pairs[gi][0], B=pairs[gi][1];
+      if(Math.sqrt(dist2(A.x,A.y,B.x,B.y))<F.R*0.9)continue; // must be a long corridor
+      var gpath=astar(cost,A.x/ACELL,A.y/ACELL,B.x/ACELL,B.y/ACELL);
+      var gpts;
+      if(gpath&&gpath.length>2)gpts=gpath;
+      else gpts=[{x:A.x,y:A.y},{x:(A.x+B.x)/2,y:(A.y+B.y)/2},{x:B.x,y:B.y}];
+      gpts=chaikin(gpts,2); gpts=resample(gpts,10); clampCurvature(gpts,maxTurn[2]);
+      var gbr=[];
+      for(var bi=0;bi<gpts.length;bi++)
+        if(F.waterDist(gpts[bi].x,gpts[bi].y)<-4)gbr.push({x:gpts[bi].x,y:gpts[bi].y});
+      roads.push({pts:gpts,cls:2,bridges:gbr,a:-1,b:-1});
+      for(var gm=0;gm<gpts.length;gm++)occMark(gpts[gm].x,gpts[gm].y,2);
+    }
+  })();
   G.edges.forEach(function(e){
     if(!e.route)return; // only important macro edges become roads
+    var a=G.pts[e.a], b=G.pts[e.b];
+    var path=astar(cost, a.x/ACELL, a.y/ACELL, b.x/ACELL, b.y/ACELL);
     var a=G.pts[e.a], b=G.pts[e.b];
     var path=astar(cost, a.x/ACELL, a.y/ACELL, b.x/ACELL, b.y/ACELL);
     var pts;
@@ -685,9 +805,11 @@ function routeRoads(F, G){
 
   // district street grids first (block-forming fabric), then organic streamlines
   buildDistrictGrids(F,roads,occMark);
-  // local streets: tensor-field streamlines (dense fabric → city blocks)
+  // local streets: tensor-field streamlines (organic accents over the district grids).
+  // Count grows sub-quadratically and walks are capped — long radial scribbles
+  // killed the look at city scale, so streamlines stay short and the grids do the fabric work.
   var rng=makeRng(state.seed,'locals');
-  var M=Math.round(36*P.roadDensity*P.cityScale);
+  var M=Math.round(22*P.roadDensity*Math.pow(WEXT,1.5));
   for(var s=0;s<M;s++){
     for(var att=0;att<24;att++){
       var sa=rng()*TAU, sr=Math.sqrt(rng())*F.R*0.98;
@@ -696,7 +818,7 @@ function routeRoads(F, G){
       var ndirs=(rng()<0.65)?2:1;
       for(var dd2=0;dd2<ndirs;dd2++){
         var baseA=F.tensorAngle(sx,sy)+(dd2?Math.PI/2:0);
-        var line=growStreamline(F,occ,sx,sy,baseA);
+        var line=growStreamline(F,occ,sx,sy,baseA,34);
         if(line&&line.length>=11){
           line=chaikin(line,1); line=resample(line,10); clampCurvature(line,P.curvatureLimit);
           roads.push({pts:line, cls:0, bridges:[], a:-1, b:-1});
@@ -704,6 +826,23 @@ function routeRoads(F, G){
         }
       }
       break;
+    }
+  }
+  // gap-fill pass: hunt for roadless pockets and seed short connectors so the
+  // map fills edge-to-edge instead of leaving dead zones between fabrics
+  var GF=Math.round(46*WEXT*WEXT), gfDone=0;
+  for(var gf=0;gf<GF&&gfDone<Math.round(30*WEXT*WEXT);gf++){
+    var ga2=rng()*TAU, gr=Math.sqrt(rng())*F.R*1.02;
+    var gx2=F.cx+Math.cos(ga2)*gr, gy2=F.cy+Math.sin(ga2)*gr*0.82;
+    if(gx2<40||gx2>WORLD_W-40||gy2<40||gy2>WORLD_H-40)continue;
+    if(F.waterDist(gx2,gy2)<30)continue;
+    if(occNear(gx2,gy2,52))continue; // already served
+    var gline=growStreamline(F,occ,gx2,gy2,F.tensorAngle(gx2,gy2),30);
+    if(gline&&gline.length>=8){
+      gline=chaikin(gline,1); gline=resample(gline,10); clampCurvature(gline,P.curvatureLimit);
+      roads.push({pts:gline, cls:0, bridges:[], a:-1, b:-1});
+      for(var m3=0;m3<gline.length;m3++)occMark(gline[m3].x,gline[m3].y,0);
+      gfDone++;
     }
   }
   return {roads:roads, occNear:occNear};
@@ -748,7 +887,7 @@ function buildDistrictGrids(F,roads,occMark){
     var mnd=1e9;
     for(var j=0;j<n;j++){ if(j===i)continue;
       mnd=Math.min(mnd,Math.hypot(D.x-C[j].x,D.y-C[j].y)); }
-    var E=clamp(mnd*0.55,170,F.R*0.95);
+    var E=clamp(mnd*0.55,170,Math.min(F.R*0.95,560));
     if(E<150)continue;
     var theta=F.tensorAngle(D.x,D.y)+(rng()-0.5)*0.6;
     var s=clamp(96/Math.max(0.4,P.roadDensity),64,150);
@@ -817,11 +956,12 @@ function buildDistrictGrids(F,roads,occMark){
     }
   }
 }
-function growStreamline(F,occ,sx,sy,baseA){
+function growStreamline(F,occ,sx,sy,baseA,maxSteps){
   var fwd=[], bwd=[];
+  var STEPS=maxSteps||55;
   function walk(x,y,dir,arr){
     var px=x, py=y, ang=dir, near=0;
-    for(var i=0;i<55;i++){
+    for(var i=0;i<STEPS;i++){
       var ta=F.tensorAngle(px,py);
       var d=angDiff(ang,ta);
       ang+=clamp(d,-0.5,0.5);
@@ -832,11 +972,11 @@ function growStreamline(F,occ,sx,sy,baseA){
       if(dcx2*dcx2+dcy2*dcy2>F.R*F.R*1.25)break;
       arr.push({x:px,y:py});
       // proximity to existing roads
-      var gx=clamp(Math.floor(px/10),0,159), gy=clamp(Math.floor(py/10),0,99);
+      var gx=clamp(Math.floor(px/OCCCELL),0,OCCW-1), gy=clamp(Math.floor(py/OCCCELL),0,OCCH-1);
       var hit=false;
-      for(var j=Math.max(0,gy-2);j<=Math.min(99,gy+2)&&!hit;j++)
-        for(var ii=Math.max(0,gx-2);ii<=Math.min(159,gx+2);ii++)
-          if(occ[j*160+ii]){hit=true;break;}
+      for(var j=Math.max(0,gy-2);j<=Math.min(OCCH-1,gy+2)&&!hit;j++)
+        for(var ii=Math.max(0,gx-2);ii<=Math.min(OCCW-1,gx+2);ii++)
+          if(occ[j*OCCW+ii]){hit=true;break;}
       if(hit){ near++; if(near>=3&&arr.length>6)break; } else near=0;
     }
   }
@@ -912,12 +1052,11 @@ function buildIntersections(roads){
 }
 
 /* ============================================================
-   BLOCKS — raster planar subdivision → erode → pack buildings
+   BLOCKS — raster planar subdivision → erode → parcel subdivision
    ============================================================ */
-var BCELL=4, BCOLS=400, BROWS=250;
 function buildBlocks(F, routed){
   var mask=new Uint8Array(BCOLS*BROWS); // 1 = blocked (road/water)
-  var angGrid=new Float32Array(40*25).fill(999); // nearest road angle, 40px cells
+  var angGrid=new Float32Array(AGW*AGH).fill(999); // nearest road angle
   function stamp(x,y,rad,ang){
     var gx=Math.floor(x/BCELL), gy=Math.floor(y/BCELL), gr=Math.ceil(rad/BCELL);
     for(var j=Math.max(0,gy-gr);j<=Math.min(BROWS-1,gy+gr);j++)
@@ -926,8 +1065,8 @@ function buildBlocks(F, routed){
         if(dx*dx+dy*dy<rad*rad)mask[j*BCOLS+i]=1;
       }
     if(ang!=null){
-      var ax=clamp(Math.floor(x/40),0,39), ay=clamp(Math.floor(y/40),0,24);
-      angGrid[ay*40+ax]=ang;
+      var ax=clamp(Math.floor(x/AGCELL),0,AGW-1), ay=clamp(Math.floor(y/AGCELL),0,AGH-1);
+      angGrid[ay*AGW+ax]=ang;
     }
   }
   var RW={2:15,1:11,0:8};
@@ -938,10 +1077,21 @@ function buildBlocks(F, routed){
       stamp(p.x,p.y,w,Math.atan2(q.y-p.y,q.x-p.x));
     }
   });
-  // water blocked
-  for(var wy=0;wy<BROWS;wy++)for(var wx=0;wx<BCOLS;wx++){
-    if(F.waterDist(wx*BCELL+2,wy*BCELL+2)<2)mask[wy*BCOLS+wx]=1;
+  // water → blocked, via stamping (far cheaper than per-cell waterDist)
+  if(F.river&&F.river.length>1){
+    for(var ri=0;ri<F.river.length;ri++)
+      stamp(F.river[ri].x,F.river[ri].y,F.riverW/2+4,null);
   }
+  F.lakes.forEach(function(L){
+    var x0=clamp(Math.floor((L.x-L.rx-6)/BCELL),0,BCOLS-1), x1=clamp(Math.ceil((L.x+L.rx+6)/BCELL),0,BCOLS-1);
+    var y0=clamp(Math.floor((L.y-L.ry-6)/BCELL),0,BROWS-1), y1=clamp(Math.ceil((L.y+L.ry+6)/BCELL),0,BROWS-1);
+    var ca=Math.cos(-L.rot), sa=Math.sin(-L.rot);
+    for(var yy=y0;yy<=y1;yy++)for(var xx=x0;xx<=x1;xx++){
+      var dx=xx*BCELL+2-L.x, dy=yy*BCELL+2-L.y;
+      var ex=(dx*ca-dy*sa)/(L.rx+5), ey=(dx*sa+dy*ca)/(L.ry+5);
+      if(ex*ex+ey*ey<1)mask[yy*BCOLS+xx]=1;
+    }
+  });
   // flood fill outside from borders
   var out=new Uint8Array(BCOLS*BROWS);
   var q=[];
@@ -1024,17 +1174,20 @@ function buildBlocks(F, routed){
     return true;
   }
   function roadAngleAt(x,y){
-    var ax=clamp(Math.floor(x/40),0,39), ay=clamp(Math.floor(y/40),0,24);
+    var ax=clamp(Math.floor(x/AGCELL),0,AGW-1), ay=clamp(Math.floor(y/AGCELL),0,AGH-1);
     var best=999, bd=1e9;
-    for(var j=Math.max(0,ay-1);j<=Math.min(24,ay+1);j++)
-      for(var i=Math.max(0,ax-1);i<=Math.min(39,ax+1);i++){
-        var a=angGrid[j*40+i];
+    for(var j=Math.max(0,ay-1);j<=Math.min(AGH-1,ay+1);j++)
+      for(var i=Math.max(0,ax-1);i<=Math.min(AGW-1,ax+1);i++){
+        var a=angGrid[j*AGW+i];
         if(a<900){ var d=(i-ax)*(i-ax)+(j-ay)*(j-ay); if(d<bd){bd=d;best=a;} }
       }
     return best;
   }
-  var PARCEL={downtown:0.62,commercial:0.85,residential:1.0,waterfront:1.05,industrial:1.9,park:1.4};
-  var BHGT={downtown:22,commercial:14,residential:8,waterfront:9,industrial:7,park:0};
+  /* parcel granularity per district (quadtree-style): downtown subdivides
+     deep into fine parcels, suburbs/industry stay coarse */
+  var SUBD={downtown:4,commercial:3,residential:3,waterfront:3,industrial:2,park:0};
+  var BHGT={downtown:26,commercial:15,residential:8,waterfront:9,industrial:7,park:0};
+  var MAXBLD=9000;
   blocks.forEach(function(b){
     var d=F.districtAt(b.cx,b.cy);
     var kind=d?d.kind:'residential';
@@ -1060,20 +1213,65 @@ function buildBlocks(F, routed){
       parks.push({cells:inner.length?inner:b.cells, cx:b.cx, cy:b.cy, kind:kind});
       return;
     }
-    var pf=PARCEL[kind]||1;
-    var tries=Math.min(70,Math.round(inner.length/700*P.buildingDensity)+6);
-    var placed=0;
-    for(var t3=0;t3<tries&&placed<44;t3++){
-      var cell=inner[Math.floor(rng()*inner.length)];
-      var px2=(cell%BCOLS)*BCELL+2, py2=((cell/BCOLS)|0)*BCELL+2;
-      var ra=roadAngleAt(px2,py2);
-      var ang=ra<900?ra+ (rng()<0.12?Math.PI/2:0) : rng()*Math.PI;
-      ang=Math.round(ang/(Math.PI/12))*(Math.PI/12); // snap 15°
-      var w=(15+rng()*27)*pf, h=(13+rng()*22)*pf;
-      if(kind==='industrial'){w*=1.5;h*=1.4;}
-      var rect={cx:px2,cy:py2,w:Math.min(w,90),h:Math.min(h,70),ang:ang,
-        hgt:BHGT[kind]*(0.7+rng()*0.6), shade:Math.floor(rng()*4), kind:kind};
-      if(tryPlace(rect)){buildings.push(rect);placed++;}
+    // guillotine parcel subdivision in the block's street-aligned frame
+    var ra0=roadAngleAt(b.cx,b.cy);
+    var ang0=ra0<900?ra0:rng()*Math.PI;
+    ang0=Math.round(ang0/(Math.PI/12))*(Math.PI/12); // snap 15°
+    var ca0=Math.cos(ang0), sa0=Math.sin(ang0);
+    var innerSet=new Set(inner);
+    function toLocal(px,py){ var dx=px-b.cx, dy=py-b.cy; return [dx*ca0+dy*sa0, -dx*sa0+dy*ca0]; }
+    function toWorld(lx,ly){ return [b.cx+lx*ca0-ly*sa0, b.cy+lx*sa0+ly*ca0]; }
+    var lx0=1e9,ly0=1e9,lx1=-1e9,ly1=-1e9;
+    for(var ci0=0;ci0<inner.length;ci0++){
+      var c0=inner[ci0];
+      var lp=toLocal((c0%BCOLS)*BCELL+2, ((c0/BCOLS)|0)*BCELL+2);
+      if(lp[0]<lx0)lx0=lp[0]; if(lp[1]<ly0)ly0=lp[1];
+      if(lp[0]>lx1)lx1=lp[0]; if(lp[1]>ly1)ly1=lp[1];
+    }
+    var parcels=[];
+    var maxDepth=SUBD[kind]!=null?SUBD[kind]:3;
+    (function subdiv(x0,y0,x1,y1,depth){
+      var w=x1-x0, h=y1-y0;
+      if(depth<=0||Math.min(w,h)<30||w*h<2400||parcels.length>64){ parcels.push([x0,y0,x1,y1]); return; }
+      var cut=0.38+rng()*0.24;
+      if(w>=h){ var sx=x0+w*cut; subdiv(x0,y0,sx,y1,depth-1); subdiv(sx,y0,x1,y1,depth-1); }
+      else { var sy=y0+h*cut; subdiv(x0,y0,x1,sy,depth-1); subdiv(x0,sy,x1,y1,depth-1); }
+    })(lx0,ly0,lx1,ly1,maxDepth);
+    for(var pi=0;pi<parcels.length&&buildings.length<MAXBLD;pi++){
+      var pr=parcels[pi], pw=pr[2]-pr[0], ph=pr[3]-pr[1];
+      if(pw<14||ph<12)continue;
+      var inside=0; // keep parcels mostly inside the eroded block
+      for(var sy4=1;sy4<=3;sy4++)for(var sx4=1;sx4<=3;sx4++){
+        var wp4=toWorld(pr[0]+pw*sx4/4, pr[1]+ph*sy4/4);
+        var gx4=clamp(Math.floor(wp4[0]/BCELL),0,BCOLS-1), gy4=clamp(Math.floor(wp4[1]/BCELL),0,BROWS-1);
+        if(innerSet.has(gy4*BCOLS+gx4))inside++;
+      }
+      if(inside<5)continue;
+      if(rng()>P.buildingDensity*0.92+0.08)continue;
+      var ccx=(pr[0]+pr[2])/2, ccy=(pr[1]+pr[3])/2;
+      var wpt=toWorld(ccx,ccy);
+      var mrg=3.5;
+      var bw=Math.max(8,pw-mrg*2), bh=Math.max(7,ph-mrg*2);
+      var hgt=BHGT[kind]*(0.65+rng()*0.7);
+      if(kind==='downtown'&&rng()<0.18)hgt*=1.7; // towers
+      var sub=null, roll=rng();
+      if(kind==='industrial'){ sub=[{dx:0,dy:0,w:bw*0.94,h:bh*0.94}]; }
+      else if(roll<0.16){ // L-shaped footprint
+        var w2=bw*(0.45+rng()*0.2), h2=bh*(0.45+rng()*0.2);
+        sub=[{dx:-bw*0.18,dy:0,w:bw*0.64,h:bh},
+             {dx:bw/2-w2/2,dy:-bh/2+h2/2,w:w2,h:h2}];
+      }
+      else if(roll<0.34&&kind!=='downtown'){ // rowhouse strip
+        var n2=2+Math.floor(rng()*2), uw=bw/n2;
+        sub=[];
+        for(var u=0;u<n2;u++)sub.push({dx:-bw/2+uw*(u+0.5),dy:(rng()-0.5)*bh*0.08,w:uw-2.5,h:bh*(0.9+rng()*0.08)});
+      }
+      else { // single rect, jittered inside its parcel
+        var jw=bw*(0.72+rng()*0.26), jh=bh*(0.72+rng()*0.26);
+        sub=[{dx:(rng()-0.5)*(bw-jw),dy:(rng()-0.5)*(bh-jh),w:jw,h:jh}];
+      }
+      buildings.push({cx:wpt[0],cy:wpt[1],w:bw,h:bh,ang:ang0,hgt:hgt,
+        shade:Math.floor(rng()*4),kind:kind,sub:sub});
     }
   });
   // street-fronting buildings: line the local streets so the urban fabric
@@ -1113,8 +1311,9 @@ function buildBlocks(F, routed){
         if(!ok)continue;
         var d=F.districtAt(bx,by); var kind=d?d.kind:'residential';
         var rect={cx:bx,cy:by,w:w,h:h,ang:ba,
-          hgt:BHGT[kind]*(0.7+rng()*0.6),shade:Math.floor(rng()*4),kind:kind};
-        if(tryPlace(rect))buildings.push(rect);
+          hgt:BHGT[kind]*(0.7+rng()*0.6),shade:Math.floor(rng()*4),kind:kind,
+          sub:[{dx:0,dy:0,w:w,h:h}]};
+        if(buildings.length<MAXBLD&&tryPlace(rect))buildings.push(rect);
       }
     }
   });
@@ -1148,6 +1347,140 @@ function buildNames(F, roads){
     return {x:mid.x,y:mid.y,ang:Math.atan2(q.y-mid.y,q.x-mid.x),name:STREET_NAMES[i%STREET_NAMES.length]};
   });
   return {districts:districts, streets:streets};
+}
+
+/* ============================================================
+   DATA LAYERS — population heat, accessibility heat, POIs, transit
+   All derived from the same seeded model; visibility is a pure
+   render toggle (not part of the seed).
+   ============================================================ */
+var LAYW=110;
+function buildLayers(F, G, world){
+  var rng=makeRng(state.seed,'layers');
+  var LW=LAYW, LH=Math.max(40,Math.round(LAYW*WORLD_H/WORLD_W));
+  var cw=WORLD_W/LW, ch=WORLD_H/LH;
+
+  /* --- macro-graph adjacency for network distances --- */
+  var n=G.pts.length, adj=[];
+  for(var i=0;i<n;i++)adj.push([]);
+  G.edges.forEach(function(e){
+    var a=G.pts[e.a], b=G.pts[e.b];
+    var len=Math.sqrt(dist2(a.x,a.y,b.x,b.y));
+    adj[e.a].push({to:e.b,len:len}); adj[e.b].push({to:e.a,len:len});
+  });
+  var anchorPts=[];
+  for(var pi=0;pi<n;pi++)if(G.pts[pi].anchor!=null)anchorPts.push(pi);
+  var anchorDist=anchorPts.map(function(s){ return dijkstraHeap(adj,s); });
+
+  /* --- population: demand field + noise, focused on downtown --- */
+  var pop=new Float32Array(LW*LH), pmax=1e-6;
+  for(var ry=0;ry<LH;ry++)for(var rx=0;rx<LW;rx++){
+    var x=(rx+0.5)*cw, y=(ry+0.5)*ch;
+    var dem=F.demandOf(x,y);
+    var dc=Math.sqrt(dist2(x,y,F.cx,F.cy))/Math.max(1,F.R);
+    var v=dem*(0.45+0.55*fbm(x*0.004,y*0.004,F.nseed+7,3))*Math.max(0,1-dc*dc*0.85);
+    if(F.waterDist(x,y)<4)v=0;
+    pop[ry*LW+rx]=v; if(v>pmax)pmax=v;
+  }
+  for(var k=0;k<pop.length;k++)pop[k]/=pmax;
+
+  /* --- accessibility: min network travel cost to any anchor --- */
+  var acc=new Float32Array(LW*LH), amax=1e-6;
+  for(var ay=0;ay<LH;ay++)for(var ax=0;ax<LW;ax++){
+    var px=(ax+0.5)*cw, py=(ay+0.5)*ch;
+    var best=1e18, bd=1e18;
+    for(var q=0;q<n;q++){
+      var d2=dist2(px,py,G.pts[q].x,G.pts[q].y);
+      if(d2<bd){bd=d2;best=q;}
+    }
+    var be=Math.sqrt(bd), mn=1e18;
+    for(var a2=0;a2<anchorPts.length;a2++){
+      var dd=anchorDist[a2][best];
+      if(dd<mn)mn=dd;
+    }
+    var v2=(mn>1e17?be*4:mn+be);
+    acc[ay*LW+ax]=v2; if(v2>amax)amax=v2;
+  }
+  // invert + normalize + one box-blur pass
+  var accN=new Float32Array(LW*LH);
+  for(var k2=0;k2<acc.length;k2++)accN[k2]=1-clamp(acc[k2]/amax,0,1);
+  var blur=new Float32Array(LW*LH);
+  for(var by2=0;by2<LH;by2++)for(var bx2=0;bx2<LW;bx2++){
+    var s2=0,c2=0;
+    for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){
+      var nx=bx2+ox, ny=by2+oy;
+      if(nx<0||ny<0||nx>=LW||ny>=LH)continue;
+      s2+=accN[ny*LW+nx]; c2++;
+    }
+    blur[by2*LW+bx2]=s2/c2;
+  }
+
+  /* --- POIs: hospitals near downtown/commercial, schools in residential --- */
+  var pois=[];
+  function landSpot(nearX,nearY,rad){
+    for(var t=0;t<60;t++){
+      var a=rng()*TAU, rr=(0.3+rng()*0.7)*rad;
+      var x=nearX+Math.cos(a)*rr, y=nearY+Math.sin(a)*rr*0.8;
+      if(x<60||x>WORLD_W-60||y<60||y>WORLD_H-60)continue;
+      if(F.waterDist(x,y)>22)return {x:x,y:y};
+    }
+    return null;
+  }
+  var dtc=F.downtown;
+  var nHosp=Math.max(2,Math.round(2*Math.sqrt(WEXT)));
+  for(var hI=0;hI<nHosp;hI++){
+    var sp=landSpot(dtc.x,dtc.y,F.R*0.45);
+    if(sp)pois.push({x:sp.x,y:sp.y,kind:'h'});
+  }
+  var resD=F.centers.filter(function(c){return c.kind==='residential'||c.kind==='commercial';});
+  resD.forEach(function(c){
+    var ns=c.kind==='commercial'?1:2;
+    for(var sI=0;sI<ns;sI++){
+      var sp2=landSpot(c.x,c.y,F.R*0.22);
+      if(sp2)pois.push({x:sp2.x,y:sp2.y,kind:'s'});
+    }
+  });
+
+  /* --- transit lines: anchor-to-anchor corridors with stops --- */
+  var transit=[];
+  var gates=G.anchors.filter(function(a){return a.role==='gate';});
+  var indA=G.anchors.filter(function(a){return a.role==='industry';})[0];
+  var pairs=[];
+  if(gates.length>=2)pairs.push([dtc,gates[0]]);
+  if(gates.length>=4)pairs.push([dtc,gates[Math.floor(gates.length/2)]]);
+  else if(gates.length>=2)pairs.push([gates[0],gates[1]]);
+  if(indA)pairs.push([dtc,indA]);
+  var nL=WEXT>1.6?3:2;
+  var LCOLS=['#d94848','#2f9e5f','#3f6fd4'];
+  for(var li=0;li<Math.min(nL,pairs.length);li++){
+    var A=pairs[li][0], B=pairs[li][1];
+    var path=[{x:A.x,y:A.y}], px2=A.x, py2=A.y;
+    var target=Math.atan2(B.y-A.y,B.x-A.x);
+    var arrived=false;
+    for(var st=0;st<260;st++){
+      var ta=F.tensorAngle(px2,py2);
+      var want=target+(angDiff(target,ta))*0.35;
+      var hd=path.length>1?Math.atan2(py2-path[path.length-2].y,px2-path[path.length-2].x):want;
+      var turn=clamp(angDiff(hd,want),-0.35,0.35);
+      var ang=hd+turn;
+      px2+=Math.cos(ang)*16; py2+=Math.sin(ang)*16;
+      path.push({x:px2,y:py2});
+      if(dist2(px2,py2,B.x,B.y)<50*50){arrived=true;break;}
+      if(px2<20||px2>WORLD_W-20||py2<20||py2>WORLD_H-20)break;
+      if(dist2(px2,py2,dtc.x,dtc.y)>F.R*F.R*1.12)break; // stay in the metro area
+    }
+    if(arrived)path.push({x:B.x,y:B.y});
+    path=chaikin(path,2); path=resample(path,12);
+    // stops every ~140px
+    var stops=[], acc2=0;
+    for(var si2=1;si2<path.length;si2++){
+      acc2+=Math.sqrt(dist2(path[si2].x,path[si2].y,path[si2-1].x,path[si2-1].y));
+      if(acc2>140){acc2=0;stops.push(path[si2]);}
+    }
+    transit.push({pts:path,stops:stops,color:LCOLS[li%LCOLS.length]});
+  }
+
+  return {pop:{w:LW,h:LH,data:pop}, acc:{w:LW,h:LH,data:blur}, pois:pois, transit:transit};
 }
 
 /* ============================================================
@@ -1203,6 +1536,16 @@ function strokePts(ctx,pts){
   for(var i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);
   ctx.stroke();
 }
+/* laterally offset a polyline (for double center lines) */
+function offsetPts(pts,d){
+  var out=new Array(pts.length);
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i], q=pts[Math.min(pts.length-1,i+1)], o=pts[Math.max(0,i-1)];
+    var dx=q.x-o.x, dy=q.y-o.y, L=Math.sqrt(dx*dx+dy*dy)||1;
+    out[i]={x:p.x+(-dy/L)*d, y:p.y+(dx/L)*d};
+  }
+  return out;
+}
 function renderWorld(ctx,W){
   var T=THEMES[clamp(Math.round(P.theme),0,2)];
   var F=W.F;
@@ -1247,14 +1590,17 @@ function renderWorld(ctx,W){
     ctx.globalAlpha=1; ctx.restore();
   });
 
-  // 3. parks
+  // 3. parks (batched rects — one fill per theme pass)
   var prng=makeRng(W.seed,'trees');
+  var parkPath=new Path2D();
   W.blocks.parks.forEach(function(pk){
-    ctx.fillStyle=T.park;
     for(var i=0;i<pk.cells.length;i++){
       var c=pk.cells[i];
-      ctx.fillRect((c%BCOLS)*BCELL,((c/BCOLS)|0)*BCELL,BCELL,BCELL);
+      parkPath.rect((c%BCOLS)*BCELL,((c/BCOLS)|0)*BCELL,BCELL,BCELL);
     }
+  });
+  ctx.fillStyle=T.park; ctx.fill(parkPath);
+  W.blocks.parks.forEach(function(pk){
     // tree dots
     var n=Math.min(60,Math.floor(pk.cells.length/28));
     ctx.fillStyle=T.tree;
@@ -1265,21 +1611,64 @@ function renderWorld(ctx,W){
     }
   });
 
-  // 4. buildings (shadow → body → pseudo-3D top)
+  // 3b. rural fringe: faint field parcels + tree speckle outside the urban
+  // core so the map fills edge-to-edge instead of dying into empty bg
+  var rrng=makeRng(W.seed,'rural');
+  var nRural=Math.round(300*WEXT*WEXT);
+  ctx.save();
+  for(var ri2=0;ri2<nRural;ri2++){
+    var ra2=rrng()*TAU, rr2=F.R*(0.92+rrng()*0.5);
+    var rx2=F.cx+Math.cos(ra2)*rr2, ry2=F.cy+Math.sin(ra2)*rr2*0.85;
+    if(rx2<20||rx2>WORLD_W-20||ry2<20||ry2>WORLD_H-20)continue;
+    if(F.waterDist(rx2,ry2)<14)continue;
+    if(rrng()<0.45){
+      // field parcel: faint rotated rect aligned to the tensor field
+      var fa=F.tensorAngle(rx2,ry2)+(rrng()<0.5?0:Math.PI/2);
+      var fw=26+rrng()*60, fh=20+rrng()*44;
+      ctx.save(); ctx.translate(rx2,ry2); ctx.rotate(fa);
+      ctx.globalAlpha=0.16; ctx.fillStyle=T.park;
+      ctx.fillRect(-fw/2,-fh/2,fw,fh);
+      ctx.globalAlpha=0.28; ctx.strokeStyle=T.parkEdge; ctx.lineWidth=1.5;
+      ctx.strokeRect(-fw/2,-fh/2,fw,fh);
+      if(rrng()<0.5){ ctx.beginPath(); ctx.moveTo(0,-fh/2); ctx.lineTo(0,fh/2); ctx.stroke(); }
+      ctx.restore();
+    }else{
+      ctx.globalAlpha=0.5; ctx.fillStyle=T.tree;
+      ctx.beginPath(); ctx.arc(rx2,ry2,2+rrng()*3.5,0,TAU); ctx.fill();
+    }
+  }
+  ctx.restore(); ctx.globalAlpha=1;
+
+  // 4. buildings: shadow → body → pseudo-3D top.
+  // Height drives the read: taller = longer shadow + brighter roof.
   var RW2={2:15,1:11,0:8};
   W.blocks.buildings.forEach(function(b){
     var col=b.kind==='industrial'?T.ind:T.bCols[b.shade%T.bCols.length];
+    var hb=clamp(b.hgt/38,0,1);
+    var parts=b.sub||[{dx:0,dy:0,w:b.w,h:b.h}];
     ctx.save(); ctx.translate(b.cx,b.cy); ctx.rotate(b.ang);
-    var hw=b.w/2, hh=b.h/2;
+    // shadow, offset grows with height
+    var sox=3+b.hgt*0.42, soy=4+b.hgt*0.34;
     ctx.fillStyle=T.bShadow;
-    ctx.fillRect(-hw+4,-hh+5,b.w,b.h);
+    for(var ps=0;ps<parts.length;ps++){var q0=parts[ps];
+      ctx.fillRect(q0.dx-q0.w/2+sox,q0.dy-q0.h/2+soy,q0.w,q0.h);}
+    // body
     ctx.fillStyle=col;
-    ctx.fillRect(-hw,-hh,b.w,b.h);
-    var ox=-b.hgt*0.38, oy=-b.hgt*0.38;
+    for(var pb=0;pb<parts.length;pb++){var q1=parts[pb];
+      ctx.fillRect(q1.dx-q1.w/2,q1.dy-q1.h/2,q1.w,q1.h);}
+    // roof: shifted by height, brightened for towers
+    var ox=-b.hgt*0.42, oy=-b.hgt*0.42;
     ctx.fillStyle=T.bTop;
-    ctx.fillRect(-hw+ox,-hh+oy,b.w,b.h);
+    for(var pt=0;pt<parts.length;pt++){var q2=parts[pt];
+      ctx.fillRect(q2.dx-q2.w/2+ox,q2.dy-q2.h/2+oy,q2.w,q2.h);}
+    if(hb>0.04){ // sun-catch: taller roofs read lighter
+      ctx.fillStyle='rgba(255,255,255,'+(hb*0.38).toFixed(3)+')';
+      for(var pw2=0;pw2<parts.length;pw2++){var q3=parts[pw2];
+        ctx.fillRect(q3.dx-q3.w/2+ox,q3.dy-q3.h/2+oy,q3.w,q3.h);}
+    }
     ctx.strokeStyle=T.bShadow; ctx.lineWidth=1;
-    ctx.strokeRect(-hw+ox,-hh+oy,b.w,b.h);
+    for(var pe=0;pe<parts.length;pe++){var q4=parts[pe];
+      ctx.strokeRect(q4.dx-q4.w/2+ox,q4.dy-q4.h/2+oy,q4.w,q4.h);}
     ctx.restore();
   });
 
@@ -1297,14 +1686,21 @@ function renderWorld(ctx,W){
     if(T.glow&&cls===2){ctx.shadowColor=T.arterial;ctx.shadowBlur=16;}
     W.roads.forEach(function(r){ if(r.cls!==cls||r.pts.length<2)return; strokePts(ctx,r.pts); });
     ctx.shadowBlur=0;
-    // lane dashes
-    if(cls>=1){
-      ctx.strokeStyle=T.dashC; ctx.lineWidth=cls===2?2.4:1.6;
-      ctx.setLineDash(cls===2?[16,12]:[9,9]);
-      W.roads.forEach(function(r){ if(r.cls!==cls||r.pts.length<2)return; strokePts(ctx,r.pts); });
-      ctx.setLineDash([]);
-    }
   }
+  // lane markings (one pass): arterials get a double center line, collectors a single dash
+  ctx.strokeStyle=T.dashC;
+  W.roads.forEach(function(r){
+    if(r.pts.length<2)return;
+    if(r.cls===2){
+      ctx.lineWidth=2.2; ctx.setLineDash([16,12]);
+      strokePts(ctx,offsetPts(r.pts,3.2));
+      strokePts(ctx,offsetPts(r.pts,-3.2));
+    }else if(r.cls===1){
+      ctx.lineWidth=1.6; ctx.setLineDash([9,9]);
+      strokePts(ctx,r.pts);
+    }
+  });
+  ctx.setLineDash([]);
 
   // 6. bridges (deck over water)
   W.roads.forEach(function(r){
@@ -1373,13 +1769,24 @@ function renderWorld(ctx,W){
     }
   });
 
-  // 8. labels
+  // 8. labels (sizes grow with world extent so they stay legible)
+  var LS=Math.sqrt(WEXT);
   if(P.labelsOn){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     try{ctx.letterSpacing='6px';}catch(e){}
-    W.names.districts.forEach(function(dn){
+    // de-collide: most important districts label first, close ones yield
+    var placed=[];
+    var dns=W.names.districts.slice().sort(function(a,b){
+      var pr={downtown:0,commercial:1,industrial:2,residential:3,waterfront:4};
+      return (pr[a.kind]!=null?pr[a.kind]:5)-(pr[b.kind]!=null?pr[b.kind]:5);
+    });
+    var minSep=Math.pow(150*LS,2);
+    dns.forEach(function(dn){
       if(F.waterDist(dn.x,dn.y)<24)return;
-      ctx.font='600 25px Georgia,"Times New Roman",serif';
+      for(var pi=0;pi<placed.length;pi++)
+        if(dist2(dn.x,dn.y,placed[pi].x,placed[pi].y)<minSep)return;
+      placed.push(dn);
+      ctx.font='600 '+Math.round(25*LS)+'px Georgia,"Times New Roman",serif';
       ctx.lineWidth=5; ctx.strokeStyle=T.halo;
       ctx.strokeText(dn.name,dn.x,dn.y);
       ctx.fillStyle=T.district;
@@ -1390,7 +1797,7 @@ function renderWorld(ctx,W){
       var a=st.ang;
       if(a>Math.PI/2)a-=Math.PI; if(a<-Math.PI/2)a+=Math.PI;
       ctx.save(); ctx.translate(st.x,st.y); ctx.rotate(a);
-      ctx.font='italic 15px Georgia,serif';
+      ctx.font='italic '+Math.round(15*LS)+'px Georgia,serif';
       ctx.lineWidth=4; ctx.strokeStyle=T.halo;
       ctx.strokeText(st.name,0,0);
       ctx.fillStyle=T.label;
@@ -1408,15 +1815,15 @@ function renderWorld(ctx,W){
   ctx.beginPath(); ctx.moveTo(ccx,ccy-24); ctx.lineTo(ccx-6,ccy-2); ctx.lineTo(ccx,ccy-8); ctx.lineTo(ccx+6,ccy-2); ctx.closePath(); ctx.fill();
   ctx.font='700 15px Georgia,serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText('N',ccx,ccy-40);
-  var sbx=WORLD_W-300, sby=WORLD_H-52;
+  var sbx=WORLD_W-300*LS, sby=WORLD_H-52;
   ctx.lineWidth=2;
   for(var s3=0;s3<4;s3++){
     ctx.fillStyle=s3%2?T.halo:T.compass;
-    ctx.fillRect(sbx+s3*40,sby,40,10);
-    ctx.strokeStyle=T.compass; ctx.strokeRect(sbx+s3*40,sby,40,10);
+    ctx.fillRect(sbx+s3*40*LS,sby,40*LS,10);
+    ctx.strokeStyle=T.compass; ctx.strokeRect(sbx+s3*40*LS,sby,40*LS,10);
   }
   ctx.font='13px Georgia,serif'; ctx.fillStyle=T.compass; ctx.textAlign='center';
-  ctx.fillText('2 km',sbx+80,sby-14);
+  ctx.fillText(WEXT<1.4?'2 km':(WEXT<2.2?'5 km':'10 km'),sbx+80*LS,sby-14);
 
   // 10. vignette
   var vg=ctx.createRadialGradient(WORLD_W/2,WORLD_H/2,420,WORLD_W/2,WORLD_H/2,1050);
@@ -1424,6 +1831,90 @@ function renderWorld(ctx,W){
   ctx.fillStyle=vg; ctx.fillRect(0,0,WORLD_W,WORLD_H);
   ctx.restore();
 }
+
+/* ============================================================
+   DATA-LAYER OVERLAYS — composited over the base map
+   ============================================================ */
+var overlayCanvas=null;
+var LAYERS={pop:false,acc:false,transit:false,pois:false};
+try{
+  var _ls=JSON.parse(localStorage.getItem('ra.layers.v1')||'null');
+  if(_ls)for(var _lk in LAYERS)if(typeof _ls[_lk]==='boolean')LAYERS[_lk]=_ls[_lk];
+}catch(e){}
+function saveLayers(){ try{localStorage.setItem('ra.layers.v1',JSON.stringify(LAYERS));}catch(e){} }
+
+function drawHeat(ctx, grid, ramp){
+  var c=document.createElement('canvas'); c.width=grid.w; c.height=grid.h;
+  var g=c.getContext('2d'), img=g.createImageData(grid.w,grid.h);
+  var dd=img.data, src=grid.data;
+  for(var i=0;i<src.length;i++){
+    var col=ramp(clamp(src[i],0,1)), o=i*4;
+    dd[o]=col[0]; dd[o+1]=col[1]; dd[o+2]=col[2]; dd[o+3]=col[3];
+  }
+  g.putImageData(img,0,0);
+  ctx.save(); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+  ctx.globalAlpha=0.82;
+  ctx.drawImage(c,0,0,WORLD_W,WORLD_H);
+  ctx.restore();
+}
+function popRamp(v){
+  var a=Math.pow(v,1.25)*150;
+  // deep green → yellow
+  return [Math.round(47+v*208), Math.round(158+v*72), Math.round(95-v*55), Math.round(a)];
+}
+function accRamp(v){
+  var a=Math.pow(v,1.15)*140;
+  // viridis-ish: purple → teal → yellow
+  var r,g2,b;
+  if(v<0.5){ var t=v*2; r=Math.round(68+t*20); g2=Math.round(30+t*150); b=Math.round(120-t*40); }
+  else { var t2=(v-0.5)*2; r=Math.round(88+t2*165); g2=Math.round(180+t2*50); b=Math.round(80-t2*30); }
+  return [r,g2,b,Math.round(a)];
+}
+function renderOverlays(){
+  if(!world||!world.layers)return;
+  if(!overlayCanvas)overlayCanvas=document.createElement('canvas');
+  if(overlayCanvas.width!==WORLD_W||overlayCanvas.height!==WORLD_H){
+    overlayCanvas.width=WORLD_W; overlayCanvas.height=WORLD_H;
+  }
+  var ctx=overlayCanvas.getContext('2d');
+  ctx.clearRect(0,0,WORLD_W,WORLD_H);
+  var L=world.layers;
+  if(LAYERS.pop)drawHeat(ctx,L.pop,popRamp);
+  if(LAYERS.acc)drawHeat(ctx,L.acc,accRamp);
+  if(LAYERS.transit){
+    ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round';
+    L.transit.forEach(function(t){
+      if(t.pts.length<2)return;
+      ctx.strokeStyle='rgba(255,255,255,.92)'; ctx.lineWidth=10;
+      strokePts(ctx,t.pts);
+      ctx.strokeStyle=t.color; ctx.lineWidth=5.5;
+      strokePts(ctx,t.pts);
+      t.stops.forEach(function(s){
+        ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(s.x,s.y,7,0,TAU); ctx.fill();
+        ctx.strokeStyle=t.color; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(s.x,s.y,7,0,TAU); ctx.stroke();
+      });
+    });
+    ctx.restore();
+  }
+  if(LAYERS.pois){
+    ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+    L.pois.forEach(function(p){
+      if(p.kind==='h'){
+        ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(p.x,p.y,11,0,TAU); ctx.fill();
+        ctx.strokeStyle='rgba(0,0,0,.45)'; ctx.lineWidth=2; ctx.stroke();
+        ctx.fillStyle='#d43a3a';
+        ctx.fillRect(p.x-7,p.y-2.4,14,4.8); ctx.fillRect(p.x-2.4,p.y-7,4.8,14);
+      }else{
+        ctx.fillStyle='#2f6fed'; ctx.beginPath(); ctx.arc(p.x,p.y,8.5,0,TAU); ctx.fill();
+        ctx.strokeStyle='#fff'; ctx.lineWidth=2.5; ctx.stroke();
+        ctx.fillStyle='#fff'; ctx.font='700 11px system-ui,sans-serif';
+        ctx.fillText('S',p.x,p.y+0.5);
+      }
+    });
+    ctx.restore();
+  }
+}
+function anyLayerOn(){ return LAYERS.pop||LAYERS.acc||LAYERS.transit||LAYERS.pois; }
 
 /* ============================================================
    GENERATE + DISPLAY
@@ -1440,6 +1931,13 @@ function applyDecoded(d){
 function regenerate(){
   var t0=(typeof performance!=='undefined'?performance.now():Date.now());
   try{
+    // world extent from the City scale control (codec unchanged: existing seeds keep working)
+    WEXT=extentOf(P.cityScale);
+    WORLD_W=Math.round(1600*WEXT); WORLD_H=Math.round(1000*WEXT);
+    ACOLS=Math.max(24,Math.round(WORLD_W/ACELL)); AROWS=Math.max(16,Math.round(WORLD_H/ACELL));
+    BCOLS=Math.max(60,Math.round(WORLD_W/BCELL)); BROWS=Math.max(40,Math.round(WORLD_H/BCELL));
+    OCCW=Math.max(40,Math.round(WORLD_W/OCCCELL)); OCCH=Math.max(28,Math.round(WORLD_H/OCCCELL));
+    AGW=Math.max(12,Math.round(WORLD_W/AGCELL)); AGH=Math.max(8,Math.round(WORLD_H/AGCELL));
     var seedStr=state.seed;
     var F=buildFields(seedStr);
     var G=buildMacroGraph(F);
@@ -1447,14 +1945,17 @@ function regenerate(){
     var nodes=buildIntersections(routed.roads);
     var blocks=buildBlocks(F,routed);
     var names=buildNames(F,routed.roads);
-    world={F:F,roads:routed.roads,nodes:nodes,blocks:blocks,names:names,seed:seedStr};
-    if(!worldCanvas){worldCanvas=document.createElement('canvas');worldCanvas.width=WORLD_W;worldCanvas.height=WORLD_H;}
+    world={F:F,G:G,roads:routed.roads,nodes:nodes,blocks:blocks,names:names,seed:seedStr};
+    world.layers=buildLayers(F,G,world);
+    if(!worldCanvas)worldCanvas=document.createElement('canvas');
+    worldCanvas.width=WORLD_W; worldCanvas.height=WORLD_H;
     renderWorld(worldCanvas.getContext('2d'),world);
+    renderOverlays();
     drawStatic();
     var ms=(typeof performance!=='undefined'?performance.now():Date.now())-t0;
     document.getElementById('genmeta').textContent=
-      '⚙ '+(ms/1000).toFixed(2)+'s · '+world.roads.length+' roads · '+blocks.buildings.length+' buildings';
-    try{console.log('[roadatlas] gen '+ms.toFixed(0)+'ms roads='+world.roads.length+' bld='+blocks.buildings.length+' seed='+seedStr);}catch(e){}
+      '⚙ '+(ms/1000).toFixed(2)+'s · '+world.roads.length+' roads · '+blocks.buildings.length+' buildings · '+WEXT.toFixed(1)+'×';
+    try{console.log('[roadatlas] gen '+ms.toFixed(0)+'ms roads='+world.roads.length+' bld='+blocks.buildings.length+' WEXT='+WEXT.toFixed(2)+' seed='+seedStr);}catch(e){}
   }catch(err){
     showErr(err&&err.message?err.message:String(err));
     try{console.error('[roadatlas] generate failed',err);}catch(e){}
@@ -1469,6 +1970,7 @@ function drawStatic(){
   var ctx=scene.getContext('2d');
   if(scene.width!==WORLD_W||scene.height!==WORLD_H){scene.width=WORLD_W;scene.height=WORLD_H;}
   ctx.drawImage(worldCanvas,0,0);
+  if(anyLayerOn()&&overlayCanvas)ctx.drawImage(overlayCanvas,0,0);
 }
 
 /* ---- render mode: deterministic Ken Burns over virtual clock ---- */
@@ -1485,6 +1987,7 @@ function drawKenBurns(t,RM){
   var sx=clamp(cx-vw/2,0,WORLD_W-vw), sy=clamp(cy-vh/2,0,WORLD_H-vh);
   var ctx=scene.getContext('2d');
   ctx.drawImage(worldCanvas,sx,sy,vw,vh,0,0,scene.width,scene.height);
+  if(anyLayerOn()&&overlayCanvas)ctx.drawImage(overlayCanvas,sx,sy,vw,vh,0,0,scene.width,scene.height);
 }
 window.__renderCanvas=scene;
 window.__renderReset=function(seed){
@@ -1515,6 +2018,36 @@ function rmFrame(){
   requestAnimationFrame(loop);
   if(window.__renderMode){rmFrame();return;}
   if(document.hidden)return;
+})();
+
+/* ---- layers panel ---- */
+(function(){
+  var panel=document.getElementById('layersPanel');
+  var btn=document.getElementById('layersBtn');
+  function syncChips(){
+    var chips=panel.querySelectorAll('.lchip');
+    for(var i=0;i<chips.length;i++){
+      var k=chips[i].getAttribute('data-layer');
+      if(LAYERS[k])chips[i].classList.add('on'); else chips[i].classList.remove('on');
+    }
+  }
+  btn.addEventListener('click',function(ev){
+    ev.stopPropagation();
+    panel.classList.toggle('open');
+  });
+  document.addEventListener('click',function(ev){
+    if(panel.classList.contains('open')&&!panel.contains(ev.target)&&ev.target!==btn)
+      panel.classList.remove('open');
+  });
+  panel.addEventListener('click',function(ev){
+    var chip=ev.target.closest?ev.target.closest('.lchip'):null;
+    if(!chip)return;
+    var k=chip.getAttribute('data-layer');
+    LAYERS[k]=!LAYERS[k];
+    saveLayers(); syncChips();
+    renderOverlays(); drawStatic();
+  });
+  syncChips();
 })();
 
 /* ---- top bar: share ---- */
