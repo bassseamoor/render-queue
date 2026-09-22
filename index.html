@@ -39,6 +39,15 @@
   .formrow { display: flex; gap: 10px; } .formrow > div { flex: 1; }
   #sheet h2 { margin: 0 0 4px; font-size: 18px; }
   .hint { font-size: 13px; color: #8b95ab; line-height: 1.55; }
+  .favrow { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 12px; -webkit-overflow-scrolling: touch; }
+  .favcard { flex: 0 0 132px; background: #0b0e14; border: 1px solid #263052; border-radius: 12px; overflow: hidden; cursor: pointer; text-align: left; padding: 0; color: inherit; }
+  .favcard.sel { border-color: #2f7bff; box-shadow: 0 0 0 2px rgba(47,123,255,.55); }
+  .favcard img { width: 132px; height: 74px; object-fit: cover; display: block; background: #1a2236; }
+  .favcard .fb { padding: 8px 9px 9px; }
+  .favcard .fs { font-size: 11px; color: #9cc3ff; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .favcard .fc { font-family: ui-monospace, monospace; font-size: 11px; color: #8b95ab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+  .favempty { font-size: 13px; color: #8b95ab; padding: 8px 2px 4px; line-height: 1.55; }
+  .item .qthumb { width: 100%; height: 120px; object-fit: cover; border-radius: 10px; margin-bottom: 10px; display: block; background: #1a2236; }
   .tokenrow { display: flex; gap: 8px; margin-top: 8px; } .tokenrow input { flex: 1; }
   footer { max-width: 640px; margin: 0 auto; padding: 0 14px 40px; }
   .tokbox { background: #121826; border: 1px solid #1e2740; border-radius: 14px; padding: 14px; }
@@ -58,7 +67,11 @@
 <div id="scrim"></div>
 <div id="sheet">
   <h2>Queue a seed</h2>
-  <p class="hint">Paste a seed from any studio. Tip: in a studio, copy its <b>?seed=</b> link and paste it below — the form fills itself in.</p>
+  <div id="favSection">
+    <label style="margin-top:8px">⭐ Your favorites — tap a card to render it</label>
+    <div id="favRow" class="favrow"></div>
+  </div>
+  <p class="hint" style="margin-top:2px">…or paste a seed from any studio below. Tip: in a studio, copy its <b>?seed=</b> link and paste it — the form fills itself in.</p>
   <label for="fStudio">Studio</label>
   <select id="fStudio"></select>
   <div style="margin-top:6px"><a id="openStudio" class="hint" href="#" target="_blank" rel="noopener" style="color:#9cc3ff">Open studio ↗</a></div>
@@ -105,6 +118,53 @@ const STUDIOS = {
 };
 const $ = id => document.getElementById(id);
 const getToken = () => localStorage.getItem("rq_token") || "";
+// seed-console studio id -> STUDIOS key (rain-window's adapter uses 'rainwindow')
+const FSC = { "turtle-life": "turtle-life", "rainwindow": "rain-window", "molten": "molten", "aquarium": "aquarium", "alien-planet": "alien-planet", "rainforest": "rainforest", "parallax": "parallax" };
+let pickedFav = null;
+
+function loadFavorites() {
+  const out = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    const m = k && k.match(/^sc\.(.+)\.favs$/);
+    if (!m || !FSC[m[1]]) continue;
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem(k)) || []; } catch (e) {}
+    for (const f of arr) {
+      if (f && f.seed) out.push({ studio: FSC[m[1]], seed: f.seed, thumb: f.thumb || null, ts: f.ts || 0 });
+    }
+  }
+  out.sort((a, b) => b.ts - a.ts);
+  return out;
+}
+function cleanName(n) { return String(n || "").replace(" ● render testing", "").replace(" ● renders now", "").replace(" (render soon)", ""); }
+const PLACEHOLDER = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="264" height="148"><rect width="264" height="148" fill="#1a2236"/><text x="132" y="84" font-size="44" text-anchor="middle" fill="#5a6378">⭐</text></svg>');
+
+function renderFavPicker() {
+  const row = $("favRow");
+  const favs = loadFavorites();
+  if (!favs.length) {
+    row.innerHTML = '<div class="favempty">Nothing favorited yet.<br>Open a studio, tap <b>☆</b> on a seed you love, and it shows up here as a card.</div>';
+    return;
+  }
+  row.innerHTML = "";
+  for (const f of favs) {
+    const st = STUDIOS[f.studio] || {};
+    const b = document.createElement("button");
+    b.className = "favcard" + (pickedFav && pickedFav.seed === f.seed && pickedFav.studio === f.studio ? " sel" : "");
+    b.setAttribute("aria-label", "Render " + f.seed);
+    b.innerHTML = '<img src="' + (f.thumb || PLACEHOLDER) + '" alt="">' +
+      '<div class="fb"><div class="fs">' + esc(cleanName(st.name || f.studio)) + '</div>' +
+      '<div class="fc">' + esc(f.seed) + '</div></div>';
+    b.onclick = () => {
+      pickedFav = f;
+      $("fStudio").value = f.studio; syncOpenStudioLink();
+      $("fSeed").value = f.seed;
+      renderFavPicker();
+    };
+    row.appendChild(b);
+  }
+}
 let queue = { items: [] }, fileSha = null;
 
 async function loadQueue() {
@@ -160,6 +220,7 @@ function render() {
       ? '<a class="studiolink" href="' + esc(st.url) + '" target="_blank" rel="noopener">' + esc(st.name) + ' ↗</a>'
       : '<span class="studio">' + esc(st.name) + '</span>';
     d.innerHTML =
+      (it.thumb ? '<img class="qthumb" src="' + it.thumb + '" alt="">' : "") +
       '<div class="row1">' + studioHead +
       '<span class="pill ' + it.status + '">' + it.status + '</span></div>' +
       '<div class="seed">seed ' + esc(it.seed) + '</div>' +
@@ -208,6 +269,8 @@ function openSheet() {
   sel.innerHTML = Object.entries(STUDIOS).map(([k, v]) => '<option value="' + k + '">' + esc(v.name) + "</option>").join("");
   sel.onchange = syncOpenStudioLink;
   syncOpenStudioLink();
+  pickedFav = null;
+  renderFavPicker();
   const h = location.hash.match(/add/i);
   $("sheet").classList.add("open"); $("scrim").classList.add("open");
 }
@@ -240,9 +303,10 @@ $("fSeed").addEventListener("change", e => {
 $("saveAdd").onclick = async () => {
   const seed = $("fSeed").value.trim();
   if (!seed) { alert("Paste a seed first."); return; }
+  const studio = $("fStudio").value;
   const it = {
     id: "q" + Date.now().toString(36),
-    studio: $("fStudio").value,
+    studio,
     seed,
     note: $("fNote").value.trim(),
     seconds: +$("fSecs").value,
@@ -250,6 +314,7 @@ $("saveAdd").onclick = async () => {
     q: $("fQ").value,
     status: "queued",
     created: new Date().toISOString(),
+    thumb: (pickedFav && pickedFav.seed === seed && pickedFav.studio === studio) ? pickedFav.thumb : null,
   };
   queue.items = queue.items || [];
   queue.items.push(it);
