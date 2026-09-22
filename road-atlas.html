@@ -151,11 +151,18 @@ function qEncode(p, v){
   var idx = Math.round((clamp(v,p.min,p.max)-p.min)/(p.max-p.min)*(p.lv-1));
   return B36[clamp(idx,0,p.lv-1)];
 }
+function qSnap(p, v){
+  // snap to clean step decimals so seed-decode and slider-set produce
+  // bit-identical values (1.4, not 1.4000000000000001): generation is
+  // float-sensitive at boundaries, so both paths must agree exactly
+  var dec=Math.max(0, Math.ceil(-Math.log10(p.step)));
+  return +(v.toFixed(dec));
+}
 function qDecode(p, ch){
   var idx = B36.indexOf(ch);
   if (idx<0 || idx>=p.lv) return null;
   var v = p.min + (idx/(p.lv-1))*(p.max-p.min);
-  return p.int ? Math.round(v) : Math.round(v/p.step)*p.step;
+  return p.int ? Math.round(v) : qSnap(p, Math.round(v/p.step)*p.step);
 }
 function randSalt(rng){ return B36[Math.floor(rng()*36)] + B36[Math.floor(rng()*36)]; }
 function encodeSeed(){
@@ -458,7 +465,7 @@ function buildMacroGraph(F){
   for (var g=0; g<ng; g++){
     var ga = Math.PI/ng + g*Math.PI*2/ng + (rng()-0.5)*0.3;
     var gx = F.cx+Math.cos(ga)*F.R*1.02, gy = F.cy+Math.sin(ga)*F.R*0.82;
-    gx = clamp(gx, 50, WORLD_W-50); gy = clamp(gy, 50, WORLD_H-50);
+    gx = clamp(gx, 18, WORLD_W-18); gy = clamp(gy, 18, WORLD_H-18); // gates hug the map edge so arterials read as continuing off-map
     addAnchor(gx, gy, 'gate');
   }
   // sample points (area-proportional so density stays constant)
@@ -609,8 +616,8 @@ function dijkstraPathHeap(gAdj, s, t){
 
 /* ============================================================
    COST FIELD + A* routing on a coarse grid
+   (ACELL/ACOLS/AROWS declared once at top; resized per generation in regenerate)
    ============================================================ */
-var ACELL = 12.5, ACOLS = 128, AROWS = 80;
 function buildCostGrid(F){
   var cost = new Float32Array(ACOLS*AROWS);
   for (var r=0;r<AROWS;r++) for (var c=0;c<ACOLS;c++){
@@ -649,8 +656,8 @@ function astar(cost, sx, sy, tx, ty){
       if(m===k)break; var t=heap[m];heap[m]=heap[k];heap[k]=t; var t2=hf[m];hf[m]=hf[k];hf[k]=t2; k=m; }
     return top; }
   var DX=[1,1,0,-1,-1,-1,0,1], DY=[0,1,1,1,0,-1,-1,-1], DC=[1,1.4142,1,1.4142,1,1.4142,1,1.4142];
-  var guard=0;
-  while(heap.length && guard++<60000){
+  var guard=0, maxExp=W*H; // scale with grid: a fixed cap would abort long routes at max city scale
+  while(heap.length && guard++<maxExp){
     var cur=pop();
     if(closed[cur])continue; closed[cur]=1;
     if(cur===ti)break;
@@ -736,6 +743,33 @@ function clampCurvature(pts, maxTurnDeg){
   return pts;
 }
 
+/* group water-crossing points into contiguous runs, so a road crossing the
+   river twice doesn't get one straight deck drawn across the land between.
+   A run spans the full visible water (wd<0) but only counts as a crossing if
+   it reaches deep water (wd<-4): that keeps shoreline kisses deck-free. */
+function bridgeRuns(F,pts){
+  var runs=[], cur=null;
+  for(var i=0;i<pts.length;i++){
+    var wd=F.waterDist(pts[i].x,pts[i].y);
+    if(wd<0){
+      if(!cur)cur={a:i,b:i,deep:false};
+      else cur.b=i;
+      if(wd<-4)cur.deep=true;
+    }else if(cur){ runs.push(cur); cur=null; }
+  }
+  if(cur)runs.push(cur);
+  // expand each run by one point per side: a lone wet point would stroke
+  // nothing, and the deck should reach both banks
+  var out=[];
+  runs.forEach(function(r){
+    if(!r.deep)return;
+    var a=Math.max(0,r.a-1), b=Math.min(pts.length-1,r.b+1), run=[];
+    for(var i=a;i<=b;i++)run.push({x:pts[i].x,y:pts[i].y});
+    if(run.length>1)out.push(run);
+  });
+  return out;
+}
+
 /* ============================================================
    ROUTE macro edges + grow local streamlines
    ============================================================ */
@@ -777,17 +811,13 @@ function routeRoads(F, G){
       if(gpath&&gpath.length>2)gpts=gpath;
       else gpts=[{x:A.x,y:A.y},{x:(A.x+B.x)/2,y:(A.y+B.y)/2},{x:B.x,y:B.y}];
       gpts=chaikin(gpts,2); gpts=resample(gpts,10); clampCurvature(gpts,maxTurn[2]);
-      var gbr=[];
-      for(var bi=0;bi<gpts.length;bi++)
-        if(F.waterDist(gpts[bi].x,gpts[bi].y)<-4)gbr.push({x:gpts[bi].x,y:gpts[bi].y});
-      roads.push({pts:gpts,cls:2,bridges:gbr,a:-1,b:-1});
+      gpts[0]={x:A.x,y:A.y}; gpts[gpts.length-1]={x:B.x,y:B.y}; // re-anchor endpoints
+      roads.push({pts:gpts,cls:2,bridges:bridgeRuns(F,gpts),a:-1,b:-1});
       for(var gm=0;gm<gpts.length;gm++)occMark(gpts[gm].x,gpts[gm].y,2);
     }
   })();
   G.edges.forEach(function(e){
     if(!e.route)return; // only important macro edges become roads
-    var a=G.pts[e.a], b=G.pts[e.b];
-    var path=astar(cost, a.x/ACELL, a.y/ACELL, b.x/ACELL, b.y/ACELL);
     var a=G.pts[e.a], b=G.pts[e.b];
     var path=astar(cost, a.x/ACELL, a.y/ACELL, b.x/ACELL, b.y/ACELL);
     var pts;
@@ -796,10 +826,11 @@ function routeRoads(F, G){
     pts=chaikin(pts,2);
     pts=resample(pts,10);
     clampCurvature(pts, maxTurn[e.cls]);
-    // bridges where crossing water
-    var bridges=[];
-    for(var i=0;i<pts.length;i++) if(F.waterDist(pts[i].x,pts[i].y)<-4) bridges.push({x:pts[i].x,y:pts[i].y});
-    roads.push({pts:pts, cls:e.cls, bridges:bridges, a:e.a, b:e.b});
+    // re-anchor the endpoints: curvature clamping displaces them, which would
+    // split shared graph nodes apart and break junction continuity
+    pts[0]={x:a.x,y:a.y};
+    pts[pts.length-1]={x:b.x,y:b.y};
+    roads.push({pts:pts, cls:e.cls, bridges:bridgeRuns(F,pts), a:e.a, b:e.b});
     for(var m=0;m<pts.length;m++) occMark(pts[m].x,pts[m].y,e.cls);
   });
 
@@ -845,6 +876,62 @@ function routeRoads(F, G){
       gfDone++;
     }
   }
+  // trim road ends that dangle in deep water back to the bank: smoothing can
+  // push a clipped endpoint past the shoreline it was clipped at
+  roads.forEach(function(r){
+    var pts=r.pts;
+    while(pts.length>2&&F.waterDist(pts[0].x,pts[0].y)<-4)pts.shift();
+    while(pts.length>2&&F.waterDist(pts[pts.length-1].x,pts[pts.length-1].y)<-4)pts.pop();
+  });
+  // snap pass: free endpoints dangling within 24px of another road get joined
+  // to it, so near-miss stubs read as intentional junctions instead of gaps
+  (function snapEndpoints(){
+    var EH=26, map=new Map();
+    function ek(x,y){return Math.floor(x/EH)+'_'+Math.floor(y/EH);}
+    roads.forEach(function(r,ri){
+      for(var i=0;i<r.pts.length;i+=2){
+        var p=r.pts[i];
+        if(F.waterDist(p.x,p.y)<-4)continue; // never snap onto a bridge span
+        var k=ek(p.x,p.y);
+        if(!map.has(k))map.set(k,[]);
+        map.get(k).push({x:p.x,y:p.y,ri:ri});
+      }
+    });
+    function nearestOnOther(x,y,skip){
+      var gx=Math.floor(x/EH), gy=Math.floor(y/EH), best=null, bd=24*24;
+      for(var dx=-2;dx<=2;dx++)for(var dy=-2;dy<=2;dy++){
+        var a=map.get((gx+dx)+'_'+(gy+dy)); if(!a)continue;
+        for(var i=0;i<a.length;i++){
+          var q=a[i]; if(q.ri===skip)continue;
+          var ddx=x-q.x, ddy=y-q.y, d=ddx*ddx+ddy*ddy;
+          if(d<bd){bd=d;best=q;}
+        }
+      }
+      return best;
+    }
+    roads.forEach(function(r,ri){
+      for(var si=0;si<2;si++){
+        var p=si===0?r.pts[0]:r.pts[r.pts.length-1];
+        if(p.x<30||p.y<30||p.x>WORLD_W-30||p.y>WORLD_H-30)continue; // runs off-map: fine
+        var q=nearestOnOther(p.x,p.y,ri);
+        if(!q)continue;
+        var mx=(p.x+q.x)/2, my=(p.y+q.y)/2;
+        if(F.waterDist(mx,my)<-4)continue; // don't snap across water
+        var np={x:q.x,y:q.y};
+        if(si===0){
+          r.pts[0]=np;
+          if(r.pts.length>2&&dist2(np.x,np.y,r.pts[1].x,r.pts[1].y)<16)r.pts.splice(1,1);
+        }else{
+          r.pts[r.pts.length-1]=np;
+          var L=r.pts.length;
+          if(L>2&&dist2(np.x,np.y,r.pts[L-2].x,r.pts[L-2].y)<16)r.pts.splice(L-2,1);
+        }
+      }
+    });
+  })();
+  // bridges for every road class: detect contiguous water-crossing runs on the
+  // final geometry (grid/streamline roads cross water too, not just arterials)
+  roads.forEach(function(r){ r.bridges=bridgeRuns(F,r.pts); });
   return {roads:roads, occNear:occNear};
 }
 /* ---- district street grids: jittered rotated grids per neighborhood ----
@@ -1054,7 +1141,7 @@ function buildIntersections(roads){
 /* ============================================================
    BLOCKS — raster planar subdivision → erode → parcel subdivision
    ============================================================ */
-function buildBlocks(F, routed){
+function buildBlocks(F, routed, nodes){
   var mask=new Uint8Array(BCOLS*BROWS); // 1 = blocked (road/water)
   var angGrid=new Float32Array(AGW*AGH).fill(999); // nearest road angle
   function stamp(x,y,rad,ang){
@@ -1071,12 +1158,15 @@ function buildBlocks(F, routed){
   }
   var RW={2:15,1:11,0:8};
   routed.roads.forEach(function(r){
-    var w=RW[r.cls]/2+3;
+    var w=RW[r.cls]/2+4; // stamp slightly wider than the drawn road+sidewalk so buildings can't touch pavement
     for(var i=0;i<r.pts.length;i++){
       var p=r.pts[i], q=r.pts[Math.min(i+1,r.pts.length-1)];
       stamp(p.x,p.y,w,Math.atan2(q.y-p.y,q.x-p.x));
     }
   });
+  // junction discs are pavement too (roads are trimmed back to the disc edge),
+  // so stamp them or buildings would overlap the intersection
+  (nodes||[]).forEach(function(nd){ stamp(nd.x,nd.y,nd.r+6,null); });
   // water → blocked, via stamping (far cheaper than per-cell waterDist)
   if(F.river&&F.river.length>1){
     for(var ri=0;ri<F.river.length;ri++)
@@ -1160,6 +1250,16 @@ function buildBlocks(F, routed){
     return true;
   }
   function tryPlace(rect){
+    // keep the footprint off roads, water, and junction discs: the block mask
+    // is stamped for all of those (parcel sampling alone can miss a clipped corner)
+    var c0=Math.cos(rect.ang||0), s0=Math.sin(rect.ang||0);
+    var mc=[[-1,-1],[1,-1],[1,1],[-1,1],[0,0]];
+    for(var mi=0;mi<mc.length;mi++){
+      var wx=rect.cx+mc[mi][0]*rect.w/2*c0-mc[mi][1]*rect.h/2*s0;
+      var wy=rect.cy+mc[mi][0]*rect.w/2*s0+mc[mi][1]*rect.h/2*c0;
+      var bx=clamp(Math.floor(wx/BCELL),0,BCOLS-1), by=clamp(Math.floor(wy/BCELL),0,BROWS-1);
+      if(mask[by*BCOLS+bx])return false;
+    }
     var gx0=Math.floor((rect.cx-rect.w)/32), gx1=Math.floor((rect.cx+rect.w)/32);
     var gy0=Math.floor((rect.cy-rect.h)/32), gy1=Math.floor((rect.cy+rect.h)/32);
     for(var gy=gy0;gy<=gy1;gy++)for(var gx=gx0;gx<=gx1;gx++){
@@ -1270,8 +1370,9 @@ function buildBlocks(F, routed){
         var jw=bw*(0.72+rng()*0.26), jh=bh*(0.72+rng()*0.26);
         sub=[{dx:(rng()-0.5)*(bw-jw),dy:(rng()-0.5)*(bh-jh),w:jw,h:jh}];
       }
-      buildings.push({cx:wpt[0],cy:wpt[1],w:bw,h:bh,ang:ang0,hgt:hgt,
-        shade:Math.floor(rng()*4),kind:kind,sub:sub});
+      var brect={cx:wpt[0],cy:wpt[1],w:bw,h:bh,ang:ang0,hgt:hgt,
+        shade:Math.floor(rng()*4),kind:kind,sub:sub};
+      if(tryPlace(brect))buildings.push(brect);
     }
   });
   // street-fronting buildings: line the local streets so the urban fabric
@@ -1292,7 +1393,7 @@ function buildBlocks(F, routed){
       for(var side=-1;side<=1;side+=2){
         if(rng()<0.3)continue;
         var w=12+rng()*22, h=10+rng()*18;
-        var off=RWALL[0]/2+Math.max(w,h)/2+6+rng()*12;
+        var off=RWALL[0]/2+Math.max(w,h)/2+8+rng()*12; // +8 keeps the near edge clear of the sidewalk
         var bx=mx+Math.cos(ang+Math.PI/2)*side*off;
         var by=my+Math.sin(ang+Math.PI/2)*side*off;
         if(bx<24||bx>WORLD_W-24||by<24||by>WORLD_H-24)continue;
@@ -1417,12 +1518,28 @@ function buildLayers(F, G, world){
 
   /* --- POIs: hospitals near downtown/commercial, schools in residential --- */
   var pois=[];
+  // coarse road occupancy so POI markers don't land on pavement
+  var OC2=36, OCW2=Math.ceil(WORLD_W/OC2), OCH2=Math.ceil(WORLD_H/OC2);
+  var occ2=new Uint8Array(OCW2*OCH2);
+  world.roads.forEach(function(r){
+    for(var oi=0;oi<r.pts.length;oi+=2){
+      var gx=clamp(Math.floor(r.pts[oi].x/OC2),0,OCW2-1), gy=clamp(Math.floor(r.pts[oi].y/OC2),0,OCH2-1);
+      occ2[gy*OCW2+gx]=1;
+    }
+  });
+  function roadNear2(x,y){
+    var gx=Math.floor(x/OC2), gy=Math.floor(y/OC2);
+    for(var j=Math.max(0,gy-1);j<=Math.min(OCH2-1,gy+1);j++)
+      for(var i=Math.max(0,gx-1);i<=Math.min(OCW2-1,gx+1);i++)
+        if(occ2[j*OCW2+i])return true;
+    return false;
+  }
   function landSpot(nearX,nearY,rad){
     for(var t=0;t<60;t++){
       var a=rng()*TAU, rr=(0.3+rng()*0.7)*rad;
       var x=nearX+Math.cos(a)*rr, y=nearY+Math.sin(a)*rr*0.8;
       if(x<60||x>WORLD_W-60||y<60||y>WORLD_H-60)continue;
-      if(F.waterDist(x,y)>22)return {x:x,y:y};
+      if(F.waterDist(x,y)>22&&!roadNear2(x,y))return {x:x,y:y};
     }
     return null;
   }
@@ -1621,6 +1738,7 @@ function renderWorld(ctx,W){
     var rx2=F.cx+Math.cos(ra2)*rr2, ry2=F.cy+Math.sin(ra2)*rr2*0.85;
     if(rx2<20||rx2>WORLD_W-20||ry2<20||ry2>WORLD_H-20)continue;
     if(F.waterDist(rx2,ry2)<14)continue;
+    if(W.occNear&&W.occNear(rx2,ry2,18))continue; // keep fringe speckle off the roads
     if(rrng()<0.45){
       // field parcel: faint rotated rect aligned to the tensor field
       var fa=F.tensorAngle(rx2,ry2)+(rrng()<0.5?0:Math.PI/2);
@@ -1702,29 +1820,32 @@ function renderWorld(ctx,W){
   });
   ctx.setLineDash([]);
 
-  // 6. bridges (deck over water)
+  // 6. bridges (deck over water), one deck per contiguous water crossing
   W.roads.forEach(function(r){
     if(!r.bridges||!r.bridges.length)return;
     var w=RW2[r.cls];
-    ctx.strokeStyle=T.bridge; ctx.lineWidth=w+10;
-    ctx.beginPath();
-    r.bridges.forEach(function(p,i){ if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-    ctx.stroke();
-    ctx.strokeStyle=r.cls===2?T.arterial:(r.cls===1?T.collector:T.local);
-    ctx.lineWidth=w;
-    ctx.beginPath();
-    r.bridges.forEach(function(p,i){ if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
-    ctx.stroke();
-    ctx.strokeStyle=T.bridgeRail; ctx.lineWidth=1.6;
-    [-1,1].forEach(function(s){
+    r.bridges.forEach(function(run){
+      if(run.length<1)return;
+      ctx.strokeStyle=T.bridge; ctx.lineWidth=w+10;
       ctx.beginPath();
-      for(var i=0;i<r.bridges.length;i++){
-        var p=r.bridges[i], q=r.bridges[Math.min(r.bridges.length-1,i+1)], q0=r.bridges[Math.max(0,i-1)];
-        var dx=q.x-q0.x, dy=q.y-q0.y, L=Math.sqrt(dx*dx+dy*dy)||1;
-        var ox=p.x+(-dy/L)*(w/2+4)*s, oy=p.y+(dx/L)*(w/2+4)*s;
-        if(i===0)ctx.moveTo(ox,oy); else ctx.lineTo(ox,oy);
-      }
+      run.forEach(function(p,i){ if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
       ctx.stroke();
+      ctx.strokeStyle=r.cls===2?T.arterial:(r.cls===1?T.collector:T.local);
+      ctx.lineWidth=w;
+      ctx.beginPath();
+      run.forEach(function(p,i){ if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+      ctx.stroke();
+      ctx.strokeStyle=T.bridgeRail; ctx.lineWidth=1.6;
+      [-1,1].forEach(function(s){
+        ctx.beginPath();
+        for(var i=0;i<run.length;i++){
+          var p=run[i], q=run[Math.min(run.length-1,i+1)], q0=run[Math.max(0,i-1)];
+          var dx=q.x-q0.x, dy=q.y-q0.y, L=Math.sqrt(dx*dx+dy*dy)||1;
+          var ox=p.x+(-dy/L)*(w/2+4)*s, oy=p.y+(dx/L)*(w/2+4)*s;
+          if(i===0)ctx.moveTo(ox,oy); else ctx.lineTo(ox,oy);
+        }
+        ctx.stroke();
+      });
     });
   });
 
@@ -1783,10 +1904,16 @@ function renderWorld(ctx,W){
     var minSep=Math.pow(150*LS,2);
     dns.forEach(function(dn){
       if(F.waterDist(dn.x,dn.y)<24)return;
-      for(var pi=0;pi<placed.length;pi++)
-        if(dist2(dn.x,dn.y,placed[pi].x,placed[pi].y)<minSep)return;
-      placed.push(dn);
       ctx.font='600 '+Math.round(25*LS)+'px Georgia,"Times New Roman",serif';
+      // rect-based de-collision using measured text width: wide district names
+      // need more room than a fixed center distance allows
+      var tw=ctx.measureText(dn.name).width, th=36*LS, ok=true;
+      for(var pi=0;pi<placed.length;pi++){
+        var q=placed[pi];
+        if(Math.abs(dn.x-q.x)<(tw+q.w)/2+20*LS && Math.abs(dn.y-q.y)<(th+q.h)/2+12*LS){ok=false;break;}
+      }
+      if(!ok)return;
+      placed.push({x:dn.x,y:dn.y,w:tw,h:th});
       ctx.lineWidth=5; ctx.strokeStyle=T.halo;
       ctx.strokeText(dn.name,dn.x,dn.y);
       ctx.fillStyle=T.district;
@@ -1794,6 +1921,7 @@ function renderWorld(ctx,W){
     });
     try{ctx.letterSpacing='1px';}catch(e){}
     W.names.streets.forEach(function(st){
+      if(F.waterDist(st.x,st.y)<14)return; // keep street labels on land
       var a=st.ang;
       if(a>Math.PI/2)a-=Math.PI; if(a<-Math.PI/2)a+=Math.PI;
       ctx.save(); ctx.translate(st.x,st.y); ctx.rotate(a);
@@ -1815,18 +1943,24 @@ function renderWorld(ctx,W){
   ctx.beginPath(); ctx.moveTo(ccx,ccy-24); ctx.lineTo(ccx-6,ccy-2); ctx.lineTo(ccx,ccy-8); ctx.lineTo(ccx+6,ccy-2); ctx.closePath(); ctx.fill();
   ctx.font='700 15px Georgia,serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText('N',ccx,ccy-40);
-  var sbx=WORLD_W-300*LS, sby=WORLD_H-52;
+  // scale bar: 80 world px = 1 km, constant across city scales; pick a nice round km value near the visual target
+  var rawKm=2.2*LS, NICEK=[1,2,3,5,10,20], KK=NICEK[0];
+  for(var nk=0;nk<NICEK.length;nk++)
+    if(Math.abs(NICEK[nk]-rawKm)<Math.abs(KK-rawKm))KK=NICEK[nk];
+  var barPx=KK*80, segPx=barPx/4;
+  var sbx=WORLD_W-barPx-44*LS, sby=WORLD_H-52;
   ctx.lineWidth=2;
   for(var s3=0;s3<4;s3++){
     ctx.fillStyle=s3%2?T.halo:T.compass;
-    ctx.fillRect(sbx+s3*40*LS,sby,40*LS,10);
-    ctx.strokeStyle=T.compass; ctx.strokeRect(sbx+s3*40*LS,sby,40*LS,10);
+    ctx.fillRect(sbx+s3*segPx,sby,segPx,10);
+    ctx.strokeStyle=T.compass; ctx.strokeRect(sbx+s3*segPx,sby,segPx,10);
   }
   ctx.font='13px Georgia,serif'; ctx.fillStyle=T.compass; ctx.textAlign='center';
-  ctx.fillText(WEXT<1.4?'2 km':(WEXT<2.2?'5 km':'10 km'),sbx+80*LS,sby-14);
+  ctx.fillText(KK+' km',sbx+barPx/2,sby-14);
 
   // 10. vignette
-  var vg=ctx.createRadialGradient(WORLD_W/2,WORLD_H/2,420,WORLD_W/2,WORLD_H/2,1050);
+  var vmin=Math.min(WORLD_W,WORLD_H);
+  var vg=ctx.createRadialGradient(WORLD_W/2,WORLD_H/2,0.42*vmin,WORLD_W/2,WORLD_H/2,1.05*vmin);
   vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,T.vig);
   ctx.fillStyle=vg; ctx.fillRect(0,0,WORLD_W,WORLD_H);
   ctx.restore();
@@ -1943,9 +2077,9 @@ function regenerate(){
     var G=buildMacroGraph(F);
     var routed=routeRoads(F,G);
     var nodes=buildIntersections(routed.roads);
-    var blocks=buildBlocks(F,routed);
+    var blocks=buildBlocks(F,routed,nodes);
     var names=buildNames(F,routed.roads);
-    world={F:F,G:G,roads:routed.roads,nodes:nodes,blocks:blocks,names:names,seed:seedStr};
+    world={F:F,G:G,roads:routed.roads,nodes:nodes,blocks:blocks,names:names,seed:seedStr,occNear:routed.occNear};
     world.layers=buildLayers(F,G,world);
     if(!worldCanvas)worldCanvas=document.createElement('canvas');
     worldCanvas.width=WORLD_W; worldCanvas.height=WORLD_H;
@@ -2084,7 +2218,7 @@ window.SeedConsoleAdapter={
     return {key:p.key,label:p.label,min:p.min,max:p.max,step:p.step,
       get:function(){return P[p.key];},
       set:function(v){
-        P[p.key]=p.int?Math.round(v):Math.round(v/p.step)*p.step;
+        P[p.key]=p.int?Math.round(v):qSnap(p, Math.round(v/p.step)*p.step);
         P[p.key]=clamp(P[p.key],p.min,p.max);
         state.seed=encodeSeed();
         scheduleRegen();
