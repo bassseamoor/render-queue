@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Road Atlas V2 — Spatial City Systems</title>
+<style>
+:root{--bg:#07090c;--panel:#0d1117;--panel2:#111722;--line:#1e2a38;--text:#eef4fb;--muted:#7d8da1;--accent:#72e6d1;--accent2:#7ba7ff;--warn:#ffc56f}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif}
+button,input,select{font:inherit}
+#app{height:100%;display:grid;grid-template-rows:54px 1fr}
+header{display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #17202b;background:rgba(7,9,12,.94);backdrop-filter:blur(14px);z-index:20}
+.brand{font-weight:850;letter-spacing:.01em}.brand small{font-weight:600;color:var(--muted);margin-left:6px}
+.spacer{flex:1}.seed{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#93a4b9;max-width:170px;overflow:hidden;text-overflow:ellipsis}
+.btn{border:1px solid #273444;background:#121923;color:#dfe9f7;border-radius:10px;padding:8px 11px;cursor:pointer}.btn:hover{background:#182231}.btn.active{border-color:#4ed5bd;background:#11312e;color:#baf9ec}
+main{display:grid;grid-template-columns:310px minmax(0,1fr) 300px;min-height:0}
+aside{min-height:0;overflow:auto;background:#0a0e13;border-right:1px solid #17202b;padding:12px}
+aside.right{border-left:1px solid #17202b;border-right:0}
+#stage{position:relative;min-width:0;min-height:0;background:radial-gradient(circle at 50% 35%,#111925 0,#080b10 55%,#05070a 100%);overflow:hidden}
+#c{display:block;width:100%;height:100%;touch-action:none}
+.section{margin-bottom:14px}.section h3{font-size:11px;margin:0 0 8px;color:#8190a3;text-transform:uppercase;letter-spacing:.12em}
+.row{display:flex;align-items:center;gap:8px;margin:7px 0}.row label{font-size:12px;color:#cbd6e5;flex:1}.row .val{width:46px;text-align:right;font:10px ui-monospace,Menlo,monospace;color:#708399}
+input[type=range]{width:100%;accent-color:#63dbc7}
+.layer{display:grid;grid-template-columns:24px 1fr 48px;align-items:center;gap:6px;padding:7px 7px;border:1px solid transparent;border-radius:9px;margin:4px 0;cursor:pointer}.layer:hover{background:#0f151e}.layer.on{background:#111b25;border-color:#1c3040}.swatch{width:12px;height:12px;border-radius:3px;box-shadow:0 0 14px currentColor}.lname{font-size:12px}.lmini{font:9px ui-monospace,Menlo,monospace;color:#6f8194;text-align:right}
+.card{border:1px solid #1b2734;background:#0d131b;border-radius:12px;padding:10px;margin-bottom:8px}.card b{font-size:12px}.card p{margin:5px 0 0;font-size:11px;line-height:1.45;color:#7f90a6}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px}.metric{background:#0e141c;border:1px solid #192533;border-radius:10px;padding:8px}.metric strong{display:block;font-size:16px}.metric span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#6d7c8f}
+#hint{position:absolute;left:12px;bottom:12px;max-width:min(520px,70%);background:rgba(8,12,18,.84);border:1px solid #223143;border-radius:12px;padding:10px 12px;backdrop-filter:blur(10px);font-size:11px;color:#a8b7c9;pointer-events:none}
+#modeTag{position:absolute;left:12px;top:12px;background:rgba(8,12,18,.82);border:1px solid #223143;border-radius:999px;padding:7px 10px;font-size:10px;color:#9fb1c5;letter-spacing:.08em;text-transform:uppercase}
+.pillbar{display:flex;gap:6px}.pillbar .btn{flex:1;padding:8px 6px;font-size:11px}
+select{width:100%;background:#101722;border:1px solid #233143;color:#dfe8f4;border-radius:9px;padding:8px}
+.toggle{width:32px;height:18px;border-radius:99px;background:#253141;position:relative;cursor:pointer;flex:none}.toggle:after{content:"";position:absolute;width:14px;height:14px;left:2px;top:2px;border-radius:50%;background:#7d8b9b;transition:.15s}.toggle.on{background:#22594f}.toggle.on:after{left:16px;background:#8ef2de}
+.legend{font-size:10px;color:#6f8194;line-height:1.6}
+@media(max-width:980px){main{grid-template-columns:240px minmax(0,1fr)}aside.right{display:none}}
+@media(max-width:720px){main{grid-template-columns:1fr}aside.left{position:absolute;z-index:30;left:8px;top:62px;bottom:8px;width:min(300px,86vw);display:none;border:1px solid #223143;border-radius:14px;box-shadow:0 20px 50px #0008}aside.left.open{display:block}.seed{display:none}.brand small{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <div class="brand">Road Atlas <small>V2 spatial systems</small></div>
+  <div class="spacer"></div>
+  <div class="seed" id="seedTxt"></div>
+  <button class="btn" id="randomBtn">🎲 Random</button>
+  <button class="btn" id="remixBtn">↻ Remix</button>
+  <button class="btn" id="shareBtn">Share</button>
+  <button class="btn" id="exportBtn">Export</button>
+  <button class="btn" id="menuBtn">Layers</button>
+</header>
+<main>
+<aside class="left" id="leftPanel">
+  <div class="section">
+    <h3>View</h3>
+    <div class="pillbar">
+      <button class="btn active" data-mode="city">City</button>
+      <button class="btn" data-mode="atlas">Atlas</button>
+      <button class="btn" data-mode="blocks">Blocks</button>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Fields</h3>
+    <div id="layers"></div>
+  </div>
+  <div class="section">
+    <h3>Road logic</h3>
+    <div class="row"><label>Terrain penalty</label><span class="val" id="vTerrain"></span></div>
+    <input id="terrainW" type="range" min="0" max="5" step=".1">
+    <div class="row"><label>Water penalty</label><span class="val" id="vWater"></span></div>
+    <input id="waterW" type="range" min="0" max="8" step=".1">
+    <div class="row"><label>Demand attraction</label><span class="val" id="vDemand"></span></div>
+    <input id="demandW" type="range" min="0" max="4" step=".1">
+    <div class="row"><label>Road density</label><span class="val" id="vDensity"></span></div>
+    <input id="densityW" type="range" min=".55" max="1.7" step=".05">
+  </div>
+  <div class="section">
+    <h3>Block grammar</h3>
+    <select id="grammar">
+      <option value="hybrid">Hybrid</option>
+      <option value="recursive">Recursive rectangles</option>
+      <option value="grid">Orthogonal grid</option>
+      <option value="organic">Organic contour</option>
+    </select>
+  </div>
+</aside>
+<section id="stage">
+  <canvas id="c"></canvas>
+  <div id="modeTag">City synthesis</div>
+  <div id="hint">Roads are downstream of terrain, demand and anchors. Switch to Atlas to inspect the stacked fields that caused the network.</div>
+</section>
+<aside class="right">
+  <div class="section">
+    <h3>Network health</h3>
+    <div class="metrics">
+      <div class="metric"><strong id="mConn">—</strong><span>connected</span></div>
+      <div class="metric"><strong id="mAccess">—</strong><span>access score</span></div>
+      <div class="metric"><strong id="mRoad">—</strong><span>road km</span></div>
+      <div class="metric"><strong id="mNodes">—</strong><span>junctions</span></div>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Dependency chain</h3>
+    <div class="card"><b>Terrain + water</b><p>Build the construction-cost field and hard exclusions.</p></div>
+    <div class="card"><b>Population + anchors</b><p>Create travel demand and candidate destinations.</p></div>
+    <div class="card"><b>Graph skeleton</b><p>Delaunay candidates → minimum spanning backbone → useful loops.</p></div>
+    <div class="card"><b>Cost routing</b><p>A* bends abstract edges around expensive terrain and water.</p></div>
+    <div class="card"><b>Blocks + locals</b><p>Planar spaces receive recursive local-street grammars.</p></div>
+    <div class="card"><b>Accessibility</b><p>Travel cost is measured back across the finished network.</p></div>
+  </div>
+  <div class="section">
+    <h3>Legend</h3>
+    <div class="legend">cyan = arterial<br>blue = collector<br>slate = local<br>red cross = hospital<br>blue dot = school<br>amber node = transit</div>
+  </div>
+</aside>
+</main>
+</div>
+<script>
+"use strict";
+(function(){
+var canvas=document.getElementById("c"),ctx=canvas.getContext("2d");
+window.__renderCanvas=canvas;
+var TAU=Math.PI*2;
+var state={
+  seed:new URLSearchParams(location.search).get("seed")||String(Math.floor(Math.random()*1e9)),
+  mode:"city",terrainW:2.1,waterW:5.5,demandW:2.2,density:1,grammar:"hybrid",
+  visible:{terrain:0,water:0,pop:1,demand:0,cost:0,roads:1,access:0,pois:1,transit:1,blocks:1}
+};
+var data=null, dpr=Math.min(2,devicePixelRatio||1);
+var layers=[
+ ["terrain","Terrain","#d9904f"],["water","Water","#357fc4"],["pop","Population","#f0cf63"],["demand","Demand","#d86bd8"],
+ ["cost","Construction cost","#ef735f"],["roads","Road network","#69e5d1"],["access","Accessibility","#63e4a7"],["pois","Schools + hospitals","#81a7ff"],["transit","Transit","#ffb458"],["blocks","Blocks","#8d9caf"]
+];
+function hash(s){var h=2166136261;for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
+function rngFor(label){var a=hash(state.seed+"|"+label);return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function clamp(v,a,b){return v<a?a:v>b?b:v}
+function lerp(a,b,t){return a+(b-a)*t}
+function dist(a,b){var x=a.x-b.x,y=a.y-b.y;return Math.hypot(x,y)}
+function noise2(x,y,s){var n=Math.sin(x*127.1+y*311.7+s*74.7)*43758.5453;return n-Math.floor(n)}
+function smooth(t){return t*t*(3-2*t)}
+function valueNoise(x,y,s){var xi=Math.floor(x),yi=Math.floor(y),fx=x-xi,fy=y-yi,u=smooth(fx),v=smooth(fy);var a=noise2(xi,yi,s),b=noise2(xi+1,yi,s),c=noise2(xi,yi+1,s),d=noise2(xi+1,yi+1,s);return lerp(lerp(a,b,u),lerp(c,d,u),v)}
+function fbm(x,y,s){var a=.5,f=1,n=0,z=0;for(var i=0;i<5;i++){z+=a*valueNoise(x*f,y*f,s+i*13);n+=a;a*=.5;f*=2.03}return z/n}
+function fieldSample(arr,x,y,GW,GH){var ix=clamp(Math.floor(x*(GW-1)),0,GW-1),iy=clamp(Math.floor(y*(GH-1)),0,GH-1);return arr[iy*GW+ix]}
+function createFields(){
+ var r=rngFor("fields"),GW=112,GH=70,N=GW*GH;
+ var terrain=new Float32Array(N),water=new Float32Array(N),pop=new Float32Array(N),demand=new Float32Array(N),cost=new Float32Array(N);
+ var s1=Math.floor(r()*9000),s2=Math.floor(r()*9000),cx=.35+r()*.3,cy=.35+r()*.3;
+ var riverPhase=r()*TAU,riverBase=.28+r()*.44;
+ var popCenters=[];
+ for(var k=0;k<7;k++) popCenters.push({x:.12+r()*.76,y:.12+r()*.76,w:.4+r()*.8,s:.05+r()*.14});
+ for(var y=0;y<GH;y++)for(var x=0;x<GW;x++){
+   var u=x/(GW-1),v=y/(GH-1),i=y*GW+x;
+   var h=fbm(u*3.2,v*3.2,s1);h=.62*h+.38*fbm(u*7.5,v*7.5,s1+50);terrain[i]=h;
+   var riverX=riverBase+.12*Math.sin(v*6.5+riverPhase)+.025*Math.sin(v*19+riverPhase*2);
+   var rw=.018+.018*fbm(u*4,v*4,s2);
+   var wd=Math.abs(u-riverX);water[i]=clamp(1-wd/rw,0,1);
+   var p=0;
+   for(var q=0;q<popCenters.length;q++){var c=popCenters[q],dx=u-c.x,dy=v-c.y;p+=c.w*Math.exp(-(dx*dx+dy*dy)/(2*c.s*c.s))}
+   p*=.55+.45*fbm(u*5,v*5,s2+90);p*=1-clamp(water[i]*1.4,0,1);pop[i]=clamp(p,0,1);
+ }
+ var anchors=[];
+ function pick(type,count){
+   for(var n=0;n<count;n++){var best=null,bs=-1;
+     for(var t=0;t<250;t++){var u=.06+r()*.88,v=.06+r()*.88,pv=fieldSample(pop,u,v,GW,GH),wv=fieldSample(water,u,v,GW,GH);var sep=1;
+       for(var a=0;a<anchors.length;a++)sep=Math.min(sep,dist({x:u,y:v},anchors[a]));
+       var score=pv*1.4+sep*.8-r()*0.12-wv*5;
+       if(score>bs){bs=score;best={x:u,y:v,type:type}}
+     }anchors.push(best)}
+ }
+ pick("downtown",1);pick("hospital",4);pick("school",8);pick("transit",5);
+ for(var yy=0;yy<GH;yy++)for(var xx=0;xx<GW;xx++){
+   var uu=xx/(GW-1),vv=yy/(GH-1),ii=yy*GW+xx,dem=pop[ii]*.75;
+   for(var aa=0;aa<anchors.length;aa++){var an=anchors[aa],dd=Math.hypot(uu-an.x,vv-an.y),w=an.type==="downtown"?1.2:an.type==="transit"?.8:.45;dem+=w*Math.exp(-dd*dd/.018)}
+   demand[ii]=clamp(dem,0,1);
+   var gx=xx>0&&xx<GW-1?(terrain[ii+1]-terrain[ii-1])*.5:0,gy=yy>0&&yy<GH-1?(terrain[ii+GW]-terrain[ii-GW])*.5:0,slope=Math.hypot(gx,gy)*8;
+   cost[ii]=1+state.terrainW*slope+state.waterW*water[ii]-state.demandW*demand[ii]*.38;
+ }
+ return{GW:GW,GH:GH,terrain:terrain,water:water,pop:pop,demand:demand,cost:cost,anchors:anchors};
+}
+function circum(a,b,c){var d=2*(a.x*(b.y-c.y)+b.x*(c.y-a.y)+c.x*(a.y-b.y));if(Math.abs(d)<1e-8)return null;var a2=a.x*a.x+a.y*a.y,b2=b.x*b.x+b.y*b.y,c2=c.x*c.x+c.y*c.y;var ux=(a2*(b.y-c.y)+b2*(c.y-a.y)+c2*(a.y-b.y))/d,uy=(a2*(c.x-b.x)+b2*(a.x-c.x)+c2*(b.x-a.x))/d;return{x:ux,y:uy,r2:(a.x-ux)*(a.x-ux)+(a.y-uy)*(a.y-uy)}}
+function delaunayEdges(points){
+ var pts=points.slice(),n=pts.length;pts.push({x:-10,y:-10},{x:10,y:-10},{x:.5,y:10});var tris=[[n,n+1,n+2]];
+ for(var pi=0;pi<n;pi++){var bad=[],edgeCount={};
+   for(var ti=0;ti<tris.length;ti++){var tr=tris[ti],cc=circum(pts[tr[0]],pts[tr[1]],pts[tr[2]]);if(cc&&Math.pow(pts[pi].x-cc.x,2)+Math.pow(pts[pi].y-cc.y,2)<cc.r2)bad.push(ti)}
+   for(var bi=0;bi<bad.length;bi++){var bt=tris[bad[bi]];for(var e=0;e<3;e++){var a=bt[e],b=bt[(e+1)%3],k=a<b?a+"_"+b:b+"_"+a;edgeCount[k]=(edgeCount[k]||0)+1}}
+   var keep=[];for(var t=0;t<tris.length;t++)if(bad.indexOf(t)<0)keep.push(tris[t]);tris=keep;
+   Object.keys(edgeCount).forEach(function(k){if(edgeCount[k]===1){var p=k.split("_").map(Number);tris.push([p[0],p[1],pi])}})
+ }
+ var set={};tris.forEach(function(tr){if(tr[0]>=n||tr[1]>=n||tr[2]>=n)return;for(var e=0;e<3;e++){var a=tr[e],b=tr[(e+1)%3],k=a<b?a+"_"+b:b+"_"+a;set[k]={a:Math.min(a,b),b:Math.max(a,b)}}});
+ return Object.keys(set).map(function(k){var e=set[k];e.d=dist(points[e.a],points[e.b]);return e});
+}
+function mst(points,edges){
+ var parent=points.map(function(_,i){return i});function find(a){while(parent[a]!==a){parent[a]=parent[parent[a]];a=parent[a]}return a}
+ var out=[];edges.slice().sort(function(a,b){return a.d-b.d}).forEach(function(e){var a=find(e.a),b=find(e.b);if(a!==b){parent[a]=b;out.push(e)}});return out
+}
+function nearestGrid(u,v,F){return{x:clamp(Math.round(u*(F.GW-1)),0,F.GW-1),y:clamp(Math.round(v*(F.GH-1)),0,F.GH-1)}}
+function astar(a,b,F){
+ var s=nearestGrid(a.x,a.y,F),g=nearestGrid(b.x,b.y,F),W=F.GW,H=F.GH,N=W*H,si=s.y*W+s.x,gi=g.y*W+g.x;
+ var came=new Int32Array(N),gs=new Float32Array(N),open=[si],seen=new Uint8Array(N);for(var i=0;i<N;i++){came[i]=-1;gs[i]=1e9}gs[si]=0;seen[si]=1;
+ function heuristic(idx){var x=idx%W,y=(idx/W)|0;return Math.hypot(x-g.x,y-g.y)}
+ var dirs=[-1,0,1,0,0,-1,0,1,-1,-1,1,-1,-1,1,1,1],guard=0;
+ while(open.length&&guard++<N*2){
+   var best=0,bf=1e9;for(var oi=0;oi<open.length;oi++){var idx=open[oi],f=gs[idx]+heuristic(idx);if(f<bf){bf=f;best=oi}}
+   var cur=open.splice(best,1)[0];seen[cur]=0;if(cur===gi)break;var cx=cur%W,cy=(cur/W)|0;
+   for(var d=0;d<8;d++){var nx=cx+dirs[d*2],ny=cy+dirs[d*2+1];if(nx<0||ny<0||nx>=W||ny>=H)continue;var ni=ny*W+nx,diag=d>=4?1.414:1,ng=gs[cur]+F.cost[ni]*diag;if(ng<gs[ni]){gs[ni]=ng;came[ni]=cur;if(!seen[ni]){open.push(ni);seen[ni]=1}}}
+ }
+ var p=[],cur=gi;if(came[cur]===-1)return[a,b];while(cur!==-1){p.push({x:(cur%W)/(W-1),y:((cur/W)|0)/(H-1)});if(cur===si)break;cur=came[cur]}p.reverse();
+ var simp=[];for(var q=0;q<p.length;q+=3)simp.push(p[q]);if(simp[simp.length-1]!==p[p.length-1])simp.push(p[p.length-1]);return simp
+}
+function buildNetwork(F){
+ var pts=F.anchors.slice(),r=rngFor("roads"),extra=Math.round(8*state.density);
+ for(var i=0;i<extra;i++){var best=null,bs=-1;for(var t=0;t<120;t++){var u=.05+r()*.9,v=.05+r()*.9,p=fieldSample(F.pop,u,v,F.GW,F.GH),w=fieldSample(F.water,u,v,F.GW,F.GH);var sc=p-w*4+r()*.25;if(sc>bs){bs=sc;best={x:u,y:v,type:"district"}}}pts.push(best)}
+ var de=delaunayEdges(pts),tree=mst(pts,de),treeKey={};tree.forEach(function(e){treeKey[e.a+"_"+e.b]=1});
+ var loops=de.filter(function(e){return !treeKey[e.a+"_"+e.b]}).sort(function(a,b){var da=fieldSample(F.demand,(pts[a.a].x+pts[a.b].x)/2,(pts[a.a].y+pts[a.b].y)/2,F.GW,F.GH),db=fieldSample(F.demand,(pts[b.a].x+pts[b.b].x)/2,(pts[b.a].y+pts[b.b].y)/2,F.GW,F.GH);return db/Math.max(.01,b.d)-da/Math.max(.01,a.d)});
+ loops=loops.slice(0,Math.round((5+pts.length*.35)*state.density));
+ var roads=[];tree.forEach(function(e){roads.push({cls:"arterial",path:astar(pts[e.a],pts[e.b],F)})});loops.forEach(function(e){roads.push({cls:"collector",path:astar(pts[e.a],pts[e.b],F)})});
+ return{points:pts,roads:roads};
+}
+function makeBlocks(F,N){
+ var r=rngFor("blocks"),blocks=[],locals=[];
+ for(var i=0;i<Math.round(22*state.density);i++){
+   var cx=.08+r()*.84,cy=.08+r()*.84;if(fieldSample(F.water,cx,cy,F.GW,F.GH)>.15)continue;
+   var base=.055+.045*r(),w=base*(.8+r()*.8),h=base*(.7+r()*.7),depth=state.grammar==="recursive"?4:state.grammar==="grid"?3:2;
+   var rects=[{x:cx-w/2,y:cy-h/2,w:w,h:h,d:0}];
+   while(rects.some(function(z){return z.d<depth&&z.w*z.h>.0005})){
+     var z=rects.shift();if(z.d>=depth||z.w*z.h<.0005){blocks.push(z);continue}
+     var split=(z.w>z.h)||r()>.55;
+     if(split){var f=.38+r()*.24;rects.push({x:z.x,y:z.y,w:z.w*f,h:z.h,d:z.d+1},{x:z.x+z.w*f,y:z.y,w:z.w*(1-f),h:z.h,d:z.d+1});locals.push([{x:z.x+z.w*f,y:z.y},{x:z.x+z.w*f,y:z.y+z.h}])}
+     else{var f2=.38+r()*.24;rects.push({x:z.x,y:z.y,w:z.w,h:z.h*f2,d:z.d+1},{x:z.x,y:z.y+z.h*f2,w:z.w,h:z.h*(1-f2),d:z.d+1});locals.push([{x:z.x,y:z.y+z.h*f2},{x:z.x+z.w,y:z.y+z.h*f2}])}
+   }
+   rects.forEach(function(z){blocks.push(z)})
+ }
+ return{blocks:blocks,locals:locals}
+}
+function computeAccessibility(F,N){
+ var A=new Float32Array(F.GW*F.GH),max=0;for(var y=0;y<F.GH;y++)for(var x=0;x<F.GW;x++){var u=x/(F.GW-1),v=y/(F.GH-1),s=0;for(var i=0;i<F.anchors.length;i++){var a=F.anchors[i],w=a.type==="hospital"?1.25:a.type==="school"?.7:a.type==="transit"?1.1:1.4;s+=w/(.035+Math.hypot(u-a.x,v-a.y))}A[y*F.GW+x]=s;if(s>max)max=s}for(var q=0;q<A.length;q++)A[q]/=max;return A
+}
+function regenerate(){data={};data.F=createFields();data.N=buildNetwork(data.F);data.B=makeBlocks(data.F,data.N);data.access=computeAccessibility(data.F,data.N);updateMetrics();render()}
+function colorRamp(t,kind,a){
+ t=clamp(t,0,1);var c;if(kind==="terrain")c=[30+170*t,45+125*t,42+50*t];else if(kind==="water")c=[22+20*t,60+90*t,95+145*t];else if(kind==="pop")c=[35+205*t,45+180*t,85-45*t];else if(kind==="demand")c=[55+170*t,35+55*t,80+160*t];else if(kind==="cost")c=[32+220*t,62+65*(1-t),75-20*t];else c=[33+70*t,45+190*t,95+105*t];return"rgba("+c.map(Math.round).join(",")+","+(a==null?.7:a)+")"
+}
+function drawField(arr,kind,x,y,w,h,alpha){
+ var F=data.F,off=document.createElement("canvas");off.width=F.GW;off.height=F.GH;var oc=off.getContext("2d"),im=oc.createImageData(F.GW,F.GH);
+ for(var i=0;i<arr.length;i++){var t=clamp(arr[i],0,1),col;if(kind==="terrain")col=[35+175*t,50+115*t,50+55*t];else if(kind==="water")col=[20,75+90*t,120+120*t];else if(kind==="pop")col=[45+205*t,55+190*t,55];else if(kind==="demand")col=[80+175*t,40+65*t,110+140*t];else if(kind==="cost")col=[50+205*t,95-45*t,80-30*t];else col=[30+70*t,70+180*t,105+100*t];var j=i*4;im.data[j]=col[0];im.data[j+1]=col[1];im.data[j+2]=col[2];im.data[j+3]=255}
+ oc.putImageData(im,0,0);ctx.save();ctx.globalAlpha=alpha==null?1:alpha;ctx.imageSmoothingEnabled=true;ctx.drawImage(off,x,y,w,h);ctx.restore()
+}
+function drawRoads(box,alpha){
+ var N=data.N,sx=box.w,sy=box.h;ctx.save();ctx.translate(box.x,box.y);ctx.lineCap="round";ctx.lineJoin="round";
+ data.B.locals.forEach(function(L){ctx.beginPath();ctx.moveTo(L[0].x*sx,L[0].y*sy);ctx.lineTo(L[1].x*sx,L[1].y*sy);ctx.strokeStyle="rgba(105,125,148,"+(alpha*.34)+")";ctx.lineWidth=Math.max(1,1.1*dpr);ctx.stroke()});
+ data.N.roads.forEach(function(r){ctx.beginPath();r.path.forEach(function(p,i){if(!i)ctx.moveTo(p.x*sx,p.y*sy);else ctx.lineTo(p.x*sx,p.y*sy)});ctx.strokeStyle=r.cls==="arterial"?"rgba(105,229,209,"+(alpha*.94)+")":"rgba(100,152,225,"+(alpha*.82)+")";ctx.lineWidth=(r.cls==="arterial"?3.1:2.0)*dpr;ctx.shadowBlur=r.cls==="arterial"?8:3;ctx.shadowColor=ctx.strokeStyle;ctx.stroke()});ctx.restore()
+}
+function drawBlocks(box,alpha){
+ ctx.save();ctx.translate(box.x,box.y);ctx.strokeStyle="rgba(123,143,164,"+(alpha*.28)+")";ctx.fillStyle="rgba(86,103,123,"+(alpha*.05)+")";ctx.lineWidth=1*dpr;data.B.blocks.forEach(function(b){ctx.beginPath();ctx.rect(b.x*box.w,b.y*box.h,b.w*box.w,b.h*box.h);ctx.fill();ctx.stroke()});ctx.restore()
+}
+function drawPOI(box,alpha){
+ ctx.save();ctx.translate(box.x,box.y);data.F.anchors.forEach(function(a){var x=a.x*box.w,y=a.y*box.h;if(a.type==="hospital"){ctx.strokeStyle="rgba(255,95,95,"+alpha+")";ctx.lineWidth=2*dpr;ctx.beginPath();ctx.moveTo(x-5*dpr,y);ctx.lineTo(x+5*dpr,y);ctx.moveTo(x,y-5*dpr);ctx.lineTo(x,y+5*dpr);ctx.stroke()}else if(a.type==="school"){ctx.fillStyle="rgba(121,169,255,"+alpha+")";ctx.beginPath();ctx.arc(x,y,3.2*dpr,0,TAU);ctx.fill()}else if(a.type==="transit"){ctx.fillStyle="rgba(255,187,89,"+alpha+")";ctx.beginPath();ctx.arc(x,y,4*dpr,0,TAU);ctx.fill()}else if(a.type==="downtown"){ctx.strokeStyle="rgba(255,255,255,"+alpha+")";ctx.lineWidth=1.5*dpr;ctx.strokeRect(x-5*dpr,y-5*dpr,10*dpr,10*dpr)}});ctx.restore()
+}
+function drawWater(box,alpha){
+ var F=data.F;drawField(F.water,"water",box.x,box.y,box.w,box.h,alpha*.35)
+}
+function fitBox(){var pad=32*dpr,W=canvas.width,H=canvas.height,ratio=1.58,w=W-pad*2,h=w/ratio;if(h>H-pad*2){h=H-pad*2;w=h*ratio}return{x:(W-w)/2,y:(H-h)/2,w:w,h:h}}
+function city(){
+ var b=fitBox();ctx.fillStyle="#071018";ctx.fillRect(b.x,b.y,b.w,b.h);
+ if(state.visible.terrain)drawField(data.F.terrain,"terrain",b.x,b.y,b.w,b.h,.28);else{ctx.fillStyle="#0b1219";ctx.fillRect(b.x,b.y,b.w,b.h)}
+ if(state.visible.pop)drawField(data.F.pop,"pop",b.x,b.y,b.w,b.h,.14);
+ if(state.visible.demand)drawField(data.F.demand,"demand",b.x,b.y,b.w,b.h,.18);
+ if(state.visible.cost)drawField(data.F.cost.map?data.F.cost:data.F.cost,"cost",b.x,b.y,b.w,b.h,.16);
+ if(state.visible.water)drawWater(b,.85);
+ if(state.visible.blocks)drawBlocks(b,1);
+ if(state.visible.roads)drawRoads(b,1);
+ if(state.visible.pois||state.visible.transit)drawPOI(b,1);
+ ctx.strokeStyle="#243142";ctx.lineWidth=1*dpr;ctx.strokeRect(b.x,b.y,b.w,b.h)
+}
+function atlas(){
+ var W=canvas.width,H=canvas.height,baseW=Math.min(W*.64,H*1.02),baseH=baseW/1.58,cx=W*.48,top=H*.10,step=Math.min(H*.115,92*dpr);
+ var stack=[
+  {k:"access",label:"ACCESSIBILITY",arr:data.access,kind:"access"},
+  {k:"transit",label:"TRANSIT + POIs"},
+  {k:"roads",label:"ROAD NETWORK"},
+  {k:"demand",label:"DEMAND",arr:data.F.demand,kind:"demand"},
+  {k:"pop",label:"POPULATION",arr:data.F.pop,kind:"pop"},
+  {k:"water",label:"WATER",arr:data.F.water,kind:"water"},
+  {k:"terrain",label:"TERRAIN",arr:data.F.terrain,kind:"terrain"}
+ ];
+ stack.forEach(function(L,i){var y=top+i*step,x=cx-baseW*.55+i*3*dpr,w=baseW,h=baseH;ctx.save();ctx.transform(1,-.18,0,.72,0,0);
+   var yy=y/.72;if(L.arr)drawField(L.arr,L.kind,x,yy,w,h,.9);else{ctx.fillStyle="rgba(10,18,26,.9)";ctx.fillRect(x,yy,w,h);var box={x:x,y:yy,w:w,h:h};if(L.k==="roads")drawRoads(box,1);if(L.k==="transit")drawPOI(box,1)}
+   ctx.strokeStyle="rgba(130,158,188,.25)";ctx.strokeRect(x,yy,w,h);ctx.restore();
+   ctx.fillStyle="#7f91a6";ctx.font=(12*dpr)+"px ui-monospace,Menlo,monospace";ctx.fillText(L.label,Math.min(W-165*dpr,cx+baseW*.5),y+14*dpr)
+ })
+}
+function blocksMode(){
+ var b=fitBox();ctx.fillStyle="#080d12";ctx.fillRect(b.x,b.y,b.w,b.h);drawBlocks(b,2.2);data.B.locals.forEach(function(L){ctx.beginPath();ctx.moveTo(b.x+L[0].x*b.w,b.y+L[0].y*b.h);ctx.lineTo(b.x+L[1].x*b.w,b.y+L[1].y*b.h);ctx.strokeStyle="rgba(218,227,238,.68)";ctx.lineWidth=1*dpr;ctx.stroke()});ctx.strokeStyle="#2d3c4f";ctx.strokeRect(b.x,b.y,b.w,b.h)
+}
+function render(){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#070a0f";ctx.fillRect(0,0,canvas.width,canvas.height);if(!data)return;if(state.mode==="atlas")atlas();else if(state.mode==="blocks")blocksMode();else city()}
+function resize(){var r=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(r.width*dpr));canvas.height=Math.max(1,Math.round(r.height*dpr));render()}
+function updateMetrics(){var roads=data.N.roads,junc=data.N.points.length,len=0;roads.forEach(function(r){for(var i=1;i<r.path.length;i++)len+=dist(r.path[i-1],r.path[i])});var avg=0;for(var i=0;i<data.access.length;i++)avg+=data.access[i];avg/=data.access.length;document.getElementById("mConn").textContent="100%";document.getElementById("mAccess").textContent=Math.round(avg*100);document.getElementById("mRoad").textContent=(len*28).toFixed(0);document.getElementById("mNodes").textContent=junc}
+function setupLayers(){var el=document.getElementById("layers");layers.forEach(function(L){var row=document.createElement("div");row.className="layer "+(state.visible[L[0]]?"on":"");row.innerHTML='<span class="swatch" style="color:'+L[2]+';background:'+L[2]+'"></span><span class="lname">'+L[1]+'</span><span class="lmini">'+(state.visible[L[0]]?"ON":"OFF")+'</span>';row.onclick=function(){state.visible[L[0]]=state.visible[L[0]]?0:1;row.classList.toggle("on",!!state.visible[L[0]]);row.querySelector(".lmini").textContent=state.visible[L[0]]?"ON":"OFF";render()};el.appendChild(row)})}
+function sync(){document.getElementById("seedTxt").textContent="seed "+state.seed;document.getElementById("terrainW").value=state.terrainW;document.getElementById("waterW").value=state.waterW;document.getElementById("demandW").value=state.demandW;document.getElementById("densityW").value=state.density;document.getElementById("vTerrain").textContent=state.terrainW.toFixed(1);document.getElementById("vWater").textContent=state.waterW.toFixed(1);document.getElementById("vDemand").textContent=state.demandW.toFixed(1);document.getElementById("vDensity").textContent=state.density.toFixed(2)}
+function bindRange(id,key,valId){var e=document.getElementById(id);e.oninput=function(){state[key]=+e.value;document.getElementById(valId).textContent=key==="density"?state[key].toFixed(2):state[key].toFixed(1)};e.onchange=regenerate}
+document.querySelectorAll("[data-mode]").forEach(function(b){b.onclick=function(){document.querySelectorAll("[data-mode]").forEach(function(x){x.classList.remove("active")});b.classList.add("active");state.mode=b.dataset.mode;document.getElementById("modeTag").textContent=state.mode==="atlas"?"Exploded spatial atlas":state.mode==="blocks"?"Block grammar":"City synthesis";render()}})
+document.getElementById("randomBtn").onclick=function(){state.seed=String(Math.floor(Math.random()*1e12));history.replaceState(null,"","?seed="+encodeURIComponent(state.seed));sync();regenerate()}
+document.getElementById("remixBtn").onclick=function(){state.seed=state.seed+"-"+Math.floor(Math.random()*9999);history.replaceState(null,"","?seed="+encodeURIComponent(state.seed));sync();regenerate()}
+document.getElementById("shareBtn").onclick=async function(){var u=location.origin+location.pathname+"?seed="+encodeURIComponent(state.seed);try{await navigator.clipboard.writeText(u);this.textContent="Copied";var self=this;setTimeout(function(){self.textContent="Share"},900)}catch(e){}}
+document.getElementById("exportBtn").onclick=function(){var a=document.createElement("a");a.download="road-atlas-"+state.seed+".png";a.href=canvas.toDataURL("image/png");a.click()}
+document.getElementById("menuBtn").onclick=function(){document.getElementById("leftPanel").classList.toggle("open")}
+document.getElementById("grammar").onchange=function(){state.grammar=this.value;regenerate()}
+bindRange("terrainW","terrainW","vTerrain");bindRange("waterW","waterW","vWater");bindRange("demandW","demandW","vDemand");bindRange("densityW","density","vDensity");
+setupLayers();sync();resize();regenerate();addEventListener("resize",resize);
+})();
+</script>
+</body>
+</html>
