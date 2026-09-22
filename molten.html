@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101012"><meta name="description" content="Sculpt light in liquid. A procedural lava lamp studio with custom materials, motion, lighting and clean video recording.">
+<title>MOLTEN — Lava Studio</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23101012'/%3E%3Cpath d='M16 4C14 11 8 12 8 20a8 8 0 0016 0C24 13 18 10 16 4' fill='%23ff794d'/%3E%3C/svg%3E">
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101012;color:#eeeae5;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#scene:active{cursor:grabbing}
+.scene-meta{position:fixed;top:24px;left:28px;pointer-events:none;z-index:2}
+.eyebrow{font-size:11px;letter-spacing:.2em;font-weight:550;color:#8c878a;text-transform:uppercase}
+.scene-meta h1{font-family:Georgia,"Times New Roman",serif;font-size:30px;font-weight:400;margin:8px 0;color:#f2e6dc;letter-spacing:-.015em}
+.scene-meta p{font-size:12px;color:#a19a9b;margin:0}
+.toast{position:fixed;bottom:90px;left:50%;transform:translate(-50%,12px);background:#29232bee;border:1px solid #ffffff23;border-radius:10px;padding:12px 18px;font-size:13px;line-height:1.5;max-width:min(480px,90vw);z-index:20;opacity:0;pointer-events:none;transition:.2s;box-shadow:0 12px 50px #0007}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+#error-panel{position:fixed;inset:0;display:none;place-content:center;padding:40px;text-align:center;background:#141216;z-index:6}
+#error-panel h2{font:32px Georgia,serif;margin:0 0 12px}
+#error-panel p{max-width:440px;color:#b5a8b7;line-height:1.7;font-size:14px}
+@media(max-width:700px){.scene-meta{top:15px;left:16px}.scene-meta .eyebrow{font-size:9px}.scene-meta h1{font-size:22px;margin:5px 0}.scene-meta p{font-size:10px}}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="Interactive three-dimensional lava lamp. Drag to orbit, scroll to zoom."></canvas>
+<div class="scene-meta"><div class="eyebrow">Live composition <span id="scene-number">01</span></div><h1 id="scene-title">Ember &amp; obsidian</h1><p id="scene-subtitle">Warm wax. Midnight glass.</p></div>
+<div id="error-panel" role="alert"><h2>Let’s turn the light on.</h2><p id="error-text"></p></div>
+<div class="toast" id="toast" role="status"></div>
+<script id="vertex-shader" type="x-shader/x-vertex">#version 300 es
+in vec2 aPosition;
+out vec2 vUv;
+void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}
+</script>
+<script id="scene-shader" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform vec2 uRes;
+uniform vec4 uBlobs[24];
+uniform int uCount,uShape,uView,uBackground,uMetal,uSteps;
+uniform vec3 uWax,uHot,uLiquid,uBack;
+uniform float uMerge,uWarp,uTime,uGlow,uGloss,uTranslucence,uGlass,uExposure,uHalo,uZoom,uYaw,uPitch,uGrain,uFloor,uPulse,uSoftness,uSpread,uIridescence,uMarble,uLightAngle,uLightHeight;
+const float PI=3.14159265359;
+float smin(float a,float b,float k){float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+float radiusAt(float y){
+ if(uView>0)return 9.;
+ if(uShape==0)return mix(.86,.46,smoothstep(-1.9,1.9,y))+.035*sin((y+1.9)*.826);
+ if(uShape==1)return .75;
+ if(uShape==2)return sqrt(max(.001,1.-pow(y/1.95,2.)))*1.39;
+ return .52+.35*pow(abs(y)/1.9,1.25);
+}
+float vessel(vec3 p){
+ if(uShape==2)return (length(p/vec3(1.39,1.95,1.39))-1.)*1.32;
+ return max(length(p.xz)-radiusAt(p.y),abs(p.y)-1.91);
+}
+float waxMap(vec3 p){
+ float d=8.;
+ vec3 q=p;
+ q.x+=uWarp*.10*sin(p.y*3.1+uTime)*sin(p.z*3.7+uTime*2.);
+ q.z+=uWarp*.09*sin(p.y*4.4-uTime*2.)*cos(p.x*3.5+uTime);
+ for(int i=0;i<24;i++){if(i>=uCount)break;
+  vec3 c=q-uBlobs[i].xyz;
+  float stretch=1.+uSoftness*.32*sin(float(i)*2.67+uTime*2.);
+  c.y/=stretch;
+  float wob=1.+.024*sin(uTime*2.+float(i)*2.39)+.016*sin(uTime*3.+float(i)*4.07);
+  float sphere=(length(c)-uBlobs[i].w*wob)*min(1.,stretch);
+  d=smin(d,sphere,uMerge);
+ }
+ if(uView==0){
+  float bottom=length((q-vec3(0.,-1.92,0.))/vec3(.66,.18,.66))-1.;
+  d=smin(d,bottom*.18,.20+uMerge*.2);
+  d=max(d,vessel(p)+.072);
+ }
+ return d;
+}
+vec3 waxNormal(vec3 p){vec2 e=vec2(.0015,0.);return normalize(vec3(waxMap(p+e.xyy)-waxMap(p-e.xyy),waxMap(p+e.yxy)-waxMap(p-e.yxy),waxMap(p+e.yyx)-waxMap(p-e.yyx)));}
+float cappedCone(vec3 p,float h,float r1,float r2){vec2 q=vec2(length(p.xz),p.y);vec2 k1=vec2(r2,h),k2=vec2(r2-r1,2.*h);vec2 ca=vec2(q.x-min(q.x,(q.y<0.)?r1:r2),abs(q.y)-h);vec2 cb=q-k1+k2*clamp(dot(k1-q,k2)/dot(k2,k2),0.,1.);float s=(cb.x<0.&&ca.y<0.)?-1.:1.;return s*sqrt(min(dot(ca,ca),dot(cb,cb)));}
+float metalMap(vec3 p){
+ if(uShape==2){float a=cappedCone(p-vec3(0.,-2.04,0.),.19,.75,.5);float b=length(vec2(length(p.xz)-.49,p.y+1.89))-.044;return min(a,b);}
+ float rb=uShape==1?.80:.94;float rt=uShape==0?.50:uShape==1?.8:.93;
+ float base=cappedCone(p-vec3(0.,-2.21,0.),.32,rb*.82,rb);
+ float foot=cappedCone(p-vec3(0.,-2.54,0.),.045,rb*.89,rb*.82);
+ float cap=cappedCone(p-vec3(0.,2.065,0.),.155,rt,rt*.70);
+ return min(min(base,foot),cap);
+}
+vec3 metalNormal(vec3 p){vec2 e=vec2(.001,0.);return normalize(vec3(metalMap(p+e.xyy)-metalMap(p-e.xyy),metalMap(p+e.yxy)-metalMap(p-e.yxy),metalMap(p+e.yyx)-metalMap(p-e.yyx)));}
+vec3 env(vec3 d){
+ vec3 c=mix(vec3(.025,.027,.04),vec3(.18,.19,.24),smoothstep(-.3,1.,d.y));
+ float softbox=pow(max(0.,dot(d,normalize(vec3(-3.,2.,4.)))),28.);
+ float strip=pow(max(0.,dot(d,normalize(vec3(3.,1.,1.)))),60.);
+ c+=vec3(.95,.80,.68)*softbox*1.6+mix(uHot,vec3(.7,.75,1.),.7)*strip*1.8;
+ c+=uWax*pow(max(0.,dot(d,normalize(vec3(-1.,-.4,-2.)))),8.)*.2;
+ return c;
+}
+vec3 backdrop(vec2 uv,vec3 rd){
+ if(uBackground==3)return vec3(0.);
+ float halo=exp(-length(uv*vec2(.80,.67))*2.7);
+ vec3 c=uBack*(.35+halo*1.5);
+ c+=mix(uWax,uHot,.2)*halo*(uBackground==0?.017:.075)*uHalo;
+ if(uBackground==2){float n=sin(uv.x*3.+sin(uv.y*2.+uTime))*.5+.5;float n2=sin(uv.y*4.-sin(uv.x*3.-uTime*2.))*.5+.5;c+=mix(uLiquid,uWax,n2)*n*n2*.09*uHalo;}
+ return c;
+}
+vec2 cylinderHit(vec3 ro,vec3 rd,float r,float h){
+ float a=dot(rd.xz,rd.xz),b=dot(ro.xz,rd.xz),c=dot(ro.xz,ro.xz)-r*r;
+ float det=b*b-a*c;if(det<0.)return vec2(1e4,-1e4);
+ vec2 t=vec2(-b-sqrt(det),-b+sqrt(det))/max(a,.00001);
+ if(abs(rd.y)>.00001){vec2 ty=vec2(-h-ro.y,h-ro.y)/rd.y;if(ty.x>ty.y)ty=ty.yx;t=vec2(max(t.x,ty.x),min(t.y,ty.y));}
+ return t;
+}
+vec3 film(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
+void main(){
+ vec2 uv=(gl_FragCoord.xy*2.-uRes.xy)/uRes.y;
+ float yaw=uYaw,pitch=uPitch;
+ float distance=(uView==0?7.65:uView==1?5.8:3.25)/uZoom;
+ vec3 target=vec3(0.,uView==0?-.18:0.,0.);
+ vec3 ro=target+vec3(sin(yaw)*cos(pitch),sin(pitch),cos(yaw)*cos(pitch))*distance;
+ vec3 ww=normalize(target-ro),uu=normalize(cross(ww,vec3(0.,1.,0.))),vv=cross(uu,ww);
+ vec3 rd=normalize(uu*uv.x+vv*uv.y+ww*2.35);
+ vec3 col=backdrop(uv,rd);
+ float floorY=uShape==2?-2.24:-2.59;
+ float tf=(floorY-ro.y)/rd.y;
+ if(uFloor>.5&&uView==0&&tf>0.){
+  vec3 fp=ro+rd*tf;
+  float pool=exp(-dot(fp.xz,fp.xz)*.45);
+  float reflection=exp(-pow(fp.x*.85,2.)-pow((fp.z-1.2)*.9,2.));
+  col+=mix(uWax,uHot,.55)*pool*.038*uGlow+uHot*reflection*.013;
+  col*=1.-.55*exp(-dot(fp.xz,fp.xz)*2.5);
+  if(pool>.015){
+   vec3 rr=reflect(rd,vec3(0.,1.,0.)),origin=fp+rr*.025;
+   vec2 rb=cylinderHit(origin,rr,uShape==2?1.43:1.06,2.6);
+   float rt=max(0.,rb.x);
+   for(int i=0;i<40;i++){
+    if(rt>rb.y)break;
+    vec3 rp=origin+rr*rt;
+    float wd=waxMap(rp),md=metalMap(rp),d=min(wd,md);
+    if(d<.009){
+     vec3 reflectionColor=wd<md?mix(uHot,uWax,smoothstep(-1.7,1.7,rp.y))*.8:env(reflect(rr,metalNormal(rp)))*.25;
+     col+=reflectionColor*.10*pool;break;
+    }
+    rt+=max(d*.76,.012);
+   }
+  }
+ }
+ float metalT=1e3;
+ if(uView==0){vec2 bound=cylinderHit(ro,rd,1.06,2.6);float t=max(0.,bound.x);
+  for(int i=0;i<64;i++){if(t>bound.y)break;vec3 p=ro+rd*t;float d=metalMap(p);if(d<.0015){metalT=t;break;}t+=max(d*.8,.003);}
+ }
+ float entry=0.,exitT=0.;vec3 glassN=vec3(0.);bool inGlass=false;
+ if(uView==0){
+  vec2 bound=cylinderHit(ro,rd,uShape==2?1.43:.96,1.95);
+  float t=max(0.,bound.x);
+  for(int i=0;i<70;i++){if(t>bound.y)break;float d=vessel(ro+rd*t);if(d<.0015){entry=t;inGlass=true;break;}t+=max(d*.78,.002);}
+  if(inGlass){
+   float back=bound.y;
+   for(int i=0;i<60;i++){if(back<entry)break;float d=vessel(ro+rd*back);if(d<.0015){exitT=back;break;}back-=max(d*.78,.002);}
+   vec3 gp=ro+rd*entry;vec2 e=vec2(.002,0.);glassN=normalize(vec3(vessel(gp+e.xyy)-vessel(gp-e.xyy),vessel(gp+e.yxy)-vessel(gp-e.yxy),vessel(gp+e.yyx)-vessel(gp-e.yyx)));
+  }
+ }else{vec2 b=cylinderHit(ro,rd,4.6,4.3);entry=max(0.,b.x);exitT=b.y;inGlass=exitT>entry;}
+ float lavaT=1e3;
+ if(inGlass&&entry<metalT){
+  vec3 rayStart=ro+rd*entry;
+  vec3 lr=rd;
+  if(uView==0)lr=normalize(mix(rd,refract(rd,glassN,1./1.18),uGlass*.28));
+  float t=.014;float travel=max(.0,exitT-entry);
+  float nearest=9.;float glowAccum=0.;
+  for(int i=0;i<128;i++){
+   if(i>=uSteps||t>travel||t+entry>metalT)break;
+   vec3 p=rayStart+lr*t;float d=waxMap(p);nearest=min(nearest,d);
+   glowAccum+=exp(-max(d,0.)*8.)*.008;
+   if(d<.002){lavaT=t;break;}t+=max(d*.74,.0035);
+  }
+  vec3 fluidColor=uLiquid*(.07+travel*.095);
+  vec3 inner=col*exp(-travel*.10)+fluidColor;
+  inner+=mix(uWax,uHot,.35)*pow(max(0.,1.-abs(rayStart.x)*.6),3.)*.04*uGlow;
+  if(lavaT<999.){
+   vec3 p=rayStart+lr*lavaT;vec3 n=waxNormal(p);vec3 v=-lr;
+   vec3 l=normalize(vec3(sin(uLightAngle)*4.6,uLightHeight,cos(uLightAngle)*4.6)-p);
+   vec3 l2=normalize(vec3(2.5,-2.3,1.3)-p);
+   float diff=max(dot(n,l),0.);float diff2=max(dot(n,l2),0.);
+   float fres=pow(1.-max(dot(n,v),0.),3.);
+   float gradient=smoothstep(-1.7,1.7,p.y+.35*sin(p.x*2.+uTime));
+   vec3 pigment=mix(uHot,uWax,gradient*.86);
+   float ribbons=.5+.5*sin(p.y*5.+sin(p.x*3.+uTime)*2.+cos(p.z*3.-uTime)*1.5);
+   pigment=mix(pigment,mix(uWax,uHot,ribbons),uMarble*.7);
+   pigment=mix(pigment,mix(uLiquid,uHot,.5+.5*sin(fres*8.+p.y*2.)),uIridescence*fres*.7);
+   float sss=pow(max(dot(-n,l2),0.),2.)*uTranslucence;
+   float ao=clamp(waxMap(p+n*.12)/.12,.3,1.);
+   vec3 shade=pigment*(.25+diff*.52+diff2*.17)*mix(.65,1.,ao);
+   shade+=uHot*sss*.45+pigment*uGlow*(.16+.12*(1.-gradient));
+   vec3 halfV=normalize(l+v);
+   float spec=pow(max(dot(n,halfV),0.),mix(12.,180.,uGloss));
+   shade+=vec3(1.,.88,.74)*spec*(.16+.95*uGloss);
+   vec3 refl=env(reflect(lr,n));
+   shade+=refl*(.07+fres*.52)*uGloss;
+   shade+=mix(uHot,vec3(.67,.79,1.),.27)*pow(fres,1.5)*(.09+uTranslucence*.27);
+   shade=mix(shade,shade*.55+uLiquid*.21,1.-exp(-lavaT*.16));
+   inner=shade;
+  }
+  inner+=mix(uWax,uHot,.4)*min(.28,glowAccum)*uGlow*.35;
+  if(uView==0){
+   float fres=pow(1.-abs(dot(glassN,-rd)),3.);
+   vec3 refl=env(reflect(rd,glassN));
+   float edge=pow(1.-abs(dot(glassN,-rd)),9.);
+   inner=mix(inner,refl,min(.46,fres*.46*uGlass));
+   inner+=refl*(.02+.16*fres)*uGlass+mix(uLiquid,vec3(.5,.58,.7),.65)*edge*.18*uGlass;
+   vec3 gp=ro+rd*entry;
+   float stripe=exp(-pow((glassN.x+.58)*18.,2.))*(1.-smoothstep(1.35,1.86,abs(gp.y)));
+   float stripe2=exp(-pow((glassN.x-.82)*40.,2.))*(1.-smoothstep(1.3,1.86,abs(gp.y)));
+   inner+=vec3(.56,.59,.68)*stripe*.13*uGlass+uHot*stripe2*.18*uGlass;
+   float stripe3=exp(-pow((glassN.x+.14)*30.,2.))*(1.-smoothstep(1.2,1.86,abs(gp.y)));
+   inner+=vec3(.60,.61,.69)*stripe3*.045*uGlass;
+   float lip=exp(-pow((abs(gp.y)-1.87)*40.,2.));inner+=vec3(.35,.38,.46)*lip*.15*uGlass;
+  }
+  col=inner;
+ }
+ if(metalT<100.&&(!inGlass||metalT<entry)){
+  vec3 p=ro+rd*metalT,n=metalNormal(p);
+  vec3 refl=env(reflect(rd,n));
+  vec3 tint=uMetal==0?vec3(.12,.13,.15):uMetal==1?vec3(.70,.73,.78):uMetal==2?vec3(.75,.49,.23):vec3(.75,.31,.17);
+  float stripe=.96+.04*sin(p.y*900.);
+  col=tint*(.09+.16*max(dot(n,normalize(vec3(-3.,4.,5.))),0.))+refl*tint*stripe*(uMetal==0?.55:1.15);
+  col+=uHot*pow(max(0.,n.y),3.)*.055*uGlow;
+  float rim=exp(-pow((p.y+1.902)*95.,2.));col+=uHot*rim*.3*uGlow;
+ }
+ float dust=0.;
+ for(int i=0;i<9;i++){
+  float fi=float(i);
+  vec2 dh=vec2(fract(sin(fi*127.1)*43758.5453),fract(sin(fi*311.7)*12543.1234))-.5;
+  vec2 dp=dh*vec2(2.8,2.3)+vec2(0.,.12)+vec2(sin(uTime+fi*2.1),cos(uTime*2.+fi*3.7))*.10;
+  float dd=length(uv-dp);
+  dust+=exp(-dd*dd*4200.)*(.6+.4*sin(uTime*3.+fi*7.3));
+ }
+ col+=mix(uHot,vec3(1.),.35)*dust*.026*min(uGlow,1.5);
+ col*=1.-.12*dot(vUv-.5,vUv-.5);
+ col=film(col*uExposure);
+ col=pow(col,vec3(1./2.2));
+ fragColor=vec4(col,1.);
+}
+</script>
+<script id="post-shader" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 vUv;out vec4 fragColor;
+uniform sampler2D uImage;uniform vec2 uRes;uniform float uGlow,uGrain;
+vec3 bright(vec2 uv){vec3 c=texture(uImage,uv).rgb;float v=max(c.r,max(c.g,c.b));return c*smoothstep(.6,.96,v);}
+void main(){vec3 c=texture(uImage,vUv).rgb;vec3 bloom=vec3(0.);vec2 px=1./uRes;for(int i=0;i<12;i++){float a=float(i)*2.39996323;vec2 d=vec2(cos(a),sin(a));bloom+=bright(vUv+d*px*8.)*.027+bright(vUv+d*px*23.)*.028+bright(vUv+d*px*52.)*.026;}c+=bloom*uGlow*.19;float n=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;c+=n*uGrain*.025;fragColor=vec4(c,1.);}
+</script>
+<script>
+'use strict';
+(()=>{
+const $=id=>document.getElementById(id),TAU=Math.PI*2;
+const defaults={shape:0,view:0,wax:'#ff421d',hot:'#ffb13b',liquid:'#673545',back:'#15121a',metal:0,background:1,glow:.82,gloss:.75,iridescence:.16,marble:.18,lightAngle:-.64,lightHeight:3.2,translucence:.68,glass:1,exposure:1.1,halo:1,grain:.16,floor:true,zoom:1,yaw:.12,pitch:.02,count:13,size:1,merge:.25,warp:.45,softness:.65,spread:.88,speed:1,motion:0,seed:271828,loop:true,cycle:60,orbit:false,quality:1,adaptive:true,heat:.55,preset:0};
+const presets=[
+ {name:'Ember',title:'Ember & obsidian',sub:'Warm wax. Midnight glass.',wax:'#ff421d',hot:'#ffb13b',liquid:'#673545',back:'#15121a',metal:0,shape:0},
+ {name:'Aurora',title:'Northern lights',sub:'Arctic jade in a violet night.',wax:'#18efb0',hot:'#d3ffe0',liquid:'#5744ac',back:'#091426',metal:1,shape:1},
+ {name:'Ultraviolet',title:'After the afterglow',sub:'Electric violet. Soft pink heat.',wax:'#a247ff',hot:'#ff75dd',liquid:'#213b9a',back:'#120d20',metal:1,shape:0},
+ {name:'Honey',title:'The golden hour',sub:'Liquid amber, held in warm light.',wax:'#e77a09',hot:'#ffe49c',liquid:'#67301b',back:'#231911',metal:2,shape:2},
+ {name:'Lagoon',title:'Somewhere below',sub:'A slow tide of luminous blue.',wax:'#169bdc',hot:'#a2fff4',liquid:'#204867',back:'#0a1820',metal:1,shape:1},
+ {name:'Rosewater',title:'Rose-colored time',sub:'Silk, blush, and a little daydream.',wax:'#f86092',hot:'#ffdcc2',liquid:'#613959',back:'#21161f',metal:3,shape:3},
+ {name:'Acid',title:'Midnight greenhouse',sub:'Radioactive lime. Botanical darkness.',wax:'#a1e717',hot:'#edff96',liquid:'#26565a',back:'#101c16',metal:0,shape:1},
+ {name:'Pearl',title:'A softer gravity',sub:'Moonlit ivory in a cool blue haze.',wax:'#b8cee4',hot:'#fff2df',liquid:'#354e7e',back:'#101723',metal:1,shape:2},
+ {name:'Inferno',title:'Heart of the furnace',sub:'Crimson wax with a molten gold core.',wax:'#b60b26',hot:'#ff761a',liquid:'#432241',back:'#180d14',metal:3,shape:0},
+ {name:'Deep space',title:'Dark matter',sub:'A weightless constellation of liquid.',wax:'#5268ff',hot:'#ed4fff',liquid:'#37297c',back:'#070b1c',metal:0,shape:2,motion:2,background:2},
+ {name:'Tangerine',title:'Orange crush',sub:'A little piece of the seventies.',wax:'#ff851d',hot:'#fff1a6',liquid:'#36369a',back:'#171326',metal:2,shape:0},
+ {name:'Black cherry',title:'Velvet underground',sub:'Black cherry wax. Copper reflections.',wax:'#ab214f',hot:'#fb8a76',liquid:'#533643',back:'#190f18',metal:3,shape:3}
+];
+const ranges={iridescence:[0,1,.01],marble:[0,1,.01],lightAngle:[-Math.PI,Math.PI,.01],lightHeight:[-3,6,.01],glow:[0,3,.01],gloss:[0,1,.01],translucence:[0,1,.01],glass:[0,2,.01],exposure:[.35,2.8,.01],halo:[0,3,.01],grain:[0,1,.01],zoom:[.5,2.6,.01],yaw:[-Math.PI,Math.PI,.01],pitch:[-.55,.75,.01],count:[4,24,1],size:[.5,1.65,.01],merge:[.06,.65,.01],warp:[0,1.5,.01],softness:[0,1.5,.01],spread:[.2,1,.01],speed:[.15,3,.01],heat:[0,1,.01],seed:[1,999999,1],cycle:[10,3600,1],shape:[0,3,1],view:[0,2,1],metal:[0,3,1],background:[0,3,1],quality:[0,3,1],motion:[0,2,1],preset:[-1,11,1]};
+let state={...defaults};
+function validate(obj){if(!obj||typeof obj!=='object'||Array.isArray(obj))throw Error('This recipe is not an object.');const out={...defaults};for(const k in defaults){if(!(k in obj))continue;const v=obj[k];if(ranges[k]){const[a,b,s]=ranges[k];if(typeof v!=='number'||!Number.isFinite(v)||v<a||v>b)throw Error('Invalid '+k+' in recipe.');out[k]=s===1?Math.round(v):v;}else if(typeof defaults[k]==='boolean'){if(typeof v!=='boolean')throw Error('Invalid '+k+' in recipe.');out[k]=v;}else if(typeof defaults[k]==='string'){if(typeof v!=='string'||!/^#[0-9a-f]{6}$/i.test(v))throw Error('Invalid color in recipe.');out[k]=v;}}return out;}
+try{const stored=localStorage.getItem('molten-studio-v1');if(stored)state=validate(JSON.parse(stored));}catch(e){}
+let playing=true,elapsed=0,last=0,lastRender=0,frameCount=0,fpsStart=0,actualFPS=0,scale=.7,heatPulse=0,toastTimer,saveTimer,blobs=[],resizeNeeded=true;
+const canvas=$('scene');const gl=canvas.getContext('webgl2',{alpha:false,antialias:false,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('show'),4200);}
+function fail(s){$('error-panel').style.display='grid';$('error-text').textContent=s;const lbl=$('engine-label');if(lbl)lbl.textContent='Renderer unavailable';}
+function save(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{try{localStorage.setItem('molten-studio-v1',JSON.stringify(state));}catch(e){}},400);}
+function buildBlobs(){let a=state.seed>>>0;const rand=()=>{a+=0x6D2B79F5;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};blobs=Array.from({length:24},(_,i)=>({phase:rand()*TAU,phase2:rand()*TAU,rad:.145+rand()*.18,orbit:.22+rand()*.7,lane:rand()*TAU,harm:1+Math.floor(rand()*2),weight:rand()}));}
+function sync(){const p=presets[state.preset];$('scene-title').textContent=p?p.title:'Your own atmosphere';$('scene-subtitle').textContent=p?p.sub:'A composition that only exists here.';$('scene-number').textContent=state.preset>=0?String(state.preset+1).padStart(2,'0'):'∞';}
+function update(k,v,custom=true){if(ranges[k]){const[a,b,s]=ranges[k];v=Math.max(a,Math.min(b,+v));if(!Number.isFinite(v)){sync();return;}if(s===1)v=Math.round(v);}state[k]=v;if(custom&&['wax','hot','liquid','back','shape','metal','background'].includes(k))state.preset=-1;if(k==='seed')buildBlobs();if(k==='quality'){scale=[.5,.7,.9,1][state.quality];resizeNeeded=true;}sync();save();}
+function applyPreset(i){const keep={quality:state.quality,adaptive:state.adaptive,view:state.view};state={...defaults,...presets[i],...keep,preset:i};for(const k of ['name','title','sub'])delete state[k];elapsed=0;heatPulse=0;buildBlobs();sync();save();}
+let pointer=null;canvas.addEventListener('pointerdown',e=>{pointer={x:e.clientX,y:e.clientY,id:e.pointerId};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointermove',e=>{if(!pointer||pointer.id!==e.pointerId)return;state.yaw+=((e.clientX-pointer.x)*.007);state.yaw=((state.yaw+Math.PI)%TAU+TAU)%TAU-Math.PI;state.pitch=Math.max(-.55,Math.min(.75,state.pitch+(e.clientY-pointer.y)*.004));pointer.x=e.clientX;pointer.y=e.clientY;sync();save();});const release=()=>pointer=null;canvas.addEventListener('pointerup',release);canvas.addEventListener('pointercancel',release);canvas.addEventListener('wheel',e=>{e.preventDefault();update('zoom',state.zoom*Math.exp(-e.deltaY*.001),false);},{passive:false});canvas.addEventListener('dblclick',()=>{if(window.SeedConsole)window.SeedConsole.toggleChrome();});
+function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);}
+if(!gl){fail('This renderer needs WebGL 2. Open this file in an up-to-date Chrome or Edge browser with hardware acceleration enabled.');buildBlobs();sync();return;}
+let sceneProgram,postProgram,texture,framebuffer;const uniforms={};
+function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){const info=gl.getShaderInfoLog(s);gl.deleteShader(s);throw Error(info);}return s;}
+function program(fs){const p=gl.createProgram(),v=shader(gl.VERTEX_SHADER,$('vertex-shader').textContent),f=shader(gl.FRAGMENT_SHADER,$(fs).textContent);gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);gl.deleteShader(v);gl.deleteShader(f);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));return p;}
+try{sceneProgram=program('scene-shader');postProgram=program('post-shader');for(const p of [sceneProgram,postProgram]){const vao=gl.createVertexArray();gl.bindVertexArray(vao);const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);let a=gl.getAttribLocation(p,'aPosition');gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);p.vao=vao;uniforms[p===sceneProgram?'scene':'post']={};const dict=uniforms[p===sceneProgram?'scene':'post'];for(let i=0;i<gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);i++){const u=gl.getActiveUniform(p,i);dict[u.name.replace('[0]','')]=gl.getUniformLocation(p,u.name);}}texture=gl.createTexture();framebuffer=gl.createFramebuffer();}catch(e){console.error(e);fail('The graphics driver could not start the renderer. Try Chrome or Edge with hardware acceleration on.');buildBlobs();sync();return;}
+const hex=c=>[1,3,5].map(i=>Math.pow(parseInt(c.slice(i,i+2),16)/255,2.2));
+function resize(w,h){if(!w){const rect=canvas.getBoundingClientRect();let dpr=Math.min(devicePixelRatio||1,1.5);w=Math.max(2,Math.round(rect.width*dpr*scale));h=Math.max(2,Math.round(rect.height*dpr*scale));}const max=gl.getParameter(gl.MAX_TEXTURE_SIZE);if(w>max||h>max)throw Error('These dimensions exceed your graphics limit. Choose a smaller resolution.');if(canvas.width===w&&canvas.height===h){resizeNeeded=false;return;}canvas.width=w;canvas.height=h;gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Not enough graphics memory for this size. Choose a lower resolution.');gl.bindFramebuffer(gl.FRAMEBUFFER,null);resizeNeeded=false;}
+const blobData=new Float32Array(24*4);
+function motionAt(time){const phase=state.loop?((time*state.speed)%state.cycle)/state.cycle*TAU:time*.045*state.speed;const harmonic=1;const pulse=heatPulse;for(let i=0;i<24;i++){const b=blobs[i];const t=phase*(state.loop?b.harm*harmonic:1+b.weight*.9)+b.phase;const wave=Math.sin(t);const y=1.38*wave+Math.sin(t*2.+b.phase2)*.10;let r=b.rad*state.size*(1+pulse*.25);let width=state.shape===2?Math.sqrt(Math.max(.1,1-(y/1.95)**2))*1.39:state.shape===0?.86-(y+1.9)/3.8*.40:state.shape===1?.75:.52+.35*Math.pow(Math.abs(y)/1.9,1.25);width=Math.max(.05,width-r-.13);let x=Math.sin(t*.0+phase*(state.loop?harmonic:1.21)+b.lane)*width*b.orbit*state.spread;let z=Math.cos(phase*(state.loop?harmonic:1.07)+b.lane)*width*b.orbit*state.spread;
+let yy=y*(.67+state.heat*.42)+pulse*.16*Math.cos(b.phase);if(state.motion===1){x=Math.cos(t)*width*.82;z=Math.sin(t)*width*.82;yy=Math.sin(t+b.phase2)*1.30;}else if(state.motion===2){x=Math.cos(t)*width;z=Math.sin(t*2.+b.phase2)*width;yy=Math.sin(t+b.lane)*1.35;}
+if(state.view>0){x*=state.view===1?4.6:3.6;z*=2.1;yy*=state.view===1?1.8:1.6;r*=state.view===1?1.62:1.7;}
+blobData[i*4]=x;blobData[i*4+1]=yy;blobData[i*4+2]=z;blobData[i*4+3]=r;
+}return phase;}
+function render(time){if(gl.isContextLost())return;const phase=motionAt(time);const breathe=state.glow*(1+.03*Math.sin(phase*3));gl.viewport(0,0,canvas.width,canvas.height);gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer);gl.useProgram(sceneProgram);gl.bindVertexArray(sceneProgram.vao);const u=uniforms.scene;const f=(key,v)=>{if(u[key]!=null)gl.uniform1f(u[key],v);};const int=(key,v)=>{if(u[key]!=null)gl.uniform1i(u[key],v);};gl.uniform2f(u.uRes,canvas.width,canvas.height);gl.uniform4fv(u.uBlobs,blobData);int('uCount',state.count);int('uShape',state.shape);int('uView',state.view);int('uBackground',state.background);int('uMetal',state.metal);int('uSteps',[64,84,104,128][state.quality]);for(const[k,s]of [['uWax','wax'],['uHot','hot'],['uLiquid','liquid'],['uBack','back']])gl.uniform3fv(u[k],hex(state[s]));for(const[k,s]of [['uMerge','merge'],['uWarp','warp'],['uGloss','gloss'],['uTranslucence','translucence'],['uGlass','glass'],['uExposure','exposure'],['uHalo','halo'],['uZoom','zoom'],['uPitch','pitch'],['uGrain','grain'],['uSoftness','softness'],['uSpread','spread'],['uIridescence','iridescence'],['uMarble','marble'],['uLightAngle','lightAngle'],['uLightHeight','lightHeight']])f(k,state[s]);f('uGlow',breathe);f('uTime',phase);f('uYaw',state.yaw+(state.orbit?Math.sin(phase)*.28:0));f('uFloor',state.floor?1:0);f('uPulse',heatPulse);gl.drawArrays(gl.TRIANGLES,0,3);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.useProgram(postProgram);gl.bindVertexArray(postProgram.vao);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.uniform1i(uniforms.post.uImage,0);gl.uniform2f(uniforms.post.uRes,canvas.width,canvas.height);gl.uniform1f(uniforms.post.uGlow,breathe);gl.uniform1f(uniforms.post.uGrain,state.grain);gl.drawArrays(gl.TRIANGLES,0,3);}
+async function snapshot(){try{render(elapsed);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!blob)throw Error('Image capture failed.');download(blob,'molten-'+state.seed+'-'+canvas.width+'x'+canvas.height+'.png');toast('Still saved at '+canvas.width+' × '+canvas.height+'.');}catch(e){toast(e.message);}}
+window.addEventListener('resize',()=>{resizeNeeded=true;});document.addEventListener('visibilitychange',()=>{last=0;});canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();fail('The graphics connection was interrupted. Reload to restore your saved look. Try Eco quality if this happens again.');});
+buildBlobs();sync();save();scale=[.5,.7,.9,1][state.quality];
+function frame(now){requestAnimationFrame(frame);if(document.hidden){last=0;return;}if(!last)last=now;const rawDt=(now-last)/1000;const dt=Math.min(.12,rawDt);last=now;if(playing){elapsed+=dt;heatPulse*=Math.exp(-dt*.24);}const limit=30;if(now-lastRender<1000/limit-1)return;lastRender=now;try{if(resizeNeeded)resize();render(elapsed);}catch(e){fail(e.message);return;}frameCount++;if(!fpsStart)fpsStart=now;if(now-fpsStart>2000){actualFPS=Math.round(frameCount*1000/(now-fpsStart));if(state.adaptive&&playing){const maxScale=[.55,.8,1,1.2][state.quality];if(actualFPS<limit*.65&&scale>.36){scale=Math.max(.35,scale-.10);resizeNeeded=true;}else if(actualFPS>limit*.95&&scale<maxScale){scale=Math.min(maxScale,scale+.04);resizeNeeded=true;}}frameCount=0;fpsStart=now;}}
+// Hooks for the Seed Console adapter (defined in a script block near the end of the document). The console is the only UI that mutates generation state now.
+window.__moltenHooks={getState:function(){return state;},update:update,applyPreset:applyPreset,setSeed:function(n){update('seed',n,false);elapsed=0;heatPulse=0;},resetCamera:function(){state.zoom=1;state.yaw=.12;state.pitch=.02;sync();save();},snapshot:snapshot,canvas:function(){return canvas;}};
+requestAnimationFrame(frame);
+// Optional agent controls share the exact state mutations used by the studio UI.
+const context=document.modelContext;if(context?.registerTool){const lifecycle=new AbortController();const register=tool=>{try{Promise.resolve(context.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{});}catch(e){}};register({name:'get_lava_composition',description:'Read the current lava studio settings and available preset names.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:()=>({settings:{...state},presets:presets.map(p=>p.name)})});register({name:'apply_lava_preset',description:'Apply one named visual preset to the live lava studio. Does not record or download files.',inputSchema:{type:'object',properties:{name:{type:'string',enum:presets.map(p=>p.name)}},required:['name'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>{const i=presets.findIndex(p=>p.name===input?.name);if(i<0)throw Error('Unknown preset.');applyPreset(i);return{preset:presets[i].name,settings:{...state}};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
+})();
+</script>
+<script>
+/* Seed Console v1 — one consistent generation console for all ambient studios.
+ * USAGE: inline this entire file in a <script> block near </body>, then define
+ * window.SeedConsoleAdapter (see interface below) in a following <script> block,
+ * then call SeedConsole.init(window.SeedConsoleAdapter).
+ *
+ * ADAPTER INTERFACE (per studio — the studio author writes this):
+ * {
+ *   studio:   'molten',            // short id, used for localStorage keys
+ *   title:    'Molten',            // display name
+ *   getSeed:  () => string,        // current seed as a string
+ *   setSeed:  (s) => void|Promise, // rebuild the scene from seed string s
+ *   randomSeed: () => string,      // cryptographically random new seed string
+ *   remixSeed:  (s) => string,     // quasi-random: derive a "sibling" seed from s
+ *   params: [                      // hero parameters for Customize (6-10)
+ *     { key, label, min, max, step, get:()=>number, set:(v)=>void }
+ *   ],
+ *   canvas:   () => HTMLCanvasElement|null,  // main render canvas for recording
+ *   fileBase: (seedStr) => string, // filename base for recordings (no extension)
+ * }
+ * The console calls setSeed on load (with ?seed= override or a random seed).
+ */
+(function () {
+  'use strict';
+  var CSS = [
+    '.sc-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:2147483000;',
+    'display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;',
+    'background:rgba(12,14,18,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);',
+    'border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 30px rgba(0,0,0,.45);',
+    'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;color:#e8eaed;',
+    'font-size:13px;user-select:none;-webkit-user-select:none;max-width:calc(100vw - 20px)}',
+    '.sc-pill.hidden{display:none}',
+    '.sc-seed{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.07);',
+    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;cursor:pointer;',
+    'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw}',
+    '.sc-btn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#e8eaed;',
+    'border-radius:999px;min-width:44px;min-height:44px;padding:0 12px;font-size:16px;cursor:pointer;',
+    'display:flex;align-items:center;justify-content:center}',
+    '.sc-btn:active{background:rgba(255,255,255,.18)}',
+    '.sc-btn.on{background:rgba(120,200,255,.25);border-color:rgba(120,200,255,.6)}',
+    '.sc-btn.rec.on{background:rgba(255,80,80,.35);border-color:rgba(255,80,80,.7)}',
+    '.sc-panel{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:2147483000;',
+    'width:min(430px,calc(100vw - 24px));max-height:62vh;overflow-y:auto;border-radius:18px;',
+    'background:rgba(10,12,16,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);',
+    'border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 60px rgba(0,0,0,.55);',
+    'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;color:#e8eaed;',
+    'padding:14px 14px 16px;font-size:14px}',
+    '.sc-panel.hidden{display:none}',
+    '.sc-row{display:flex;align-items:center;gap:8px;margin:8px 0}',
+    '.sc-seedinput{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);',
+    'border-radius:10px;color:#e8eaed;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:13px;min-width:0}',
+    '.sc-sec{margin:12px 0 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9aa0a6}',
+    '.sc-list{display:flex;flex-direction:column;gap:6px;max-height:130px;overflow-y:auto}',
+    '.sc-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;',
+    'background:rgba(255,255,255,.05);cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:12px}',
+    '.sc-item:active{background:rgba(255,255,255,.12)}',
+    '.sc-item .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.sc-item .meta{color:#9aa0a6;font-size:11px}',
+    '.sc-param{margin:10px 0}',
+    '.sc-param .top{display:flex;align-items:center;gap:8px;margin-bottom:4px}',
+    '.sc-param label{flex:1;font-size:13px}',
+    '.sc-param .val{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#9aa0a6;min-width:44px;text-align:right}',
+    '.sc-param input[type=range]{width:100%;accent-color:#7cc4ff}',
+    '.sc-lock{border:1px solid rgba(255,255,255,.16);background:transparent;border-radius:8px;',
+    'min-width:36px;min-height:36px;font-size:14px;cursor:pointer;color:#9aa0a6}',
+    '.sc-lock.on{color:#ffd76a;border-color:rgba(255,215,106,.6);background:rgba(255,215,106,.12)}',
+    '.sc-durs{display:flex;gap:6px;flex-wrap:wrap}',
+    '.sc-dur{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#e8eaed;',
+    'border-radius:10px;padding:10px 12px;font-size:13px;cursor:pointer}',
+    '.sc-dur.on{background:rgba(120,200,255,.25);border-color:rgba(120,200,255,.6)}',
+    '.sc-status{font-size:12px;color:#9aa0a6;margin-top:8px;min-height:18px}',
+    '.sc-status.rec{color:#ff8a80}',
+    '.sc-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;z-index:2147483001;',
+    'background:rgba(20,22,28,.92);color:#e8eaed;border:1px solid rgba(255,255,255,.16);',
+    'border-radius:12px;padding:10px 16px;font-size:13px;font-family:system-ui,sans-serif;',
+    'opacity:0;transition:opacity .25s;pointer-events:none}',
+    '.sc-toast.show{opacity:1}',
+    '.sc-dot{position:fixed;right:10px;bottom:10px;width:14px;height:14px;border-radius:50%;',
+    'background:rgba(255,255,255,.25);z-index:2147483000;cursor:pointer}',
+    '.sc-dot.hidden{display:none}',
+    '.sc-link{color:#7cc4ff;font-size:13px;text-decoration:underline;cursor:pointer;word-break:break-all}'
+  ].join('\n');
+
+  function el(tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  function store(k) {
+    return {
+      get: function (dflt) {
+        try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : dflt; }
+        catch (e) { return dflt; }
+      },
+      set: function (v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+    };
+  }
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  var SeedConsole = {
+    init: function (A) {
+      if (!A || typeof A.setSeed !== 'function' || typeof A.getSeed !== 'function') {
+        console.error('[SeedConsole] invalid adapter'); return;
+      }
+      this.A = A;
+      this.hist = store('sc.' + A.studio + '.history');
+      this.favs = store('sc.' + A.studio + '.favs');
+      this.locks = store('sc.' + A.studio + '.locks');
+      this.recState = { rec: null, chunks: [], timer: null, t0: 0, dur: 0, mime: '' };
+      this.buildUI();
+      this.refreshParams();
+      var q = null;
+      try { q = new URLSearchParams(location.search).get('seed'); } catch (e) {}
+      var start = (q && q.trim()) ? q.trim() : A.randomSeed();
+      this.applySeed(start, { silent: true });
+      // H key or double-tap toggles full chrome hide (clean recordings)
+      var self = this;
+      document.addEventListener('keydown', function (e) {
+        if ((e.key === 'h' || e.key === 'H') && !/INPUT|TEXTAREA/.test(document.activeElement.tagName))
+          self.toggleChrome();
+      });
+      var lastTap = 0;
+      document.addEventListener('touchend', function () {
+        var now = Date.now();
+        if (now - lastTap < 300) self.toggleChrome();
+        lastTap = now;
+      }, { passive: true });
+    },
+
+    buildUI: function () {
+      var self = this, A = this.A;
+      var st = document.createElement('style');
+      st.textContent = CSS;
+      document.head.appendChild(st);
+
+      // pill
+      var pill = el('div', 'sc-pill');
+      var seedChip = el('div', 'sc-seed', esc(A.getSeed() || '…'));
+      seedChip.title = 'Tap to copy seed';
+      seedChip.addEventListener('click', function () {
+        var s = A.getSeed();
+        function done() { self.toast('Seed copied: ' + s); }
+        if (navigator.clipboard && navigator.clipboard.writeText)
+          navigator.clipboard.writeText(s).then(done, done);
+        else done();
+      });
+      function btn(txt, title, fn, cls) {
+        var b = el('button', 'sc-btn' + (cls ? ' ' + cls : ''), txt);
+        b.title = title; b.setAttribute('aria-label', title);
+        b.addEventListener('click', function (ev) { ev.stopPropagation(); fn(b); });
+        return b;
+      }
+      this.bRandom = btn('🎲', 'Random — brand new world', function () { self.doRandom(); });
+      this.bRemix = btn('🌀', 'Remix — same vibe, new details (respects locks)', function () { self.doRemix(); });
+      this.bFav = btn('☆', 'Save this seed to favorites', function (b) { self.toggleFav(b); });
+      this.bRec = btn('●', 'Record video', function () { self.togglePanelSection('rec'); }, 'rec');
+      this.bMore = btn('⚙️', 'Customize: seed, parameters, history', function () { self.togglePanel(); });
+      pill.appendChild(seedChip);
+      pill.appendChild(this.bRandom); pill.appendChild(this.bRemix);
+      pill.appendChild(this.bFav); pill.appendChild(this.bRec); pill.appendChild(this.bMore);
+      document.body.appendChild(pill);
+      this.pill = pill; this.seedChip = seedChip;
+
+      // dot (restores chrome when hidden)
+      var dot = el('div', 'sc-dot hidden');
+      dot.title = 'Show controls';
+      dot.addEventListener('click', function () { self.toggleChrome(); });
+      document.body.appendChild(dot);
+      this.dot = dot;
+
+      // panel
+      var p = el('div', 'sc-panel hidden');
+      p.innerHTML =
+        '<div class="sc-row"><input class="sc-seedinput" id="sc-seedfield" spellcheck="false">' +
+        '<button class="sc-btn" id="sc-apply" style="font-size:13px">Apply</button></div>' +
+        '<div class="sc-sec">Parameters (🔒 = kept on Remix)</div><div id="sc-params"></div>' +
+        '<div class="sc-sec">Record video</div><div class="sc-durs" id="sc-durs"></div>' +
+        '<div class="sc-row"><button class="sc-btn" id="sc-recbtn" style="font-size:13px">● Start recording</button>' +
+        '<button class="sc-btn" id="sc-hideui" style="font-size:13px">Hide UI</button></div>' +
+        '<div class="sc-status" id="sc-status"></div><div id="sc-dl"></div>' +
+        '<div class="sc-sec">⭐ Favorites</div><div class="sc-list" id="sc-favs"></div>' +
+        '<div class="sc-sec">🕘 Recent seeds</div><div class="sc-list" id="sc-hist"></div>';
+      document.body.appendChild(p);
+      this.panel = p;
+      var self2 = this;
+      p.querySelector('#sc-apply').addEventListener('click', function () {
+        var v = p.querySelector('#sc-seedfield').value.trim();
+        if (v) self2.applySeed(v);
+      });
+      p.querySelector('#sc-hideui').addEventListener('click', function () { self2.toggleChrome(); });
+      p.querySelector('#sc-recbtn').addEventListener('click', function () { self2.toggleRecord(); });
+      var durs = [['30s', 30], ['5 min', 300], ['30 min', 1800], ['∞ until stopped', 0]];
+      var dz = p.querySelector('#sc-durs');
+      this.durBtns = [];
+      durs.forEach(function (d, i) {
+        var b = el('button', 'sc-dur' + (i === 3 ? ' on' : ''), d[0]);
+        b.addEventListener('click', function () {
+          self2.recState.dur = d[1];
+          self2.durBtns.forEach(function (x) { x.classList.remove('on'); });
+          b.classList.add('on');
+        });
+        dz.appendChild(b); self2.durBtns.push(b);
+      });
+      this.recState.dur = 0;
+
+      // toast
+      var t = el('div', 'sc-toast');
+      document.body.appendChild(t);
+      this.toastEl = t;
+
+      this.renderHist(); this.renderFavs(); this.updateFavBtn();
+    },
+
+    toast: function (msg) {
+      var t = this.toastEl, self = this;
+      t.textContent = msg; t.classList.add('show');
+      clearTimeout(this._tt);
+      this._tt = setTimeout(function () { t.classList.remove('show'); }, 2200);
+    },
+
+    togglePanel: function () { this.panel.classList.toggle('hidden'); },
+    togglePanelSection: function () {
+      if (this.panel.classList.contains('hidden')) this.panel.classList.remove('hidden');
+      this.panel.scrollTop = this.panel.querySelector('.sc-sec').offsetTop - 60;
+    },
+    toggleChrome: function () {
+      var hidden = this.pill.classList.toggle('hidden');
+      this.panel.classList.add('hidden');
+      this.dot.classList.toggle('hidden', !hidden);
+    },
+
+    applySeed: function (s, opts) {
+      var self = this;
+      opts = opts || {};
+      function done() {
+        self.seedChip.textContent = s;
+        var f = self.panel.querySelector('#sc-seedfield');
+        if (f) f.value = s;
+        // re-apply locked params after regen so Remix/customize locks hold
+        self.applyLocks();
+        self.refreshParams();
+        if (!opts.silent) self.toast('Seed: ' + s);
+        var h = self.hist.get([]);
+        h = [s].concat(h.filter(function (x) { return x !== s; })).slice(0, 30);
+        self.hist.set(h);
+        self.renderHist(); self.updateFavBtn();
+      }
+      try {
+        var r = this.A.setSeed(s);
+        if (r && typeof r.then === 'function') r.then(done, function (e) {
+          console.error(e); self.toast('Could not apply seed');
+        });
+        else done();
+      } catch (e) { console.error(e); this.toast('Could not apply seed'); }
+    },
+
+    doRandom: function () { this.applySeed(this.A.randomSeed()); },
+    doRemix: function () { this.applySeed(this.A.remixSeed(this.A.getSeed())); },
+
+    applyLocks: function () {
+      var locks = this.locks.get({});
+      var self = this;
+      (this.A.params || []).forEach(function (p) {
+        if (locks[p.key] && self._lockedVals && self._lockedVals[p.key] != null) {
+          try { p.set(self._lockedVals[p.key]); } catch (e) {}
+        }
+      });
+    },
+    snapshotLocks: function () {
+      var locks = this.locks.get({}), vals = {};
+      (this.A.params || []).forEach(function (p) {
+        if (locks[p.key]) { try { vals[p.key] = p.get(); } catch (e) {} }
+      });
+      this._lockedVals = vals;
+    },
+
+    refreshParams: function () {
+      var self = this, A = this.A;
+      var box = this.panel.querySelector('#sc-params');
+      box.innerHTML = '';
+      var locks = this.locks.get({});
+      (A.params || []).forEach(function (p) {
+        var wrap = el('div', 'sc-param');
+        var top = el('div', 'top');
+        var lab = el('label', '', esc(p.label));
+        var val = el('span', 'val', '');
+        var lock = el('button', 'sc-lock' + (locks[p.key] ? ' on' : ''), locks[p.key] ? '🔒' : '🔓');
+        lock.title = 'Lock: kept on Remix';
+        var cur = null;
+        try { cur = p.get(); } catch (e) {}
+        function fmt(v) { return (typeof v === 'number' && Math.abs(v) < 10 && p.step < 1) ? v.toFixed(2) : String(v); }
+        val.textContent = fmt(cur);
+        var slider = document.createElement('input');
+        slider.type = 'range'; slider.min = p.min; slider.max = p.max; slider.step = p.step;
+        if (cur != null) slider.value = cur;
+        slider.addEventListener('input', function () {
+          var v = parseFloat(slider.value);
+          try { p.set(v); } catch (e) {}
+          val.textContent = fmt(v);
+          if (locks[p.key]) { self.snapshotLocks(); }
+        });
+        slider.addEventListener('change', function () { self.snapshotLocks(); });
+        lock.addEventListener('click', function () {
+          var L = self.locks.get({});
+          L[p.key] = !L[p.key];
+          self.locks.set(L);
+          lock.classList.toggle('on', !!L[p.key]);
+          lock.textContent = L[p.key] ? '🔒' : '🔓';
+          self.snapshotLocks();
+          self.toast(L[p.key] ? p.label + ' locked for Remix' : p.label + ' unlocked');
+        });
+        top.appendChild(lab); top.appendChild(val); top.appendChild(lock);
+        wrap.appendChild(top); wrap.appendChild(slider);
+        box.appendChild(wrap);
+      });
+      this.snapshotLocks();
+    },
+
+    toggleFav: function (b) {
+      var s = this.A.getSeed();
+      var favs = this.favs.get([]);
+      var i = favs.findIndex(function (f) { return f.seed === s; });
+      var snap = {};
+      try {
+        (this.A.params || []).forEach(function (p) { snap[p.key] = p.get(); });
+      } catch (e) {}
+      if (i === -1) {
+        favs.unshift({ seed: s, params: snap, ts: Date.now() });
+        this.toast('⭐ Saved to favorites');
+      } else {
+        favs.splice(i, 1);
+        this.toast('Removed from favorites');
+      }
+      this.favs.set(favs.slice(0, 100));
+      this.renderFavs(); this.updateFavBtn();
+    },
+    updateFavBtn: function () {
+      var s = this.A.getSeed();
+      var favs = this.favs.get([]);
+      var on = favs.some(function (f) { return f.seed === s; });
+      this.bFav.textContent = on ? '★' : '☆';
+      this.bFav.classList.toggle('on', on);
+    },
+    renderFavs: function () {
+      var self = this, box = this.panel.querySelector('#sc-favs');
+      box.innerHTML = '';
+      var favs = this.favs.get([]);
+      if (!favs.length) box.innerHTML = '<div class="meta" style="color:#9aa0a6;font-size:12px">Nothing saved yet — tap ☆ on a seed you love.</div>';
+      favs.forEach(function (f) {
+        var it = el('div', 'sc-item');
+        it.innerHTML = '<span class="grow">' + esc(f.seed) + '</span><span class="meta">' +
+          new Date(f.ts).toLocaleDateString() + '</span>';
+        it.addEventListener('click', function () {
+          self.applySeed(f.seed);
+          if (f.params) {
+            setTimeout(function () {
+              (self.A.params || []).forEach(function (p) {
+                if (f.params[p.key] != null) { try { p.set(f.params[p.key]); } catch (e) {} }
+              });
+              self.refreshParams();
+            }, 50);
+          }
+          self.toast('Loaded favorite: ' + f.seed);
+        });
+        box.appendChild(it);
+      });
+    },
+    renderHist: function () {
+      var self = this, box = this.panel.querySelector('#sc-hist');
+      box.innerHTML = '';
+      var h = this.hist.get([]);
+      if (!h.length) box.innerHTML = '<div style="color:#9aa0a6;font-size:12px">Your recent seeds will appear here.</div>';
+      h.forEach(function (s) {
+        var it = el('div', 'sc-item');
+        it.innerHTML = '<span class="grow">' + esc(s) + '</span>';
+        it.addEventListener('click', function () { self.applySeed(s); });
+        box.appendChild(it);
+      });
+    },
+
+    // ---- recording ----
+    bestMime: function () {
+      if (!window.MediaRecorder) return '';
+      var cands = ['video/mp4', 'video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm'];
+      for (var i = 0; i < cands.length; i++) {
+        try { if (MediaRecorder.isTypeSupported(cands[i])) return cands[i]; } catch (e) {}
+      }
+      return '';
+    },
+    toggleRecord: function () {
+      if (this.recState.rec) this.stopRecord();
+      else this.startRecord();
+    },
+    startRecord: function () {
+      var self = this;
+      var canvas = null;
+      try { canvas = this.A.canvas(); } catch (e) {}
+      if (!canvas || !canvas.captureStream) { this.setStatus('Recording not supported on this canvas.'); return; }
+      var mime = this.bestMime();
+      if (!mime) { this.setStatus('No supported recording format in this browser.'); return; }
+      this.recState.mime = mime;
+      this.recState.chunks = [];
+      var stream;
+      try { stream = canvas.captureStream(60); } catch (e) { this.setStatus('Could not capture stream.'); return; }
+      var rec;
+      try {
+        rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 14000000 });
+      } catch (e) { this.setStatus('Recorder failed to start.'); return; }
+      rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) self.recState.chunks.push(ev.data); };
+      rec.onstop = function () { self.finishRecord(); };
+      try { rec.start(4000); } catch (e) { this.setStatus('Recorder failed to start.'); return; }
+      this.recState.rec = rec;
+      this.recState.t0 = Date.now();
+      this.bRec.classList.add('on');
+      this.panel.querySelector('#sc-recbtn').textContent = '■ Stop recording';
+      this.tickStatus();
+      if (this.recState.dur > 0) {
+        this.recState.timer = setTimeout(function () { self.stopRecord(); }, this.recState.dur * 1000);
+      }
+      this.toast('● Recording…');
+    },
+    tickStatus: function () {
+      var self = this;
+      if (!this.recState.rec) return;
+      var s = Math.floor((Date.now() - this.recState.t0) / 1000);
+      var mm = Math.floor(s / 60), ss = ('0' + (s % 60)).slice(-2);
+      this.setStatus('● REC ' + mm + ':' + ss + ' — tap Stop when done', true);
+      setTimeout(function () { self.tickStatus(); }, 1000);
+    },
+    stopRecord: function () {
+      clearTimeout(this.recState.timer);
+      try { this.recState.rec.stop(); } catch (e) {}
+      this.setStatus('Finishing…');
+    },
+    finishRecord: function () {
+      var self = this;
+      this.recState.rec = null;
+      this.bRec.classList.remove('on');
+      this.panel.querySelector('#sc-recbtn').textContent = '● Start recording';
+      var ext = this.recState.mime.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
+      var blob = new Blob(this.recState.chunks, { type: this.recState.mime.split(';')[0] });
+      this.recState.chunks = [];
+      var base = 'seedconsole';
+      try { base = this.A.fileBase(this.A.getSeed()) || base; } catch (e) {}
+      var name = base + '.' + ext;
+      var file = null;
+      try { file = new File([blob], name, { type: blob.type }); } catch (e) {}
+      this.setStatus('Done — ' + (blob.size / 1048576).toFixed(1) + ' MB. Share it to Files → your SSD.');
+      var dl = this.panel.querySelector('#sc-dl');
+      dl.innerHTML = '';
+      function fallbackLink() {
+        var url = URL.createObjectURL(blob);
+        var a = el('a', 'sc-link', '⬇ Download ' + esc(name));
+        a.href = url; a.download = name;
+        dl.appendChild(a);
+      }
+      if (file && navigator.canShare && navigator.share) {
+        try {
+          if (navigator.canShare({ files: [file] })) {
+            navigator.share({ files: [file], title: name }).then(function () {
+              self.toast('Shared — pick Save to Files → your SSD');
+            }, function () { fallbackLink(); });
+            return;
+          }
+        } catch (e) {}
+      }
+      fallbackLink();
+      this.toast('Recording ready below');
+    },
+    setStatus: function (msg, rec) {
+      var s = this.panel.querySelector('#sc-status');
+      s.textContent = msg;
+      s.classList.toggle('rec', !!rec);
+    }
+  };
+
+  window.SeedConsole = SeedConsole;
+})();
+</script>
+<script>
+'use strict';
+/* Seed Console adapter for the Molten studio. The console is the only UI that
+ * mutates generation state: seed, hero parameters, favorites, and recording.
+ * setSeed() fully rebuilds the scene (new blob choreography from the seed,
+ * motion restarted) while leaving the seamless loop guarantee intact - the
+ * loop closes on integer motion harmonics, which hold for every seed. */
+(function () {
+  var H = window.__moltenHooks;
+  if (!H) { console.error('[molten] SeedConsole adapter: studio hooks missing'); return; }
+  var SEED_MIN = 1, SEED_MAX = 999999;
+  function cryptoUint() {
+    var a = new Uint32Array(1);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(a);
+    else a[0] = Math.floor(Math.random() * 4294967296);
+    return a[0];
+  }
+  function randomSeed() { return String(SEED_MIN + (cryptoUint() % (SEED_MAX - SEED_MIN + 1))); }
+  /* Sibling seed: a small random hop from the current seed, so the new world
+   * is a variant of this one (same look/palette family, new blob details).
+   * Locked hero params are re-applied by the console after regeneration. */
+  function remixSeed(s) {
+    var cur = parseInt(String(s).trim(), 10);
+    if (!isFinite(cur)) cur = SEED_MIN;
+    var off = 1 + (cryptoUint() % 5000);
+    var dir = (cryptoUint() % 2) ? 1 : -1;
+    var n = (((cur - 1 + dir * off) % SEED_MAX) + SEED_MAX) % SEED_MAX + 1;
+    return String(n);
+  }
+  function param(key, label, min, max, step, custom) {
+    return {
+      key: key, label: label, min: min, max: max, step: step,
+      get: function () { return H.getState()[key]; },
+      set: function (v) { H.update(key, v, custom !== false); }
+    };
+  }
+  var viewParam = param('view', 'Framing \u00b7 Sculpture / Liquid / Macro', 0, 2, 1, false);
+  var setView = viewParam.set;
+  viewParam.set = function (v) { setView(v); H.resetCamera(); };
+  window.SeedConsoleAdapter = {
+    studio: 'molten',
+    title: 'Molten',
+    getSeed: function () { return String(H.getState().seed); },
+    setSeed: function (s) {
+      var n = parseInt(String(s).trim(), 10);
+      if (!isFinite(n)) n = SEED_MIN;
+      n = Math.max(SEED_MIN, Math.min(SEED_MAX, Math.round(n)));
+      H.setSeed(n);
+    },
+    randomSeed: randomSeed,
+    remixSeed: remixSeed,
+    params: [
+      param('count', 'Wax bodies', 4, 24, 1),
+      param('size', 'Blob size', 0.5, 1.65, 0.01),
+      param('speed', 'Flow speed', 0.15, 3, 0.01),
+      param('glow', 'Luminous glow', 0, 3, 0.01),
+      param('merge', 'Fusion', 0.06, 0.65, 0.01),
+      param('heat', 'Thermal lift', 0, 1, 0.01),
+      param('marble', 'Color marbling', 0, 1, 0.01),
+      param('warp', 'Surface turbulence', 0, 1.5, 0.01),
+      param('exposure', 'Brightness', 0.35, 2.8, 0.01),
+      viewParam
+    ],
+    canvas: function () { return H.canvas(); },
+    fileBase: function (seedStr) { return 'molten-' + String(seedStr).replace(/[^\w\-]+/g, '_'); }
+  };
+  SeedConsole.init(window.SeedConsoleAdapter);
+})();
+</script>
+</body></html>
