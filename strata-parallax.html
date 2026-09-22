@@ -12,11 +12,20 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#
  font-size:13px;letter-spacing:.22em;pointer-events:none;text-shadow:0 1px 8px rgba(0,0,0,.6);}
 #title small{display:block;letter-spacing:.08em;color:rgba(255,255,255,.5);font-size:11px;margin-top:2px;}
 body.rendering #title{display:none;}
+#bakeload{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+ background:#0b0e14;color:rgba(255,255,255,.7);font-family:-apple-system,system-ui,sans-serif;
+ font-size:15px;letter-spacing:.05em;transition:opacity .5s;}
+#bakeload.hidden{opacity:0;pointer-events:none;}
+#bakeload .spin{width:28px;height:28px;border:3px solid rgba(255,255,255,.15);border-top-color:#fff;
+ border-radius:50%;margin-right:12px;animation:sp 1s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+body.rendering #bakeload{display:none;}
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <div id="title">STRATA<small>a living canyon · drag nothing, it breathes on its own</small></div>
+<div id="bakeload"><div class="spin"></div>Baking your world…</div>
 <script>
 
 /* ===== Seed Console v2 (inlined) ===== */
@@ -1239,7 +1248,15 @@ function applySeed(s){
  state.mist=p.mist; state.drift=p.drift; state.glow=p.glow;
  live.mist=p.mist; live.drift=p.drift; live.glow=p.glow;
  state.seedStr=seedOf(state);
- bakeAll();
+ var bl=document.getElementById('bakeload');
+ if(bl)bl.classList.remove('hidden');
+ // let the loading UI paint before the blocking bake
+ setTimeout(function(){
+  try{bakeAll();}finally{
+   var b2=document.getElementById('bakeload');
+   if(b2)b2.classList.add('hidden');
+  }
+ },50);
 }
 /* remix: new layout/detail, jitter params (SeedConsole re-applies locks after) */
 function remixSeedStr(s){
