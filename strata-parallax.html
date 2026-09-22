@@ -20,12 +20,18 @@ body.rendering #title{display:none;}
  border-radius:50%;margin-right:12px;animation:sp 1s linear infinite;}
 @keyframes sp{to{transform:rotate(360deg);}}
 body.rendering #bakeload{display:none;}
+#dbgstat{position:fixed;top:calc(10px + env(safe-area-inset-top));right:10px;z-index:30;
+ background:rgba(0,0,0,.7);color:#0f0;font-family:monospace;font-size:10px;
+ padding:6px 8px;border-radius:6px;max-width:45vw;word-break:break-all;
+ display:none;}
+body.rendering #dbgstat{display:none;}
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <div id="title">STRATA<small>a living canyon · drag nothing, it breathes on its own</small></div>
 <div id="bakeload"><div class="spin"></div>Baking your world…</div>
+<div id="dbgstat"></div>
 <script>
 
 /* ===== Seed Console v2 (inlined) ===== */
@@ -1255,6 +1261,23 @@ function applySeed(s){
   try{
    fitCanvas(); // ensure canvas is final size BEFORE GL init (resize wipes GL)
    bakeAll();
+   // Show debug status
+   try{
+    var ds=document.getElementById('dbgstat');
+    if(ds){
+     ds.style.display='block';
+     var gl2=canvas.getContext('webgl');
+     var err=gl2?gl2.getError():-999;
+     ds.textContent='planes:'+state.planes.length+' canvas:'+canvas.width+'x'+canvas.height+' glErr:'+err+' simT:'+simT.toFixed(1);
+     // Update every 2s
+     setInterval(function(){
+      try{
+       var e2=canvas.getContext('webgl').getError();
+       ds.textContent='planes:'+state.planes.length+' canvas:'+canvas.width+'x'+canvas.height+' glErr:'+e2+' simT:'+simT.toFixed(1);
+      }catch(e){}
+     },2000);
+    }
+   }catch(e){}
   }finally{
    var b2=document.getElementById('bakeload');
    if(b2)b2.classList.add('hidden');
