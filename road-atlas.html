@@ -1,0 +1,2385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Road Atlas — Procedural City Map Studio</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#20180f;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;}
+  #topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:1000;
+    display:flex;align-items:center;gap:10px;padding:0 14px;
+    background:rgba(14,12,9,.78);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid rgba(255,255,255,.09);color:#f0e8d8;}
+  #topbar .brand{font-weight:800;font-size:16px;letter-spacing:.02em;white-space:nowrap;}
+  #topbar .sub{font-size:12px;color:#a89a80;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #topbar .spacer{flex:1;}
+  #topbar .meta{font-size:11px;color:#8b7f68;font-family:ui-monospace,Menlo,monospace;white-space:nowrap;}
+  .tbtn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);color:#f0e8d8;
+    border-radius:10px;padding:9px 13px;font-size:13px;cursor:pointer;white-space:nowrap;}
+  .tbtn:active{background:rgba(255,255,255,.18);}
+  #stage{position:fixed;inset:52px 0 0 0;display:flex;align-items:center;justify-content:center;background:#20180f;}
+  #scene{max-width:100%;max-height:100%;box-shadow:0 18px 70px rgba(0,0,0,.55);border-radius:4px;
+    width:min(100vw - 16px, (100vh - 68px) * 1.6);height:auto;touch-action:pan-x pan-y;}
+  #err{position:fixed;left:12px;top:60px;z-index:2000;max-width:70vw;display:none;
+    background:#5a1d1d;color:#ffd9d9;border:1px solid #a33;border-radius:10px;padding:10px 14px;font-size:13px;}
+</style>
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">🗺️ Road Atlas</div>
+  <div class="sub">procedural city road maps</div>
+  <div class="spacer"></div>
+  <div class="meta" id="genmeta"></div>
+  <button class="tbtn" id="shareBtn" title="Copy a link to this exact map">🔗 Share</button>
+</header>
+<div id="stage"><canvas id="scene" width="1600" height="1000"></canvas></div>
+<div id="err"></div>
+<script>
+'use strict';
+/* ============================================================
+   ROAD ATLAS — procedural city road-map generator (single file)
+   Pipeline: seeded RNG → height/water fields → district Voronoi →
+   anchors → tensor field → Delaunay/MST/loops macro graph →
+   cost-field A* routing → Chaikin + curvature clamp → intersections
+   → raster block subdivision → buildings/parks → labels → themes.
+   ============================================================ */
+var TAU = Math.PI * 2;
+var WORLD_W = 1600, WORLD_H = 1000;
+
+function showErr(msg){
+  var e = document.getElementById('err');
+  e.style.display = 'block';
+  e.textContent = 'Road Atlas: ' + msg;
+}
+
+/* ---------------- seeded RNG ---------------- */
+function cyrb53(str, seed){
+  var h1 = 0xdeadbeef ^ (seed||0), h2 = 0x41c6ce57 ^ (seed||0);
+  for (var i = 0, ch; i < str.length; i++){
+    ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1>>>16), 2246822507) ^ Math.imul(h2 ^ (h2>>>13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2>>>16), 2246822507) ^ Math.imul(h1 ^ (h1>>>13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1>>>0);
+}
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a>>>15), 1 | a);
+    t = (t + Math.imul(t ^ (t>>>7), 61 | t)) ^ t;
+    return ((t ^ (t>>>14)) >>> 0) / 4294967296;
+  };
+}
+function makeRng(seedStr, stream){ return mulberry32(cyrb53(stream + '|' + seedStr, 7) >>> 0); }
+
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function dist2(ax,ay,bx,by){ var dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
+
+/* ---------------- value noise (deterministic) ---------------- */
+function hash2i(x,y,s){
+  var h = (Math.imul(x,374761393) + Math.imul(y,668265263) + Math.imul(s,974711)) | 0;
+  h = Math.imul(h ^ (h>>>13), 1274126177);
+  h ^= (h>>>16);
+  return (h>>>0) / 4294967296;
+}
+function vnoise(x,y,s){
+  var xi = Math.floor(x), yi = Math.floor(y);
+  var xf = x-xi, yf = y-yi;
+  var u = xf*xf*(3-2*xf), v = yf*yf*(3-2*yf);
+  var a = hash2i(xi,yi,s), b = hash2i(xi+1,yi,s), c = hash2i(xi,yi+1,s), d = hash2i(xi+1,yi+1,s);
+  return a + (b-a)*u + (c-a)*v + (a-b-c+d)*u*v;
+}
+function fbm(x,y,s,oct){
+  var f=0, amp=0.5, fr=1, n=0;
+  for (var i=0;i<oct;i++){ f += amp*vnoise(x*fr, y*fr, s+i*131); n+=amp; amp*=0.5; fr*=2.03; }
+  return f/n;
+}
+
+/* ---------------- parameters + seed codec ---------------- */
+var B36 = '0123456789abcdefghijklmnopqrstuvwxyz';
+var PARAMS = [
+  {key:'cityScale',      label:'City scale',        min:0.6, max:1.4, step:0.05, lv:17, dflt:1.0},
+  {key:'districtCount',  label:'Districts',         min:3,   max:7,   step:1,    lv:5,  dflt:5, int:1},
+  {key:'arterialCount',  label:'Arterial corridors',min:2,   max:6,   step:1,    lv:5,  dflt:3, int:1},
+  {key:'roadDensity',    label:'Road density',      min:0.4, max:1.6, step:0.05, lv:25, dflt:1.0},
+  {key:'curvatureLimit', label:'Curvature limit °', min:5,   max:30,  step:1,    lv:26, dflt:14, int:1},
+  {key:'wateriness',     label:'Wateriness',        min:0,   max:1.5, step:0.05, lv:31, dflt:0.8},
+  {key:'parkiness',      label:'Parkiness',         min:0,   max:1.5, step:0.05, lv:31, dflt:0.7},
+  {key:'buildingDensity',label:'Building density',  min:0.3, max:1.3, step:0.05, lv:21, dflt:1.0},
+  {key:'theme',          label:'Theme · 0 paper 1 midnight 2 blueprint', min:0, max:2, step:1, lv:3, dflt:0, int:1},
+  {key:'labelsOn',       label:'Labels on/off',     min:0,   max:1,   step:1,    lv:2, dflt:1, int:1}
+];
+var P = {};
+PARAMS.forEach(function(p){ P[p.key] = p.dflt; });
+var state = { seed:'', salt:'aa' };
+
+function qEncode(p, v){
+  var idx = Math.round((clamp(v,p.min,p.max)-p.min)/(p.max-p.min)*(p.lv-1));
+  return B36[clamp(idx,0,p.lv-1)];
+}
+function qDecode(p, ch){
+  var idx = B36.indexOf(ch);
+  if (idx<0 || idx>=p.lv) return null;
+  var v = p.min + (idx/(p.lv-1))*(p.max-p.min);
+  return p.int ? Math.round(v) : Math.round(v/p.step)*p.step;
+}
+function randSalt(rng){ return B36[Math.floor(rng()*36)] + B36[Math.floor(rng()*36)]; }
+function encodeSeed(){
+  var s = 'RA1-';
+  for (var i=0;i<PARAMS.length;i++) s += qEncode(PARAMS[i], P[PARAMS[i].key]);
+  return s + state.salt;
+}
+function decodeSeed(str){
+  var m = /^RA1-([0-9a-z]{12})$/i.exec(String(str||'').trim());
+  if (!m) return null;
+  var code = m[1].toLowerCase(), out = {};
+  for (var i=0;i<PARAMS.length;i++){
+    var v = qDecode(PARAMS[i], code[i]);
+    if (v === null) return null;
+    out[PARAMS[i].key] = v;
+  }
+  return { P: out, salt: code.slice(10,12) };
+}
+function randomSeedStr(){
+  var r = mulberry32((Math.random()*4294967296)>>>0), s = 'RA1-';
+  for (var i=0;i<PARAMS.length;i++){
+    var p = PARAMS[i];
+    var idx = Math.floor(r()*p.lv);
+    s += B36[idx];
+  }
+  return s + B36[Math.floor(r()*36)] + B36[Math.floor(r()*36)];
+}
+function remixSeedStr(s){
+  var d = decodeSeed(s);
+  var r = mulberry32((Math.random()*4294967296)>>>0);
+  if (!d) return randomSeedStr();
+  // sibling: keep every param, re-roll the salt (the layout randomizer)
+  var keep = 'RA1-';
+  for (var i=0;i<PARAMS.length;i++) keep += qEncode(PARAMS[i], d.P[PARAMS[i].key]);
+  return keep + B36[Math.floor(r()*36)] + B36[Math.floor(r()*36)];
+}
+
+/* ============================================================
+   WORLD FIELDS — height, water, districts, tensor field
+   ============================================================ */
+function buildFields(seedStr){
+  var rng = makeRng(seedStr, 'fields');
+  var cx = WORLD_W/2, cy = WORLD_H/2;
+  var R = 430 * P.cityScale;
+  var hseed = Math.floor(rng()*1e9), nseed = Math.floor(rng()*1e9);
+
+  function heightAt(x,y){
+    return fbm(x*0.0016+3.1, y*0.0016+8.7, hseed, 3);
+  }
+
+  /* ---- water: river polyline + lakes ---- */
+  var river = null, riverW = 0, lakes = [];
+  if (P.wateriness > 0.05){
+    var edge = Math.floor(rng()*4);
+    function edgePoint(e){
+      var m = 40;
+      if (e===0) return {x: m+rng()*(WORLD_W-2*m), y: -20};
+      if (e===1) return {x: WORLD_W+20, y: m+rng()*(WORLD_H-2*m)};
+      if (e===2) return {x: m+rng()*(WORLD_W-2*m), y: WORLD_H+20};
+      return {x: -20, y: m+rng()*(WORLD_H-2*m)};
+    }
+    var a = edgePoint(edge), b = edgePoint((edge+1+Math.floor(rng()*2))%4);
+    var pts = [{x:a.x,y:a.y}];
+    var px=a.x, py=a.y;
+    var baseAng = Math.atan2(b.y-a.y, b.x-a.x);
+    var wander = (rng()*2-1)*0.9;
+    for (var i=0;i<90;i++){
+      baseAng = Math.atan2(b.y-py, b.x-px);
+      var ang = baseAng + Math.sin(i*0.35+wander*3)*0.55 + (fbm(i*0.11, wander*9.1, nseed, 2)-0.5)*1.1;
+      px += Math.cos(ang)*26; py += Math.sin(ang)*26;
+      pts.push({x:px,y:py});
+      if (dist2(px,py,b.x,b.y) < 60*60) break;
+    }
+    pts.push({x:b.x,y:b.y});
+    river = pts;
+    riverW = (15 + 34*P.wateriness) * (0.85+0.3*rng());
+    var nlakes = P.wateriness < 0.15 ? 0 : (P.wateriness < 0.85 ? 1 : 2);
+    for (var li=0; li<nlakes; li++){
+      for (var tries=0; tries<40; tries++){
+        var ang2 = rng()*TAU, rr = rng()*R*0.75;
+        var lx = cx+Math.cos(ang2)*rr, ly = cy+Math.sin(ang2)*rr*0.75;
+        if (heightAt(lx,ly) < 0.52 && waterDistTo(lx,ly,river,riverW,lakes) > 170){
+          lakes.push({x:lx, y:ly, rx:(55+rng()*80)*(0.6+0.5*P.wateriness), ry:(40+rng()*55)*(0.6+0.5*P.wateriness), rot:rng()*TAU});
+          break;
+        }
+      }
+    }
+  }
+
+  function waterDist(x,y){
+    return waterDistTo(x,y,river,riverW,lakes);
+  }
+
+  /* ---- districts: weighted Voronoi ---- */
+  var nD = Math.round(P.districtCount);
+  var centers = [];
+  function farFromOthers(x,y,minD){
+    for (var i=0;i<centers.length;i++)
+      if (dist2(x,y,centers[i].x,centers[i].y) < minD*minD) return false;
+    return true;
+  }
+  centers.push({x:cx+(rng()*2-1)*70, y:cy+(rng()*2-1)*70}); // downtown first
+  if (P.wateriness > 0.1 && river){
+    for (var t2=0;t2<60;t2++){
+      var wa = rng()*TAU, wr = R*(0.35+rng()*0.55);
+      var wx = cx+Math.cos(wa)*wr, wy = cy+Math.sin(wa)*wr*0.75;
+      var wd = waterDist(wx,wy);
+      if (wd > 25 && wd < 150 && farFromOthers(wx,wy,170)){ centers.push({x:wx,y:wy,kind:'waterfront'}); break; }
+    }
+  }
+  var guard = 0;
+  while (centers.length < nD && guard++ < 400){
+    var sa = rng()*TAU, sr = Math.sqrt(rng())*R*0.92;
+    var sx = cx+Math.cos(sa)*sr, sy = cy+Math.sin(sa)*sr*0.78;
+    if (waterDist(sx,sy) < 40) continue;
+    if (farFromOthers(sx,sy,165)) centers.push({x:sx,y:sy});
+  }
+  // assign kinds: downtown = centermost; others by role
+  var order = centers.map(function(c,i){ return {i:i, d:dist2(c.x,c.y,cx,cy)}; })
+    .sort(function(a,b){ return a.d-b.d; });
+  centers[order[0].i].kind = 'downtown';
+  var rest = order.slice(1).map(function(o){ return o.i; });
+  var hasWf = centers.some(function(c){ return c.kind==='waterfront'; });
+  var pool = rest.filter(function(i){ return !centers[i].kind; });
+  function farthestFromDowntown(){
+    var best=-1, bd=-1;
+    for (var k=0;k<pool.length;k++){ var d=dist2(centers[pool[k]].x,centers[pool[k]].y,centers[order[0].i].x,centers[order[0].i].y); if(d>bd){bd=d;best=k;} }
+    return best>=0 ? pool.splice(best,1)[0] : -1;
+  }
+  function nearestToDowntown(){
+    var best=-1, bd=1e18;
+    for (var k=0;k<pool.length;k++){ var d=dist2(centers[pool[k]].x,centers[pool[k]].y,centers[order[0].i].x,centers[order[0].i].y); if(d<bd){bd=d;best=k;} }
+    return best>=0 ? pool.splice(best,1)[0] : -1;
+  }
+  if (pool.length){ var pi = Math.floor(rng()*pool.length); centers[pool.splice(pi,1)[0]].kind='park'; }
+  var fi = farthestFromDowntown(); if (fi>=0) centers[fi].kind='industrial';
+  var ci2 = nearestToDowntown(); if (ci2>=0) centers[ci2].kind='commercial';
+  for (var qi=0; qi<pool.length; qi++) centers[pool[qi]].kind='residential';
+  centers.forEach(function(c){ if(!c.kind) c.kind='residential'; });
+
+  var DW = { downtown:1.18, commercial:1.0, residential:1.0, waterfront:1.0, industrial:0.92, park:1.05 };
+  var DEMAND = { downtown:3, commercial:2, residential:1.4, waterfront:1.2, industrial:1, park:0.2 };
+  function districtAt(x,y){
+    var best=null, bd=1e18;
+    for (var i=0;i<centers.length;i++){
+      var c=centers[i];
+      var d = Math.sqrt(dist2(x,y,c.x,c.y)) / (DW[c.kind]||1);
+      if (d<bd){ bd=d; best=c; }
+    }
+    return best;
+  }
+
+  /* ---- tensor field: preferred street direction ---- */
+  var dtc = centers[order[0].i];
+  var dAxis = rng()*Math.PI; // downtown grid axis
+  function tensorAngle(x,y){
+    var a1 = Math.atan2(y-dtc.y, x-dtc.x);          // radial from downtown
+    var wd = waterDist(x,y);
+    var wNear = clamp(1-Math.abs(wd)/230, 0, 1);    // hug water
+    var a3 = fbm(x*0.0011+7.3, y*0.0011+2.1, nseed, 2)*TAU*2; // smooth noise
+    var vx = Math.cos(a1)*0.55 + Math.cos(a1+Math.PI/2)*wNear*0.55 + Math.cos(a3)*0.5;
+    var vy = Math.sin(a1)*0.55 + Math.sin(a1+Math.PI/2)*wNear*0.55 + Math.sin(a3)*0.5;
+    var ang = Math.atan2(vy,vx);
+    var dd = Math.sqrt(dist2(x,y,dtc.x,dtc.y));
+    if (dd < 200){ // downtown grid: snap toward the nearer of two perpendicular axes
+      var snap = dAxis + Math.round((ang-dAxis)/(Math.PI/2))*(Math.PI/2);
+      var t = 1 - dd/200; t = t*t*(3-2*t);
+      var bx = Math.cos(ang)*(1-t)+Math.cos(snap)*t;
+      var by = Math.sin(ang)*(1-t)+Math.sin(snap)*t;
+      ang = Math.atan2(by,bx);
+    }
+    return ang;
+  }
+
+  return {
+    cx:cx, cy:cy, R:R, rng:rng,
+    heightAt:heightAt, waterDist:waterDist,
+    river:river, riverW:riverW, lakes:lakes,
+    centers:centers, downtown:dtc, districtAt:districtAt,
+    demandOf:function(x,y){ var d=districtAt(x,y); return d?DEMAND[d.kind]:1; },
+    tensorAngle:tensorAngle, nseed:nseed
+  };
+}
+
+function waterDistTo(x,y,river,riverW,lakes){
+  var best = 1e9;
+  if (river){
+    for (var i=0;i<river.length-1;i++){
+      var d = segDist(x,y,river[i].x,river[i].y,river[i+1].x,river[i+1].y);
+      if (d<best) best=d;
+    }
+    best -= riverW/2;
+  }
+  for (var l=0;l<lakes.length;l++){
+    var L=lakes[l];
+    var dx=x-L.x, dy=y-L.y;
+    var ca=Math.cos(-L.rot), sa=Math.sin(-L.rot);
+    var ex=(dx*ca-dy*sa)/L.rx, ey=(dx*sa+dy*ca)/L.ry;
+    var e=Math.sqrt(ex*ex+ey*ey);
+    var approx=(e-1)*Math.min(L.rx,L.ry);
+    if (approx<best) best=approx;
+  }
+  return best;
+}
+function segDist(px,py,ax,ay,bx,by){
+  var dx=bx-ax, dy=by-ay;
+  var L2=dx*dx+dy*dy;
+  var t = L2>0 ? ((px-ax)*dx+(py-ay)*dy)/L2 : 0;
+  t = clamp(t,0,1);
+  var cx=ax+dx*t, cy=ay+dy*t;
+  return Math.sqrt(dist2(px,py,cx,cy));
+}
+
+/* ============================================================
+   MACRO ROAD GRAPH — Delaunay → MST → loops → classify
+   ============================================================ */
+function delaunayEdges(pts){
+  var n = pts.length;
+  var minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9, i;
+  for (i=0;i<n;i++){ var p=pts[i];
+    if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; }
+  var dcx=(minX+maxX)/2, dcy=(minY+maxY)/2, dd=Math.max(maxX-minX,maxY-minY);
+  var P2 = pts.concat([
+    {x:dcx-20*dd, y:dcy-dd}, {x:dcx, y:dcy+20*dd}, {x:dcx+20*dd, y:dcy-dd}
+  ]);
+  var si=n, sj=n+1, sk=n+2;
+  var tris=[[si,sj,sk]];
+  function circum(x1,y1,x2,y2,x3,y3){
+    var d=2*(x1*(y2-y3)+x2*(y3-y1)+x3*(y1-y2));
+    if (Math.abs(d)<1e-9) return null;
+    var s1=x1*x1+y1*y1, s2=x2*x2+y2*y2, s3=x3*x3+y3*y3;
+    var ux=(s1*(y2-y3)+s2*(y3-y1)+s3*(y1-y2))/d;
+    var uy=(s1*(x3-x2)+s2*(x1-x3)+s3*(x2-x1))/d;
+    return {x:ux, y:uy, r2:(x1-ux)*(x1-ux)+(y1-uy)*(y1-uy)};
+  }
+  for (var pi=0; pi<n; pi++){
+    var px=P2[pi].x, py=P2[pi].y, bad=[];
+    for (var ti=0; ti<tris.length; ti++){
+      var t=tris[ti];
+      var c=circum(P2[t[0]].x,P2[t[0]].y,P2[t[1]].x,P2[t[1]].y,P2[t[2]].x,P2[t[2]].y);
+      if (c && (px-c.x)*(px-c.x)+(py-c.y)*(py-c.y) < c.r2-1e-9) bad.push(ti);
+    }
+    var ecount={};
+    for (var bi=0;bi<bad.length;bi++){
+      var bt=tris[bad[bi]];
+      for (var e=0;e<3;e++){
+        var a2=bt[e], b2=bt[(e+1)%3];
+        var k=a2<b2?a2+'_'+b2:b2+'_'+a2;
+        ecount[k]=(ecount[k]||0)+1;
+      }
+    }
+    var badSet={}; for (var q2=0;q2<bad.length;q2++) badSet[bad[q2]]=1;
+    var ntris=[];
+    for (var ti2=0;ti2<tris.length;ti2++) if(!badSet[ti2]) ntris.push(tris[ti2]);
+    tris=ntris;
+    for (var k2 in ecount){
+      if (ecount[k2]===1){
+        var ab=k2.split('_'); tris.push([+ab[0], pi, +ab[1]]);
+      }
+    }
+  }
+  var emap={};
+  for (var ti3=0;ti3<tris.length;ti3++){
+    var t3=tris[ti3];
+    if (t3[0]>=n||t3[1]>=n||t3[2]>=n) continue;
+    for (var e3=0;e3<3;e3++){
+      var a3=t3[e3], b3=t3[(e3+1)%3];
+      var k3=a3<b3?a3+'_'+b3:b3+'_'+a3;
+      emap[k3]=[a3,b3];
+    }
+  }
+  var out=[];
+  for (var k4 in emap) out.push(emap[k4]);
+  return out;
+}
+
+function buildMacroGraph(F){
+  var rng = makeRng(state.seed, 'macro');
+  var pts = [];
+  var anchors = [];
+  function addAnchor(x,y,role){ anchors.push({x:x,y:y,role:role}); pts.push({x:x,y:y,anchor:anchors.length-1}); }
+
+  var dtc = F.downtown;
+  addAnchor(dtc.x, dtc.y, 'downtown');
+  addAnchor(dtc.x+55, dtc.y-45, 'transit');
+  var ind = null, wfg = null, com = null;
+  F.centers.forEach(function(c){
+    if (c.kind==='industrial'){ ind=c; addAnchor(c.x,c.y,'industry'); }
+    else if (c.kind==='waterfront'){ wfg=c; addAnchor(c.x,c.y,'watergate'); }
+    else if (c.kind==='commercial'){ com=c; addAnchor(c.x,c.y,'nhood'); }
+    else if (c.kind==='residential' && anchors.length < 9){ addAnchor(c.x,c.y,'nhood'); }
+  });
+  // city gates at boundary
+  for (var g=0; g<4; g++){
+    var ga = Math.PI/4 + g*Math.PI/2 + (rng()-0.5)*0.3;
+    var gx = F.cx+Math.cos(ga)*F.R*1.02, gy = F.cy+Math.sin(ga)*F.R*0.82;
+    gx = clamp(gx, 50, WORLD_W-50); gy = clamp(gy, 50, WORLD_H-50);
+    addAnchor(gx, gy, 'gate');
+  }
+  // sample points
+  var S = Math.round(40*P.cityScale), guard=0;
+  while (pts.length < anchors.length+S && guard++ < 900){
+    var sa=rng()*TAU, sr=Math.sqrt(rng())*F.R*1.0;
+    var sx=F.cx+Math.cos(sa)*sr, sy=F.cy+Math.sin(sa)*sr*0.8;
+    if (sx<40||sx>WORLD_W-40||sy<40||sy>WORLD_H-40) continue;
+    if (F.waterDist(sx,sy) < 30) continue;
+    var ok=true;
+    for (var pi2=0;pi2<pts.length;pi2++)
+      if (dist2(sx,sy,pts[pi2].x,pts[pi2].y) < 52*52){ ok=false; break; }
+    if (ok) pts.push({x:sx,y:sy});
+  }
+
+  var n = pts.length;
+  var edgePairs = delaunayEdges(pts);
+  var edges = edgePairs.map(function(pr){
+    var a=pr[0], b=pr[1];
+    return {a:a, b:b, len:Math.sqrt(dist2(pts[a].x,pts[a].y,pts[b].x,pts[b].y))};
+  }).filter(function(e){ return e.len < F.R*0.85; });
+
+  // Kruskal MST
+  var parent=[], rank=[];
+  for (var i=0;i<n;i++){ parent[i]=i; rank[i]=0; }
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  function union(a,b){ a=find(a); b=find(b); if(a===b)return false;
+    if(rank[a]<rank[b])parent[a]=b; else if(rank[a]>rank[b])parent[b]=a; else {parent[b]=a;rank[a]++;} return true; }
+  var byLen = edges.slice().sort(function(x,y){ return x.len-y.len; });
+  var mstSet={}, mstEdges=[];
+  for (var ei=0;ei<byLen.length;ei++){
+    var e=byLen[ei];
+    if (union(e.a,e.b)){ e.inMST=true; mstSet[e.a+'_'+e.b]=1; mstSet[e.b+'_'+e.a]=1; mstEdges.push(e); }
+  }
+  // adjacency of MST for path queries
+  var adj=[]; for (var ai=0;ai<n;ai++) adj.push([]);
+  mstEdges.forEach(function(e){ adj[e.a].push({to:e.b,len:e.len}); adj[e.b].push({to:e.a,len:e.len}); });
+  function mstDist(s,t){
+    var dd=new Array(n).fill(1e18); dd[s]=0;
+    var vis=new Array(n).fill(false);
+    for (var it=0;it<n;it++){
+      var u=-1,best=1e18;
+      for (var v=0;v<n;v++) if(!vis[v]&&dd[v]<best){best=dd[v];u=v;}
+      if(u<0||u===t)break; vis[u]=true;
+      for (var k=0;k<adj[u].length;k++){ var nb=adj[u][k];
+        if(dd[u]+nb.len<dd[nb.to]) dd[nb.to]=dd[u]+nb.len; }
+    }
+    return dd[t];
+  }
+  // loop edges: short Delaunay edges that create small detours
+  var nonMST = edges.filter(function(e){ return !e.inMST; })
+    .sort(function(x,y){ return x.len-y.len; });
+  var added=0;
+  for (var li2=0;li2<nonMST.length && added<10; li2++){
+    var le=nonMST[li2];
+    var md=mstDist(le.a,le.b);
+    if (md < 1e17 && le.len/md < 1.42){ le.inLoop=true; added++; }
+  }
+
+  var graphEdges = edges.filter(function(e){ return e.inMST || e.inLoop; });
+
+  // classify via anchor-pair betweenness
+  var usage={};
+  var anchorIdx = [];
+  for (var pa=0;pa<pts.length;pa++) if(pts[pa].anchor!=null) anchorIdx.push(pa);
+  var gAdj=[]; for (var gi=0;gi<n;gi++) gAdj.push([]);
+  graphEdges.forEach(function(e,i){ e.gi=i;
+    gAdj[e.a].push({to:e.b,e:i,len:e.len}); gAdj[e.b].push({to:e.a,e:i,len:e.len}); });
+  function dijkstraPath(s,t){
+    var dd=new Array(n).fill(1e18), prev=new Array(n).fill(-1), preve=new Array(n).fill(-1);
+    dd[s]=0; var vis=new Array(n).fill(false);
+    for (var it=0;it<n;it++){
+      var u=-1,best=1e18;
+      for (var v=0;v<n;v++) if(!vis[v]&&dd[v]<best){best=dd[v];u=v;}
+      if(u<0||u===t)break; vis[u]=true;
+      for (var k=0;k<gAdj[u].length;k++){ var nb=gAdj[u][k];
+        if(dd[u]+nb.len<dd[nb.to]){ dd[nb.to]=dd[u]+nb.len; prev[nb.to]=u; preve[nb.to]=nb.e; } }
+    }
+    var path=[], cur=t, guard2=0;
+    while(cur!==s && cur>=0 && guard2++<n+5){ path.push(preve[cur]); cur=prev[cur]; }
+    return path;
+  }
+  for (var i1=0;i1<anchorIdx.length;i1++)
+    for (var i2=i1+1;i2<anchorIdx.length;i2++){
+      var path=dijkstraPath(anchorIdx[i1],anchorIdx[i2]);
+      for (var q3=0;q3<path.length;q3++) usage[path[q3]]=(usage[path[q3]]||0)+1;
+    }
+  var ranked = graphEdges.slice().sort(function(a,b){ return (usage[b.gi]||0)-(usage[a.gi]||0); });
+  var nArt = Math.min(ranked.length, Math.round(P.arterialCount)*3);
+  var nRoute = Math.min(ranked.length, nArt+14); // arterials + key collectors only
+  for (var ri=0;ri<ranked.length;ri++){
+    ranked[ri].cls = ri<nArt ? 2 : 1; // 2 arterial, 1 collector
+    ranked[ri].route = ri<nRoute;
+  }
+
+  return { pts:pts, edges:graphEdges, anchors:anchors };
+}
+
+function angDiff(a,b){ var d=(b-a)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+
+/* ============================================================
+   COST FIELD + A* routing on a coarse grid
+   ============================================================ */
+var ACELL = 12.5, ACOLS = 128, AROWS = 80;
+function buildCostGrid(F){
+  var cost = new Float32Array(ACOLS*AROWS);
+  for (var r=0;r<AROWS;r++) for (var c=0;c<ACOLS;c++){
+    var x=(c+0.5)*ACELL, y=(r+0.5)*ACELL;
+    var e=4;
+    var sx=(F.heightAt(x+e,y)-F.heightAt(x-e,y))/(2*e);
+    var sy=(F.heightAt(x,y+e)-F.heightAt(x,y-e))/(2*e);
+    var slope=Math.sqrt(sx*sx+sy*sy)*900; // normalize-ish
+    var wd=F.waterDist(x,y);
+    var d=F.districtAt(x,y);
+    var built = d ? ({downtown:0.9,commercial:0.7,residential:0.5,waterfront:0.4,industrial:0.6,park:0.1}[d.kind]||0.4) : 0.3;
+    var dem = d ? ({downtown:1,commercial:0.7,residential:0.5,waterfront:0.45,industrial:0.35,park:0.05}[d.kind]||0.4) : 0.3;
+    var cc = 1 + 3.0*Math.min(1,slope) + (wd<0?16:0) + 1.1*built - 1.0*dem;
+    cc += 2.6*fbm(x*0.008, y*0.008, F.nseed, 3); // organic wander
+    cost[r*ACOLS+c] = Math.max(0.35, cc);
+  }
+  return cost;
+}
+function astar(cost, sx, sy, tx, ty){
+  var W=ACOLS, H=AROWS;
+  sx=clamp(Math.round(sx),0,W-1); sy=clamp(Math.round(sy),0,H-1);
+  tx=clamp(Math.round(tx),0,W-1); ty=clamp(Math.round(ty),0,H-1);
+  var g=new Float32Array(W*H).fill(1e18), came=new Int32Array(W*H).fill(-1), closed=new Uint8Array(W*H);
+  var si=sy*W+sx, ti=ty*W+tx;
+  g[si]=0;
+  var heap=[si], hf=[0];
+  function h(i){ var x=i%W, y=(i/W)|0; var dx=Math.abs(x-tx), dy=Math.abs(y-ty);
+    return Math.max(dx,dy)+0.4142*Math.min(dx,dy); }
+  function push(i,f){ heap.push(i); hf.push(f); var k=heap.length-1;
+    while(k>0){ var p=(k-1)>>1; if(hf[p]<=hf[k])break;
+      var t=heap[p];heap[p]=heap[k];heap[k]=t; var t2=hf[p];hf[p]=hf[k];hf[k]=t2; k=p; } }
+  function pop(){ var top=heap[0], li=heap.length-1;
+    heap[0]=heap[li]; hf[0]=hf[li]; heap.pop(); hf.pop();
+    var k=0; for(;;){ var l=2*k+1, r2=l+1, m=k;
+      if(l<heap.length&&hf[l]<hf[m])m=l; if(r2<heap.length&&hf[r2]<hf[m])m=r2;
+      if(m===k)break; var t=heap[m];heap[m]=heap[k];heap[k]=t; var t2=hf[m];hf[m]=hf[k];hf[k]=t2; k=m; }
+    return top; }
+  var DX=[1,1,0,-1,-1,-1,0,1], DY=[0,1,1,1,0,-1,-1,-1], DC=[1,1.4142,1,1.4142,1,1.4142,1,1.4142];
+  var guard=0;
+  while(heap.length && guard++<60000){
+    var cur=pop();
+    if(closed[cur])continue; closed[cur]=1;
+    if(cur===ti)break;
+    var cx2=cur%W, cy2=(cur/W)|0;
+    for(var d=0;d<8;d++){
+      var nx=cx2+DX[d], ny=cy2+DY[d];
+      if(nx<0||ny<0||nx>=W||ny>=H)continue;
+      if(d%2===1){ // no corner cutting through high cost
+        if(closed[cy2*W+nx]||closed[(cy2+DY[d])*W+cx2])continue;
+      }
+      var ni=ny*W+nx;
+      if(closed[ni])continue;
+      var ng=g[cur]+DC[d]*cost[ni];
+      if(ng<g[ni]){ g[ni]=ng; came[ni]=cur; push(ni,ng+h(ni)); }
+    }
+  }
+  if(!closed[ti])return null;
+  var path=[], cur2=ti;
+  while(cur2>=0&&cur2!==si){ path.push(cur2); cur2=came[cur2]; }
+  path.push(si); path.reverse();
+  return path.map(function(i){ return {x:(i%W+0.5)*ACELL, y:(((i/W)|0)+0.5)*ACELL}; });
+}
+
+/* ============================================================
+   GEOMETRY — Chaikin, resample, curvature clamp
+   ============================================================ */
+function chaikin(pts, iters){
+  var p=pts;
+  for(var k=0;k<iters;k++){
+    if(p.length<3)break;
+    var out=[p[0]];
+    for(var i=0;i<p.length-1;i++){
+      var a=p[i], b=p[i+1];
+      out.push({x:a.x*0.75+b.x*0.25, y:a.y*0.75+b.y*0.25});
+      out.push({x:a.x*0.25+b.x*0.75, y:a.y*0.25+b.y*0.75});
+    }
+    out.push(p[p.length-1]); p=out;
+  }
+  return p;
+}
+function resample(pts, ds){
+  if(pts.length<2)return pts;
+  var out=[{x:pts[0].x,y:pts[0].y}], acc=0;
+  for(var i=1;i<pts.length;i++){
+    var a=pts[i-1], b=pts[i];
+    var seg=Math.sqrt(dist2(a.x,a.y,b.x,b.y));
+    if(seg<1e-6)continue;
+    var t0=ds-acc;
+    var travelled=0;
+    while(travelled+t0<seg){
+      travelled+=t0;
+      var f=travelled/seg;
+      out.push({x:a.x+(b.x-a.x)*f, y:a.y+(b.y-a.y)*f});
+      t0=ds;
+    }
+    acc=seg-travelled;
+  }
+  out.push({x:pts[pts.length-1].x, y:pts[pts.length-1].y});
+  return out;
+}
+// clothoid-like: limit turning angle per step, 2 passes
+function clampCurvature(pts, maxTurnDeg){
+  var maxT=maxTurnDeg*Math.PI/180;
+  for(var pass=0;pass<2;pass++){
+    if(pts.length<3)break;
+    var dx=pts[1].x-pts[0].x, dy=pts[1].y-pts[0].y;
+    var heading=Math.atan2(dy,dx);
+    for(var i=1;i<pts.length-1;i++){
+      var want=Math.atan2(pts[i+1].y-pts[i].y, pts[i+1].x-pts[i].x);
+      var turn=angDiff(heading,want);
+      var use=heading+clamp(turn,-maxT,maxT);
+      var L=Math.sqrt(dist2(pts[i].x,pts[i].y,pts[i+1].x,pts[i+1].y));
+      pts[i+1].x=pts[i].x+Math.cos(use)*L;
+      pts[i+1].y=pts[i].y+Math.sin(use)*L;
+      heading=use;
+    }
+  }
+  return pts;
+}
+
+/* ============================================================
+   ROUTE macro edges + grow local streamlines
+   ============================================================ */
+function routeRoads(F, G){
+  var cost=buildCostGrid(F);
+  var roads=[]; // {pts, cls, bridges:[{x,y}], name}
+  var occ=new Uint8Array(160*100); // 10px occupancy
+  function occMark(x,y,cls){
+    var gx=clamp(Math.floor(x/10),0,159), gy=clamp(Math.floor(y/10),0,99);
+    occ[gy*160+gx]=Math.max(occ[gy*160+gx], cls+1);
+  }
+  function occNear(x,y,r){
+    var r2=r/10, gx=Math.floor(x/10), gy=Math.floor(y/10);
+    for(var j=Math.max(0,gy-Math.ceil(r2));j<=Math.min(99,gy+Math.ceil(r2));j++)
+      for(var i=Math.max(0,gx-Math.ceil(r2));i<=Math.min(159,gx+Math.ceil(r2));i++)
+        if(occ[j*160+i])return true;
+    return false;
+  }
+  var maxTurn={2:7, 1:11, 0:P.curvatureLimit};
+  G.edges.forEach(function(e){
+    if(!e.route)return; // only important macro edges become roads
+    var a=G.pts[e.a], b=G.pts[e.b];
+    var path=astar(cost, a.x/ACELL, a.y/ACELL, b.x/ACELL, b.y/ACELL);
+    var pts;
+    if(path&&path.length>2)pts=path;
+    else pts=[{x:a.x,y:a.y},{x:(a.x+b.x)/2,y:(a.y+b.y)/2},{x:b.x,y:b.y}];
+    pts=chaikin(pts,2);
+    pts=resample(pts,10);
+    clampCurvature(pts, maxTurn[e.cls]);
+    // bridges where crossing water
+    var bridges=[];
+    for(var i=0;i<pts.length;i++) if(F.waterDist(pts[i].x,pts[i].y)<-4) bridges.push({x:pts[i].x,y:pts[i].y});
+    roads.push({pts:pts, cls:e.cls, bridges:bridges, a:e.a, b:e.b});
+    for(var m=0;m<pts.length;m++) occMark(pts[m].x,pts[m].y,e.cls);
+  });
+
+  // district street grids first (block-forming fabric), then organic streamlines
+  buildDistrictGrids(F,roads,occMark);
+  // local streets: tensor-field streamlines (dense fabric → city blocks)
+  var rng=makeRng(state.seed,'locals');
+  var M=Math.round(36*P.roadDensity*P.cityScale);
+  for(var s=0;s<M;s++){
+    for(var att=0;att<24;att++){
+      var sa=rng()*TAU, sr=Math.sqrt(rng())*F.R*0.98;
+      var sx=F.cx+Math.cos(sa)*sr, sy=F.cy+Math.sin(sa)*sr*0.8;
+      if(F.waterDist(sx,sy)<34||occNear(sx,sy,30))continue;
+      var ndirs=(rng()<0.65)?2:1;
+      for(var dd2=0;dd2<ndirs;dd2++){
+        var baseA=F.tensorAngle(sx,sy)+(dd2?Math.PI/2:0);
+        var line=growStreamline(F,occ,sx,sy,baseA);
+        if(line&&line.length>=11){
+          line=chaikin(line,1); line=resample(line,10); clampCurvature(line,P.curvatureLimit);
+          roads.push({pts:line, cls:0, bridges:[], a:-1, b:-1});
+          for(var m2=0;m2<line.length;m2++)occMark(line[m2].x,line[m2].y,0);
+        }
+      }
+      break;
+    }
+  }
+  return {roads:roads, occNear:occNear};
+}
+/* ---- district street grids: jittered rotated grids per neighborhood ----
+   Guarantees enclosed, walkable blocks. Lines are clipped to the district's
+   Voronoi cell + water + city edge, split at H/V crossings into segments. */
+function segInt(p1,p2,p3,p4){
+  var d=(p2.x-p1.x)*(p4.y-p3.y)-(p2.y-p1.y)*(p4.x-p3.x);
+  if(Math.abs(d)<1e-9)return null;
+  var t=((p3.x-p1.x)*(p4.y-p3.y)-(p3.y-p1.y)*(p4.x-p3.x))/d;
+  var u=((p3.x-p1.x)*(p2.y-p1.y)-(p3.y-p1.y)*(p2.x-p1.x))/d;
+  if(t<-0.02||t>1.02||u<-0.02||u>1.02)return null;
+  return {x:p1.x+t*(p2.x-p1.x), y:p1.y+t*(p2.y-p1.y), t:t, u:u};
+}
+function splitAtCrossings(pts,crosses){
+  crosses.sort(function(a,b){return (a.s+a.t)-(b.s+b.t);});
+  var cuts=[], lastF=-1e9, N=pts.length;
+  for(var ci=0;ci<crosses.length;ci++){
+    var f=crosses[ci].s+crosses[ci].t;
+    if(f<1||f>N-2)continue;
+    if(f-lastF<1.4)continue;
+    cuts.push({f:f,pt:crosses[ci].pt}); lastF=f;
+  }
+  if(!cuts.length)return [pts];
+  var segs=[], prevF=0, prevPt=pts[0];
+  function emit(toF,toPt){
+    var seg=[prevPt];
+    for(var j=Math.floor(prevF)+1;j<=Math.floor(toF);j++)seg.push(pts[j]);
+    seg.push(toPt); segs.push(seg); prevF=toF; prevPt=toPt;
+  }
+  for(var k=0;k<cuts.length;k++)emit(cuts[k].f,cuts[k].pt);
+  emit(N-1,pts[N-1]);
+  return segs.filter(function(s){return s.length>=3;});
+}
+function buildDistrictGrids(F,roads,occMark){
+  var rng=makeRng(state.seed,'grids');
+  var C=F.centers, n=C.length;
+    for(var i=0;i<n;i++){
+    var D=C[i];
+    if(D.kind==='park'||D.kind==='waterfront')continue;
+    var mnd=1e9;
+    for(var j=0;j<n;j++){ if(j===i)continue;
+      mnd=Math.min(mnd,Math.hypot(D.x-C[j].x,D.y-C[j].y)); }
+    var E=clamp(mnd*0.55,170,F.R*0.95);
+    if(E<150)continue;
+    var theta=F.tensorAngle(D.x,D.y)+(rng()-0.5)*0.6;
+    var s=clamp(96/Math.max(0.4,P.roadDensity),64,150);
+    var ca=Math.cos(theta), sa=Math.sin(theta);
+    var hChunks=[], vChunks=[];
+    for(var hv=0;hv<2;hv++){
+      var nk=Math.ceil(E/s);
+      for(var k=-nk;k<=nk;k++){
+        var off=k*s+(rng()-0.5)*s*0.35;
+        var cur=[], lastT=-1e9;
+        for(var t=-E;t<=E;t+=10){
+          var w=hv?{x:D.x+off*ca-t*sa, y:D.y+off*sa+t*ca}
+                 :{x:D.x+t*ca-off*sa, y:D.y+t*sa+off*ca};
+          var ok=true;
+          var dxc=w.x-F.cx, dcy=w.y-F.cy;
+          if(dxc*dxc+dcy*dcy>F.R*F.R*1.1)ok=false;
+          else if(F.waterDist(w.x,w.y)<20)ok=false;
+          else if(F.districtAt(w.x,w.y)!==D)ok=false;
+          if(ok&&(t-lastT>11||lastT<-1e8)){
+            if(cur.length>=3)(hv?hChunks:vChunks).push(cur);
+            cur=[];
+          }
+          if(!ok){lastT=-1e9;continue;}
+          cur.push(w); lastT=t;
+        }
+        if(cur.length>=3)(hv?hChunks:vChunks).push(cur);
+      }
+    }
+    // crossings between H and V chunks
+    var hCross=hChunks.map(function(){return [];});
+    var vCross=vChunks.map(function(){return [];});
+    for(var hi=0;hi<hChunks.length;hi++){
+      var H=hChunks[hi];
+      for(var vi=0;vi<vChunks.length;vi++){
+        var V=vChunks[vi];
+        for(var a=0;a<H.length-1;a++){
+          var p1=H[a], p2=H[a+1];
+          var minx=Math.min(p1.x,p2.x)-1, maxx=Math.max(p1.x,p2.x)+1;
+          var miny=Math.min(p1.y,p2.y)-1, maxy=Math.max(p1.y,p2.y)+1;
+          for(var b2=0;b2<V.length-1;b2++){
+            var p3=V[b2], p4=V[b2+1];
+            if(Math.max(p3.x,p4.x)<minx||Math.min(p3.x,p4.x)>maxx)continue;
+            if(Math.max(p3.y,p4.y)<miny||Math.min(p3.y,p4.y)>maxy)continue;
+            var ix=segInt(p1,p2,p3,p4);
+            if(ix){
+              var pt={x:ix.x,y:ix.y};
+              hCross[hi].push({s:a,t:ix.t,pt:pt});
+              vCross[vi].push({s:b2,t:ix.u,pt:pt});
+            }
+          }
+        }
+      }
+    }
+    for(var ci2=0;ci2<hChunks.length;ci2++){
+      var segs=splitAtCrossings(hChunks[ci2],hCross[ci2]);
+      for(var si=0;si<segs.length;si++)addGridRoad(segs[si]);
+    }
+    for(var ci3=0;ci3<vChunks.length;ci3++){
+      var segs2=splitAtCrossings(vChunks[ci3],vCross[ci3]);
+      for(var si2=0;si2<segs2.length;si2++)addGridRoad(segs2[si2]);
+    }
+    function addGridRoad(pts){
+      var line=chaikin(pts,1); clampCurvature(line,P.curvatureLimit);
+      roads.push({pts:line, cls:0, bridges:[], a:-1, b:-1});
+      for(var m2=0;m2<line.length;m2++)occMark(line[m2].x,line[m2].y,0);
+    }
+  }
+}
+function growStreamline(F,occ,sx,sy,baseA){
+  var fwd=[], bwd=[];
+  function walk(x,y,dir,arr){
+    var px=x, py=y, ang=dir, near=0;
+    for(var i=0;i<55;i++){
+      var ta=F.tensorAngle(px,py);
+      var d=angDiff(ang,ta);
+      ang+=clamp(d,-0.5,0.5);
+      px+=Math.cos(ang)*12; py+=Math.sin(ang)*12;
+      if(px<30||px>WORLD_W-30||py<30||py>WORLD_H-30)break;
+      if(F.waterDist(px,py)<15)break;
+      var dcx2=px-F.cx, dcy2=py-F.cy;
+      if(dcx2*dcx2+dcy2*dcy2>F.R*F.R*1.25)break;
+      arr.push({x:px,y:py});
+      // proximity to existing roads
+      var gx=clamp(Math.floor(px/10),0,159), gy=clamp(Math.floor(py/10),0,99);
+      var hit=false;
+      for(var j=Math.max(0,gy-2);j<=Math.min(99,gy+2)&&!hit;j++)
+        for(var ii=Math.max(0,gx-2);ii<=Math.min(159,gx+2);ii++)
+          if(occ[j*160+ii]){hit=true;break;}
+      if(hit){ near++; if(near>=3&&arr.length>6)break; } else near=0;
+    }
+  }
+  walk(sx,sy,baseA,fwd);
+  walk(sx,sy,baseA+Math.PI,bwd);
+  bwd.reverse();
+  var line=bwd.concat([{x:sx,y:sy}],fwd);
+  return line.length>=9?line:null;
+}
+
+/* ============================================================
+   INTERSECTIONS — merge nodes, trim roads back from node discs
+   ============================================================ */
+function buildIntersections(roads){
+  // merge nearby endpoints
+  var nodes=[]; // {x,y,r,cls}
+  var ends=[];
+  roads.forEach(function(r,ri){
+    ends.push({x:r.pts[0].x,y:r.pts[0].y,ri:ri,head:true});
+    ends.push({x:r.pts[r.pts.length-1].x,y:r.pts[r.pts.length-1].y,ri:ri,head:false});
+  });
+  var parent=ends.map(function(_,i){return i;});
+  function find(x){while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;}
+  for(var i=0;i<ends.length;i++)for(var j=i+1;j<ends.length;j++){
+    if(dist2(ends[i].x,ends[i].y,ends[j].x,ends[j].y)<28*28){
+      var a=find(i),b=find(j); if(a!==b)parent[b]=a;
+    }
+  }
+  var groups={};
+  for(var k=0;k<ends.length;k++){ var g=find(k); (groups[g]=groups[g]||[]).push(ends[k]); }
+  var nodeOf={};
+  for(var gk in groups){
+    var gr=groups[gk], sx=0, sy=0, mc=0;
+    for(var q=0;q<gr.length;q++){ sx+=gr[q].x; sy+=gr[q].y;
+      mc=Math.max(mc,roads[gr[q].ri].cls); nodeOf[gr[q].ri+(gr[q].head?'h':'t')]=nodes.length; }
+    var r=[8,12,18][mc];
+    nodes.push({x:sx/gr.length, y:sy/gr.length, r:r, cls:mc, deg:gr.length});
+  }
+  // trim each road back from real junction discs (deg>=3);
+  // degree-2 nodes are just through-points: snap ends together, no trim
+  roads.forEach(function(r,ri){
+    ['h','t'].forEach(function(side){
+      var ni=nodeOf[ri+side];
+      if(ni==null)return;
+      var nd=nodes[ni];
+      var pts=r.pts;
+      if(nd.deg<3){
+        var np0={x:nd.x,y:nd.y};
+        if(side==='h')pts[0]=np0; else pts[pts.length-1]=np0;
+        r.pts=pts;
+        return;
+      }
+      var idx = side==='h'?0:pts.length-1;
+      var step = side==='h'?1:-1;
+      // walk from the end until outside radius
+      var cut=-1;
+      for(var i=idx;i>=0&&i<pts.length;i+=step){
+        if(dist2(pts[i].x,pts[i].y,nd.x,nd.y)>nd.r*nd.r){cut=i;break;}
+      }
+      if(cut<0)return; // fully inside — leave
+      // place endpoint exactly at radius: lerp between outside o1 and inside o2
+      var o1=pts[cut], o2=pts[cut-step]||pts[cut];
+      var d1=Math.sqrt(dist2(o1.x,o1.y,nd.x,nd.y));
+      var d2=Math.sqrt(dist2(o2.x,o2.y,nd.x,nd.y));
+      var t=clamp((d1-nd.r)/Math.max(1e-6,(d1-d2)),0,1);
+      var np={x:o1.x+(o2.x-o1.x)*t, y:o1.y+(o2.y-o1.y)*t};
+      if(side==='h'){ pts.splice(0,cut); pts.unshift(np); }
+      else { pts.splice(cut+1); pts.push(np); }
+      r.pts=pts;
+    });
+  });
+  return nodes;
+}
+
+/* ============================================================
+   BLOCKS — raster planar subdivision → erode → pack buildings
+   ============================================================ */
+var BCELL=4, BCOLS=400, BROWS=250;
+function buildBlocks(F, routed){
+  var mask=new Uint8Array(BCOLS*BROWS); // 1 = blocked (road/water)
+  var angGrid=new Float32Array(40*25).fill(999); // nearest road angle, 40px cells
+  function stamp(x,y,rad,ang){
+    var gx=Math.floor(x/BCELL), gy=Math.floor(y/BCELL), gr=Math.ceil(rad/BCELL);
+    for(var j=Math.max(0,gy-gr);j<=Math.min(BROWS-1,gy+gr);j++)
+      for(var i=Math.max(0,gx-gr);i<=Math.min(BCOLS-1,gx+gr);i++){
+        var dx=(i-gx)*BCELL, dy=(j-gy)*BCELL;
+        if(dx*dx+dy*dy<rad*rad)mask[j*BCOLS+i]=1;
+      }
+    if(ang!=null){
+      var ax=clamp(Math.floor(x/40),0,39), ay=clamp(Math.floor(y/40),0,24);
+      angGrid[ay*40+ax]=ang;
+    }
+  }
+  var RW={2:15,1:11,0:8};
+  routed.roads.forEach(function(r){
+    var w=RW[r.cls]/2+3;
+    for(var i=0;i<r.pts.length;i++){
+      var p=r.pts[i], q=r.pts[Math.min(i+1,r.pts.length-1)];
+      stamp(p.x,p.y,w,Math.atan2(q.y-p.y,q.x-p.x));
+    }
+  });
+  // water blocked
+  for(var wy=0;wy<BROWS;wy++)for(var wx=0;wx<BCOLS;wx++){
+    if(F.waterDist(wx*BCELL+2,wy*BCELL+2)<2)mask[wy*BCOLS+wx]=1;
+  }
+  // flood fill outside from borders
+  var out=new Uint8Array(BCOLS*BROWS);
+  var q=[];
+  for(var bx=0;bx<BCOLS;bx++){ if(!mask[bx]){out[bx]=1;q.push(bx);} var bi=(BROWS-1)*BCOLS+bx; if(!mask[bi]){out[bi]=1;q.push(bi);} }
+  for(var by=0;by<BROWS;by++){ var l=by*BCOLS; if(!mask[l]){out[l]=1;q.push(l);} var rr=by*BCOLS+BCOLS-1; if(!mask[rr]){out[rr]=1;q.push(rr);} }
+  while(q.length){
+    var c=q.pop(), cx2=c%BCOLS, cy2=(c/BCOLS)|0;
+    var nb=[c-1,c+1,c-BCOLS,c+BCOLS];
+    for(var k=0;k<4;k++){
+      var n2=nb[k];
+      if(n2<0||n2>=BCOLS*BROWS||out[n2]||mask[n2])continue;
+      var nx=n2%BCOLS, ny=(n2/BCOLS)|0;
+      if(Math.abs(nx-cx2)+Math.abs(ny-cy2)!==1)continue;
+      out[n2]=1; q.push(n2);
+    }
+  }
+  // connected components of interior free space = blocks
+  var comp=new Int32Array(BCOLS*BROWS).fill(-1);
+  var blocks=[];
+  for(var sy2=0;sy2<BROWS;sy2++)for(var sx2=0;sx2<BCOLS;sx2++){
+    var idx=sy2*BCOLS+sx2;
+    if(mask[idx]||out[idx]||comp[idx]>=0)continue;
+    var cells=[], qq=[idx]; comp[idx]=blocks.length;
+    var minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+    while(qq.length){
+      var c2=qq.pop(); cells.push(c2);
+      var px=(c2%BCOLS)*BCELL, py=((c2/BCOLS)|0)*BCELL;
+      if(px<minx)minx=px; if(py<miny)miny=py; if(px>maxx)maxx=px; if(py>maxy)maxy=py;
+      var ex=c2%BCOLS, ey=(c2/BCOLS)|0;
+      var nb2=[[ex-1,ey],[ex+1,ey],[ex,ey-1],[ex,ey+1]];
+      for(var k2=0;k2<4;k2++){
+        var nx2=nb2[k2][0], ny2=nb2[k2][1];
+        if(nx2<0||ny2<0||nx2>=BCOLS||ny2>=BROWS)continue;
+        var ni=ny2*BCOLS+nx2;
+        if(mask[ni]||out[ni]||comp[ni]>=0)continue;
+        comp[ni]=blocks.length; qq.push(ni);
+      }
+    }
+    var cxm=(minx+maxx)/2, cym=(miny+maxy)/2;
+    var dc=Math.sqrt(dist2(cxm,cym,F.cx,F.cy));
+    if(cells.length>240 && dc<F.R*1.12){
+      blocks.push({cells:cells, cx:cxm, cy:cym, area:cells.length,
+        minx:minx, miny:miny, maxx:maxx, maxy:maxy});
+    }
+  }
+  // erode (setback) + classify + pack buildings
+  var rng=makeRng(state.seed,'blocks');
+  var buildings=[], parks=[];
+  var hash=new Map(); // spatial hash of placed rects
+  function hkey(gx,gy){return gx*4096+gy;}
+  function rectsOverlap(a,b){
+    // SAT on both rects' axes
+    var rects=[a,b];
+    for(var ri=0;ri<2;ri++){
+      var r0=rects[ri], r1=rects[1-ri];
+      var axes=[[Math.cos(r0.ang),Math.sin(r0.ang)],[ -Math.sin(r0.ang),Math.cos(r0.ang)]];
+      for(var ai=0;ai<2;ai++){
+        var ax=axes[ai][0], ay=axes[ai][1];
+        var pa=(r1.cx-r0.cx)*ax+(r1.cy-r0.cy)*ay;
+        var ra=(ai===0?r0.w:r0.h)/2;
+        var cb=Math.cos(r1.ang), sb=Math.sin(r1.ang);
+        var rb=Math.abs(cb*ax+sb*ay)*r1.w/2+Math.abs(-sb*ax+cb*ay)*r1.h/2;
+        if(Math.abs(pa)>ra+rb+3)return false;
+      }
+    }
+    return true;
+  }
+  function tryPlace(rect){
+    var gx0=Math.floor((rect.cx-rect.w)/32), gx1=Math.floor((rect.cx+rect.w)/32);
+    var gy0=Math.floor((rect.cy-rect.h)/32), gy1=Math.floor((rect.cy+rect.h)/32);
+    for(var gy=gy0;gy<=gy1;gy++)for(var gx=gx0;gx<=gx1;gx++){
+      var arr=hash.get(hkey(gx,gy));
+      if(arr)for(var i=0;i<arr.length;i++)if(rectsOverlap(rect,arr[i]))return false;
+    }
+    for(var gy2=gy0;gy2<=gy1;gy2++)for(var gx2=gx0;gx2<=gx1;gx2++){
+      var k=hkey(gx2,gy2), arr2=hash.get(k);
+      if(!arr2){arr2=[];hash.set(k,arr2);}
+      arr2.push(rect);
+    }
+    return true;
+  }
+  function roadAngleAt(x,y){
+    var ax=clamp(Math.floor(x/40),0,39), ay=clamp(Math.floor(y/40),0,24);
+    var best=999, bd=1e9;
+    for(var j=Math.max(0,ay-1);j<=Math.min(24,ay+1);j++)
+      for(var i=Math.max(0,ax-1);i<=Math.min(39,ax+1);i++){
+        var a=angGrid[j*40+i];
+        if(a<900){ var d=(i-ax)*(i-ax)+(j-ay)*(j-ay); if(d<bd){bd=d;best=a;} }
+      }
+    return best;
+  }
+  var PARCEL={downtown:0.62,commercial:0.85,residential:1.0,waterfront:1.05,industrial:1.9,park:1.4};
+  var BHGT={downtown:22,commercial:14,residential:8,waterfront:9,industrial:7,park:0};
+  blocks.forEach(function(b){
+    var d=F.districtAt(b.cx,b.cy);
+    var kind=d?d.kind:'residential';
+    var isPark = kind==='park' || rng()<P.parkiness*0.09;
+    // erode twice (8px setback)
+    var inner=b.cells;
+    for(var e2=0;e2<2;e2++){
+      var inset=new Set(inner);
+      var next=[];
+      for(var ci=0;ci<inner.length;ci++){
+        var c3=inner[ci], ex3=c3%BCOLS, ey3=(c3/BCOLS)|0, edge=false;
+        var nb3=[[ex3-1,ey3],[ex3+1,ey3],[ex3,ey3-1],[ex3,ey3+1]];
+        for(var k3=0;k3<4;k3++){
+          var nx3=nb3[k3][0], ny3=nb3[k3][1];
+          if(nx3<0||ny3<0||nx3>=BCOLS||ny3>=BROWS||!inset.has(ny3*BCOLS+nx3)){edge=true;break;}
+        }
+        if(!edge)next.push(c3);
+      }
+      inner=next;
+      if(inner.length<40)break;
+    }
+    if(isPark||inner.length<60){
+      parks.push({cells:inner.length?inner:b.cells, cx:b.cx, cy:b.cy, kind:kind});
+      return;
+    }
+    var pf=PARCEL[kind]||1;
+    var tries=Math.min(70,Math.round(inner.length/700*P.buildingDensity)+6);
+    var placed=0;
+    for(var t3=0;t3<tries&&placed<44;t3++){
+      var cell=inner[Math.floor(rng()*inner.length)];
+      var px2=(cell%BCOLS)*BCELL+2, py2=((cell/BCOLS)|0)*BCELL+2;
+      var ra=roadAngleAt(px2,py2);
+      var ang=ra<900?ra+ (rng()<0.12?Math.PI/2:0) : rng()*Math.PI;
+      ang=Math.round(ang/(Math.PI/12))*(Math.PI/12); // snap 15°
+      var w=(15+rng()*27)*pf, h=(13+rng()*22)*pf;
+      if(kind==='industrial'){w*=1.5;h*=1.4;}
+      var rect={cx:px2,cy:py2,w:Math.min(w,90),h:Math.min(h,70),ang:ang,
+        hgt:BHGT[kind]*(0.7+rng()*0.6), shade:Math.floor(rng()*4), kind:kind};
+      if(tryPlace(rect)){buildings.push(rect);placed++;}
+    }
+  });
+  // street-fronting buildings: line the local streets so the urban fabric
+  // reads even where blocks didn't fully enclose
+  var RWALL={2:15,1:11,0:8};
+  var parkSet=new Set();
+  parks.forEach(function(pk){ pk.cells.forEach(function(c){ parkSet.add(c); }); });
+  routed.roads.forEach(function(r){
+    if(r.cls!==0)return;
+    var pts=r.pts, acc=0;
+    for(var i2=1;i2<pts.length;i2++){
+      var p0=pts[i2-1], p1=pts[i2];
+      acc+=Math.hypot(p1.x-p0.x,p1.y-p0.y);
+      if(acc<30)continue;
+      acc=0;
+      var ang=Math.atan2(p1.y-p0.y,p1.x-p0.x);
+      var mx=(p0.x+p1.x)/2, my=(p0.y+p1.y)/2;
+      for(var side=-1;side<=1;side+=2){
+        if(rng()<0.3)continue;
+        var w=12+rng()*22, h=10+rng()*18;
+        var off=RWALL[0]/2+Math.max(w,h)/2+6+rng()*12;
+        var bx=mx+Math.cos(ang+Math.PI/2)*side*off;
+        var by=my+Math.sin(ang+Math.PI/2)*side*off;
+        if(bx<24||bx>WORLD_W-24||by<24||by>WORLD_H-24)continue;
+        if(F.waterDist(bx,by)<16)continue;
+        var ba=Math.round(ang/(Math.PI/12))*(Math.PI/12);
+        var cb=Math.cos(ba), sb=Math.sin(ba);
+        var ok=true;
+        var corners=[[w/2,h/2],[-w/2,h/2],[w/2,-h/2],[-w/2,-h/2],[0,0]];
+        for(var c4=0;c4<corners.length;c4++){
+          var lx=corners[c4][0], ly=corners[c4][1];
+          var wx=bx+lx*cb-ly*sb, wy=by+lx*sb+ly*cb;
+          var gx=clamp(Math.floor(wx/BCELL),0,BCOLS-1), gy=clamp(Math.floor(wy/BCELL),0,BROWS-1);
+          var ci=gy*BCOLS+gx;
+          if(mask[ci]||parkSet.has(ci)){ok=false;break;}
+        }
+        if(!ok)continue;
+        var d=F.districtAt(bx,by); var kind=d?d.kind:'residential';
+        var rect={cx:bx,cy:by,w:w,h:h,ang:ba,
+          hgt:BHGT[kind]*(0.7+rng()*0.6),shade:Math.floor(rng()*4),kind:kind};
+        if(tryPlace(rect))buildings.push(rect);
+      }
+    }
+  });
+  return {blocks:blocks, buildings:buildings, parks:parks};
+}
+
+/* ============================================================
+   NAMES — procedural district + street names
+   ============================================================ */
+var NP1=['Ash','Bel','Mar','Oak','Wil','Har','Stone','Mill','Brook','Fair','North','West','East','South','Lake','River','Port','Fort','Elder','Thorn','Cinder','Hollow'];
+var NP2=['wood','bury','ford','haven','wick','shire','ton','field','gate','moor','crest','vale','holm','stead','bridge','view'];
+var STREET_NAMES=['Meridian Ave','Harbor Blvd','Founders Way','Kingsway','Riverside Dr','Summit Ave','Old Mill Rd','Union St','Park Row','Grand Ave','Canal St','Depot Rd','Chapel Hill','Market St'];
+function buildNames(F, roads){
+  var rng=makeRng(state.seed,'names');
+  var used={}, districts=[];
+  F.centers.forEach(function(c){
+    var nm='';
+    for(var t=0;t<12&&!nm;t++){
+      var cand=NP1[Math.floor(rng()*NP1.length)]+NP2[Math.floor(rng()*NP2.length)];
+      if(!used[cand]){nm=cand;used[cand]=1;}
+    }
+    if(!nm)nm='New '+NP1[Math.floor(rng()*NP1.length)];
+    districts.push({x:c.x,y:c.y,name:nm.toUpperCase()+' '+c.kind.toUpperCase(),kind:c.kind});
+  });
+  var arts=roads.filter(function(r){return r.cls===2;})
+    .sort(function(a,b){return b.pts.length-a.pts.length;})
+    .slice(0,Math.min(STREET_NAMES.length, Math.round(P.arterialCount)*2));
+  var streets=arts.map(function(r,i){
+    var mid=r.pts[Math.floor(r.pts.length/2)];
+    var q=r.pts[Math.min(r.pts.length-1,Math.floor(r.pts.length/2)+6)];
+    return {x:mid.x,y:mid.y,ang:Math.atan2(q.y-mid.y,q.x-mid.x),name:STREET_NAMES[i%STREET_NAMES.length]};
+  });
+  return {districts:districts, streets:streets};
+}
+
+/* ============================================================
+   THEMES
+   ============================================================ */
+var THEMES=[
+  { key:'paper',
+    bg1:'#f5edda', bg2:'#e9dabd', water:'#a9c6d2', waterDeep:'#7fa3b5', waterLine:'rgba(255,255,255,.5)',
+    park:'#b3c48d', parkEdge:'#93a56f', tree:'#7d9a5f',
+    sidewalk:'#e3d5b3', local:'#d6cfba', collector:'#ecd9a4', arterial:'#cf9433',
+    arterialEdge:'#a87624', dashC:'#fdf8ea', nodeFill:'#c08c2e', crosswalk:'rgba(255,255,255,.55)',
+    label:'#5b4636', district:'#8a6f4d', halo:'rgba(245,237,218,.9)',
+    bCols:['#cdbb98','#c0a97c','#d8c7a2','#b79e6d'], bTop:'#efe3c6', bShadow:'rgba(96,74,40,.30)',
+    ind:'#a89b83', bridge:'#c4ab74', bridgeRail:'#7d6242', grain:0.06, compass:'#5b4636', vig:'rgba(120,90,40,.20)' },
+  { key:'midnight',
+    bg1:'#0e1729', bg2:'#070c16', water:'#173b5c', waterDeep:'#0c2240', waterLine:'rgba(140,200,255,.35)',
+    park:'#16402f', parkEdge:'#1f5a42', tree:'#2f7a52',
+    sidewalk:'#1b2942', local:'#3a4c72', collector:'#4f6a99', arterial:'#ffb648',
+    arterialEdge:'#c77f1e', dashC:'#ffe9c4', nodeFill:'#d99a2e', crosswalk:'rgba(255,255,255,.5)',
+    label:'#dfe8fa', district:'#8fa8d8', halo:'rgba(14,23,41,.9)',
+    bCols:['#22304c','#2a3a5c','#1c2840','#31436a'], bTop:'#3d5178', bShadow:'rgba(0,0,0,.5)',
+    ind:'#33415e', bridge:'#46598a', bridgeRail:'#9fc0ff', grain:0.03, compass:'#dfe8fa', vig:'rgba(0,0,0,.35)', glow:true },
+  { key:'blueprint',
+    bg1:'#2c64ae', bg2:'#1d4b8b', water:'#16467f', waterDeep:'#0e3363', waterLine:'rgba(255,255,255,.4)',
+    park:'#3f7dc4', parkEdge:'#5a97d8', tree:'#c4e2ff',
+    sidewalk:'rgba(255,255,255,.22)', local:'#cfe2fb', collector:'#e8f2ff', arterial:'#ffffff',
+    arterialEdge:'#9cc0ee', dashC:'#2c64ae', nodeFill:'#ffffff', crosswalk:'rgba(255,255,255,.6)',
+    label:'#ffffff', district:'#dceaff', halo:'rgba(44,100,174,.85)',
+    bCols:['#d7e7fd','#c2d9f8','#e4f0ff','#b4cfee'], bTop:'#ffffff', bShadow:'rgba(10,30,60,.35)',
+    ind:'#9dbee8', bridge:'#e8f2ff', bridgeRail:'#ffffff', grain:0.02, compass:'#ffffff', vig:'rgba(8,25,55,.30)' }
+];
+
+/* ============================================================
+   RENDER the world to a 2D context (1600×1000 space)
+   ============================================================ */
+var grainTile=null, grainKey='';
+function getGrain(T, seedStr){
+  var key=T.key+seedStr;
+  if(grainTile&&grainKey===key)return grainTile;
+  var c=document.createElement('canvas'); c.width=180; c.height=180;
+  var g=c.getContext('2d'), img=g.createImageData(180,180);
+  var rng=makeRng(seedStr,'grain');
+  for(var i=0;i<img.data.length;i+=4){
+    var v=Math.floor(rng()*255);
+    img.data[i]=v; img.data[i+1]=v; img.data[i+2]=v; img.data[i+3]=255;
+  }
+  g.putImageData(img,0,0);
+  grainTile=c; grainKey=key;
+  return c;
+}
+function strokePts(ctx,pts){
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  for(var i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);
+  ctx.stroke();
+}
+function renderWorld(ctx,W){
+  var T=THEMES[clamp(Math.round(P.theme),0,2)];
+  var F=W.F;
+  ctx.save();
+  ctx.lineJoin='round'; ctx.lineCap='round';
+  // 1. background
+  var bg=ctx.createLinearGradient(0,0,WORLD_W,WORLD_H);
+  bg.addColorStop(0,T.bg1); bg.addColorStop(1,T.bg2);
+  ctx.fillStyle=bg; ctx.fillRect(0,0,WORLD_W,WORLD_H);
+  ctx.globalAlpha=T.grain;
+  ctx.fillStyle=ctx.createPattern(getGrain(T,W.seed),'repeat');
+  ctx.fillRect(0,0,WORLD_W,WORLD_H);
+  ctx.globalAlpha=1;
+
+  // 2. water
+  if(F.river&&F.river.length>1){
+    ctx.strokeStyle=T.waterDeep; ctx.lineWidth=F.riverW+10; strokePts(ctx,F.river);
+    ctx.strokeStyle=T.water; ctx.lineWidth=F.riverW; strokePts(ctx,F.river);
+    // soft flow lines
+    ctx.strokeStyle=T.waterLine; ctx.lineWidth=2; ctx.globalAlpha=0.5;
+    [-0.26,0,0.26].forEach(function(off){
+      ctx.beginPath();
+      for(var i=0;i<F.river.length;i++){
+        var p=F.river[i], q=F.river[Math.min(F.river.length-1,i+1)];
+        var dx=q.x-p.x, dy=q.y-p.y, L=Math.sqrt(dx*dx+dy*dy)||1;
+        var ox=p.x+(-dy/L)*F.riverW*off, oy=p.y+(dx/L)*F.riverW*off;
+        if(i===0)ctx.moveTo(ox,oy); else ctx.lineTo(ox,oy);
+      }
+      ctx.stroke();
+    });
+    ctx.globalAlpha=1;
+  }
+  F.lakes.forEach(function(L){
+    ctx.save(); ctx.translate(L.x,L.y); ctx.rotate(L.rot);
+    var lg=ctx.createRadialGradient(0,0,4,0,0,Math.max(L.rx,L.ry));
+    lg.addColorStop(0,T.water); lg.addColorStop(1,T.waterDeep);
+    ctx.fillStyle=lg;
+    ctx.beginPath(); ctx.ellipse(0,0,L.rx,L.ry,0,0,TAU); ctx.fill();
+    ctx.strokeStyle=T.waterLine; ctx.lineWidth=2; ctx.globalAlpha=0.6;
+    ctx.beginPath(); ctx.ellipse(0,0,L.rx*0.7,L.ry*0.7,0,0,TAU); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0,0,L.rx*0.42,L.ry*0.42,0,0,TAU); ctx.stroke();
+    ctx.globalAlpha=1; ctx.restore();
+  });
+
+  // 3. parks
+  var prng=makeRng(W.seed,'trees');
+  W.blocks.parks.forEach(function(pk){
+    ctx.fillStyle=T.park;
+    for(var i=0;i<pk.cells.length;i++){
+      var c=pk.cells[i];
+      ctx.fillRect((c%BCOLS)*BCELL,((c/BCOLS)|0)*BCELL,BCELL,BCELL);
+    }
+    // tree dots
+    var n=Math.min(60,Math.floor(pk.cells.length/28));
+    ctx.fillStyle=T.tree;
+    for(var t=0;t<n;t++){
+      var cell=pk.cells[Math.floor(prng()*pk.cells.length)];
+      var tx=(cell%BCOLS)*BCELL+2, ty=((cell/BCOLS)|0)*BCELL+2;
+      ctx.beginPath(); ctx.arc(tx,ty,2.5+prng()*2.5,0,TAU); ctx.fill();
+    }
+  });
+
+  // 4. buildings (shadow → body → pseudo-3D top)
+  var RW2={2:15,1:11,0:8};
+  W.blocks.buildings.forEach(function(b){
+    var col=b.kind==='industrial'?T.ind:T.bCols[b.shade%T.bCols.length];
+    ctx.save(); ctx.translate(b.cx,b.cy); ctx.rotate(b.ang);
+    var hw=b.w/2, hh=b.h/2;
+    ctx.fillStyle=T.bShadow;
+    ctx.fillRect(-hw+4,-hh+5,b.w,b.h);
+    ctx.fillStyle=col;
+    ctx.fillRect(-hw,-hh,b.w,b.h);
+    var ox=-b.hgt*0.38, oy=-b.hgt*0.38;
+    ctx.fillStyle=T.bTop;
+    ctx.fillRect(-hw+ox,-hh+oy,b.w,b.h);
+    ctx.strokeStyle=T.bShadow; ctx.lineWidth=1;
+    ctx.strokeRect(-hw+ox,-hh+oy,b.w,b.h);
+    ctx.restore();
+  });
+
+  // 5. roads: local → collector → arterial
+  for(var cls=0;cls<=2;cls++){
+    var w=RW2[cls];
+    // sidewalk border
+    ctx.strokeStyle=T.sidewalk; ctx.lineWidth=w+7;
+    if(T.glow&&cls===2){ctx.shadowColor=T.arterial;ctx.shadowBlur=16;}
+    W.roads.forEach(function(r){ if(r.cls!==cls||r.pts.length<2)return; strokePts(ctx,r.pts); });
+    ctx.shadowBlur=0;
+    // road surface
+    ctx.strokeStyle=cls===2?T.arterial:(cls===1?T.collector:T.local);
+    ctx.lineWidth=w;
+    if(T.glow&&cls===2){ctx.shadowColor=T.arterial;ctx.shadowBlur=16;}
+    W.roads.forEach(function(r){ if(r.cls!==cls||r.pts.length<2)return; strokePts(ctx,r.pts); });
+    ctx.shadowBlur=0;
+    // lane dashes
+    if(cls>=1){
+      ctx.strokeStyle=T.dashC; ctx.lineWidth=cls===2?2.4:1.6;
+      ctx.setLineDash(cls===2?[16,12]:[9,9]);
+      W.roads.forEach(function(r){ if(r.cls!==cls||r.pts.length<2)return; strokePts(ctx,r.pts); });
+      ctx.setLineDash([]);
+    }
+  }
+
+  // 6. bridges (deck over water)
+  W.roads.forEach(function(r){
+    if(!r.bridges||!r.bridges.length)return;
+    var w=RW2[r.cls];
+    ctx.strokeStyle=T.bridge; ctx.lineWidth=w+10;
+    ctx.beginPath();
+    r.bridges.forEach(function(p,i){ if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.stroke();
+    ctx.strokeStyle=r.cls===2?T.arterial:(r.cls===1?T.collector:T.local);
+    ctx.lineWidth=w;
+    ctx.beginPath();
+    r.bridges.forEach(function(p,i){ if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.stroke();
+    ctx.strokeStyle=T.bridgeRail; ctx.lineWidth=1.6;
+    [-1,1].forEach(function(s){
+      ctx.beginPath();
+      for(var i=0;i<r.bridges.length;i++){
+        var p=r.bridges[i], q=r.bridges[Math.min(r.bridges.length-1,i+1)], q0=r.bridges[Math.max(0,i-1)];
+        var dx=q.x-q0.x, dy=q.y-q0.y, L=Math.sqrt(dx*dx+dy*dy)||1;
+        var ox=p.x+(-dy/L)*(w/2+4)*s, oy=p.y+(dx/L)*(w/2+4)*s;
+        if(i===0)ctx.moveTo(ox,oy); else ctx.lineTo(ox,oy);
+      }
+      ctx.stroke();
+    });
+  });
+
+  // 7. intersections: discs + crosswalks
+  var incident={};
+  W.roads.forEach(function(r){
+    if(r.pts.length<3)return;
+    for(var ni=0;ni<W.nodes.length;ni++){
+      var nd=W.nodes[ni];
+      var p0=r.pts[0], p1=r.pts[r.pts.length-1];
+      var d0=dist2(p0.x,p0.y,nd.x,nd.y), d1=dist2(p1.x,p1.y,nd.x,nd.y);
+      if(d0<(nd.r+12)*(nd.r+12)){
+        var a=r.pts[Math.min(4,r.pts.length-1)];
+        (incident[ni]=incident[ni]||[]).push(Math.atan2(a.y-nd.y,a.x-nd.x));
+      }
+      if(d1<(nd.r+12)*(nd.r+12)){
+        var b2=r.pts[Math.max(0,r.pts.length-5)];
+        (incident[ni]=incident[ni]||[]).push(Math.atan2(b2.y-nd.y,b2.x-nd.x));
+      }
+    }
+  });
+  W.nodes.forEach(function(nd,ni){
+    // junction as continuous pavement (not a contrasting dot)
+    ctx.fillStyle=nd.cls===2?T.arterial:(nd.cls===1?T.collector:T.local);
+    ctx.beginPath(); ctx.arc(nd.x,nd.y,nd.r*0.95,0,TAU); ctx.fill();
+    // crosswalks at arterial junctions only
+    var angs=incident[ni];
+    if(nd.cls===2&&angs&&angs.length>=3){
+      ctx.strokeStyle=T.crosswalk; ctx.lineWidth=2;
+      angs.forEach(function(a){
+        for(var s2=0;s2<3;s2++){
+          var dd2=nd.r+7+s2*6;
+          var sx2=nd.x+Math.cos(a)*dd2, sy2=nd.y+Math.sin(a)*dd2;
+          var px2=-Math.sin(a), py2=Math.cos(a);
+          var hw2=RW2[nd.cls]/2+1;
+          ctx.beginPath();
+          ctx.moveTo(sx2-px2*hw2,sy2-py2*hw2);
+          ctx.lineTo(sx2+px2*hw2,sy2+py2*hw2);
+          ctx.stroke();
+        }
+      });
+    }
+  });
+
+  // 8. labels
+  if(P.labelsOn){
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    try{ctx.letterSpacing='6px';}catch(e){}
+    W.names.districts.forEach(function(dn){
+      if(F.waterDist(dn.x,dn.y)<24)return;
+      ctx.font='600 25px Georgia,"Times New Roman",serif';
+      ctx.lineWidth=5; ctx.strokeStyle=T.halo;
+      ctx.strokeText(dn.name,dn.x,dn.y);
+      ctx.fillStyle=T.district;
+      ctx.fillText(dn.name,dn.x,dn.y);
+    });
+    try{ctx.letterSpacing='1px';}catch(e){}
+    W.names.streets.forEach(function(st){
+      var a=st.ang;
+      if(a>Math.PI/2)a-=Math.PI; if(a<-Math.PI/2)a+=Math.PI;
+      ctx.save(); ctx.translate(st.x,st.y); ctx.rotate(a);
+      ctx.font='italic 15px Georgia,serif';
+      ctx.lineWidth=4; ctx.strokeStyle=T.halo;
+      ctx.strokeText(st.name,0,0);
+      ctx.fillStyle=T.label;
+      ctx.fillText(st.name,0,0);
+      ctx.restore();
+    });
+    try{ctx.letterSpacing='0px';}catch(e){}
+  }
+
+  // 9. compass rose + scale bar
+  var ccx=WORLD_W-84, ccy=88;
+  ctx.strokeStyle=T.compass; ctx.fillStyle=T.compass; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.arc(ccx,ccy,30,0,TAU); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ccx,ccy+18); ctx.lineTo(ccx-8,ccy+6); ctx.lineTo(ccx+8,ccy+6); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(ccx,ccy-24); ctx.lineTo(ccx-6,ccy-2); ctx.lineTo(ccx,ccy-8); ctx.lineTo(ccx+6,ccy-2); ctx.closePath(); ctx.fill();
+  ctx.font='700 15px Georgia,serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('N',ccx,ccy-40);
+  var sbx=WORLD_W-300, sby=WORLD_H-52;
+  ctx.lineWidth=2;
+  for(var s3=0;s3<4;s3++){
+    ctx.fillStyle=s3%2?T.halo:T.compass;
+    ctx.fillRect(sbx+s3*40,sby,40,10);
+    ctx.strokeStyle=T.compass; ctx.strokeRect(sbx+s3*40,sby,40,10);
+  }
+  ctx.font='13px Georgia,serif'; ctx.fillStyle=T.compass; ctx.textAlign='center';
+  ctx.fillText('2 km',sbx+80,sby-14);
+
+  // 10. vignette
+  var vg=ctx.createRadialGradient(WORLD_W/2,WORLD_H/2,420,WORLD_W/2,WORLD_H/2,1050);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,T.vig);
+  ctx.fillStyle=vg; ctx.fillRect(0,0,WORLD_W,WORLD_H);
+  ctx.restore();
+}
+
+/* ============================================================
+   GENERATE + DISPLAY
+   ============================================================ */
+var world=null, worldCanvas=null;
+var scene=document.getElementById('scene');
+var regenTimer=null;
+
+function applyDecoded(d){
+  PARAMS.forEach(function(p){ P[p.key]=d.P[p.key]; });
+  state.salt=d.salt;
+  state.seed=encodeSeed();
+}
+function regenerate(){
+  var t0=(typeof performance!=='undefined'?performance.now():Date.now());
+  try{
+    var seedStr=state.seed;
+    var F=buildFields(seedStr);
+    var G=buildMacroGraph(F);
+    var routed=routeRoads(F,G);
+    var nodes=buildIntersections(routed.roads);
+    var blocks=buildBlocks(F,routed);
+    var names=buildNames(F,routed.roads);
+    world={F:F,roads:routed.roads,nodes:nodes,blocks:blocks,names:names,seed:seedStr};
+    if(!worldCanvas){worldCanvas=document.createElement('canvas');worldCanvas.width=WORLD_W;worldCanvas.height=WORLD_H;}
+    renderWorld(worldCanvas.getContext('2d'),world);
+    drawStatic();
+    var ms=(typeof performance!=='undefined'?performance.now():Date.now())-t0;
+    document.getElementById('genmeta').textContent=
+      '⚙ '+(ms/1000).toFixed(2)+'s · '+world.roads.length+' roads · '+blocks.buildings.length+' buildings';
+    try{console.log('[roadatlas] gen '+ms.toFixed(0)+'ms roads='+world.roads.length+' bld='+blocks.buildings.length+' seed='+seedStr);}catch(e){}
+  }catch(err){
+    showErr(err&&err.message?err.message:String(err));
+    try{console.error('[roadatlas] generate failed',err);}catch(e){}
+  }
+}
+function scheduleRegen(){
+  if(regenTimer)clearTimeout(regenTimer);
+  regenTimer=setTimeout(regenerate,280);
+}
+function drawStatic(){
+  if(!worldCanvas)return;
+  var ctx=scene.getContext('2d');
+  if(scene.width!==WORLD_W||scene.height!==WORLD_H){scene.width=WORLD_W;scene.height=WORLD_H;}
+  ctx.drawImage(worldCanvas,0,0);
+}
+
+/* ---- render mode: deterministic Ken Burns over virtual clock ---- */
+var KB_WPS=[[0.5,0.5,1.0],[0.30,0.36,1.55],[0.68,0.60,1.45],[0.42,0.68,1.2],[0.5,0.5,1.0]];
+function drawKenBurns(t,RM){
+  var D=Math.max(1,RM.totalFrames/RM.fps);
+  var ft=clamp(t/D,0,1)*(KB_WPS.length-1);
+  var i0=Math.min(KB_WPS.length-2,Math.floor(ft)), f=ft-i0;
+  f=f*f*(3-2*f);
+  var A=KB_WPS[i0], B=KB_WPS[i0+1];
+  var cx=lerp(A[0],B[0],f)*WORLD_W, cy=lerp(A[1],B[1],f)*WORLD_H, z=lerp(A[2],B[2],f);
+  var vw=WORLD_W/z, vh=WORLD_H/z;
+  if(vw>WORLD_W){vw=WORLD_W;vh=WORLD_H;}
+  var sx=clamp(cx-vw/2,0,WORLD_W-vw), sy=clamp(cy-vh/2,0,WORLD_H-vh);
+  var ctx=scene.getContext('2d');
+  ctx.drawImage(worldCanvas,sx,sy,vw,vh,0,0,scene.width,scene.height);
+}
+window.__renderCanvas=scene;
+window.__renderReset=function(seed){
+  var RM=window.__renderMode;
+  var s=seed;
+  if(!s){try{s=new URLSearchParams(location.search).get('seed');}catch(e){}}
+  if(s){var d=decodeSeed(s);if(d)applyDecoded(d);}
+  regenerate();
+  if(RM){scene.width=RM.W;scene.height=RM.H;}
+};
+function rmFrame(){
+  var RM=window.__renderMode;
+  if(!RM||RM.paused||RM._bp||RM.phase==='done'||RM.phase==='cancelled'||RM.phase==='reset')return;
+  var rt=RM.frame/RM.fps;
+  try{drawKenBurns(rt,RM);}catch(e){
+    if(window.__rmErr!==String(e&&e.message)){window.__rmErr=String(e&&e.message);try{console.error('[render] kb failed:',e);}catch(_){}}
+  }
+  if(RM.phase==='warmup'){
+    RM.frame++;
+    if(RM.frame>=RM.warmup&&RM.onPhase){try{RM.onPhase('reset');}catch(e){}}
+  }else if(RM.phase==='record'){
+    if(RM.onFrame){try{RM.onFrame(RM.frame);}catch(e){}}
+    RM.frame++;
+    if(RM.frame>=RM.totalFrames&&RM.onPhase){try{RM.onPhase('done');}catch(e){}}
+  }
+}
+(function loop(){
+  requestAnimationFrame(loop);
+  if(window.__renderMode){rmFrame();return;}
+  if(document.hidden)return;
+})();
+
+/* ---- top bar: share ---- */
+document.getElementById('shareBtn').addEventListener('click',function(){
+  var url=location.href.split('?')[0]+'?seed='+encodeURIComponent(state.seed);
+  function done(){try{toast('Link copied — this exact map');}catch(e){}}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(done,function(){prompt('Copy this link:',url);});
+  }else prompt('Copy this link:',url);
+});
+function toast(msg){
+  var t=document.createElement('div');
+  t.textContent=msg;
+  t.style.cssText='position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:3000;background:rgba(20,18,12,.92);color:#f0e8d8;border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:10px 16px;font-size:13px;';
+  document.body.appendChild(t);
+  setTimeout(function(){t.remove();},2200);
+}
+
+/* ---- Seed Console v2 adapter ---- */
+window.SeedConsoleAdapter={
+  studio:'roadatlas',
+  title:'Road Atlas',
+  getSeed:function(){return state.seed;},
+  setSeed:function(s){
+    var d=decodeSeed(s);
+    if(!d)return Promise.reject(new Error('bad seed'));
+    applyDecoded(d);
+    regenerate();
+    return Promise.resolve();
+  },
+  randomSeed:function(){return randomSeedStr();},
+  remixSeed:function(s){return remixSeedStr(s);},
+  params:PARAMS.map(function(p){
+    return {key:p.key,label:p.label,min:p.min,max:p.max,step:p.step,
+      get:function(){return P[p.key];},
+      set:function(v){
+        P[p.key]=p.int?Math.round(v):Math.round(v/p.step)*p.step;
+        P[p.key]=clamp(P[p.key],p.min,p.max);
+        state.seed=encodeSeed();
+        scheduleRegen();
+      }};
+  }),
+  canvas:function(){return scene;},
+  fileBase:function(seedStr){
+    var s=seedStr||state.seed;
+    return 'road-atlas-'+String(s).replace(/[^a-z0-9]/gi,'').toLowerCase().slice(0,24);
+  }
+};
+</script>
+<script>
+/* Seed Console v2 — one consistent generation console for all ambient studios.
+ * v2 adds: a PNG/JPEG thumbnail snapshot is captured from the render canvas
+ * whenever a seed is favorited (stored as f.thumb), so pickers elsewhere
+ * (e.g. the Render Queue) can show visual favorite cards.
+ * USAGE: inline this entire file in a <script> block near </body>, then define
+ * window.SeedConsoleAdapter (see interface below) in a following <script> block,
+ * then call SeedConsole.init(window.SeedConsoleAdapter).
+ *
+ * ADAPTER INTERFACE (per studio — the studio author writes this):
+ * {
+ *   studio:   'molten',            // short id, used for localStorage keys
+ *   title:    'Molten',            // display name
+ *   getSeed:  () => string,        // current seed as a string
+ *   setSeed:  (s) => void|Promise, // rebuild the scene from seed string s
+ *   randomSeed: () => string,      // cryptographically random new seed string
+ *   remixSeed:  (s) => string,     // quasi-random: derive a "sibling" seed from s
+ *   params: [                      // hero parameters for Customize (6-10)
+ *     { key, label, min, max, step, get:()=>number, set:(v)=>void }
+ *   ],
+ *   canvas:   () => HTMLCanvasElement|null,  // main render canvas for recording
+ *   fileBase: (seedStr) => string, // filename base for recordings (no extension)
+ * }
+ * The console calls setSeed on load (with ?seed= override or a random seed).
+ */
+(function () {
+  'use strict';
+  var CSS = [
+    '.sc-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:2147483000;',
+    'display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;',
+    'background:rgba(12,14,18,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);',
+    'border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 30px rgba(0,0,0,.45);',
+    'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;color:#e8eaed;',
+    'font-size:13px;user-select:none;-webkit-user-select:none;max-width:calc(100vw - 20px)}',
+    '.sc-pill.hidden{display:none}',
+    '.sc-seed{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.07);',
+    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;cursor:pointer;',
+    'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw}',
+    '.sc-btn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#e8eaed;',
+    'border-radius:999px;min-width:44px;min-height:44px;padding:0 12px;font-size:16px;cursor:pointer;',
+    'display:flex;align-items:center;justify-content:center}',
+    '.sc-btn:active{background:rgba(255,255,255,.18)}',
+    '.sc-btn.on{background:rgba(120,200,255,.25);border-color:rgba(120,200,255,.6)}',
+    '.sc-btn.rec.on{background:rgba(255,80,80,.35);border-color:rgba(255,80,80,.7)}',
+    '.sc-panel{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:2147483000;',
+    'width:min(430px,calc(100vw - 24px));max-height:62vh;overflow-y:auto;border-radius:18px;',
+    'background:rgba(10,12,16,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);',
+    'border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 60px rgba(0,0,0,.55);',
+    'font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;color:#e8eaed;',
+    'padding:14px 14px 16px;font-size:14px}',
+    '.sc-panel.hidden{display:none}',
+    '.sc-row{display:flex;align-items:center;gap:8px;margin:8px 0}',
+    '.sc-seedinput{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);',
+    'border-radius:10px;color:#e8eaed;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:13px;min-width:0}',
+    '.sc-sec{margin:12px 0 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9aa0a6}',
+    '.sc-list{display:flex;flex-direction:column;gap:6px;max-height:130px;overflow-y:auto}',
+    '.sc-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;',
+    'background:rgba(255,255,255,.05);cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:12px}',
+    '.sc-item:active{background:rgba(255,255,255,.12)}',
+    '.sc-item .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.sc-item .meta{color:#9aa0a6;font-size:11px}',
+    '.sc-thumb{width:54px;height:31px;object-fit:cover;border-radius:6px;background:#1a1f2b;flex:none}',
+    '.sc-param{margin:10px 0}',
+    '.sc-param .top{display:flex;align-items:center;gap:8px;margin-bottom:4px}',
+    '.sc-param label{flex:1;font-size:13px}',
+    '.sc-param .val{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#9aa0a6;min-width:44px;text-align:right}',
+    '.sc-param input[type=range]{width:100%;accent-color:#7cc4ff}',
+    '.sc-lock{border:1px solid rgba(255,255,255,.16);background:transparent;border-radius:8px;',
+    'min-width:36px;min-height:36px;font-size:14px;cursor:pointer;color:#9aa0a6}',
+    '.sc-lock.on{color:#ffd76a;border-color:rgba(255,215,106,.6);background:rgba(255,215,106,.12)}',
+    '.sc-durs{display:flex;gap:6px;flex-wrap:wrap}',
+    '.sc-dur{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#e8eaed;',
+    'border-radius:10px;padding:10px 12px;font-size:13px;cursor:pointer}',
+    '.sc-dur.on{background:rgba(120,200,255,.25);border-color:rgba(120,200,255,.6)}',
+    '.sc-status{font-size:12px;color:#9aa0a6;margin-top:8px;min-height:18px}',
+    '.sc-status.rec{color:#ff8a80}',
+    '.sc-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;z-index:2147483001;',
+    'background:rgba(20,22,28,.92);color:#e8eaed;border:1px solid rgba(255,255,255,.16);',
+    'border-radius:12px;padding:10px 16px;font-size:13px;font-family:system-ui,sans-serif;',
+    'opacity:0;transition:opacity .25s;pointer-events:none}',
+    '.sc-toast.show{opacity:1}',
+    '.sc-dot{position:fixed;right:10px;bottom:10px;width:14px;height:14px;border-radius:50%;',
+    'background:rgba(255,255,255,.25);z-index:2147483000;cursor:pointer}',
+    '.sc-dot.hidden{display:none}',
+    '.sc-link{color:#7cc4ff;font-size:13px;text-decoration:underline;cursor:pointer;word-break:break-all}'
+  ].join('\n');
+
+  function el(tag, cls, html) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  function store(k) {
+    return {
+      get: function (dflt) {
+        try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : dflt; }
+        catch (e) { return dflt; }
+      },
+      set: function (v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+    };
+  }
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  var SeedConsole = {
+    init: function (A) {
+      if (!A || typeof A.setSeed !== 'function' || typeof A.getSeed !== 'function') {
+        console.error('[SeedConsole] invalid adapter'); return;
+      }
+      this.A = A;
+      this.hist = store('sc.' + A.studio + '.history');
+      this.favs = store('sc.' + A.studio + '.favs');
+      this.locks = store('sc.' + A.studio + '.locks');
+      this.recState = { rec: null, chunks: [], timer: null, t0: 0, dur: 0, mime: '' };
+      this.buildUI();
+      this.refreshParams();
+      var q = null;
+      try { q = new URLSearchParams(location.search).get('seed'); } catch (e) {}
+      var start = (q && q.trim()) ? q.trim() : A.randomSeed();
+      this.applySeed(start, { silent: true });
+      // H key or double-tap toggles full chrome hide (clean recordings)
+      var self = this;
+      document.addEventListener('keydown', function (e) {
+        if ((e.key === 'h' || e.key === 'H') && !/INPUT|TEXTAREA/.test(document.activeElement.tagName))
+          self.toggleChrome();
+      });
+      var lastTap = 0;
+      document.addEventListener('touchend', function () {
+        var now = Date.now();
+        if (now - lastTap < 300) self.toggleChrome();
+        lastTap = now;
+      }, { passive: true });
+    },
+
+    buildUI: function () {
+      var self = this, A = this.A;
+      var st = document.createElement('style');
+      st.textContent = CSS;
+      document.head.appendChild(st);
+
+      // pill
+      var pill = el('div', 'sc-pill');
+      var seedChip = el('div', 'sc-seed', esc(A.getSeed() || '…'));
+      seedChip.title = 'Tap to copy seed';
+      seedChip.addEventListener('click', function () {
+        var s = A.getSeed();
+        function done() { self.toast('Seed copied: ' + s); }
+        if (navigator.clipboard && navigator.clipboard.writeText)
+          navigator.clipboard.writeText(s).then(done, done);
+        else done();
+      });
+      function btn(txt, title, fn, cls) {
+        var b = el('button', 'sc-btn' + (cls ? ' ' + cls : ''), txt);
+        b.title = title; b.setAttribute('aria-label', title);
+        b.addEventListener('click', function (ev) { ev.stopPropagation(); fn(b); });
+        return b;
+      }
+      this.bRandom = btn('🎲', 'Random — brand new world', function () { self.doRandom(); });
+      this.bRemix = btn('🌀', 'Remix — same vibe, new details (respects locks)', function () { self.doRemix(); });
+      this.bFav = btn('☆', 'Save this seed to favorites', function (b) { self.toggleFav(b); });
+      this.bRec = btn('●', 'Record video', function () { self.togglePanelSection('rec'); }, 'rec');
+      this.bMore = btn('⚙️', 'Customize: seed, parameters, history', function () { self.togglePanel(); });
+      pill.appendChild(seedChip);
+      pill.appendChild(this.bRandom); pill.appendChild(this.bRemix);
+      pill.appendChild(this.bFav); pill.appendChild(this.bRec); pill.appendChild(this.bMore);
+      document.body.appendChild(pill);
+      this.pill = pill; this.seedChip = seedChip;
+
+      // dot (restores chrome when hidden)
+      var dot = el('div', 'sc-dot hidden');
+      dot.title = 'Show controls';
+      dot.addEventListener('click', function () { self.toggleChrome(); });
+      document.body.appendChild(dot);
+      this.dot = dot;
+
+      // panel
+      var p = el('div', 'sc-panel hidden');
+      p.innerHTML =
+        '<div class="sc-row"><input class="sc-seedinput" id="sc-seedfield" spellcheck="false">' +
+        '<button class="sc-btn" id="sc-apply" style="font-size:13px">Apply</button></div>' +
+        '<div class="sc-sec">Parameters (🔒 = kept on Remix)</div><div id="sc-params"></div>' +
+        '<div class="sc-sec">Record video</div><div class="sc-durs" id="sc-durs"></div>' +
+        '<div class="sc-row"><button class="sc-btn" id="sc-recbtn" style="font-size:13px">● Start recording</button>' +
+        '<button class="sc-btn" id="sc-hideui" style="font-size:13px">Hide UI</button></div>' +
+        '<div class="sc-status" id="sc-status"></div><div id="sc-dl"></div>' +
+        '<div class="sc-sec">⭐ Favorites</div><div class="sc-list" id="sc-favs"></div>' +
+        '<div class="sc-sec">🕘 Recent seeds</div><div class="sc-list" id="sc-hist"></div>';
+      document.body.appendChild(p);
+      this.panel = p;
+      var self2 = this;
+      p.querySelector('#sc-apply').addEventListener('click', function () {
+        var v = p.querySelector('#sc-seedfield').value.trim();
+        if (v) self2.applySeed(v);
+      });
+      p.querySelector('#sc-hideui').addEventListener('click', function () { self2.toggleChrome(); });
+      p.querySelector('#sc-recbtn').addEventListener('click', function () { self2.toggleRecord(); });
+      var durs = [['30s', 30], ['5 min', 300], ['30 min', 1800], ['∞ until stopped', 0]];
+      var dz = p.querySelector('#sc-durs');
+      this.durBtns = [];
+      durs.forEach(function (d, i) {
+        var b = el('button', 'sc-dur' + (i === 3 ? ' on' : ''), d[0]);
+        b.addEventListener('click', function () {
+          self2.recState.dur = d[1];
+          self2.durBtns.forEach(function (x) { x.classList.remove('on'); });
+          b.classList.add('on');
+        });
+        dz.appendChild(b); self2.durBtns.push(b);
+      });
+      this.recState.dur = 0;
+
+      // toast
+      var t = el('div', 'sc-toast');
+      document.body.appendChild(t);
+      this.toastEl = t;
+
+      this.renderHist(); this.renderFavs(); this.updateFavBtn();
+    },
+
+    toast: function (msg) {
+      var t = this.toastEl, self = this;
+      t.textContent = msg; t.classList.add('show');
+      clearTimeout(this._tt);
+      this._tt = setTimeout(function () { t.classList.remove('show'); }, 2200);
+    },
+
+    togglePanel: function () { this.panel.classList.toggle('hidden'); },
+    togglePanelSection: function () {
+      if (this.panel.classList.contains('hidden')) this.panel.classList.remove('hidden');
+      this.panel.scrollTop = this.panel.querySelector('.sc-sec').offsetTop - 60;
+    },
+    toggleChrome: function () {
+      var hidden = this.pill.classList.toggle('hidden');
+      this.panel.classList.add('hidden');
+      this.dot.classList.toggle('hidden', !hidden);
+    },
+
+    applySeed: function (s, opts) {
+      var self = this;
+      opts = opts || {};
+      function done() {
+        self.seedChip.textContent = s;
+        var f = self.panel.querySelector('#sc-seedfield');
+        if (f) f.value = s;
+        // re-apply locked params after regen so Remix/customize locks hold
+        self.applyLocks();
+        self.refreshParams();
+        if (!opts.silent) self.toast('Seed: ' + s);
+        var h = self.hist.get([]);
+        h = [s].concat(h.filter(function (x) { return x !== s; })).slice(0, 30);
+        self.hist.set(h);
+        self.renderHist(); self.updateFavBtn();
+      }
+      try {
+        var r = this.A.setSeed(s);
+        if (r && typeof r.then === 'function') r.then(done, function (e) {
+          console.error(e); self.toast('Could not apply seed');
+        });
+        else done();
+      } catch (e) { console.error(e); this.toast('Could not apply seed'); }
+    },
+
+    doRandom: function () { this.applySeed(this.A.randomSeed()); },
+    doRemix: function () { this.applySeed(this.A.remixSeed(this.A.getSeed())); },
+
+    applyLocks: function () {
+      var locks = this.locks.get({});
+      var self = this;
+      (this.A.params || []).forEach(function (p) {
+        if (locks[p.key] && self._lockedVals && self._lockedVals[p.key] != null) {
+          try { p.set(self._lockedVals[p.key]); } catch (e) {}
+        }
+      });
+    },
+    snapshotLocks: function () {
+      var locks = this.locks.get({}), vals = {};
+      (this.A.params || []).forEach(function (p) {
+        if (locks[p.key]) { try { vals[p.key] = p.get(); } catch (e) {} }
+      });
+      this._lockedVals = vals;
+    },
+
+    refreshParams: function () {
+      var self = this, A = this.A;
+      var box = this.panel.querySelector('#sc-params');
+      box.innerHTML = '';
+      var locks = this.locks.get({});
+      (A.params || []).forEach(function (p) {
+        var wrap = el('div', 'sc-param');
+        var top = el('div', 'top');
+        var lab = el('label', '', esc(p.label));
+        var val = el('span', 'val', '');
+        var lock = el('button', 'sc-lock' + (locks[p.key] ? ' on' : ''), locks[p.key] ? '🔒' : '🔓');
+        lock.title = 'Lock: kept on Remix';
+        var cur = null;
+        try { cur = p.get(); } catch (e) {}
+        function fmt(v) { return (typeof v === 'number' && Math.abs(v) < 10 && p.step < 1) ? v.toFixed(2) : String(v); }
+        val.textContent = fmt(cur);
+        var slider = document.createElement('input');
+        slider.type = 'range'; slider.min = p.min; slider.max = p.max; slider.step = p.step;
+        if (cur != null) slider.value = cur;
+        slider.addEventListener('input', function () {
+          var v = parseFloat(slider.value);
+          try { p.set(v); } catch (e) {}
+          val.textContent = fmt(v);
+          if (locks[p.key]) { self.snapshotLocks(); }
+        });
+        slider.addEventListener('change', function () { self.snapshotLocks(); });
+        lock.addEventListener('click', function () {
+          var L = self.locks.get({});
+          L[p.key] = !L[p.key];
+          self.locks.set(L);
+          lock.classList.toggle('on', !!L[p.key]);
+          lock.textContent = L[p.key] ? '🔒' : '🔓';
+          self.snapshotLocks();
+          self.toast(L[p.key] ? p.label + ' locked for Remix' : p.label + ' unlocked');
+        });
+        top.appendChild(lab); top.appendChild(val); top.appendChild(lock);
+        wrap.appendChild(top); wrap.appendChild(slider);
+        box.appendChild(wrap);
+      });
+      this.snapshotLocks();
+    },
+
+    toggleFav: function (b) {
+      var self = this;
+      var s = this.A.getSeed();
+      var favs = this.favs.get([]);
+      var i = favs.findIndex(function (f) { return f.seed === s; });
+      if (i !== -1) {
+        favs.splice(i, 1);
+        this.favs.set(favs.slice(0, 100));
+        this.renderFavs(); this.updateFavBtn();
+        this.toast('Removed from favorites');
+        return;
+      }
+      var snap = {};
+      try {
+        (this.A.params || []).forEach(function (p) { snap[p.key] = p.get(); });
+      } catch (e) {}
+      // Capture a small thumbnail on the next painted frame so WebGL
+      // drawing buffers are fresh, then save the favorite with it.
+      function save(thumb) {
+        var entry = { seed: s, params: snap, ts: Date.now() };
+        if (thumb) entry.thumb = thumb;
+        var list = self.favs.get([]);
+        list.unshift(entry);
+        list = list.slice(0, 100);
+        try {
+          self.favs.set(list);
+        } catch (e) {
+          // localStorage full (thumbs are the bulk): strip thumbs, retry once
+          try {
+            list.forEach(function (f) { delete f.thumb; });
+            self.favs.set(list);
+          } catch (e2) {}
+        }
+        self.renderFavs(); self.updateFavBtn();
+        self.toast('⭐ Saved to favorites');
+      }
+      try {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () { save(self.captureThumb()); });
+        });
+      } catch (e) { save(null); }
+    },
+    captureThumb: function () {
+      // Small 240px-wide JPEG snapshot of the current render for favorite cards.
+      var canvas = null;
+      try { canvas = this.A.canvas(); } catch (e) {}
+      if (!canvas || !canvas.width) return null;
+      try {
+        var w = 240, h = Math.max(1, Math.round(w * canvas.height / canvas.width));
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        var ctx = c.getContext('2d');
+        ctx.drawImage(canvas, 0, 0, w, h);
+        var url = c.toDataURL('image/jpeg', 0.72);
+        // sanity: reject empty/degenerate captures
+        if (!url || url.length < 2000) return null;
+        return url;
+      } catch (e) { return null; }
+    },
+    updateFavBtn: function () {
+      var s = this.A.getSeed();
+      var favs = this.favs.get([]);
+      var on = favs.some(function (f) { return f.seed === s; });
+      this.bFav.textContent = on ? '★' : '☆';
+      this.bFav.classList.toggle('on', on);
+    },
+    renderFavs: function () {
+      var self = this, box = this.panel.querySelector('#sc-favs');
+      box.innerHTML = '';
+      var favs = this.favs.get([]);
+      if (!favs.length) box.innerHTML = '<div class="meta" style="color:#9aa0a6;font-size:12px">Nothing saved yet — tap ☆ on a seed you love.</div>';
+      favs.forEach(function (f) {
+        var it = el('div', 'sc-item');
+        var img = f.thumb
+          ? '<img class="sc-thumb" src="' + f.thumb + '" alt="">'
+          : '<span class="sc-thumb" style="display:flex;align-items:center;justify-content:center;color:#5a6378;font-size:14px">⭐</span>';
+        it.innerHTML = img + '<span class="grow">' + esc(f.seed) + '</span><span class="meta">' +
+          new Date(f.ts).toLocaleDateString() + '</span>';
+        it.addEventListener('click', function () {
+          self.applySeed(f.seed);
+          if (f.params) {
+            setTimeout(function () {
+              (self.A.params || []).forEach(function (p) {
+                if (f.params[p.key] != null) { try { p.set(f.params[p.key]); } catch (e) {} }
+              });
+              self.refreshParams();
+            }, 50);
+          }
+          self.toast('Loaded favorite: ' + f.seed);
+        });
+        box.appendChild(it);
+      });
+    },
+    renderHist: function () {
+      var self = this, box = this.panel.querySelector('#sc-hist');
+      box.innerHTML = '';
+      var h = this.hist.get([]);
+      if (!h.length) box.innerHTML = '<div style="color:#9aa0a6;font-size:12px">Your recent seeds will appear here.</div>';
+      h.forEach(function (s) {
+        var it = el('div', 'sc-item');
+        it.innerHTML = '<span class="grow">' + esc(s) + '</span>';
+        it.addEventListener('click', function () { self.applySeed(s); });
+        box.appendChild(it);
+      });
+    },
+
+    // ---- recording ----
+    bestMime: function () {
+      if (!window.MediaRecorder) return '';
+      var cands = ['video/mp4', 'video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm'];
+      for (var i = 0; i < cands.length; i++) {
+        try { if (MediaRecorder.isTypeSupported(cands[i])) return cands[i]; } catch (e) {}
+      }
+      return '';
+    },
+    toggleRecord: function () {
+      if (this.recState.rec) this.stopRecord();
+      else this.startRecord();
+    },
+    startRecord: function () {
+      var self = this;
+      var canvas = null;
+      try { canvas = this.A.canvas(); } catch (e) {}
+      if (!canvas || !canvas.captureStream) { this.setStatus('Recording not supported on this canvas.'); return; }
+      var mime = this.bestMime();
+      if (!mime) { this.setStatus('No supported recording format in this browser.'); return; }
+      this.recState.mime = mime;
+      this.recState.chunks = [];
+      var stream;
+      try { stream = canvas.captureStream(60); } catch (e) { this.setStatus('Could not capture stream.'); return; }
+      var rec;
+      try {
+        rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 14000000 });
+      } catch (e) { this.setStatus('Recorder failed to start.'); return; }
+      rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) self.recState.chunks.push(ev.data); };
+      rec.onstop = function () { self.finishRecord(); };
+      try { rec.start(4000); } catch (e) { this.setStatus('Recorder failed to start.'); return; }
+      this.recState.rec = rec;
+      this.recState.t0 = Date.now();
+      this.bRec.classList.add('on');
+      this.panel.querySelector('#sc-recbtn').textContent = '■ Stop recording';
+      this.tickStatus();
+      if (this.recState.dur > 0) {
+        this.recState.timer = setTimeout(function () { self.stopRecord(); }, this.recState.dur * 1000);
+      }
+      this.toast('● Recording…');
+    },
+    tickStatus: function () {
+      var self = this;
+      if (!this.recState.rec) return;
+      var s = Math.floor((Date.now() - this.recState.t0) / 1000);
+      var mm = Math.floor(s / 60), ss = ('0' + (s % 60)).slice(-2);
+      this.setStatus('● REC ' + mm + ':' + ss + ' — tap Stop when done', true);
+      setTimeout(function () { self.tickStatus(); }, 1000);
+    },
+    stopRecord: function () {
+      clearTimeout(this.recState.timer);
+      try { this.recState.rec.stop(); } catch (e) {}
+      this.setStatus('Finishing…');
+    },
+    finishRecord: function () {
+      var self = this;
+      this.recState.rec = null;
+      this.bRec.classList.remove('on');
+      this.panel.querySelector('#sc-recbtn').textContent = '● Start recording';
+      var ext = this.recState.mime.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
+      var blob = new Blob(this.recState.chunks, { type: this.recState.mime.split(';')[0] });
+      this.recState.chunks = [];
+      var base = 'seedconsole';
+      try { base = this.A.fileBase(this.A.getSeed()) || base; } catch (e) {}
+      var name = base + '.' + ext;
+      var file = null;
+      try { file = new File([blob], name, { type: blob.type }); } catch (e) {}
+      this.setStatus('Done — ' + (blob.size / 1048576).toFixed(1) + ' MB. Share it to Files → your SSD.');
+      var dl = this.panel.querySelector('#sc-dl');
+      dl.innerHTML = '';
+      function fallbackLink() {
+        var url = URL.createObjectURL(blob);
+        var a = el('a', 'sc-link', '⬇ Download ' + esc(name));
+        a.href = url; a.download = name;
+        dl.appendChild(a);
+      }
+      if (file && navigator.canShare && navigator.share) {
+        try {
+          if (navigator.canShare({ files: [file] })) {
+            navigator.share({ files: [file], title: name }).then(function () {
+              self.toast('Shared — pick Save to Files → your SSD');
+            }, function () { fallbackLink(); });
+            return;
+          }
+        } catch (e) {}
+      }
+      fallbackLink();
+      this.toast('Recording ready below');
+    },
+    setStatus: function (msg, rec) {
+      var s = this.panel.querySelector('#sc-status');
+      s.textContent = msg;
+      s.classList.toggle('rec', !!rec);
+    }
+  };
+
+  window.SeedConsole = SeedConsole;
+})();
+
+</script>
+<script>
+SeedConsole.init(window.SeedConsoleAdapter);
+</script>
+<script>
+/* mp4-muxer v5.2.1 (inlined for offline render mode) */
+/**
+ * Minified by jsDelivr using Terser v5.39.0.
+ * Original file: /npm/mp4-muxer@5.2.1/build/mp4-muxer.js
+ *
+ * Do NOT use SRI with dynamically generated files! More information: https://www.jsdelivr.com/using-sri-with-dynamic-files
+ */
+"use strict";var Mp4Muxer=(()=>{var e=Object.defineProperty,t=Object.getOwnPropertyDescriptor,i=Object.getOwnPropertyNames,s=Object.prototype.hasOwnProperty,a=(e,t,i)=>{if(!t.has(e))throw TypeError("Cannot "+i)},r=(e,t,i)=>(a(e,t,"read from private field"),i?i.call(e):t.get(e)),n=(e,t,i)=>{if(t.has(e))throw TypeError("Cannot add the same private member more than once");t instanceof WeakSet?t.add(e):t.set(e,i)},o=(e,t,i,s)=>(a(e,t,"write to private field"),s?s.call(e,i):t.set(e,i),i),h=(e,t,i)=>(a(e,t,"access private method"),i),l={};((t,i)=>{for(var s in i)e(t,s,{get:i[s],enumerable:!0})})(l,{ArrayBufferTarget:()=>Me,FileSystemWritableFileStreamTarget:()=>Oe,Muxer:()=>Rt,StreamTarget:()=>We});var d,f,u,m,p,c,w,g,b=new Uint8Array(8),y=new DataView(b.buffer),k=e=>[(e%256+256)%256],T=e=>(y.setUint16(0,e,!1),[b[0],b[1]]),C=e=>(y.setUint32(0,e,!1),[b[1],b[2],b[3]]),v=e=>(y.setUint32(0,e,!1),[b[0],b[1],b[2],b[3]]),S=e=>(y.setUint32(0,Math.floor(e/2**32),!1),y.setUint32(4,e,!1),[b[0],b[1],b[2],b[3],b[4],b[5],b[6],b[7]]),x=e=>(y.setInt16(0,256*e,!1),[b[0],b[1]]),z=e=>(y.setInt32(0,65536*e,!1),[b[0],b[1],b[2],b[3]]),E=e=>(y.setInt32(0,2**30*e,!1),[b[0],b[1],b[2],b[3]]),A=(e,t=!1)=>{let i=Array(e.length).fill(null).map(((t,i)=>e.charCodeAt(i)));return t&&i.push(0),i},M=e=>e&&e[e.length-1],W=e=>{let t;for(let i of e)(!t||i.presentationTimestamp>t.presentationTimestamp)&&(t=i);return t},O=(e,t,i=!0)=>{let s=e*t;return i?Math.round(s):s},B=e=>{let t=e*(Math.PI/180),i=Math.cos(t),s=Math.sin(t);return[i,s,0,-s,i,0,0,0,1]},U=B(0),D=e=>[z(e[0]),z(e[1]),E(e[2]),z(e[3]),z(e[4]),E(e[5]),z(e[6]),z(e[7]),E(e[8])],j=e=>e?"object"!=typeof e?e:Array.isArray(e)?e.map(j):Object.fromEntries(Object.entries(e).map((([e,t])=>[e,j(t)]))):e,R=e=>e>=0&&e<2**32,I=(e,t,i)=>({type:e,contents:t&&new Uint8Array(t.flat(10)),children:i}),N=(e,t,i,s,a)=>I(e,[k(t),C(i),s??[]],a),V=e=>({type:"mdat",largeSize:e}),F=(e,t,i=!1)=>I("moov",null,[L(t,e),...e.map((e=>$(e,t))),i?me(e):null]),L=(e,t)=>{let i=O(Math.max(0,...t.filter((e=>e.samples.length>0)).map((e=>{const t=W(e.samples);return t.presentationTimestamp+t.duration}))),Bt),s=Math.max(...t.map((e=>e.id)))+1,a=!R(e)||!R(i),r=a?S:v;return N("mvhd",+a,0,[r(e),r(e),v(Bt),r(i),z(1),x(1),Array(10).fill(0),D(U),Array(24).fill(0),v(s)])},$=(e,t)=>I("trak",null,[P(e,t),H(e,t)]),P=(e,t)=>{let i,s=W(e.samples),a=O(s?s.presentationTimestamp+s.duration:0,Bt),r=!R(t)||!R(a),n=r?S:v;return i="video"===e.info.type?"number"==typeof e.info.rotation?B(e.info.rotation):e.info.rotation:U,N("tkhd",+r,3,[n(t),n(t),v(e.id),v(0),n(a),Array(8).fill(0),T(0),T(0),x("audio"===e.info.type?1:0),T(0),D(i),z("video"===e.info.type?e.info.width:0),z("video"===e.info.type?e.info.height:0)])},H=(e,t)=>I("mdia",null,[_(e,t),q("video"===e.info.type?"vide":"soun"),G(e)]),_=(e,t)=>{let i=W(e.samples),s=O(i?i.presentationTimestamp+i.duration:0,e.timescale),a=!R(t)||!R(s),r=a?S:v;return N("mdhd",+a,0,[r(t),r(t),v(e.timescale),r(s),T(21956),T(0)])},q=e=>N("hdlr",0,0,[A("mhlr"),A(e),v(0),v(0),v(0),A("mp4-muxer-hdlr",!0)]),G=e=>I("minf",null,["video"===e.info.type?J():K(),Q(),Z(e)]),J=()=>N("vmhd",0,1,[T(0),T(0),T(0),T(0)]),K=()=>N("smhd",0,0,[T(0),T(0)]),Q=()=>I("dinf",null,[X()]),X=()=>N("dref",0,0,[v(1)],[Y()]),Y=()=>N("url ",0,1),Z=e=>{const t=e.compositionTimeOffsetTable.length>1||e.compositionTimeOffsetTable.some((e=>0!==e.sampleCompositionTimeOffset));return I("stbl",null,[ee(e),oe(e),he(e),le(e),de(e),fe(e),t?ue(e):null])},ee=e=>N("stsd",0,0,[v(1)],["video"===e.info.type?te(Se[e.info.codec],e):ne(ze[e.info.codec],e)]),te=(e,t)=>{return I(e,[Array(6).fill(0),T(1),T(0),T(0),Array(12).fill(0),T(t.info.width),T(t.info.height),v(4718592),v(4718592),v(0),T(1),Array(32).fill(0),T(24),(i=65535,y.setInt16(0,i,!1),[b[0],b[1]])],[xe[t.info.codec](t),t.info.decoderConfig.colorSpace?re(t):null]);var i},ie={bt709:1,bt470bg:5,smpte170m:6},se={bt709:1,smpte170m:6,"iec61966-2-1":13},ae={rgb:0,bt709:1,bt470bg:5,smpte170m:6},re=e=>I("colr",[A("nclx"),T(ie[e.info.decoderConfig.colorSpace.primaries]),T(se[e.info.decoderConfig.colorSpace.transfer]),T(ae[e.info.decoderConfig.colorSpace.matrix]),k((e.info.decoderConfig.colorSpace.fullRange?1:0)<<7)]),ne=(e,t)=>I(e,[Array(6).fill(0),T(1),T(0),T(0),v(0),T(t.info.numberOfChannels),T(16),T(0),T(0),z(t.info.sampleRate)],[Ee[t.info.codec](t)]),oe=e=>N("stts",0,0,[v(e.timeToSampleTable.length),e.timeToSampleTable.map((e=>[v(e.sampleCount),v(e.sampleDelta)]))]),he=e=>{if(e.samples.every((e=>"key"===e.type)))return null;let t=[...e.samples.entries()].filter((([,e])=>"key"===e.type));return N("stss",0,0,[v(t.length),t.map((([e])=>v(e+1)))])},le=e=>N("stsc",0,0,[v(e.compactlyCodedChunkTable.length),e.compactlyCodedChunkTable.map((e=>[v(e.firstChunk),v(e.samplesPerChunk),v(1)]))]),de=e=>N("stsz",0,0,[v(0),v(e.samples.length),e.samples.map((e=>v(e.size)))]),fe=e=>e.finalizedChunks.length>0&&M(e.finalizedChunks).offset>=2**32?N("co64",0,0,[v(e.finalizedChunks.length),e.finalizedChunks.map((e=>S(e.offset)))]):N("stco",0,0,[v(e.finalizedChunks.length),e.finalizedChunks.map((e=>v(e.offset)))]),ue=e=>N("ctts",0,0,[v(e.compositionTimeOffsetTable.length),e.compositionTimeOffsetTable.map((e=>[v(e.sampleCount),v(e.sampleCompositionTimeOffset)]))]),me=e=>I("mvex",null,e.map(pe)),pe=e=>N("trex",0,0,[v(e.id),v(1),v(0),v(0),v(0)]),ce=(e,t)=>I("moof",null,[we(e),...t.map(be)]),we=e=>N("mfhd",0,0,[v(e)]),ge=e=>{let t=0,i=0,s="delta"===e.type;return i|=+s,t|=s?1:2,t<<24|i<<16},be=e=>I("traf",null,[ye(e),ke(e),Te(e)]),ye=e=>{let t=0;t|=8,t|=16,t|=32,t|=131072;let i=e.currentChunk.samples[1]??e.currentChunk.samples[0],s={duration:i.timescaleUnitsToNextSample,size:i.size,flags:ge(i)};return N("tfhd",0,131128,[v(e.id),v(s.duration),v(s.size),v(s.flags)])},ke=e=>N("tfdt",1,0,[S(O(e.currentChunk.startTimestamp,e.timescale))]),Te=e=>{let t=e.currentChunk.samples.map((e=>e.timescaleUnitsToNextSample)),i=e.currentChunk.samples.map((e=>e.size)),s=e.currentChunk.samples.map(ge),a=e.currentChunk.samples.map((t=>O(t.presentationTimestamp-t.decodeTimestamp,e.timescale))),r=new Set(t),n=new Set(i),o=new Set(s),h=new Set(a),l=2===o.size&&s[0]!==s[1],d=r.size>1,f=n.size>1,u=!l&&o.size>1,m=h.size>1||[...h].some((e=>0!==e)),p=0;return p|=1,p|=4*+l,p|=256*+d,p|=512*+f,p|=1024*+u,p|=2048*+m,N("trun",1,p,[v(e.currentChunk.samples.length),v(e.currentChunk.offset-e.currentChunk.moofOffset||0),l?v(s[0]):[],e.currentChunk.samples.map(((e,r)=>{return[d?v(t[r]):[],f?v(i[r]):[],u?v(s[r]):[],m?(n=a[r],y.setInt32(0,n,!1),[b[0],b[1],b[2],b[3]]):[]];var n}))])},Ce=(e,t)=>N("tfra",1,0,[v(e.id),v(63),v(e.finalizedChunks.length),e.finalizedChunks.map((i=>[S(O(i.startTimestamp,e.timescale)),S(i.moofOffset),v(t+1),v(1),v(1)]))]),ve=()=>N("mfro",0,0,[v(0)]),Se={avc:"avc1",hevc:"hvc1",vp9:"vp09",av1:"av01"},xe={avc:e=>e.info.decoderConfig&&I("avcC",[...new Uint8Array(e.info.decoderConfig.description)]),hevc:e=>e.info.decoderConfig&&I("hvcC",[...new Uint8Array(e.info.decoderConfig.description)]),vp9:e=>{if(!e.info.decoderConfig)return null;let t=e.info.decoderConfig;if(!t.colorSpace)throw new Error("'colorSpace' is required in the decoder config for VP9.");let i=t.codec.split("."),s=Number(i[1]),a=Number(i[2]),r=0+(Number(i[3])<<4)+Number(t.colorSpace.fullRange);return N("vpcC",1,0,[k(s),k(a),k(r),k(2),k(2),k(2),T(0)])},av1:()=>I("av1C",[129,0,0,0])},ze={aac:"mp4a",opus:"Opus"},Ee={aac:e=>{let t=new Uint8Array(e.info.decoderConfig.description);return N("esds",0,0,[v(58753152),k(32+t.byteLength),T(1),k(0),v(75530368),k(18+t.byteLength),k(64),k(21),C(0),v(130071),v(130071),v(92307584),k(t.byteLength),...t,v(109084800),k(1),k(2)])},opus:e=>{let t=3840,i=0;const s=e.info.decoderConfig?.description;if(s){if(s.byteLength<18)throw new TypeError("Invalid decoder description provided for Opus; must be at least 18 bytes long.");const e=ArrayBuffer.isView(s)?new DataView(s.buffer,s.byteOffset,s.byteLength):new DataView(s);t=e.getUint16(10,!0),i=e.getInt16(14,!0)}return I("dOps",[k(0),k(e.info.numberOfChannels),T(t),v(e.info.sampleRate),x(i),k(0)])}},Ae=(Symbol("isTarget"),class{}),Me=class extends Ae{constructor(){super(...arguments),this.buffer=null}},We=class extends Ae{constructor(e){if(super(),this.options=e,"object"!=typeof e)throw new TypeError("StreamTarget requires an options object to be passed to its constructor.");if(e.onData){if("function"!=typeof e.onData)throw new TypeError("options.onData, when provided, must be a function.");if(e.onData.length<2)throw new TypeError("options.onData, when provided, must be a function that takes in at least two arguments (data and position). Ignoring the position argument, which specifies the byte offset at which the data is to be written, can lead to broken outputs.")}if(void 0!==e.chunked&&"boolean"!=typeof e.chunked)throw new TypeError("options.chunked, when provided, must be a boolean.");if(void 0!==e.chunkSize&&(!Number.isInteger(e.chunkSize)||e.chunkSize<1024))throw new TypeError("options.chunkSize, when provided, must be an integer and not smaller than 1024.")}},Oe=class extends Ae{constructor(e,t){if(super(),this.stream=e,this.options=t,!(e instanceof FileSystemWritableFileStream))throw new TypeError("FileSystemWritableFileStreamTarget requires a FileSystemWritableFileStream instance.");if(void 0!==t&&"object"!=typeof t)throw new TypeError("FileSystemWritableFileStreamTarget's options, when provided, must be an object.");if(t&&void 0!==t.chunkSize&&(!Number.isInteger(t.chunkSize)||t.chunkSize<=0))throw new TypeError("options.chunkSize, when provided, must be a positive integer")}},Be=class{constructor(){this.pos=0,n(this,d,new Uint8Array(8)),n(this,f,new DataView(r(this,d).buffer)),this.offsets=new WeakMap}seek(e){this.pos=e}writeU32(e){r(this,f).setUint32(0,e,!1),this.write(r(this,d).subarray(0,4))}writeU64(e){r(this,f).setUint32(0,Math.floor(e/2**32),!1),r(this,f).setUint32(4,e,!1),this.write(r(this,d).subarray(0,8))}writeAscii(e){for(let t=0;t<e.length;t++)r(this,f).setUint8(t%8,e.charCodeAt(t)),t%8==7&&this.write(r(this,d));e.length%8!=0&&this.write(r(this,d).subarray(0,e.length%8))}writeBox(e){if(this.offsets.set(e,this.pos),e.contents&&!e.children)this.writeBoxHeader(e,e.size??e.contents.byteLength+8),this.write(e.contents);else{let t=this.pos;if(this.writeBoxHeader(e,0),e.contents&&this.write(e.contents),e.children)for(let t of e.children)t&&this.writeBox(t);let i=this.pos,s=e.size??i-t;this.seek(t),this.writeBoxHeader(e,s),this.seek(i)}}writeBoxHeader(e,t){this.writeU32(e.largeSize?1:t),this.writeAscii(e.type),e.largeSize&&this.writeU64(t)}measureBoxHeader(e){return 8+(e.largeSize?8:0)}patchBox(e){let t=this.pos;this.seek(this.offsets.get(e)),this.writeBox(e),this.seek(t)}measureBox(e){if(e.contents&&!e.children){return this.measureBoxHeader(e)+e.contents.byteLength}{let t=this.measureBoxHeader(e);if(e.contents&&(t+=e.contents.byteLength),e.children)for(let i of e.children)i&&(t+=this.measureBox(i));return t}}};d=new WeakMap,f=new WeakMap;var Ue=class extends Be{constructor(e){super(),n(this,w),n(this,u,void 0),n(this,m,new ArrayBuffer(65536)),n(this,p,new Uint8Array(r(this,m))),n(this,c,0),o(this,u,e)}write(e){h(this,w,g).call(this,this.pos+e.byteLength),r(this,p).set(e,this.pos),this.pos+=e.byteLength,o(this,c,Math.max(r(this,c),this.pos))}finalize(){h(this,w,g).call(this,this.pos),r(this,u).buffer=r(this,m).slice(0,Math.max(r(this,c),this.pos))}};u=new WeakMap,m=new WeakMap,p=new WeakMap,c=new WeakMap,w=new WeakSet,g=function(e){let t=r(this,m).byteLength;for(;t<e;)t*=2;if(t===r(this,m).byteLength)return;let i=new ArrayBuffer(t),s=new Uint8Array(i);s.set(r(this,p),0),o(this,m,i),o(this,p,s)};var De,je,Re,Ie,Ne,Ve,Fe,Le,$e,Pe,He,_e,qe,Ge=class extends Be{constructor(e){super(),n(this,Ve),n(this,Le),n(this,Pe),n(this,_e),n(this,De,void 0),n(this,je,[]),n(this,Re,void 0),n(this,Ie,void 0),n(this,Ne,[]),o(this,De,e),o(this,Re,e.options?.chunked??!1),o(this,Ie,e.options?.chunkSize??16777216)}write(e){r(this,je).push({data:e.slice(),start:this.pos}),this.pos+=e.byteLength}flush(){if(0===r(this,je).length)return;let e=[],t=[...r(this,je)].sort(((e,t)=>e.start-t.start));e.push({start:t[0].start,size:t[0].data.byteLength});for(let i=1;i<t.length;i++){let s=e[e.length-1],a=t[i];a.start<=s.start+s.size?s.size=Math.max(s.size,a.start+a.data.byteLength-s.start):e.push({start:a.start,size:a.data.byteLength})}for(let t of e){t.data=new Uint8Array(t.size);for(let e of r(this,je))t.start<=e.start&&e.start<t.start+t.size&&t.data.set(e.data,e.start-t.start);r(this,Re)?(h(this,Ve,Fe).call(this,t.data,t.start),h(this,_e,qe).call(this)):r(this,De).options.onData?.(t.data,t.start)}r(this,je).length=0}finalize(){r(this,Re)&&h(this,_e,qe).call(this,!0)}};De=new WeakMap,je=new WeakMap,Re=new WeakMap,Ie=new WeakMap,Ne=new WeakMap,Ve=new WeakSet,Fe=function(e,t){let i=r(this,Ne).findIndex((e=>e.start<=t&&t<e.start+r(this,Ie)));-1===i&&(i=h(this,Pe,He).call(this,t));let s=r(this,Ne)[i],a=t-s.start,n=e.subarray(0,Math.min(r(this,Ie)-a,e.byteLength));s.data.set(n,a);let o={start:a,end:a+n.byteLength};if(h(this,Le,$e).call(this,s,o),0===s.written[0].start&&s.written[0].end===r(this,Ie)&&(s.shouldFlush=!0),r(this,Ne).length>2){for(let e=0;e<r(this,Ne).length-1;e++)r(this,Ne)[e].shouldFlush=!0;h(this,_e,qe).call(this)}n.byteLength<e.byteLength&&h(this,Ve,Fe).call(this,e.subarray(n.byteLength),t+n.byteLength)},Le=new WeakSet,$e=function(e,t){let i=0,s=e.written.length-1,a=-1;for(;i<=s;){let r=Math.floor(i+(s-i+1)/2);e.written[r].start<=t.start?(i=r+1,a=r):s=r-1}for(e.written.splice(a+1,0,t),(-1===a||e.written[a].end<t.start)&&a++;a<e.written.length-1&&e.written[a].end>=e.written[a+1].start;)e.written[a].end=Math.max(e.written[a].end,e.written[a+1].end),e.written.splice(a+1,1)},Pe=new WeakSet,He=function(e){let t={start:Math.floor(e/r(this,Ie))*r(this,Ie),data:new Uint8Array(r(this,Ie)),written:[],shouldFlush:!1};return r(this,Ne).push(t),r(this,Ne).sort(((e,t)=>e.start-t.start)),r(this,Ne).indexOf(t)},_e=new WeakSet,qe=function(e=!1){for(let t=0;t<r(this,Ne).length;t++){let i=r(this,Ne)[t];if(i.shouldFlush||e){for(let e of i.written)r(this,De).options.onData?.(i.data.subarray(e.start,e.end),i.start+e.start);r(this,Ne).splice(t--,1)}}};var Je,Ke,Qe,Xe,Ye,Ze,et,tt,it,st,at,rt,nt,ot,ht,lt,dt,ft,ut,mt,pt,ct,wt,gt,bt,yt,kt,Tt,Ct,vt,St,xt,zt,Et,At,Mt,Wt,Ot=class extends Ge{constructor(e){super(new We({onData:(t,i)=>e.stream.write({type:"write",data:t,position:i}),chunked:!0,chunkSize:e.options?.chunkSize}))}},Bt=1e3,Ut=["avc","hevc","vp9","av1"],Dt=["aac","opus"],jt=["strict","offset","cross-track-offset"],Rt=class{constructor(e){if(n(this,nt),n(this,ht),n(this,dt),n(this,ut),n(this,pt),n(this,wt),n(this,bt),n(this,kt),n(this,Ct),n(this,St),n(this,zt),n(this,At),n(this,Je,void 0),n(this,Ke,void 0),n(this,Qe,void 0),n(this,Xe,void 0),n(this,Ye,null),n(this,Ze,null),n(this,et,Math.floor(Date.now()/1e3)+2082844800),n(this,tt,[]),n(this,it,1),n(this,st,[]),n(this,at,[]),n(this,rt,!1),h(this,nt,ot).call(this,e),e.video=j(e.video),e.audio=j(e.audio),e.fastStart=j(e.fastStart),this.target=e.target,o(this,Je,{firstTimestampBehavior:"strict",...e}),e.target instanceof Me)o(this,Ke,new Ue(e.target));else if(e.target instanceof We)o(this,Ke,new Ge(e.target));else{if(!(e.target instanceof Oe))throw new Error(`Invalid target: ${e.target}`);o(this,Ke,new Ot(e.target))}h(this,ut,mt).call(this),h(this,ht,lt).call(this)}addVideoChunk(e,t,i,s){if(!(e instanceof EncodedVideoChunk))throw new TypeError("addVideoChunk's first argument (sample) must be of type EncodedVideoChunk.");if(t&&"object"!=typeof t)throw new TypeError("addVideoChunk's second argument (meta), when provided, must be an object.");if(void 0!==i&&(!Number.isFinite(i)||i<0))throw new TypeError("addVideoChunk's third argument (timestamp), when provided, must be a non-negative real number.");if(void 0!==s&&!Number.isFinite(s))throw new TypeError("addVideoChunk's fourth argument (compositionTimeOffset), when provided, must be a real number.");let a=new Uint8Array(e.byteLength);e.copyTo(a),this.addVideoChunkRaw(a,e.type,i??e.timestamp,e.duration,t,s)}addVideoChunkRaw(e,t,i,s,a,n){if(!(e instanceof Uint8Array))throw new TypeError("addVideoChunkRaw's first argument (data) must be an instance of Uint8Array.");if("key"!==t&&"delta"!==t)throw new TypeError("addVideoChunkRaw's second argument (type) must be either 'key' or 'delta'.");if(!Number.isFinite(i)||i<0)throw new TypeError("addVideoChunkRaw's third argument (timestamp) must be a non-negative real number.");if(!Number.isFinite(s)||s<0)throw new TypeError("addVideoChunkRaw's fourth argument (duration) must be a non-negative real number.");if(a&&"object"!=typeof a)throw new TypeError("addVideoChunkRaw's fifth argument (meta), when provided, must be an object.");if(void 0!==n&&!Number.isFinite(n))throw new TypeError("addVideoChunkRaw's sixth argument (compositionTimeOffset), when provided, must be a real number.");if(h(this,At,Mt).call(this),!r(this,Je).video)throw new Error("No video track declared.");if("object"==typeof r(this,Je).fastStart&&r(this,Ye).samples.length===r(this,Je).fastStart.expectedVideoChunks)throw new Error(`Cannot add more video chunks than specified in 'fastStart' (${r(this,Je).fastStart.expectedVideoChunks}).`);let o=h(this,wt,gt).call(this,r(this,Ye),e,t,i,s,a,n);if("fragmented"===r(this,Je).fastStart&&r(this,Ze)){for(;r(this,at).length>0&&r(this,at)[0].decodeTimestamp<=o.decodeTimestamp;){let e=r(this,at).shift();h(this,bt,yt).call(this,r(this,Ze),e)}o.decodeTimestamp<=r(this,Ze).lastDecodeTimestamp?h(this,bt,yt).call(this,r(this,Ye),o):r(this,st).push(o)}else h(this,bt,yt).call(this,r(this,Ye),o)}addAudioChunk(e,t,i){if(!(e instanceof EncodedAudioChunk))throw new TypeError("addAudioChunk's first argument (sample) must be of type EncodedAudioChunk.");if(t&&"object"!=typeof t)throw new TypeError("addAudioChunk's second argument (meta), when provided, must be an object.");if(void 0!==i&&(!Number.isFinite(i)||i<0))throw new TypeError("addAudioChunk's third argument (timestamp), when provided, must be a non-negative real number.");let s=new Uint8Array(e.byteLength);e.copyTo(s),this.addAudioChunkRaw(s,e.type,i??e.timestamp,e.duration,t)}addAudioChunkRaw(e,t,i,s,a){if(!(e instanceof Uint8Array))throw new TypeError("addAudioChunkRaw's first argument (data) must be an instance of Uint8Array.");if("key"!==t&&"delta"!==t)throw new TypeError("addAudioChunkRaw's second argument (type) must be either 'key' or 'delta'.");if(!Number.isFinite(i)||i<0)throw new TypeError("addAudioChunkRaw's third argument (timestamp) must be a non-negative real number.");if(!Number.isFinite(s)||s<0)throw new TypeError("addAudioChunkRaw's fourth argument (duration) must be a non-negative real number.");if(a&&"object"!=typeof a)throw new TypeError("addAudioChunkRaw's fifth argument (meta), when provided, must be an object.");if(h(this,At,Mt).call(this),!r(this,Je).audio)throw new Error("No audio track declared.");if("object"==typeof r(this,Je).fastStart&&r(this,Ze).samples.length===r(this,Je).fastStart.expectedAudioChunks)throw new Error(`Cannot add more audio chunks than specified in 'fastStart' (${r(this,Je).fastStart.expectedAudioChunks}).`);let n=h(this,wt,gt).call(this,r(this,Ze),e,t,i,s,a);if("fragmented"===r(this,Je).fastStart&&r(this,Ye)){for(;r(this,st).length>0&&r(this,st)[0].decodeTimestamp<=n.decodeTimestamp;){let e=r(this,st).shift();h(this,bt,yt).call(this,r(this,Ye),e)}n.decodeTimestamp<=r(this,Ye).lastDecodeTimestamp?h(this,bt,yt).call(this,r(this,Ze),n):r(this,at).push(n)}else h(this,bt,yt).call(this,r(this,Ze),n)}finalize(){if(r(this,rt))throw new Error("Cannot finalize a muxer more than once.");if("fragmented"===r(this,Je).fastStart){for(let e of r(this,st))h(this,bt,yt).call(this,r(this,Ye),e);for(let e of r(this,at))h(this,bt,yt).call(this,r(this,Ze),e);h(this,St,xt).call(this,!1)}else r(this,Ye)&&h(this,Ct,vt).call(this,r(this,Ye)),r(this,Ze)&&h(this,Ct,vt).call(this,r(this,Ze));let e=[r(this,Ye),r(this,Ze)].filter(Boolean);if("in-memory"===r(this,Je).fastStart){let t;for(let i=0;i<2;i++){let i=F(e,r(this,et)),s=r(this,Ke).measureBox(i);t=r(this,Ke).measureBox(r(this,Xe));let a=r(this,Ke).pos+s+t;for(let e of r(this,tt)){e.offset=a;for(let{data:i}of e.samples)a+=i.byteLength,t+=i.byteLength}if(a<2**32)break;t>=2**32&&(r(this,Xe).largeSize=!0)}let i=F(e,r(this,et));r(this,Ke).writeBox(i),r(this,Xe).size=t,r(this,Ke).writeBox(r(this,Xe));for(let e of r(this,tt))for(let t of e.samples)r(this,Ke).write(t.data),t.data=null}else if("fragmented"===r(this,Je).fastStart){let t=r(this,Ke).pos,i=(e=>I("mfra",null,[...e.map(Ce),ve()]))(e);r(this,Ke).writeBox(i);let s=r(this,Ke).pos-t;r(this,Ke).seek(r(this,Ke).pos-4),r(this,Ke).writeU32(s)}else{let t=r(this,Ke).offsets.get(r(this,Xe)),i=r(this,Ke).pos-t;r(this,Xe).size=i,r(this,Xe).largeSize=i>=2**32,r(this,Ke).patchBox(r(this,Xe));let s=F(e,r(this,et));if("object"==typeof r(this,Je).fastStart){r(this,Ke).seek(r(this,Qe)),r(this,Ke).writeBox(s);let e=t-r(this,Ke).pos;r(this,Ke).writeBox({type:"free",size:e})}else r(this,Ke).writeBox(s)}h(this,zt,Et).call(this),r(this,Ke).finalize(),o(this,rt,!0)}};return Je=new WeakMap,Ke=new WeakMap,Qe=new WeakMap,Xe=new WeakMap,Ye=new WeakMap,Ze=new WeakMap,et=new WeakMap,tt=new WeakMap,it=new WeakMap,st=new WeakMap,at=new WeakMap,rt=new WeakMap,nt=new WeakSet,ot=function(e){if("object"!=typeof e)throw new TypeError("The muxer requires an options object to be passed to its constructor.");if(!(e.target instanceof Ae))throw new TypeError("The target must be provided and an instance of Target.");if(e.video){if(!Ut.includes(e.video.codec))throw new TypeError(`Unsupported video codec: ${e.video.codec}`);if(!Number.isInteger(e.video.width)||e.video.width<=0)throw new TypeError(`Invalid video width: ${e.video.width}. Must be a positive integer.`);if(!Number.isInteger(e.video.height)||e.video.height<=0)throw new TypeError(`Invalid video height: ${e.video.height}. Must be a positive integer.`);const t=e.video.rotation;if("number"==typeof t&&![0,90,180,270].includes(t))throw new TypeError(`Invalid video rotation: ${t}. Has to be 0, 90, 180 or 270.`);if(Array.isArray(t)&&(9!==t.length||t.some((e=>"number"!=typeof e))))throw new TypeError(`Invalid video transformation matrix: ${t.join()}`);if(void 0!==e.video.frameRate&&(!Number.isInteger(e.video.frameRate)||e.video.frameRate<=0))throw new TypeError(`Invalid video frame rate: ${e.video.frameRate}. Must be a positive integer.`)}if(e.audio){if(!Dt.includes(e.audio.codec))throw new TypeError(`Unsupported audio codec: ${e.audio.codec}`);if(!Number.isInteger(e.audio.numberOfChannels)||e.audio.numberOfChannels<=0)throw new TypeError(`Invalid number of audio channels: ${e.audio.numberOfChannels}. Must be a positive integer.`);if(!Number.isInteger(e.audio.sampleRate)||e.audio.sampleRate<=0)throw new TypeError(`Invalid audio sample rate: ${e.audio.sampleRate}. Must be a positive integer.`)}if(e.firstTimestampBehavior&&!jt.includes(e.firstTimestampBehavior))throw new TypeError(`Invalid first timestamp behavior: ${e.firstTimestampBehavior}`);if("object"==typeof e.fastStart){if(e.video){if(void 0===e.fastStart.expectedVideoChunks)throw new TypeError("'fastStart' is an object but is missing property 'expectedVideoChunks'.");if(!Number.isInteger(e.fastStart.expectedVideoChunks)||e.fastStart.expectedVideoChunks<0)throw new TypeError("'expectedVideoChunks' must be a non-negative integer.")}if(e.audio){if(void 0===e.fastStart.expectedAudioChunks)throw new TypeError("'fastStart' is an object but is missing property 'expectedAudioChunks'.");if(!Number.isInteger(e.fastStart.expectedAudioChunks)||e.fastStart.expectedAudioChunks<0)throw new TypeError("'expectedAudioChunks' must be a non-negative integer.")}}else if(![!1,"in-memory","fragmented"].includes(e.fastStart))throw new TypeError("'fastStart' option must be false, 'in-memory', 'fragmented' or an object.");if(void 0!==e.minFragmentDuration&&(!Number.isFinite(e.minFragmentDuration)||e.minFragmentDuration<0))throw new TypeError("'minFragmentDuration' must be a non-negative number.")},ht=new WeakSet,lt=function(){var e;if(r(this,Ke).writeBox((e={holdsAvc:"avc"===r(this,Je).video?.codec,fragmented:"fragmented"===r(this,Je).fastStart}).fragmented?I("ftyp",[A("iso5"),v(512),A("iso5"),A("iso6"),A("mp41")]):I("ftyp",[A("isom"),v(512),A("isom"),e.holdsAvc?A("avc1"):[],A("mp41")])),o(this,Qe,r(this,Ke).pos),"in-memory"===r(this,Je).fastStart)o(this,Xe,V(!1));else if("fragmented"===r(this,Je).fastStart);else{if("object"==typeof r(this,Je).fastStart){let e=h(this,dt,ft).call(this);r(this,Ke).seek(r(this,Ke).pos+e)}o(this,Xe,V(!0)),r(this,Ke).writeBox(r(this,Xe))}h(this,zt,Et).call(this)},dt=new WeakSet,ft=function(){if("object"!=typeof r(this,Je).fastStart)return;let e=0,t=[r(this,Je).fastStart.expectedVideoChunks,r(this,Je).fastStart.expectedAudioChunks];for(let i of t)i&&(e+=8*Math.ceil(2/3*i),e+=4*i,e+=12*Math.ceil(2/3*i),e+=4*i,e+=8*i);return e+=4096,e},ut=new WeakSet,mt=function(){if(r(this,Je).video&&o(this,Ye,{id:1,info:{type:"video",codec:r(this,Je).video.codec,width:r(this,Je).video.width,height:r(this,Je).video.height,rotation:r(this,Je).video.rotation??0,decoderConfig:null},timescale:r(this,Je).video.frameRate??57600,samples:[],finalizedChunks:[],currentChunk:null,firstDecodeTimestamp:void 0,lastDecodeTimestamp:-1,timeToSampleTable:[],compositionTimeOffsetTable:[],lastTimescaleUnits:null,lastSample:null,compactlyCodedChunkTable:[]}),r(this,Je).audio&&(o(this,Ze,{id:r(this,Je).video?2:1,info:{type:"audio",codec:r(this,Je).audio.codec,numberOfChannels:r(this,Je).audio.numberOfChannels,sampleRate:r(this,Je).audio.sampleRate,decoderConfig:null},timescale:r(this,Je).audio.sampleRate,samples:[],finalizedChunks:[],currentChunk:null,firstDecodeTimestamp:void 0,lastDecodeTimestamp:-1,timeToSampleTable:[],compositionTimeOffsetTable:[],lastTimescaleUnits:null,lastSample:null,compactlyCodedChunkTable:[]}),"aac"===r(this,Je).audio.codec)){let e=h(this,pt,ct).call(this,2,r(this,Je).audio.sampleRate,r(this,Je).audio.numberOfChannels);r(this,Ze).info.decoderConfig={codec:r(this,Je).audio.codec,description:e,numberOfChannels:r(this,Je).audio.numberOfChannels,sampleRate:r(this,Je).audio.sampleRate}}},pt=new WeakSet,ct=function(e,t,i){let s=[96e3,88200,64e3,48e3,44100,32e3,24e3,22050,16e3,12e3,11025,8e3,7350].indexOf(t),a=i,r="";r+=e.toString(2).padStart(5,"0"),r+=s.toString(2).padStart(4,"0"),15===s&&(r+=t.toString(2).padStart(24,"0")),r+=a.toString(2).padStart(4,"0");let n=8*Math.ceil(r.length/8);r=r.padEnd(n,"0");let o=new Uint8Array(r.length/8);for(let e=0;e<r.length;e+=8)o[e/8]=parseInt(r.slice(e,e+8),2);return o},wt=new WeakSet,gt=function(e,t,i,s,a,r,n){let o=s/1e6,l=(s-(n??0))/1e6,d=a/1e6,f=h(this,kt,Tt).call(this,o,l,e);return o=f.presentationTimestamp,l=f.decodeTimestamp,r?.decoderConfig&&(null===e.info.decoderConfig?e.info.decoderConfig=r.decoderConfig:Object.assign(e.info.decoderConfig,r.decoderConfig)),{presentationTimestamp:o,decodeTimestamp:l,duration:d,data:t,size:t.byteLength,type:i,timescaleUnitsToNextSample:O(d,e.timescale)}},bt=new WeakSet,yt=function(e,t){"fragmented"!==r(this,Je).fastStart&&e.samples.push(t);const i=O(t.presentationTimestamp-t.decodeTimestamp,e.timescale);if(null!==e.lastTimescaleUnits){let s=O(t.decodeTimestamp,e.timescale,!1),a=Math.round(s-e.lastTimescaleUnits);if(e.lastTimescaleUnits+=a,e.lastSample.timescaleUnitsToNextSample=a,"fragmented"!==r(this,Je).fastStart){let t=M(e.timeToSampleTable);1===t.sampleCount?(t.sampleDelta=a,t.sampleCount++):t.sampleDelta===a?t.sampleCount++:(t.sampleCount--,e.timeToSampleTable.push({sampleCount:2,sampleDelta:a}));const s=M(e.compositionTimeOffsetTable);s.sampleCompositionTimeOffset===i?s.sampleCount++:e.compositionTimeOffsetTable.push({sampleCount:1,sampleCompositionTimeOffset:i})}}else e.lastTimescaleUnits=0,"fragmented"!==r(this,Je).fastStart&&(e.timeToSampleTable.push({sampleCount:1,sampleDelta:O(t.duration,e.timescale)}),e.compositionTimeOffsetTable.push({sampleCount:1,sampleCompositionTimeOffset:i}));e.lastSample=t;let s=!1;if(e.currentChunk){let i=t.presentationTimestamp-e.currentChunk.startTimestamp;if("fragmented"===r(this,Je).fastStart){let a=r(this,Ye)??r(this,Ze);const n=r(this,Je).minFragmentDuration??1;e===a&&"key"===t.type&&i>=n&&(s=!0,h(this,St,xt).call(this))}else s=i>=.5}else s=!0;s&&(e.currentChunk&&h(this,Ct,vt).call(this,e),e.currentChunk={startTimestamp:t.presentationTimestamp,samples:[]}),e.currentChunk.samples.push(t)},kt=new WeakSet,Tt=function(e,t,i){const s="strict"===r(this,Je).firstTimestampBehavior,a=-1===i.lastDecodeTimestamp;if(s&&a&&0!==t)throw new Error(`The first chunk for your media track must have a timestamp of 0 (received DTS=${t}).Non-zero first timestamps are often caused by directly piping frames or audio data from a MediaStreamTrack into the encoder. Their timestamps are typically relative to the age of thedocument, which is probably what you want.\n\nIf you want to offset all timestamps of a track such that the first one is zero, set firstTimestampBehavior: 'offset' in the options.\n`);if("offset"===r(this,Je).firstTimestampBehavior||"cross-track-offset"===r(this,Je).firstTimestampBehavior){let s;void 0===i.firstDecodeTimestamp&&(i.firstDecodeTimestamp=t),s="offset"===r(this,Je).firstTimestampBehavior?i.firstDecodeTimestamp:Math.min(r(this,Ye)?.firstDecodeTimestamp??1/0,r(this,Ze)?.firstDecodeTimestamp??1/0),t-=s,e-=s}if(t<i.lastDecodeTimestamp)throw new Error(`Timestamps must be monotonically increasing (DTS went from ${1e6*i.lastDecodeTimestamp} to ${1e6*t}).`);return i.lastDecodeTimestamp=t,{presentationTimestamp:e,decodeTimestamp:t}},Ct=new WeakSet,vt=function(e){if("fragmented"===r(this,Je).fastStart)throw new Error("Can't finalize individual chunks if 'fastStart' is set to 'fragmented'.");if(e.currentChunk)if(e.finalizedChunks.push(e.currentChunk),r(this,tt).push(e.currentChunk),0!==e.compactlyCodedChunkTable.length&&M(e.compactlyCodedChunkTable).samplesPerChunk===e.currentChunk.samples.length||e.compactlyCodedChunkTable.push({firstChunk:e.finalizedChunks.length,samplesPerChunk:e.currentChunk.samples.length}),"in-memory"!==r(this,Je).fastStart){e.currentChunk.offset=r(this,Ke).pos;for(let t of e.currentChunk.samples)r(this,Ke).write(t.data),t.data=null;h(this,zt,Et).call(this)}else e.currentChunk.offset=0},St=new WeakSet,xt=function(e=!0){if("fragmented"!==r(this,Je).fastStart)throw new Error("Can't finalize a fragment unless 'fastStart' is set to 'fragmented'.");let t=[r(this,Ye),r(this,Ze)].filter((e=>e&&e.currentChunk));if(0===t.length)return;let i=(s=this,a=it,{set _(e){o(s,a,e,n)},get _(){return r(s,a,l)}})._++;var s,a,n,l;if(1===i){let e=F(t,r(this,et),!0);r(this,Ke).writeBox(e)}let d=r(this,Ke).pos,f=ce(i,t);r(this,Ke).writeBox(f);{let e=V(!1),i=0;for(let e of t)for(let t of e.currentChunk.samples)i+=t.size;let s=r(this,Ke).measureBox(e)+i;s>=2**32&&(e.largeSize=!0,s=r(this,Ke).measureBox(e)+i),e.size=s,r(this,Ke).writeBox(e)}for(let e of t){e.currentChunk.offset=r(this,Ke).pos,e.currentChunk.moofOffset=d;for(let t of e.currentChunk.samples)r(this,Ke).write(t.data),t.data=null}let u=r(this,Ke).pos;r(this,Ke).seek(r(this,Ke).offsets.get(f));let m=ce(i,t);r(this,Ke).writeBox(m),r(this,Ke).seek(u);for(let e of t)e.finalizedChunks.push(e.currentChunk),r(this,tt).push(e.currentChunk),e.currentChunk=null;e&&h(this,zt,Et).call(this)},zt=new WeakSet,Et=function(){r(this,Ke)instanceof Ge&&r(this,Ke).flush()},At=new WeakSet,Mt=function(){if(r(this,rt))throw new Error("Cannot add new video or audio chunks after the file has been finalized.")},Wt=l,((a,r,n,o)=>{if(r&&"object"==typeof r||"function"==typeof r)for(let h of i(r))s.call(a,h)||h===n||e(a,h,{get:()=>r[h],enumerable:!(o=t(r,h))||o.enumerable});return a})(e({},"__esModule",{value:!0}),Wt)})();"object"==typeof module&&"object"==typeof module.exports&&Object.assign(module.exports,Mp4Muxer);
+//# sourceMappingURL=/sm/d72d5cf9845053fd379eb03c8aa0076e0f937f51c85e59b9c023ad3f33721c0b.map
+
+</script>
+<script>
+
+/* ============================================================
+   RENDER MODE — headless deterministic video render.
+   URL: ?render=1&seed=SEED&fps=30&seconds=300&qid=ID&w=1280&h=720
+   The studio's rAF loop must honor window.__renderMode (see surgical
+   edit in the studio's frame loop): fixed dt = 1/fps, time = frame/fps.
+   Encoding: WebCodecs VideoEncoder (H.264) + inlined mp4-muxer.
+   Same seed + same settings = identical video, every time.
+   ============================================================ */
+(function () {
+  'use strict';
+  var qs = new URLSearchParams(location.search);
+  if (qs.get('render') !== '1') return;
+
+  var fps = Math.min(120, Math.max(1, parseInt(qs.get('fps'), 10) || 30));
+  var seconds = Math.min(3600, Math.max(5, parseInt(qs.get('seconds'), 10) || 300));
+  var _wu = parseInt(qs.get('warmup'), 10);
+  var warmupFrames = (isNaN(_wu) || _wu < 0) ? 90 : Math.min(_wu, 600);
+  var totalFrames = fps * seconds;
+  var seed = qs.get('seed') || '';
+  var qid = qs.get('qid') || '';
+  var W = parseInt(qs.get('w'), 10) || 1280;
+  var H = parseInt(qs.get('h'), 10) || 720;
+  var studioLabel = ((document.title || 'Studio').split('\u2014')[0] || 'Studio').trim();
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function fmtDur(s) { s = +s; return s >= 60 ? (s / 60) + ' min' : s + ' sec'; }
+  function fmtTime(s) { s = Math.max(0, Math.round(s)); var m = Math.floor(s / 60); return m + ':' + ('0' + (s % 60)).slice(-2); }
+
+  /* ---- shared state read by the studio's frame loop ---- */
+  var RM = window.__renderMode = {
+    fps: fps, W: W, H: H,
+    frame: 0, warmup: warmupFrames, totalFrames: totalFrames,
+    phase: 'warmup', paused: false, _bp: false,
+    onPhase: null, onFrame: null
+  };
+
+  /* ---- take over the page ----
+     Generic: works no matter what the studio names its canvas or how deep
+     it sits in the DOM. The canvas's ancestor chain is kept visible so the
+     small live preview survives; everything else is hidden for speed. */
+  var css = document.createElement('style');
+  css.textContent =
+    'body.rendering>*:not(#rmOverlay):not(script):not(style):not([data-rm-keep]){display:none!important;}' +
+    'body.rendering #rmOverlay{display:flex!important;}';
+  document.head.appendChild(css);
+  document.body.classList.add('rendering');
+  try {
+    var _rc = window.__renderCanvas || document.querySelector('canvas');
+    if (_rc) {
+      var _n = _rc;
+      while (_n && _n !== document.body) { _n.setAttribute('data-rm-keep', '1'); _n = _n.parentElement; }
+      _rc.style.setProperty('display', 'block', 'important');
+      _rc.style.setProperty('position', 'fixed', 'important');
+      _rc.style.setProperty('right', '12px', 'important');
+      _rc.style.setProperty('top', '12px', 'important');
+      _rc.style.setProperty('width', '168px', 'important');
+      _rc.style.setProperty('height', '94px', 'important');
+      _rc.style.setProperty('z-index', '60', 'important');
+      _rc.style.setProperty('border-radius', '10px', 'important');
+      _rc.style.setProperty('border', '1px solid rgba(255,255,255,.25)', 'important');
+    }
+  } catch (e) {}
+
+  var overlay = document.createElement('div');
+  overlay.id = 'rmOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;' +
+    'align-items:center;justify-content:center;background:#0b0e14;color:#e8ecf4;' +
+    'font-family:-apple-system,system-ui,sans-serif;padding:24px;text-align:center;';
+  overlay.innerHTML =
+    '<div style="font-size:15px;color:#8b95ab;margin-bottom:6px">\uD83C\uDFAC Rendering</div>' +
+    '<div style="font-size:22px;font-weight:800;margin-bottom:4px">' + esc(studioLabel) + '</div>' +
+    '<div style="font-size:13px;color:#8b95ab;margin-bottom:18px;font-family:ui-monospace,monospace">seed ' + esc(seed) + ' \u00B7 ' + W + '\u00D7' + H + ' \u00B7 ' + fps + 'fps \u00B7 ' + fmtDur(seconds) + '</div>' +
+    '<div style="width:min(320px,80vw);height:10px;background:#1a2236;border-radius:99px;overflow:hidden;margin-bottom:10px">' +
+    '<div id="rmBar" style="height:100%;width:0%;background:#2f7bff;border-radius:99px;transition:width .3s"></div></div>' +
+    '<div id="rmStatus" style="font-size:14px;color:#c6cfe4;margin-bottom:4px">Preparing\u2026</div>' +
+    '<div id="rmEta" style="font-size:12px;color:#8b95ab;margin-bottom:22px"></div>' +
+    '<div style="display:flex;gap:10px">' +
+    '<button id="rmPause" style="font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 22px;background:#1a2236;color:#fff">\u23F8 Pause</button>' +
+    '<button id="rmCancel" style="font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 22px;background:#3a1d1d;color:#ff9c9c">\u2715 Cancel</button>' +
+    '</div>' +
+    '<div style="font-size:12px;color:#5b6b8c;margin-top:18px;max-width:300px;line-height:1.6">Keep this tab open while rendering.<br>You can pause anytime \u2014 but closing this tab loses the render.</div>';
+  document.body.appendChild(overlay);
+
+  function setStatus(s) { var el = document.getElementById('rmStatus'); if (el) el.textContent = s; }
+  function fail(msg) {
+    RM.phase = 'cancelled'; RM.onFrame = null;
+    try { if (encoder) encoder.close(); } catch (e) {}
+    setStatus('\u26A0\uFE0F ' + msg);
+    var b = document.getElementById('rmEta');
+    if (b) b.textContent = 'Nothing was rendered.';
+  }
+
+  /* ---- encoder ---- */
+  var encoder = null, muxer = null, encodedFrames = 0, t0 = 0;
+  var rcanvas = window.__renderCanvas || document.querySelector('canvas');
+
+  RM.onPhase = function (phase) {
+    if (phase === 'reset') doReset();
+    else if (phase === 'done') finishRender();
+  };
+
+  function doReset() {
+    RM.phase = 'reset';
+    try { if (typeof window.__renderReset === 'function') window.__renderReset(); } catch (e) {}
+    RM.frame = 0;
+    if (!setupEncoder()) return;
+    RM.phase = 'record';
+    t0 = performance.now();
+    setStatus('Rendering\u2026');
+  }
+
+  function setupEncoder() {
+    if (typeof VideoEncoder === 'undefined') {
+      fail('This browser can\u2019t do headless rendering (needs WebCodecs). Try Safari on iOS 17.4+.');
+      return false;
+    }
+    if (typeof Mp4Muxer === 'undefined') { fail('Video muxer failed to load.'); return false; }
+    try {
+      muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: { codec: 'avc', width: W, height: H },
+        fastStart: 'in-memory',
+        firstTimestampBehavior: 'offset'
+      });
+      encoder = new VideoEncoder({
+        output: function (chunk, meta) {
+          try { muxer.addVideoChunk(chunk, meta); } catch (e) {}
+          if (RM._bp && encoder.encodeQueueSize < 20) RM._bp = false;
+        },
+        error: function (e) { fail('Encoder error: ' + (e && e.message)); }
+      });
+      /* Note: iOS Safari's isConfigSupported can falsely report H.264 as
+         unsupported, so we skip the check and just configure. */
+      encoder.configure({
+        codec: 'avc1.640028', width: W, height: H,
+        bitrate: Math.min(40000000, Math.round(12000000 * (W * H) / (1280 * 720))),
+        framerate: fps
+      });
+      RM.onFrame = encodeFrame;
+      return true;
+    } catch (e) {
+      fail('Couldn\u2019t start the encoder: ' + e.message);
+      return false;
+    }
+  }
+
+  function encodeFrame(idx) {
+    if (!encoder || RM.phase !== 'record' || !rcanvas) return;
+    if (encoder.encodeQueueSize > 90) { RM._bp = true; return; }
+    var vf = null;
+    try { vf = new VideoFrame(rcanvas, { timestamp: Math.round(idx * 1e6 / fps) }); }
+    catch (e) { return; }
+    try { encoder.encode(vf, { keyFrame: idx % (fps * 5) === 0 }); } catch (e) {}
+    try { vf.close(); } catch (e) {}
+    encodedFrames = idx + 1;
+    if ((idx & 15) === 0) updateProgress();
+  }
+
+  function updateProgress() {
+    var pct = Math.min(100, (encodedFrames / totalFrames) * 100);
+    var bar = document.getElementById('rmBar');
+    if (bar) bar.style.width = pct.toFixed(1) + '%';
+    var el = (performance.now() - t0) / 1000;
+    var rate = encodedFrames / Math.max(el, 0.1);
+    var remain = rate > 0.01 ? (totalFrames - encodedFrames) / rate : 0;
+    setStatus('Frame ' + encodedFrames.toLocaleString() + ' / ' + totalFrames.toLocaleString() + ' (' + pct.toFixed(0) + '%)');
+    var eta = document.getElementById('rmEta');
+    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall';
+  }
+
+  async function finishRender() {
+    RM.phase = 'done'; RM.onFrame = null;
+    updateProgress();
+    setStatus('Finishing video\u2026');
+    try {
+      if (encoder) await encoder.flush();
+      if (muxer) muxer.finalize();
+    } catch (e) { fail('Couldn\u2019t finish the video: ' + e.message); return; }
+    var buf = muxer.target.buffer;
+    if (!buf || !buf.byteLength) { fail('The video came out empty.'); return; }
+    try { window.__renderResult = buf; } catch (e) {} /* lets automated tests grab the MP4 */
+    var blob = new Blob([buf], { type: 'video/mp4' });
+    var cleanSeed = seed.replace(/[^A-Za-z0-9]+/g, '').slice(0, 14) || 'seed';
+    var name = studioLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') +
+      '-' + cleanSeed + '-' + seconds + 's.mp4';
+    showDone(blob, name);
+    markQueueDone();
+  }
+
+  function showDone(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var mb = (blob.size / 1048576).toFixed(1);
+    overlay.innerHTML =
+      '<div style="font-size:44px;margin-bottom:10px">\u2705</div>' +
+      '<div style="font-size:20px;font-weight:800;margin-bottom:6px">Your video is ready</div>' +
+      '<div style="font-size:13px;color:#8b95ab;margin-bottom:20px;font-family:ui-monospace,monospace">' + esc(name) + ' \u00B7 ' + mb + ' MB</div>' +
+      '<button id="rmShare" style="font-size:17px;font-weight:800;border:0;border-radius:14px;padding:16px 30px;background:#2f7bff;color:#fff;margin-bottom:12px">Share video</button>' +
+      '<div style="font-size:12px;color:#8b95ab;max-width:300px;line-height:1.6">Share \u2192 Save to Files \u2192 your SSD.<br>Or use the download link below.</div>' +
+      '<a id="rmDl" href="' + url + '" download="' + esc(name) + '" style="margin-top:14px;color:#9cc3ff;font-size:14px">Download instead</a>';
+    document.getElementById('rmShare').onclick = function () {
+      var file = new File([blob], name, { type: 'video/mp4' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: name }).catch(function () {});
+      } else {
+        document.getElementById('rmDl').click();
+      }
+    };
+  }
+
+  async function markQueueDone() {
+    var token = null;
+    try { token = localStorage.getItem('rq_token'); } catch (e) {}
+    if (!token || !qid) return;
+    try {
+      var api = 'https://api.github.com/repos/bassseamoor/render-queue/contents/queue.json';
+      var h = { Authorization: 'Bearer ' + token };
+      var r = await fetch(api, { headers: h });
+      if (!r.ok) return;
+      var j = await r.json();
+      var data = JSON.parse(atob(j.content));
+      var it = (data.items || []).find(function (x) { return x.id === qid; });
+      if (!it) return;
+      it.status = 'done';
+      await fetch(api, {
+        method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, h),
+        body: JSON.stringify({
+          message: 'Mark render done', sha: j.sha,
+          content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))))
+        })
+      });
+    } catch (e) {}
+  }
+
+  document.getElementById('rmPause').onclick = function () {
+    if (RM.phase !== 'record' && RM.phase !== 'warmup') return;
+    RM.paused = !RM.paused;
+    this.textContent = RM.paused ? '\u25B6 Resume' : '\u23F8 Pause';
+    setStatus(RM.paused ? 'Paused \u2014 nothing is lost.' : (RM.phase === 'record' ? 'Rendering\u2026' : 'Preparing\u2026'));
+  };
+  document.getElementById('rmCancel').onclick = function () {
+    RM.phase = 'cancelled'; RM.onFrame = null;
+    try { if (encoder) encoder.close(); } catch (e) {}
+    overlay.innerHTML =
+      '<div style="font-size:20px;font-weight:800;margin-bottom:8px">Cancelled</div>' +
+      '<div style="font-size:13px;color:#8b95ab;margin-bottom:18px">No video was saved.</div>' +
+      '<button onclick="location.href=\u2018https://bassseamoor.github.io/render-queue/\u2019" ' +
+      'style="font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 24px;background:#1a2236;color:#fff">Back to queue</button>';
+  };
+
+  /* ---- force render-size drawing buffer, keep screen awake ----
+     Set the buffer directly (reliable) and also try the studio's own
+     resize path if it exposes one (it may reallocate its targets). */
+  try {
+    if (rcanvas) { rcanvas.width = W; rcanvas.height = H; }
+    if (typeof loop !== 'undefined' && loop && loop.resize) { try { loop.resize(); } catch (e) {} }
+  } catch (e) {}
+  try {
+    if (navigator.wakeLock) {
+      var keepAwake = function () { navigator.wakeLock.request('screen').catch(function () {}); };
+      keepAwake();
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) keepAwake(); });
+    }
+  } catch (e) {}
+  setStatus('Preparing\u2026 (warming up)');
+})();
+
+
+</script>
+</body>
+</html>
