@@ -104,11 +104,11 @@ with sync_playwright() as p:
  # fixtures. This tests DOMParser/script sequence, not internet availability.
  page=browser.new_page(viewport={'width':1024,'height':768})
  bootErrors=[];page.on('pageerror',lambda e:bootErrors.append(str(e)))
- sources={'vendor/road-atlas-baseline-329a68a.html':baseline.replace('randomSeed:function(){return randomSeedStr();}',"randomSeed:function(){return '"+SEEDS[0]+"';}"),'road-atlas-pipeline.js':module,'road-atlas-conditions.js':(ROOT/'road-atlas-conditions.js').read_text()}
+ sources={'vendor/road-atlas-baseline-329a68a.html':baseline.replace('randomSeed:function(){return randomSeedStr();}',"randomSeed:function(){return '"+SEEDS[0]+"';}"),'road-atlas-pipeline.js':module,'road-atlas-conditions.js':(ROOT/'road-atlas-conditions.js').read_text(),'road-atlas-urban.js':(ROOT/'road-atlas-urban.js').read_text()}
  mock='<script>window.fetch=async function(path){const f='+json.dumps(sources).replace('</','<\\/')+';const k=String(path).replace(/^\\.\\//,\'\').split(\'?\')[0];return new Response(f[k]||\'missing\',{status:f[k]?200:404});};</script>'
  boot=(SITE/'road-atlas-v2.html').read_text().replace('<script>',mock+'<script>',1)
  page.set_content(boot,wait_until='load');page.wait_for_function('window.RoadAtlasPipeline && world && world.pipeline')
- check('Shipped asynchronous boot executes exactly one initial build',page.evaluate("world.pipeline.version==='2.2.0' && document.querySelectorAll('.sc-pill').length===1") and not bootErrors,bootErrors)
+ check('Shipped asynchronous boot executes exactly one initial build',page.evaluate("world.pipeline.version==='2.3.0' && document.querySelectorAll('.sc-pill').length===1") and not bootErrors,bootErrors)
  page.close();browser.close()
 check('No uncaught browser errors',not report['errors'],report['errors'])
 report['passed']=all(c['passed'] for c in report['checks']);report['testCount']=len(report['checks'])
