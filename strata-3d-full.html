@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>STRATA · Living Canyon</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui;-webkit-user-select:none;user-select:none;}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;}
+#title{position:fixed;top:14px;left:16px;z-index:10;color:#fff;font-size:15px;letter-spacing:4px;opacity:.9;pointer-events:none;text-shadow:0 1px 8px rgba(0,0,0,.5);}
+#title small{display:block;font-size:10px;letter-spacing:1px;opacity:.5;margin-top:2px;}
+#seedbar{position:fixed;bottom:14px;left:12px;right:12px;z-index:20;display:flex;gap:8px;align-items:center;
+ background:rgba(20,20,24,.72);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:16px;padding:8px 8px 8px 14px;}
+#seedtxt{flex:1;color:#fff;font:12px monospace;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sbtn{width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.12);color:#fff;font-size:20px;flex-shrink:0;}
+.sbtn:active{background:rgba(255,255,255,.25);}
+/* Seed console modal */
+#console{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.85);display:none;overflow-y:auto;padding:20px;box-sizing:border-box;}
+#console.open{display:block;}
+#console h2{color:#fff;font-size:18px;margin:0 0 16px;}
+#console .row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+#console button{background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:12px;padding:12px 16px;font-size:14px;}
+#console button:active{background:rgba(255,255,255,.25);}
+#console .close{position:sticky;top:0;float:right;font-size:24px;padding:8px 12px;}
+#favGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;}
+#favGrid img{width:100%;border-radius:8px;aspect-ratio:9/16;object-fit:cover;}
+#favGrid .fav{position:relative;}
+#favGrid .del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);color:#fff;border:none;border-radius:50%;width:28px;height:28px;font-size:14px;}
+#histList{color:#fff;font:12px monospace;opacity:.7;margin-top:12px;max-height:200px;overflow-y:auto;}
+#histList div{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.1);}
+/* Customize panel */
+#custom{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.9);display:none;overflow-y:auto;padding:20px;box-sizing:border-box;}
+#custom.open{display:block;}
+#custom h2{color:#fff;font-size:18px;margin:0 0 16px;}
+#custom label{color:#fff;font-size:14px;display:block;margin:16px 0 8px;}
+#custom input[type=range]{width:100%;}
+#custom .val{color:#fff;opacity:.6;font-size:12px;}
+</style>
+</head><body>
+<canvas id="gl"></canvas>
+<div id="title">STRATA<small id="seedline"></small></div>
+<div id="seedbar">
+ <div id="seedtxt">…</div>
+ <button class="sbtn" id="bNew" title="New">🎲</button>
+ <button class="sbtn" id="bRemix" title="Remix">🌀</button>
+ <button class="sbtn" id="bFav" title="Favorites">⭐</button>
+ <button class="sbtn" id="bRec" title="Record">🎬</button>
+ <button class="sbtn" id="bSet" title="Settings">⚙️</button>
+</div>
+
+<div id="console">
+ <button class="close" id="cClose">×</button>
+ <h2>Seeds</h2>
+ <div class="row">
+  <button id="cNew">🎲 New Random</button>
+  <button id="cRemix">🌀 Remix</button>
+  <button id="cCustom">🎛 Customize</button>
+ </div>
+ <h2 style="margin-top:20px;">⭐ Favorites</h2>
+ <div id="favGrid"></div>
+ <h2 style="margin-top:20px;">History</h2>
+ <div id="histList"></div>
+</div>
+
+<div id="custom">
+ <button class="close" id="xClose" style="position:sticky;top:0;float:right;background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:12px;padding:8px 12px;font-size:24px;">×</button>
+ <h2>Customize</h2>
+ <label>Formations <span class="val" id="vForm"></span></label>
+ <input type="range" id="rForm" min="1" max="5" step="1">
+ <label>Trees <span class="val" id="vTree"></span></label>
+ <input type="range" id="rTree" min="0" max="1" step="0.05">
+ <label>Mist <span class="val" id="vMist"></span></label>
+ <input type="range" id="rMist" min="0" max="1" step="0.05">
+ <label>Drift <span class="val" id="vDrift"></span></label>
+ <input type="range" id="rDrift" min="0" max="1" step="0.05">
+ <label>Glow <span class="val" id="vGlow"></span></label>
+ <input type="range" id="rGlow" min="0" max="1" step="0.05">
+ <div class="row" style="display:flex;gap:8px;margin-top:20px;">
+  <button id="xApply" style="background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:12px;padding:12px 16px;font-size:14px;flex:1;">Apply</button>
+ </div>
+</div>
+
+<script>
+'use strict';
+/* STRATA 3D Studio — full rebuild on working 3D foundation.
+   Real canyon geometry, baked vertex colors, cloud-cliffs, trees, dust.
+   Full seed console: random, remix, customize, favorites, history, record. */
+
+// ---------- seeded RNG ----------
+function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return function(){h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return (h^=h>>>16)>>>0;};}
+function mulberry32(a){return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;};}
+function rngFrom(s){return mulberry32(xmur3(s)());}
+function makeNoise2D(seed){
+  const r=rngFrom(seed);
+  const perm=new Uint8Array(512), p=new Uint8Array(256);
+  for(let i=0;i<256;i++)p[i]=i;
+  for(let i=255;i>0;i--){const j=Math.floor(r()*(i+1));const t=p[i];p[i]=p[j];p[j]=t;}
+  for(let i=0;i<512;i++)perm[i]=p[i&255];
+  const grad=new Float32Array(256);
+  for(let i=0;i<256;i++)grad[i]=r()*2-1;
+  function n2(x,y){
+    const X=Math.floor(x)&255,Y=Math.floor(y)&255;
+    x-=Math.floor(x);y-=Math.floor(y);
+    const u=x*x*(3-2*x),v=y*y*(3-2*y);
+    const a=perm[X+perm[Y]],b=perm[X+1+perm[Y]],c=perm[X+perm[Y+1]],d=perm[X+1+perm[Y+1]];
+    return (grad[a]*(1-u)+grad[b]*u)*(1-v)+(grad[c]*(1-u)+grad[d]*u)*v;
+  }
+  function fbm(x,y,oct){let s=0,a=.5,f=1,n=0;for(let i=0;i<oct;i++){s+=a*n2(x*f,y*f);n+=a;a*=.5;f*=2.03;}return s/n*.5+.5;}
+  return {fbm};
+}
+function hexRgb(h){return [parseInt(h.slice(1,3),16)/255,parseInt(h.slice(3,5),16)/255,parseInt(h.slice(5,7),16)/255];}
+function lerp(a,b,t){return a+(b-a)*t;}
+function lerpRgb(c1,c2,t){return [lerp(c1[0],c2[0],t),lerp(c1[1],c2[1],t),lerp(c1[2],c2[2],t)];}
+
+// ---------- seed ----------
+const B36='0123456789abcdefghijklmnopqrstuvwxyz';
+function rcN(n){let s='';for(let i=0;i<n;i++)s+=B36[Math.floor(Math.random()*36)];return s;}
+function parseSeed(s){
+  const m=/^SPX1\.([0-9a-z]{4})\.([0-9a-z]{4})\.([0-9a-z]{6})$/i.exec(String(s||'').trim());
+  if(!m)return null;
+  const pc=m[3], cv=c=>B36.indexOf(c.toLowerCase());
+  return {layout:parseInt(m[1],36)>>>0, detail:parseInt(m[2],36)>>>0,
+    palette:cv(pc[0])%5, formations:1+cv(pc[1])%5, trees:cv(pc[2])/35,
+    mist:cv(pc[3])/35, drift:cv(pc[4])/35, glow:cv(pc[5])/35};
+}
+function randomSeedStr(){return 'SPX1.'+rcN(4)+'.'+rcN(4)+'.'+B36[Math.floor(Math.random()*5)]+rcN(5);}
+function remixSeedStr(st){
+  const j=()=>Math.floor(Math.random()*36);
+  // Keep palette, vary formations slightly, randomize others
+  return 'SPX1.'+rcN(4)+'.'+rcN(4)+'.'+B36[st.palette%5]+B36[(st.formations-1+Math.floor(Math.random()*3)-1+5)%5]+rcN(4);
+}
+function seedFromParams(pal,form,tree,mist,drift,glow){
+  return 'SPX1.'+rcN(4)+'.'+rcN(4)+'.'+B36[pal%5]+B36[(form-1)%5]+B36[Math.round(tree*35)%36]+B36[Math.round(mist*35)%36]+B36[Math.round(drift*35)%36]+B36[Math.round(glow*35)%36];
+}
+
+// ---------- palettes ----------
+const PALETTES=[
+ {sky:['#2a3a5c','#7a9ab5','#e8e0d0'],cloud:['#f8f4ec','#d8e2ee','#9ab0c8'],wall:['#d96f32','#a34a22','#5e2c16'],moss:['#c0aa4e','#6d7a2c'],tree:'#1a2a1a'},
+ {sky:['#3a2b3f','#b0563a','#f2d8a8'],cloud:['#f6e3c2','#d9b48c','#a08a72'],wall:['#e07b2e','#9c4a1e','#542512'],moss:['#c2a13f','#77662a'],tree:'#2a1f1a'},
+ {sky:['#0e1626','#2c3d5c','#9fb2cc'],cloud:['#e8eef6','#b9c7da','#7a8aa8'],wall:['#8a5a3a','#5e3a26','#2e1c12'],moss:['#7a8a3a','#3f4a22'],tree:'#0f1a0f'},
+ {sky:['#1e3328','#5a7a52','#d8e0c0'],cloud:['#f0f2e2','#c2d0ae','#8a9a7a'],wall:['#b86a32','#7e4420','#40220f'],moss:['#cdbb4a','#7a8a2e'],tree:'#1a2a12'},
+ {sky:['#4a2e3f','#b06a7a','#f2d8c8'],cloud:['#f8ece2','#d8b8ac','#a88a9a'],wall:['#c65a3a','#8a3a24','#482016'],moss:['#b89a48','#6a5e2a'],tree:'#241a1a'},
+];
+
+// ---------- canyon mesh with detailed baked colors ----------
+function buildCanyon(seedStr, pal, formations, gridN, size){
+  const nz=makeNoise2D('terr'+seedStr);
+  const verts=[],normals=[],colors=[],indices=[];
+  const wallHi=hexRgb(pal.wall[0]), wallMid=hexRgb(pal.wall[1]), wallLo=hexRgb(pal.wall[2]);
+  const mossHi=hexRgb(pal.moss[0]), mossLo=hexRgb(pal.moss[1]);
+  for(let j=0;j<=gridN;j++)for(let i=0;i<=gridN;i++){
+    const x=(i/gridN-.5)*size, z=(j/gridN-.5)*size-12;
+    const wallF=Math.min(1,Math.max(0,(Math.abs(x)-5)/9));
+    const hBase=wallF*wallF*(8+formations*1.5);
+    const detail=nz.fbm(x*.08,z*.08,4)*3*(.3+wallF);
+    const strata=Math.sin(z*.45+wallF*4)*.9*wallF;
+    const y=hBase+detail+strata-2;
+    verts.push(x,y,z);
+    // Detailed color: strata bands by height + noise variation
+    const band=Math.sin(y*1.2+nz.fbm(x*.2,z*.2,2)*3)*.5+.5; // 0-1 strata band
+    const vn=nz.fbm(x*.5,z*.5,3); // fine detail noise
+    let r,g,b;
+    if(wallF>.4){
+      // Rock: mix between wall colors based on band + height
+      const t=Math.min(1,Math.max(0,(y+2)/12)); // 0 at bottom, 1 at top
+      let base;
+      if(band<.33)base=lerpRgb(wallLo,wallMid,band/.33);
+      else if(band<.66)base=lerpRgb(wallMid,wallHi,(band-.33)/.33);
+      else base=lerpRgb(wallHi,wallMid,(band-.66)/.34);
+      // Darken crevices, lighten ridges
+      const shade=.85+vn*.3;
+      r=base[0]*shade;g=base[1]*shade;b=base[2]*shade;
+    }else{
+      // Moss/ground: mix moss colors with noise
+      const base=lerpRgb(mossLo,mossHi,vn);
+      const shade=.9+vn*.2;
+      r=base[0]*shade;g=base[1]*shade;b=base[2]*shade;
+    }
+    colors.push(Math.min(1,r),Math.min(1,g),Math.min(1,b));
+  }
+  // Normals
+  for(let j=0;j<=gridN;j++)for(let i=0;i<=gridN;i++){
+    const il=Math.max(0,i-1),ir=Math.min(gridN,i+1),jd=Math.max(0,j-1),ju=Math.min(gridN,j+1);
+    const l=(j*(gridN+1)+il)*3,r=(j*(gridN+1)+ir)*3,d=(jd*(gridN+1)+i)*3,u=(ju*(gridN+1)+i)*3;
+    const dx=verts[r]-verts[l],dy=verts[r+1]-verts[l+1],dz=verts[r+2]-verts[l+2];
+    const ex=verts[u]-verts[d],ey=verts[u+1]-verts[d+1],ez=verts[u+2]-verts[d+2];
+    let nx=dy*ez-dz*ey,ny=dz*ex-dx*ez,nz2=dx*ey-dy*ex;
+    const len=Math.hypot(nx,ny,nz2)||1;
+    normals.push(nx/len,ny/len,nz2/len);
+  }
+  for(let j=0;j<gridN;j++)for(let i=0;i<gridN;i++){
+    const a=j*(gridN+1)+i,b=a+1,c=a+gridN+1,d=c+1;
+    indices.push(a,c,b,b,c,d);
+  }
+  return {verts:new Float32Array(verts),normals:new Float32Array(normals),
+    colors:new Float32Array(colors),indices:new Uint16Array(indices),count:indices.length};
+}
+
+// ---------- cloud puff (displaced sphere) ----------
+function buildPuff(seedStr, gridN){
+  const nz=makeNoise2D('puff'+seedStr);
+  const verts=[],normals=[],indices=[];
+  for(let j=0;j<=gridN;j++)for(let i=0;i<=gridN;i++){
+    const th=(i/gridN)*Math.PI*2, ph=(j/gridN)*Math.PI;
+    let x=Math.sin(ph)*Math.cos(th), y=Math.cos(ph), z=Math.sin(ph)*Math.sin(th);
+    const d=1+(nz.fbm(x*1.5+5,z*1.5+y,3)-.5)*.6;
+    x*=d;y*=d*.7;z*=d;
+    verts.push(x,y,z);
+    const len=Math.hypot(x,y,z)||1;
+    normals.push(x/len,y/len,z/len);
+  }
+  for(let j=0;j<gridN;j++)for(let i=0;i<gridN;i++){
+    const a=j*(gridN+1)+i,b=a+1,c=a+gridN+1,d=c+1;
+    indices.push(a,b,c,b,d,c);
+  }
+  return {verts:new Float32Array(verts),normals:new Float32Array(normals),
+    indices:new Uint16Array(indices),count:indices.length};
+}
+
+// ---------- tree (cone + trunk) ----------
+function buildTree(){
+  // Simple cone: 8 sides, 3 levels
+  const verts=[],normals=[],indices=[];
+  let vi=0;
+  // Trunk (cylinder)
+  const trunkH=1, trunkR=.15;
+  for(let i=0;i<8;i++){
+    const a1=(i/8)*Math.PI*2, a2=((i+1)/8)*Math.PI*2;
+    verts.push(Math.cos(a1)*trunkR,0,Math.sin(a1)*trunkR,
+               Math.cos(a2)*trunkR,0,Math.sin(a2)*trunkR,
+               Math.cos(a1)*trunkR,trunkH,Math.sin(a1)*trunkR,
+               Math.cos(a2)*trunkR,trunkH,Math.sin(a2)*trunkR);
+    for(let k=0;k<4;k++)normals.push(0,0,1); // simplified
+    indices.push(vi,vi+2,vi+1, vi+1,vi+2,vi+3);
+    vi+=4;
+  }
+  // Foliage (3 stacked cones)
+  const levels=[[1.2,1,2.2],[.9,2,3.2],[.6,2.8,4]];
+  for(const [r,y0,y1] of levels){
+    const base=vi;
+    // Apex
+    verts.push(0,y1,0);normals.push(0,1,0);vi++;
+    // Base ring
+    for(let i=0;i<8;i++){
+      const a=(i/8)*Math.PI*2;
+      verts.push(Math.cos(a)*r,y0,Math.sin(a)*r);
+      normals.push(Math.cos(a)*.5,.5,Math.sin(a)*.5);
+      vi++;
+    }
+    // Side faces
+    for(let i=0;i<8;i++){
+      const b0=base+1+i, b1=base+1+((i+1)%8);
+      indices.push(base,b1,b0);
+    }
+    // Base cap (fan)
+    const cb=vi;verts.push(0,y0,0);normals.push(0,-1,0);vi++;
+    for(let i=0;i<8;i++){
+      const b0=base+1+i, b1=base+1+((i+1)%8);
+      indices.push(cb,b0,b1);
+    }
+  }
+  return {verts:new Float32Array(verts),normals:new Float32Array(normals),
+    indices:new Uint16Array(indices),count:indices.length};
+}
+
+// ---------- matrices ----------
+function mPerspective(fov,aspect,near,far){
+  const f=1/Math.tan(fov/2),nf=1/(near-far);
+  return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0];
+}
+function mLookAt(ex,ey,ez,cx,cy,cz){
+  let zx=ex-cx,zy=ey-cy,zz=ez-cz,l=Math.hypot(zx,zy,zz);zx/=l;zy/=l;zz/=l;
+  let xx=zz,xy=0,xz=-zx;l=Math.hypot(xx,xy,xz)||1;xx/=l;xy/=l;xz/=l;
+  const yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+  return [xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+    -(xx*ex+xy*ey+xz*ez),-(yx*ex+yy*ey+yz*ez),-(zx*ex+zy*ey+zz*ez),1];
+}
+function mMul(a,b){
+  const o=new Array(16);
+  for(let c=0;c<4;c++)for(let r=0;r<4;r++)
+    o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+  return o;
+}
+function mModel(tx,ty,tz,sx,sy,sz){
+  return [sx,0,0,0, 0,sy,0,0, 0,0,sz,0, tx,ty,tz,1];
+}
+
+// ---------- GL ----------
+const canvas=document.getElementById('gl');
+let gl=null;
+// Programs: pCanyon (vertex colors), pSolid (uniform color)
+let pCanyon=null, pSolid=null, pDust=null;
+let aPosC=null,aNorC=null,aColC=null,uMVPC=null,uLightC=null;
+let aPosS=null,aNorS=null,uMVPS=null,uLightS=null,uColorS=null;
+let aPosD=null,uMVPD=null,uColorD=null,uSizeD=null;
+
+let canyonBuf={}, puffBuf={}, treeBuf={}, dustBuf={};
+let canyonCount=0, puffCount=0, treeCount=0, dustCount=0;
+let puffs=[], trees=[], dust=[];
+
+function initGL(){
+  if(gl)return;
+  gl=canvas.getContext('webgl',{antialias:false,alpha:false});
+  if(!gl)throw new Error('no webgl');
+  function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;}
+  // Canyon: vertex colors + lighting
+  pCanyon=gl.createProgram();
+  gl.attachShader(pCanyon,sh(gl.VERTEX_SHADER,
+    'attribute vec3 aPos;attribute vec3 aNor;attribute vec3 aCol;'+
+    'uniform mat4 uMVP;varying vec3 vN;varying vec3 vC;'+
+    'void main(){vN=aNor;vC=aCol;gl_Position=uMVP*vec4(aPos,1.);}'));
+  gl.attachShader(pCanyon,sh(gl.FRAGMENT_SHADER,
+    'precision mediump float;varying vec3 vN;varying vec3 vC;uniform vec3 uLight;'+
+    'void main(){float d=max(dot(normalize(vN),normalize(uLight)),0.);'+
+    'vec3 c=vC*(.35+.65*d);gl_FragColor=vec4(c,1.);}'));
+  gl.linkProgram(pCanyon);
+  aPosC=gl.getAttribLocation(pCanyon,'aPos');aNorC=gl.getAttribLocation(pCanyon,'aNor');aColC=gl.getAttribLocation(pCanyon,'aCol');
+  uMVPC=gl.getUniformLocation(pCanyon,'uMVP');uLightC=gl.getUniformLocation(pCanyon,'uLight');
+  // Solid: uniform color + lighting (puffs, trees)
+  pSolid=gl.createProgram();
+  gl.attachShader(pSolid,sh(gl.VERTEX_SHADER,
+    'attribute vec3 aPos;attribute vec3 aNor;uniform mat4 uMVP;varying vec3 vN;'+
+    'void main(){vN=aNor;gl_Position=uMVP*vec4(aPos,1.);}'));
+  gl.attachShader(pSolid,sh(gl.FRAGMENT_SHADER,
+    'precision mediump float;varying vec3 vN;uniform vec3 uLight;uniform vec3 uColor;'+
+    'void main(){float d=max(dot(normalize(vN),normalize(uLight)),0.);'+
+    'vec3 c=uColor*(.45+.55*d);gl_FragColor=vec4(c,1.);}'));
+  gl.linkProgram(pSolid);
+  aPosS=gl.getAttribLocation(pSolid,'aPos');aNorS=gl.getAttribLocation(pSolid,'aNor');
+  uMVPS=gl.getUniformLocation(pSolid,'uMVP');uLightS=gl.getUniformLocation(pSolid,'uLight');uColorS=gl.getUniformLocation(pSolid,'uColor');
+  // Dust: points
+  pDust=gl.createProgram();
+  gl.attachShader(pDust,sh(gl.VERTEX_SHADER,
+    'attribute vec3 aPos;uniform mat4 uMVP;uniform float uSize;'+
+    'void main(){gl_Position=uMVP*vec4(aPos,1.);gl_PointSize=uSize;}'));
+  gl.attachShader(pDust,sh(gl.FRAGMENT_SHADER,
+    'precision mediump float;uniform vec3 uColor;'+
+    'void main(){vec2 c=gl_PointCoord-.5;if(dot(c,c)>.25)discard;gl_FragColor=vec4(uColor,1.);}'));
+  gl.linkProgram(pDust);
+  aPosD=gl.getAttribLocation(pDust,'aPos');
+  uMVPD=gl.getUniformLocation(pDust,'uMVP');uColorD=gl.getUniformLocation(pDust,'uColor');uSizeD=gl.getUniformLocation(pDust,'uSize');
+  // Buffers
+  canyonBuf={v:gl.createBuffer(),n:gl.createBuffer(),c:gl.createBuffer(),i:gl.createBuffer()};
+  puffBuf={v:gl.createBuffer(),n:gl.createBuffer(),i:gl.createBuffer()};
+  treeBuf={v:gl.createBuffer(),n:gl.createBuffer(),i:gl.createBuffer()};
+  dustBuf={v:gl.createBuffer()};
+}
+
+function uploadMesh(buf,mesh,withColor){
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf.v);gl.bufferData(gl.ARRAY_BUFFER,mesh.verts,gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf.n);gl.bufferData(gl.ARRAY_BUFFER,mesh.normals,gl.STATIC_DRAW);
+  if(withColor){gl.bindBuffer(gl.ARRAY_BUFFER,buf.c);gl.bufferData(gl.ARRAY_BUFFER,mesh.colors,gl.STATIC_DRAW);}
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,buf.i);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,mesh.indices,gl.STATIC_DRAW);
+  return mesh.count;
+}
+
+// ---------- state ----------
+let state={seedStr:'',palette:0,formations:3,trees:.5,mist:.5,drift:.6,glow:.6};
+let simT=0, lastNow=0;
+const FAV_KEY='sc.strata.favs';
+const HIST_KEY='sc.strata.hist';
+
+function getFavs(){try{return JSON.parse(localStorage.getItem(FAV_KEY)||'[]');}catch(e){return[];}}
+function setFavs(f){localStorage.setItem(FAV_KEY,JSON.stringify(f));}
+function getHist(){try{return JSON.parse(localStorage.getItem(HIST_KEY)||'[]');}catch(e){return[];}}
+function addHist(seed){
+  let h=getHist();h=h.filter(s=>s!==seed);h.unshift(seed);h=h.slice(0,50);
+  localStorage.setItem(HIST_KEY,JSON.stringify(h));
+}
+function captureThumb(){
+  try{
+    const t=document.createElement('canvas');t.width=120;t.height=213;
+    t.getContext('2d').drawImage(canvas,0,0,120,213);
+    return t.toDataURL('image/jpeg',.7);
+  }catch(e){return null;}
+}
+
+function applySeed(s, fromUser){
+  const p=parseSeed(s)||parseSeed(randomSeedStr());
+  state.seedStr='SPX1.'+p.layout.toString(36).padStart(4,'0')+'.'+p.detail.toString(36).padStart(4,'0')+'.'+
+    B36[p.palette%5]+B36[(p.formations-1)%5]+B36[Math.round(p.trees*35)%36]+
+    B36[Math.round(p.mist*35)%36]+B36[Math.round(p.drift*35)%36]+B36[Math.round(p.glow*35)%36];
+  const meshSeed=p.layout.toString(36)+p.detail.toString(36);
+  state.palette=p.palette;state.formations=p.formations;state.trees=p.trees;
+  state.mist=p.mist;state.drift=p.drift;state.glow=p.glow;
+  document.getElementById('seedline').textContent=state.seedStr;
+  document.getElementById('seedtxt').textContent=state.seedStr;
+  if(fromUser)addHist(state.seedStr);
+  // Update URL
+  try{history.replaceState(null,'','?seed='+encodeURIComponent(state.seedStr));}catch(e){}
+  try{
+    initGL();
+    const pal=PALETTES[state.palette%5];
+    const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const grid=isMobile?44:60;
+    canyonCount=uploadMesh(canyonBuf,buildCanyon(meshSeed,pal,p.formations,grid,44),true);
+    const puffMesh=buildPuff(meshSeed,18);
+    puffCount=uploadMesh(puffBuf,puffMesh,false);
+    const treeMesh=buildTree();
+    treeCount=uploadMesh(treeBuf,treeMesh,false);
+    // Place cloud puffs (white/blue, background)
+    const rng=rngFrom('puffs'+meshSeed);
+    puffs=[];
+    const nPuffs=4+p.formations;
+    for(let i=0;i<nPuffs;i++){
+      puffs.push({
+        x:(rng()-.5)*40, y:11+rng()*9, z:-30-rng()*14,
+        s:7+rng()*8, c:pal.cloud[Math.floor(rng()*3)]
+      });
+    }
+    // Place trees on canyon slopes
+    trees=[];
+    const nTrees=Math.floor(8+state.trees*20);
+    const nz=makeNoise2D('trees'+meshSeed);
+    for(let i=0;i<nTrees;i++){
+      const x=(rng()-.5)*30, z=-20+rng()*18;
+      const wallF=Math.min(1,Math.max(0,(Math.abs(x)-5)/9));
+      if(wallF<.3||wallF>.9)continue; // only on slopes
+      // Approximate height (same formula as buildCanyon)
+      const hBase=wallF*wallF*(8+p.formations*1.5);
+      const detail=nz.fbm(x*.08,z*.08,4)*3*(.3+wallF);
+      const y=hBase+detail-2;
+      trees.push({x,y:y-.2,z,s:.8+rng()*.8});
+    }
+    // Dust particles
+    dust=[];
+    const nDust=120;
+    for(let i=0;i<nDust;i++){
+      dust.push({
+        x:(rng()-.5)*30, y:rng()*15, z:-25+rng()*25,
+        vx:(rng()-.5)*.3, vy:(rng()-.5)*.2, vz:(rng()-.5)*.3,
+        ph:rng()*Math.PI*2
+      });
+    }
+    dustCount=dust.length;
+    const dv=new Float32Array(dustCount*3);
+    gl.bindBuffer(gl.ARRAY_BUFFER,dustBuf.v);
+    gl.bufferData(gl.ARRAY_BUFFER,dv,gl.DYNAMIC_DRAW);
+  }catch(e){
+    document.getElementById('seedline').textContent='Error: '+String(e).slice(0,60);
+  }
+  // Render hooks
+  window.__renderCanvas=canvas;
+  window.__renderReset=()=>{simT=0;lastNow=0;};
+}
+
+// ---------- render ----------
+function frame(now){
+  requestAnimationFrame(frame);
+  if(document.hidden||!gl)return;
+  const w=Math.floor(window.innerWidth),h=Math.floor(window.innerHeight);
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);}
+  const dt=lastNow?Math.min((now-lastNow)/1000,.1):.016;lastNow=now;
+  // Fixed-step for render mode
+  const qs=new URLSearchParams(location.search);
+  if(qs.get('render')==='1'){
+    simT+=1/30; // 30fps fixed
+  }else{
+    simT+=dt;
+  }
+  const t=simT, aspect=w/h;
+  const pal=PALETTES[state.palette%5];
+  // Sky gradient via clear color (top of palette)
+  const skyTop=hexRgb(pal.sky[0]), skyBot=hexRgb(pal.sky[2]);
+  const skyMix=.5+.5*Math.sin(t*.02);
+  const sky=lerpRgb(skyTop,skyBot,skyMix*.3);
+  gl.clearColor(sky[0],sky[1],sky[2],1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  const amp=.3+state.drift*1.2;
+  const cx=amp*Math.sin(t*.05), cy=2.5+amp*.4*Math.sin(t*.063+1.3), cz=7+amp*.5*Math.sin(t*.037+2.1);
+  const V=mLookAt(cx,cy,cz, cx*.3,2+cy*.15,-12);
+  const P=mPerspective(55*Math.PI/180,aspect,.1,160);
+  const VP=mMul(P,V);
+  const lx=.5,ly=.85,lz=.35;
+  // Canyon
+  gl.useProgram(pCanyon);
+  gl.uniformMatrix4fv(uMVPC,false,new Float32Array(VP));
+  gl.uniform3f(uLightC,lx,ly,lz);
+  gl.bindBuffer(gl.ARRAY_BUFFER,canyonBuf.v);
+  gl.enableVertexAttribArray(aPosC);gl.vertexAttribPointer(aPosC,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,canyonBuf.n);
+  gl.enableVertexAttribArray(aNorC);gl.vertexAttribPointer(aNorC,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,canyonBuf.c);
+  gl.enableVertexAttribArray(aColC);gl.vertexAttribPointer(aColC,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,canyonBuf.i);
+  gl.drawElements(gl.TRIANGLES,canyonCount,gl.UNSIGNED_SHORT,0);
+  // Puffs (clouds)
+  gl.useProgram(pSolid);
+  gl.uniform3f(uLightS,lx,ly,lz);
+  gl.bindBuffer(gl.ARRAY_BUFFER,puffBuf.v);
+  gl.enableVertexAttribArray(aPosS);gl.vertexAttribPointer(aPosS,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,puffBuf.n);
+  gl.enableVertexAttribArray(aNorS);gl.vertexAttribPointer(aNorS,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,puffBuf.i);
+  for(const pf of puffs){
+    const bob=Math.sin(t*.15+pf.x)*.4;
+    const M=mModel(pf.x,pf.y+bob,pf.z,pf.s,pf.s,pf.s);
+    gl.uniformMatrix4fv(uMVPS,false,new Float32Array(mMul(VP,M)));
+    const cc=hexRgb(pf.c);
+    // Brighten clouds
+    gl.uniform3f(uColorS,Math.min(1,cc[0]*1.1),Math.min(1,cc[1]*1.1),Math.min(1,cc[2]*1.1));
+    gl.drawElements(gl.TRIANGLES,puffCount,gl.UNSIGNED_SHORT,0);
+  }
+  // Trees
+  const treeCol=hexRgb(pal.tree);
+  for(const tr of trees){
+    const M=mModel(tr.x,tr.y,tr.z,tr.s,tr.s,tr.s);
+    gl.uniformMatrix4fv(uMVPS,false,new Float32Array(mMul(VP,M)));
+    gl.uniform3f(uColorS,treeCol[0],treeCol[1],treeCol[2]);
+    gl.bindBuffer(gl.ARRAY_BUFFER,treeBuf.v);
+    gl.enableVertexAttribArray(aPosS);gl.vertexAttribPointer(aPosS,3,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,treeBuf.n);
+    gl.enableVertexAttribArray(aNorS);gl.vertexAttribPointer(aNorS,3,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,treeBuf.i);
+    gl.drawElements(gl.TRIANGLES,treeCount,gl.UNSIGNED_SHORT,0);
+  }
+  // Dust (update positions, draw as points)
+  const dv=new Float32Array(dustCount*3);
+  for(let i=0;i<dustCount;i++){
+    const d=dust[i];
+    d.x+=d.vx*dt;d.y+=d.vy*dt;d.z+=d.vz*dt;
+    // Wrap
+    if(d.x>15)d.x=-15;if(d.x<-15)d.x=15;
+    if(d.y>15)d.y=0;if(d.y<0)d.y=15;
+    if(d.z>5)d.z=-25;if(d.z<-25)d.z=5;
+    dv[i*3]=d.x+Math.sin(t*.5+d.ph)*.3;
+    dv[i*3+1]=d.y;
+    dv[i*3+2]=d.z;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,dustBuf.v);
+  gl.bufferData(gl.ARRAY_BUFFER,dv,gl.DYNAMIC_DRAW);
+  gl.useProgram(pDust);
+  gl.uniformMatrix4fv(uMVPD,false,new Float32Array(VP));
+  const glowC=state.glow;
+  gl.uniform3f(uColorD,.9*glowC+.1,.85*glowC+.1,.8*glowC+.1);
+  gl.uniform1f(uSizeD,3+state.mist*3);
+  gl.bindBuffer(gl.ARRAY_BUFFER,dustBuf.v);
+  gl.enableVertexAttribArray(aPosD);gl.vertexAttribPointer(aPosD,3,gl.FLOAT,false,0,0);
+  // Disable depth test for dust (draw on top)
+  gl.disable(gl.DEPTH_TEST);
+  gl.drawArrays(gl.POINTS,0,dustCount);
+  gl.enable(gl.DEPTH_TEST);
+}
+
+// ---------- UI ----------
+document.getElementById('bNew').addEventListener('click',()=>applySeed(randomSeedStr(),true));
+document.getElementById('bRemix').addEventListener('click',()=>applySeed(remixSeedStr(state),true));
+document.getElementById('bFav').addEventListener('click',()=>{
+  document.getElementById('console').classList.add('open');
+  renderFavs();renderHist();
+});
+document.getElementById('cClose').addEventListener('click',()=>{
+  document.getElementById('console').classList.remove('open');
+});
+document.getElementById('cNew').addEventListener('click',()=>{
+  applySeed(randomSeedStr(),true);
+  document.getElementById('console').classList.remove('open');
+});
+document.getElementById('cRemix').addEventListener('click',()=>{
+  applySeed(remixSeedStr(state),true);
+  document.getElementById('console').classList.remove('open');
+});
+document.getElementById('cCustom').addEventListener('click',()=>{
+  document.getElementById('console').classList.remove('open');
+  openCustom();
+});
+document.getElementById('bSet').addEventListener('click',()=>openCustom());
+
+function renderFavs(){
+  const grid=document.getElementById('favGrid');
+  const favs=getFavs();
+  grid.innerHTML='';
+  if(favs.length===0){
+    grid.innerHTML='<div style="color:#fff;opacity:.5;grid-column:1/-1;">No favorites yet. Tap ⭐ on the seed bar to save this seed.</div>';
+  }
+  for(const f of favs){
+    const div=document.createElement('div');div.className='fav';
+    const img=document.createElement('img');img.src=f.thumb||'';img.alt=f.seed;
+    img.addEventListener('click',()=>{
+      applySeed(f.seed,true);
+      document.getElementById('console').classList.remove('open');
+    });
+    const del=document.createElement('button');del.className='del';del.textContent='×';
+    del.addEventListener('click',(e)=>{
+      e.stopPropagation();
+      setFavs(getFavs().filter(x=>x.seed!==f.seed));
+      renderFavs();
+    });
+    div.appendChild(img);div.appendChild(del);
+    grid.appendChild(div);
+  }
+}
+function renderHist(){
+  const list=document.getElementById('histList');
+  const h=getHist();
+  list.innerHTML=h.map(s=>'<div data-seed="'+s+'">'+s+'</div>').join('')||'<div>No history yet</div>';
+  list.querySelectorAll('div[data-seed]').forEach(d=>{
+    d.addEventListener('click',()=>{
+      applySeed(d.getAttribute('data-seed'),true);
+      document.getElementById('console').classList.remove('open');
+    });
+  });
+}
+// Toggle favorite for current seed
+let favState=false;
+document.getElementById('bFav').addEventListener('dblclick',()=>{});
+function toggleFav(){
+  const favs=getFavs();
+  const idx=favs.findIndex(f=>f.seed===state.seedStr);
+  if(idx>=0){
+    setFavs(favs.filter(f=>f.seed!==state.seedStr));
+    document.getElementById('bFav').textContent='⭐';
+  }else{
+    favs.unshift({seed:state.seedStr,thumb:captureThumb(),ts:Date.now()});
+    setFavs(favs.slice(0,60));
+    document.getElementById('bFav').textContent='🌟';
+  }
+}
+// Long-press star to toggle favorite
+let pressTimer=null;
+const bFav=document.getElementById('bFav');
+bFav.addEventListener('touchstart',()=>{pressTimer=setTimeout(toggleFav,500);},{passive:true});
+bFav.addEventListener('touchend',()=>{if(pressTimer)clearTimeout(pressTimer);});
+bFav.addEventListener('mousedown',()=>{pressTimer=setTimeout(toggleFav,500);});
+bFav.addEventListener('mouseup',()=>{if(pressTimer)clearTimeout(pressTimer);});
+
+// Record button
+document.getElementById('bRec').addEventListener('click',()=>{
+  const url=location.origin+location.pathname+'?render=1&seed='+encodeURIComponent(state.seedStr);
+  if(navigator.share){
+    navigator.share({title:'STRATA Render',url:url}).catch(()=>{});
+  }else{
+    prompt('Copy render URL:',url);
+  }
+});
+
+// Customize
+function openCustom(){
+  document.getElementById('rForm').value=state.formations;
+  document.getElementById('rTree').value=state.trees;
+  document.getElementById('rMist').value=state.mist;
+  document.getElementById('rDrift').value=state.drift;
+  document.getElementById('rGlow').value=state.glow;
+  updateCustomLabels();
+  document.getElementById('custom').classList.add('open');
+}
+function updateCustomLabels(){
+  document.getElementById('vForm').textContent=document.getElementById('rForm').value;
+  document.getElementById('vTree').textContent=Math.round(document.getElementById('rTree').value*100)+'%';
+  document.getElementById('vMist').textContent=Math.round(document.getElementById('rMist').value*100)+'%';
+  document.getElementById('vDrift').textContent=Math.round(document.getElementById('rDrift').value*100)+'%';
+  document.getElementById('vGlow').textContent=Math.round(document.getElementById('rGlow').value*100)+'%';
+}
+for(const id of ['rForm','rTree','rMist','rDrift','rGlow']){
+  document.getElementById(id).addEventListener('input',updateCustomLabels);
+}
+document.getElementById('xClose').addEventListener('click',()=>{
+  document.getElementById('custom').classList.remove('open');
+});
+document.getElementById('xApply').addEventListener('click',()=>{
+  const form=parseInt(document.getElementById('rForm').value);
+  const tree=parseFloat(document.getElementById('rTree').value);
+  const mist=parseFloat(document.getElementById('rMist').value);
+  const drift=parseFloat(document.getElementById('rDrift').value);
+  const glow=parseFloat(document.getElementById('rGlow').value);
+  const s=seedFromParams(state.palette,form,tree,mist,drift,glow);
+  applySeed(s,true);
+  document.getElementById('custom').classList.remove('open');
+});
+
+// ---------- init ----------
+const qs=new URLSearchParams(location.search);
+applySeed(qs.get('seed')||randomSeedStr(),false);
+requestAnimationFrame(frame);
+</script>
+</body></html>
