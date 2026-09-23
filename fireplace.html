@@ -1726,14 +1726,15 @@ layout(location=1) in vec3 aBase;
 layout(location=2) in vec4 aP0; /* leanX, leanZ, height, width */
 layout(location=3) in vec4 aP1; /* rotY, toneR, toneG, toneB */
 layout(location=4) in vec4 aP2; /* curlDirX, curlDirZ, curlAmp, curlPhase (shag only; nubs read defaults) */
+layout(location=5) in vec4 aP3; /* aoK, sheenK (shag only; nubs read defaults) */
 uniform mat4 uView; uniform mat4 uProj;
-out vec2 vQ; out vec3 vWP; out vec3 vTone;
+out vec2 vQ; out vec3 vWP; out vec3 vTone; out vec3 vTan; out vec2 vFx;
 void main(){
-  vQ=aQuad; vTone=aP1.yzw;
+  vQ=aQuad; vTone=aP1.yzw; vTan=vec3(aP0.x,aP0.y,aP0.z); vFx=aP3.xy;
   float cr=cos(aP1.x), sr=sin(aP1.x);
   float t=aQuad.y+0.5;
   float bend=t*t; /* curl grows along the strand so the root stays planted */
-  vec2 curl=vec2(aP2.x,aP2.y)*(aP2.z*bend+0.30*aP2.z*sin(aP2.w+t*4.0)*t);
+  vec2 curl=vec2(aP2.x,aP2.y)*(aP2.z*bend+0.30*aP2.z*sin(aP2.w+t*9.0)*t);
   vec3 center=aBase+vec3(aP0.x,aP0.z,aP0.y)*t+vec3(curl.x,-aP2.z*bend*0.35,curl.y);
   vec3 off=vec3(cr*aQuad.x*aP0.w, 0.0, -sr*aQuad.x*aP0.w)*(1.0-t*0.55);
   vec3 pos=center+off;
@@ -1742,7 +1743,7 @@ void main(){
 }`;
 const DET_FS = `#version 300 es
 precision highp float;
-in vec2 vQ; in vec3 vWP; in vec3 vTone;
+in vec2 vQ; in vec3 vWP; in vec3 vTone; in vec3 vTan; in vec2 vFx;
 uniform vec3 uCamPos; uniform vec3 uFirePos; uniform float uFlick;
 uniform vec3 uFireCol; uniform float uFireI; uniform vec3 uAmbTint;
 uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uSunI;
@@ -1755,10 +1756,11 @@ void main(){
   vec3 fD=uFirePos-vWP; float fd=length(fD); vec3 fL=fD/max(fd,1e-3);
   float fAtt=uFireI*uFlick/(1.0+fd*fd*0.55);
   float sheen=pow(1.0-abs(dot(N,V)),2.0); /* fiber sheen */
-  vec3 col=vTone*(0.30+0.70*t); /* darker root */
+  float aniso=pow(1.0-abs(dot(normalize(vTan),V)),2.0); /* soft fuzzy rim: brightest looking across the strand */
+  vec3 col=vTone*mix(0.30+0.70*t, 0.12+0.88*t*t, vFx.x); /* fake fiber AO: shadowed root, light tip */
   vec3 lit=col*(uSunCol*uSunI*ndl*0.35+uFireCol*fAtt*(0.4+0.6*max(dot(N,fL),0.0)));
   lit+=col*uAmbTint*0.35;
-  lit+=vTone*sheen*0.06*(0.4+0.6*fAtt);
+  lit+=vTone*mix(sheen*0.06, aniso*0.16, vFx.y)*(0.4+0.6*fAtt);
   oC=vec4(lit,1.0);
 }`;
 
@@ -2435,11 +2437,12 @@ function detFreeVAO(vao, bufs){
   if(vao) gl.deleteVertexArray(vao);
   for(const b of bufs) gl.deleteBuffer(b);
 }
-function detBuild(n, fill, withP2){
+function detBuild(n, fill, withP2, withP3){
   const quad=new Float32Array([-0.5,-0.5, 0.5,-0.5, -0.5,0.5, -0.5,0.5, 0.5,-0.5, 0.5,0.5]);
   const base=new Float32Array(n*3), p0=new Float32Array(n*4), p1=new Float32Array(n*4);
   const p2=withP2?new Float32Array(n*4):null;
-  for(let i=0;i<n;i++) fill(i, base, p0, p1, p2);
+  const p3=withP3?new Float32Array(n*4):null;
+  for(let i=0;i<n;i++) fill(i, base, p0, p1, p2, p3);
   const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
   const bufs=[];
   function attr(loc, arr, size, divisor){
@@ -2450,6 +2453,7 @@ function detBuild(n, fill, withP2){
   }
   attr(0,quad,2,0); attr(1,base,3,1); attr(2,p0,4,1); attr(3,p1,4,1);
   if(p2) attr(4,p2,4,1);
+  if(p3) attr(5,p3,4,1);
   gl.bindVertexArray(null);
   return {vao,bufs};
 }
@@ -2457,23 +2461,51 @@ function buildShagNubs(st){
   detFreeVAO(shagVAO,shagBufs); detFreeVAO(nubVAO,nubBufs);
   shagVAO=null; nubVAO=null; shagBufs=[]; nubBufs=[];
   const rng=mulberry32((st.seed^0x51ab)>>>0);
-  /* shag rug strands: dense curly tufts on a jittered clump grid, soft fringe edge */
-  const counts=[4500,5000,9000,4000];
-  const n=counts[st.rug|0]||4500;
-  const cw=0.30, cl=[];
+  /* shag rug strands: fluffy pom-pom tufts on a jittered clump grid —
+     fibers radiate outward from each tuft center with curl, S-wiggle and
+     tip droop; deep shadowed valleys between tufts; per-tuft wave lean so
+     neighboring tufts don't look stamped; soft fringe edge */
+  const counts=[6500,7000,12000,6000];
+  const n=counts[st.rug|0]||6500;
+  const cw=0.45, cl=[];
   for(let gx=-2.45; gx<1.85; gx+=cw) for(let gz=-0.4; gz<2.6; gz+=cw)
-    cl.push([gx+cw*0.5+(rng()-0.5)*cw*0.7, gz+cw*0.5+(rng()-0.5)*cw*0.7, 0.72+rng()*0.60]);
-  const r=detBuild(n,(i,base,p0,p1,p2)=>{
-    let x=-0.3+(rng()-0.5)*4.3, z=1.1+(rng()-0.5)*3.0, ch=1.0;
-    if(rng()<0.72){ /* most strands snap toward a clump center -> chunky tufts */
-      const c=cl[(rng()*cl.length)|0], pull=0.45+rng()*0.30;
-      x+=(c[0]-x)*pull; z+=(c[1]-z)*pull; ch=c[2];
+    cl.push([gx+cw*0.5+(rng()-0.5)*cw*0.6, gz+cw*0.5+(rng()-0.5)*cw*0.6,
+             0.72+rng()*0.60, rng()*Math.PI*2]);
+    /* cx, cz, heightMul, wavePhase */
+  const r=detBuild(n,(i,base,p0,p1,p2,p3)=>{
+    let x=-0.3+(rng()-0.5)*4.3, z=1.1+(rng()-0.5)*3.0, c=null;
+    if(rng()<0.90){ /* most strands snap toward a tuft center -> pom-poms */
+      c=cl[(rng()*cl.length)|0];
+      const pull=0.60+rng()*0.35;
+      x+=(c[0]-x)*pull; z+=(c[1]-z)*pull;
     }
     const dxe=Math.min(x+2.45,1.85-x), dze=Math.min(z+0.4,2.6-z), de=Math.min(dxe,dze);
     const fr=de<0.38 ? 1-de/0.38 : 0; /* fringe band at the rug border */
     base[i*3]=x; base[i*3+1]=0.065; base[i*3+2]=z;
-    let la=rng()*Math.PI*2, lean=0.002+rng()*0.010; /* near-upright, random tilt */
-    let hgt=(0.024+rng()*0.030)*ch;
+    let la, lean, hMul, wMul, toneMul, cdX, cdZ, cAmp, cPh;
+    if(c){
+      let rx=x-c[0], rz=z-c[1];
+      const rd=Math.hypot(rx,rz), rmax=cw*0.80, vn=Math.min(rd/rmax,1);
+      const vsh=vn*vn*(3-2*vn); /* 0 at tuft center -> 1 at cell border */
+      hMul=(1.0-0.85*vsh)*c[2]; /* carve deep valleys between tufts */
+      wMul=1.0-0.35*vsh;
+      toneMul=1.0-0.50*vsh; /* shadowed valleys */
+      if(rd<1e-4){ rx=1; rz=0; }
+      const ra=Math.atan2(rz,rx);
+      const wave=Math.sin(c[0]*5.3+c[1]*3.7+c[3]); /* per-tuft wave lean */
+      la=ra+(rng()-0.5)*0.55+wave*0.55; /* radial pom-pom + jitter + tuft wave */
+      lean=(0.008+vn*0.062)*(0.70+rng()*0.60); /* edge fibers lean outward */
+      cdX=Math.cos(la); cdZ=Math.sin(la); /* curl follows the radial flow */
+      cAmp=0.30+rng()*0.70;
+      cPh=c[3]+rng()*0.8; /* per-tuft phase coherence */
+    }else{
+      /* un-snapped: short dark underlayer so no backing shows through */
+      hMul=0.30; wMul=1.0; toneMul=0.50;
+      la=rng()*Math.PI*2; lean=0.004+rng()*0.008;
+      cdX=Math.cos(la); cdZ=Math.sin(la);
+      cAmp=0.25+rng()*0.45; cPh=rng()*Math.PI*2;
+    }
+    let hgt=(0.048+rng()*0.052)*hMul; /* long fluffy fibers */
     if(fr>0){ /* fringe: longer strands leaning outward, soft wavy silhouette */
       const ox=dxe<dze?(x<-0.3?-1:1):0, oz=dxe<dze?0:(z<1.1?-1:1);
       la=Math.atan2(oz,ox)+(rng()-0.5)*0.9;
@@ -2481,14 +2513,15 @@ function buildShagNubs(st){
       hgt*=1.0+fr*0.7;
     }
     p0[i*4]=Math.cos(la)*lean; p0[i*4+1]=Math.sin(la)*lean;
-    p0[i*4+2]=hgt; p0[i*4+3]=0.0035+rng()*0.0035;
-    const ca=rng()*Math.PI*2; /* per-strand curl: random direction + amplitude */
-    p2[i*4]=Math.cos(ca); p2[i*4+1]=Math.sin(ca);
-    p2[i*4+2]=(0.25+rng()*0.85)*hgt*(1+fr*0.3); p2[i*4+3]=rng()*Math.PI*2;
-    const tv=0.72+rng()*0.56, tw=0.90+rng()*0.20;
+    p0[i*4+2]=hgt; p0[i*4+3]=(0.0035+rng()*0.0035)*wMul;
+    p2[i*4]=cdX; p2[i*4+1]=cdZ;
+    p2[i*4+2]=cAmp*hgt*(1+fr*0.3); p2[i*4+3]=cPh;
+    p3[i*4]=1.0; p3[i*4+1]=1.0; p3[i*4+2]=0; p3[i*4+3]=0; /* fur shading: AO + sheen */
+    const tv=(0.72+rng()*0.56)*toneMul, tw=0.90+rng()*0.20;
+    const hj=(rng()-0.5)*2; /* subtle per-strand hue jitter: warm/cool shift */
     p1[i*4]=rng()*Math.PI*2;
-    p1[i*4+1]=0.55*tv*tw; p1[i*4+2]=0.50*tv*tw; p1[i*4+3]=0.44*tv;
-  },true);
+    p1[i*4+1]=0.55*tv*tw*(1+hj*0.05); p1[i*4+2]=0.50*tv*tw*(1-hj*0.02); p1[i*4+3]=0.44*tv*(1-hj*0.045);
+  },true,true);
   shagVAO=r.vao; shagBufs=r.bufs; shagCount=n; S.shagN=n;
   /* couch micro-tufts: mattress + two fabric seats, 8-14mm tall */
   const spots=[
