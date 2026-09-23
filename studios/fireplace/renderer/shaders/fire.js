@@ -113,49 +113,77 @@ float logDampen(vec3 p){
   float inside = 1.0 - smoothstep(0.60, 1.05, lp);
   return 1.0 - inside*0.88;
 }
+/* ---- procedural fire density: domain-warped fbm where the noise IS the flame.
+   Tall-thin sample space (x frequency ~2.2x the y frequency) scrolls upward
+   with the fixed-step clock; a ridged octave adds sharp bright filaments.
+   Adapted from the colony cloud engine's domain-warp technique, reshaped for
+   fire. Pure function of (q, ph, te) — deterministic. Returns the density
+   field and the warp vector (used to break up tongue edges). */
+float fireField(vec2 q, float ph, float te, float stretch, out vec2 warp){
+  float h01 = q.y + 0.5;
+  vec2 fuv = vec2(q.x*stretch + ph*3.7, h01*stretch*0.45 - te*0.85 + ph*1.3);
+  warp = vec2(
+    fbm(fuv*1.7 + vec2(ph*2.1, -te*0.65)),
+    fbm(fuv*1.7 + vec2(-ph*1.4,  te*0.55) + 7.31));
+  float n = fbm(fuv + (warp-0.5)*1.7);
+  float r = vnoise(fuv*vec2(2.2,1.0) + warp*2.3 + vec2(0.0,-te*1.6));
+  r = 1.0 - abs(2.0*r - 1.0);
+  r *= r;
+  return n*0.62 + r*0.38;
+}
 vec4 flameShade(vec2 q, float ph, float te, float flick, float burn){
   float h01 = q.y+0.5;
-  /* flame-local heat shimmer: wobble the noise lookup, strongest at the hot base */
-  float shim = fbm(vec2(q.x*6.0+ph, h01*3.0 - te*2.2));
-  vec2 wuv = vec2(q.x*3.2, h01*2.2 - te*(0.9+0.35*sin(ph))) + (shim-0.5)*0.35*(1.0-h01);
-  float curl = mix(1.25, 0.55, burn);
-  float warp = fbm(wuv*1.7 + vec2(ph*3.1, -te*0.6) + fbm(wuv*2.3+vec2(ph))*0.9);
-  float width = mix(0.60, 0.10, pow(h01,0.8));
-  float d = abs(q.x + (warp-0.5)*0.6*curl*(0.25+h01));
-  float body = smoothstep(width, width*0.22, d);
-  float hgt = mix(0.72, 1.22, burn);
-  float tip = 1.0 - smoothstep(0.50+0.38*(warp-0.5), 1.02, clamp(h01/hgt,0.0,1.0));
-  float base = smoothstep(0.0, 0.10, h01);
-  float heat = clamp(body*tip*base*1.25*mix(0.80,1.20,burn), 0.0, 1.0);
+  vec2 warp;
+  float dens = fireField(q, ph, te, 4.6, warp);
+  /* envelope: wide bright base narrowing to the tip */
+  float width = mix(0.52, 0.10, pow(h01, 0.75));
+  float env = 1.0 - smoothstep(width*0.55, width, abs(q.x));
+  /* licking tongues: striations across the width; dark wispy gaps between them
+     so the flame never reads as one blob. Gaps deepen toward the tip. */
+  float tong = sin(clamp(q.x/max(width,1e-3),-1.5,1.5)*7.85 + (warp.x-0.5)*6.0 + ph);
+  float tongueMask = smoothstep(-0.35, 0.75, tong);
+  float carve = mix(mix(0.45, 0.18, h01), 1.0, tongueMask);
+  /* ragged licking tip line */
+  float tipLine = 0.55 + (fbm(vec2(q.x*3.0 + ph*2.0, te*0.45)) - 0.5)*0.9;
+  float tip = 1.0 - smoothstep(tipLine-0.30, tipLine+0.10, h01);
+  float base = smoothstep(0.0, 0.06, h01);
+  float heat = clamp((dens*carve*1.55 + 0.10*(1.0-h01)) * env * tip * base * mix(0.80,1.20,burn), 0.0, 1.0);
   heat = logWrap(heat, h01);
-  vec3 coolC = mix(vec3(0.80,0.13,0.015), vec3(0.60,0.075,0.010), burn);
-  vec3 col = mix(coolC, vec3(1.0,0.42,0.07), clamp(heat*1.5,0.0,1.0));
-  vec3 hotC = mix(vec3(1.0,0.88,0.55), vec3(1.0,0.55,0.18), burn);
-  col = mix(col, hotC, clamp((heat-0.55)*2.4,0.0,1.0));
-  float a = clamp(heat*1.05, 0.0, 0.90);
-  return vec4(col*(0.72+0.60*flick), a);
+  /* color ramp driven by noise field + height: deep red edges -> orange ->
+     yellow-white core low at the base; tips cool toward ember red. */
+  vec3 deepRed = mix(vec3(0.72,0.10,0.008), vec3(0.55,0.06,0.008), burn);
+  vec3 col = mix(deepRed, vec3(1.0,0.40,0.06), clamp(heat*1.6,0.0,1.0));
+  float core = clamp(heat*1.7 - h01*0.55, 0.0, 1.0);
+  vec3 hotC = mix(vec3(1.0,0.88,0.60), vec3(1.0,0.55,0.18), burn);
+  col = mix(col, hotC, clamp((core-0.40)*2.2,0.0,1.0));
+  col = mix(col, vec3(0.42,0.07,0.008), smoothstep(0.55,1.0,h01)*0.55);
+  float a = clamp(heat*1.08, 0.0, 0.92);
+  return vec4(col*(0.70+0.62*flick), a);
 }
 vec4 tongueShade(vec2 q, float ph, float te, float flick, vec4 seed, float burn){
   float h01 = q.y+0.5;
-  float shim = fbm(vec2(q.x*7.0+ph*1.3, h01*3.4 - te*2.6));
-  vec2 wuv = vec2(q.x*4.0, h01*2.6 - te*(1.2+0.4*sin(ph))) + (shim-0.5)*0.30*(1.0-h01);
-  float curl = mix(1.25, 0.55, burn);
-  float warp = fbm(wuv*1.9 + vec2(ph*2.7, -te*0.8) + fbm(wuv*2.6+vec2(ph))*0.8);
-  float width = mix(0.38, 0.05, pow(h01,0.9));
-  float d = abs(q.x + (warp-0.5)*0.55*curl*(0.25+h01));
-  float body = smoothstep(width, width*0.25, d);
-  float hgt = mix(0.72, 1.22, burn);
-  float tip = 1.0 - smoothstep(0.42+0.34*(warp-0.5), 1.0, clamp(h01/hgt,0.0,1.0));
-  float base = smoothstep(0.0, 0.08, h01);
-  float heat = clamp(body*tip*base*1.3*mix(0.80,1.20,burn), 0.0, 1.0);
-  heat = logWrap(heat, h01);
+  vec2 warp;
+  float dens = fireField(q, ph, te, 7.0, warp);
+  /* narrower envelope for the licking tongues */
+  float width = mix(0.34, 0.05, pow(h01, 0.85));
+  float env = 1.0 - smoothstep(width*0.50, width, abs(q.x));
+  float tong = sin(clamp(q.x/max(width,1e-3),-1.5,1.5)*6.28 + (warp.x-0.5)*5.0 + ph*1.7);
+  float tongueMask = smoothstep(-0.30, 0.80, tong);
+  float carve = mix(mix(0.50, 0.22, h01), 1.0, tongueMask);
+  float tipLine = 0.50 + (fbm(vec2(q.x*4.0 + ph, te*0.60)) - 0.5)*0.8;
+  float tip = 1.0 - smoothstep(tipLine-0.28, tipLine+0.10, h01);
+  float base = smoothstep(0.0, 0.05, h01);
   float tvar = seed.x;
-  vec3 coolC = mix(vec3(0.78,0.12,0.01), vec3(0.60,0.07,0.01), burn);
-  vec3 col = mix(coolC, vec3(1.0,0.40,0.06), clamp(heat*1.6,0.0,1.0));
+  float heat = clamp((dens*carve*1.60 + 0.08*(1.0-h01)) * env * tip * base * mix(0.80,1.20,burn), 0.0, 1.0);
+  heat = logWrap(heat, h01);
+  vec3 deepRed = mix(vec3(0.70,0.10,0.008), vec3(0.55,0.06,0.008), burn);
+  vec3 col = mix(deepRed, vec3(1.0,0.40,0.06), clamp(heat*1.6,0.0,1.0));
+  float core = clamp(heat*1.7 - h01*0.50, 0.0, 1.0);
   vec3 hotC = mix(mix(vec3(1.0,0.72,0.30), vec3(1.0,0.85,0.45), tvar), vec3(1.0,0.52,0.16), burn);
-  col = mix(col, hotC, clamp((heat-0.5)*2.2,0.0,1.0));
-  float a = clamp(heat*1.05, 0.0, 0.9);
-  return vec4(col*(0.75+0.60*flick), a);
+  col = mix(col, hotC, clamp((core-0.40)*2.2,0.0,1.0));
+  col = mix(col, vec3(0.42,0.07,0.008), smoothstep(0.55,1.0,h01)*0.55);
+  float a = clamp(heat*1.08, 0.0, 0.92);
+  return vec4(col*(0.72+0.62*flick), a);
 }
 void main(){
   float r = length(vQ)*2.0;
