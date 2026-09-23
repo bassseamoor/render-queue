@@ -94,14 +94,14 @@
 (async function bootRoadAtlas(){
   function run(text){const s=document.createElement('script');s.textContent=text;document.body.appendChild(s);}
   try {
-    const paths=['./vendor/road-atlas-baseline-329a68a.html','./road-atlas-pipeline.js?v=2.4.0','./road-atlas-conditions.js?v=2.3.0','./road-atlas-urban.js?v=2.4.0','./road-atlas-navigation.js?v=1.0.0','./road-atlas-streets.js?v=2.5.1','./road-atlas-street-hooks.js?v=2.4.1'];
+    const paths=['./vendor/road-atlas-baseline-329a68a.html','./road-atlas-pipeline.js?v=2.4.0','./road-atlas-conditions.js?v=2.3.0','./road-atlas-urban.js?v=2.4.0','./road-atlas-navigation.js?v=1.0.0','./road-atlas-streets.js?v=2.6.0','./road-atlas-street-hooks.js?v=2.4.1','./road-atlas-cartography.js?v=1.0.0'];
     const texts=await Promise.all(paths.map(async path=>{const r=await fetch(path);if(!r.ok)throw new Error(path+' ('+r.status+')');return r.text();}));
-    run(texts[6]);[texts[1],texts[2]]=RoadAtlasStreetHooks.transform(texts[1],texts[2]);
+    run(texts[6]);[texts[1],texts[2]]=RoadAtlasStreetHooks.transform(texts[1],texts[2]);run(texts[7]);texts[2]=RoadAtlasCarto.transformConditions(texts[2]);
     const parsed=new DOMParser().parseFromString(texts[0],'text/html');
     const scripts=Array.from(parsed.querySelectorAll('script'));
     if(scripts.length!==5||!scripts[0].textContent.includes('function buildFields(')||!scripts[2].textContent.includes('SeedConsole.init('))throw new Error('Unexpected baseline. Original V1 is unchanged.');
     run(scripts[0].textContent);run(texts[1]);run(texts[2]);run(texts[3]);run(texts[4]);run(texts[5]);
-    if(!window.RoadAtlasPipeline||!window.RoadAtlasConditions||!window.RoadAtlasUrban||!window.RoadAtlasNavigation||!window.RoadAtlasStreets)throw new Error('Ordered pipeline did not initialize');
+    if(!window.RoadAtlasPipeline||!window.RoadAtlasConditions||!window.RoadAtlasUrban||!window.RoadAtlasNavigation||!window.RoadAtlasStreets||!window.RoadAtlasCarto)throw new Error('Ordered pipeline did not initialize');
     for(let i=1;i<scripts.length;i++)run(scripts[i].textContent);
     window.dispatchEvent(new Event("studio:ready"));
   }catch(error){
