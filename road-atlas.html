@@ -35,8 +35,6 @@
   .lchip.on{background:rgba(90,160,220,.22);border-color:rgba(90,160,220,.65);}
   #layersPanel .legend{font-size:11px;color:#8ba0b3;line-height:1.7;border-top:1px solid rgba(255,255,255,.1);padding-top:8px;}
 </style>
-<link rel="stylesheet" href="studio-shell.css?v=2">
-<script defer src="studio-shell.js?v=2"></script>
 </head>
 <body>
 <header id="topbar">
@@ -2781,6 +2779,7 @@ SeedConsole.init(window.SeedConsoleAdapter);
 
 </script>
 <script>
+
 /* ============================================================
    RENDER MODE — headless deterministic video render.
    URL: ?render=1&seed=SEED&fps=30&seconds=300&qid=ID&w=1280&h=720
@@ -2876,12 +2875,8 @@ SeedConsole.init(window.SeedConsoleAdapter);
   /* ---- encoder ---- */
   var encoder = null, muxer = null, encodedFrames = 0, t0 = 0;
   /* Counters that prove the iOS path actually produced media. A finished
-     render with zero muxed chunks is a 581-byte empty shell, not a video.
-     rawChunks counts encoder output directly, before the muxer can drop
-     anything; muxedChunks counts chunks actually written to the file.
-     If the two diverge, the loss is downstream of the encoder. */
-  var framesAttempted = 0, encodeErrors = 0, rawChunks = 0, muxedChunks = 0;
-  var muxErrors = 0, firstMuxError = '';
+     render with zero muxed chunks is a 581-byte empty shell, not a video. */
+  var framesAttempted = 0, encodeErrors = 0, muxedChunks = 0;
 
   /* If the device encoder rejects frames, say so fast and plainly instead of
      spending the whole render on output that can only come out empty. */
@@ -2911,29 +2906,20 @@ SeedConsole.init(window.SeedConsoleAdapter);
     } catch (e) { frame2d = null; fctx = null; return false; }
   }
 
-  /* Shared "empty video" message: frames drained through the encoder,
-     nothing (or nothing usable) landed in the file. Names the raw
-     encoder count vs the muxed count so the next report is self-
-     diagnosing: equal-and-zero means a silent encoder, divergent means
-     chunks were lost downstream. */
+  /* Shared "empty video" message: 60+ frames drained through the encoder,
+     zero chunks came out. Used both mid-render (fail fast) and at finish. */
   function failEmpty() {
-    var detail = framesAttempted + ' frames went in, the encoder produced ' + rawChunks +
-      ' chunks, but the file kept ' + muxedChunks + ' of them.';
-    if (muxErrors) detail += ' File errors: ' + muxErrors + (firstMuxError ? ' (first: ' + firstMuxError + ').' : '.');
-    if (encodeErrors) detail += ' The encoder rejected ' + encodeErrors + ' frames.';
-    fail('The video came out empty \u2014 ' + detail + ' Please try again; if it keeps happening, use a lower resolution.');
+    fail('The video came out empty \u2014 ' + framesAttempted + ' frames went in, but this device\u2019s encoder recorded 0 of them' +
+      (encodeErrors ? ' (' + encodeErrors + ' were rejected).' : '.') +
+      ' Please try again; if it keeps happening, use a lower resolution.');
   }
-
   /* ---- iOS decoderConfig recovery ----
      iOS Safari's WebCodecs encoder can emit chunks whose metadata has no
      decoderConfig. Without it the muxer cannot write the avcC box, and its
      finalize() then crashes reading decoderConfig.colorSpace of null.
-     Recover the config from key chunks' SPS/PPS NAL units (H.264 carries
-     them inline), retrying on EVERY keyframe — real hardware encoders
-     don't all package NALs like the software encoder this was first
-     tested against, so both Annex-B and length-prefixed layouts are
-     tried before giving up on a keyframe. */
-  var _avcDc = null, avcKeyTries = 0;
+     Recover the config once from the first key chunk's SPS/PPS NAL units
+     (H.264 carries them inline), so the MP4 stays valid and playable. */
+  var _avcDc = null;
   function withAvcDecoderConfig(chunk, meta) {
     meta = meta || {};
     if (meta.decoderConfig) { _avcDc = meta.decoderConfig; return meta; }
@@ -2941,7 +2927,6 @@ SeedConsole.init(window.SeedConsoleAdapter);
     var dc = null;
     try {
       if (chunk && chunk.type === 'key' && chunk.byteLength > 0) {
-        avcKeyTries++;
         var buf = new Uint8Array(chunk.byteLength);
         chunk.copyTo(buf);
         dc = avcDcFromNalUnits(buf);
@@ -2950,11 +2935,10 @@ SeedConsole.init(window.SeedConsoleAdapter);
     if (dc) { _avcDc = dc; return { decoderConfig: dc }; }
     return meta;
   }
-  /* Split one H.264 sample into NAL units, tolerating both Annex-B
-     (start codes) and length-prefixed (avcC) layouts. Unknown NAL types
-     (AUD, SEI, …) are skipped over, not choked on. */
-  function splitNals(buf, annexB) {
-    var nals = [], i, j, m, p, len, sc, scLen, end;
+  function avcDcFromNalUnits(buf) {
+    var nals = [], i, j, k, m, p, len, sc, scLen, end, t;
+    var annexB = buf.length > 4 && buf[0] === 0 && buf[1] === 0 &&
+      (buf[2] === 1 || (buf[2] === 0 && buf[3] === 1));
     if (annexB) {
       i = 0;
       while (i + 3 < buf.length) {
@@ -2981,26 +2965,14 @@ SeedConsole.init(window.SeedConsoleAdapter);
         p += 4 + len;
       }
     }
-    return nals;
-  }
-  function spsPpsFromNals(nals) {
-    var sps = null, pps = null, k, t;
+    var sps = null, pps = null;
     for (k = 0; k < nals.length; k++) {
       t = nals[k][0] & 31;
       if (t === 7 && !sps) sps = nals[k];
       else if (t === 8 && !pps) pps = nals[k];
       if (sps && pps) break;
     }
-    return (sps && pps && sps.length >= 4) ? { sps: sps, pps: pps } : null;
-  }
-  function avcDcFromNalUnits(buf) {
-    if (!buf || buf.length < 5) return null;
-    var annexB = buf[0] === 0 && buf[1] === 0 &&
-      (buf[2] === 1 || (buf[2] === 0 && buf[3] === 1));
-    var found = spsPpsFromNals(splitNals(buf, annexB));
-    if (!found) found = spsPpsFromNals(splitNals(buf, !annexB));
-    if (!found) return null;
-    var sps = found.sps, pps = found.pps;
+    if (!sps || !pps || sps.length < 4) return null;
     var avcC = new Uint8Array(11 + sps.length + pps.length);
     avcC[0] = 1; avcC[1] = sps[1]; avcC[2] = sps[2]; avcC[3] = sps[3];
     avcC[4] = 0xFF; avcC[5] = 0xE1;
@@ -3043,41 +3015,8 @@ SeedConsole.init(window.SeedConsoleAdapter);
       });
       encoder = new VideoEncoder({
         output: function (chunk, meta) {
-          /* Counted before anything can drop it: this is what the
-             encoder actually produced, independent of the muxer. */
-          rawChunks++;
-          try {
-            /* Never trust the chunk's own timing fields. iOS Safari's
-               hardware encoder emits duration null, and mp4-muxer throws
-               on a non-finite duration — which used to silently discard
-               EVERY chunk (the "frames in, 0 recorded" empty file).
-               Copy the bytes once and pass an explicit timestamp plus
-               the nominal frame duration instead. */
-            var ts = (chunk.timestamp != null && isFinite(chunk.timestamp) && chunk.timestamp >= 0)
-              ? chunk.timestamp : Math.round(rawChunks * 1e6 / fps);
-            var dur = (chunk.duration != null && isFinite(chunk.duration) && chunk.duration > 0)
-              ? chunk.duration : Math.round(1e6 / fps);
-            var bytes = new Uint8Array(chunk.byteLength);
-            chunk.copyTo(bytes);
-            muxer.addVideoChunkRaw(bytes, chunk.type, ts, dur, withAvcDecoderConfig(chunk, meta));
-            muxedChunks++;
-          } catch (e) {
-            /* Recorded, never silently swallowed: a divergence between
-               rawChunks and muxedChunks is itself the diagnosis. */
-            muxErrors++;
-            if (!firstMuxError) firstMuxError = (e && e.message) || String(e);
-          }
+          try { muxer.addVideoChunk(chunk, withAvcDecoderConfig(chunk, meta)); muxedChunks++; } catch (e) {}
           if (RM._bp && encoder.encodeQueueSize < 20) RM._bp = false;
-          /* Fail fast if the video format info never arrives: two
-             keyframes attempted without readable SPS/PPS means the file
-             could never be playable — stop loudly instead of rendering
-             a broken file to the end. */
-          if (RM.phase === 'record' && !_avcDc && avcKeyTries >= 2) {
-            fail('The video\u2019s format info never arrived \u2014 the encoder produced ' + rawChunks +
-              ' chunks but their layout couldn\u2019t be read' +
-              (muxErrors ? ' (' + muxErrors + ' file errors' + (firstMuxError ? ', first: ' + firstMuxError : '') + ')' : '') +
-              '. Please try again; if it keeps happening, use a lower resolution.');
-          }
         },
         error: function (e) { fail('Encoder error: ' + (e && e.message)); }
       });
@@ -3131,7 +3070,96 @@ SeedConsole.init(window.SeedConsoleAdapter);
     var remain = rate > 0.01 ? (totalFrames - encodedFrames) / rate : 0;
     setStatus('Frame ' + encodedFrames.toLocaleString() + ' / ' + totalFrames.toLocaleString() + ' (' + pct.toFixed(0) + '%)');
     var eta = document.getElementById('rmEta');
-    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall \u00B7 ' + rawChunks + ' enc \u00B7 ' + muxedChunks + ' mux \u00B7 q' + encoder.encodeQueueSize;
+    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall \u00B7 ' + muxedChunks + ' chunks \u00B7 q' + encoder.encodeQueueSize;
+  }
+
+
+  RM.onPhase = function (phase) {
+    if (phase === 'reset') doReset();
+    else if (phase === 'done') finishRender();
+  };
+
+  function doReset() {
+    RM.phase = 'reset';
+    try { if (typeof window.__renderReset === 'function') window.__renderReset(); } catch (e) {}
+    RM.frame = 0;
+    if (!setupEncoder()) return;
+    RM.phase = 'record';
+    t0 = performance.now();
+    setStatus('Rendering\u2026');
+  }
+
+  function setupEncoder() {
+    if (typeof VideoEncoder === 'undefined') {
+      fail('This browser can\u2019t do headless rendering (needs WebCodecs). Try Safari on iOS 17.4+.');
+      return false;
+    }
+    if (typeof Mp4Muxer === 'undefined') { fail('Video muxer failed to load.'); return false; }
+    try {
+      muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: { codec: 'avc', width: W, height: H },
+        fastStart: 'in-memory',
+        firstTimestampBehavior: 'offset'
+      });
+      encoder = new VideoEncoder({
+        output: function (chunk, meta) {
+          try { muxer.addVideoChunk(chunk, withAvcDecoderConfig(chunk, meta)); muxedChunks++; } catch (e) {}
+          if (RM._bp && encoder.encodeQueueSize < 20) RM._bp = false;
+        },
+        error: function (e) { fail('Encoder error: ' + (e && e.message)); }
+      });
+      /* Note: iOS Safari's isConfigSupported can falsely report H.264 as
+         unsupported, so we skip the check and just configure. */
+      encoder.configure({
+        codec: 'avc1.640028', width: W, height: H,
+        bitrate: Math.min(40000000, Math.round(12000000 * (W * H) / (1280 * 720))),
+        framerate: fps
+      });
+      ensureFrame2d();
+      RM.onFrame = encodeFrame;
+      return true;
+    } catch (e) {
+      fail('Couldn\u2019t start the encoder: ' + e.message);
+      return false;
+    }
+  }
+
+  function encodeFrame(idx) {
+    if (!encoder || RM.phase !== 'record' || !rcanvas) return;
+    if (encoder.encodeQueueSize > 90) { RM._bp = true; return; }
+    var src = rcanvas;
+    if (fctx && frame2d) {
+      try { fctx.drawImage(rcanvas, 0, 0, W, H); src = frame2d; }
+      catch (e) { noteEncodeError(); return; }
+    }
+    var vf = null;
+    try { vf = new VideoFrame(src, { timestamp: Math.round(idx * 1e6 / fps), alpha: 'discard' }); }
+    catch (e) { noteEncodeError(); return; }
+    framesAttempted++;
+    try { encoder.encode(vf, { keyFrame: idx % (fps * 5) === 0 }); }
+    catch (e) { noteEncodeError(); }
+    try { vf.close(); } catch (e) {}
+    encodedFrames = idx + 1;
+    /* Fail fast on a silently stalled encoder: 60 frames fully drained,
+       nothing recorded. Saves the user sitting through a doomed render. */
+    if (framesAttempted >= 60 && muxedChunks === 0 && encoder.encodeQueueSize === 0) {
+      failEmpty();
+      return;
+    }
+    if ((idx & 15) === 0) updateProgress();
+  }
+
+  function updateProgress() {
+    var pct = Math.min(100, (encodedFrames / totalFrames) * 100);
+    var bar = document.getElementById('rmBar');
+    if (bar) bar.style.width = pct.toFixed(1) + '%';
+    var el = (performance.now() - t0) / 1000;
+    var rate = encodedFrames / Math.max(el, 0.1);
+    var remain = rate > 0.01 ? (totalFrames - encodedFrames) / rate : 0;
+    setStatus('Frame ' + encodedFrames.toLocaleString() + ' / ' + totalFrames.toLocaleString() + ' (' + pct.toFixed(0) + '%)');
+    var eta = document.getElementById('rmEta');
+    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall \u00B7 ' + muxedChunks + ' chunks \u00B7 q' + encoder.encodeQueueSize;
   }
 
   async function finishRender() {
@@ -3145,13 +3173,6 @@ SeedConsole.init(window.SeedConsoleAdapter);
     var buf = muxer.target.buffer;
     if (!buf || !buf.byteLength) { fail('The video came out empty.'); return; }
     if (muxedChunks === 0) { failEmpty(); return; }
-    /* Chunks without format info would make an unplayable file: never
-       hand the user a broken "ready" video. Fail loudly instead. */
-    if (!_avcDc) {
-      fail('The video recorded ' + muxedChunks + ' chunks but their format info never arrived, so no playable file could be made. ' +
-        'Please try again; if it keeps happening, use a lower resolution.');
-      return;
-    }
     try { window.__renderResult = buf; } catch (e) {} /* lets automated tests grab the MP4 */
     var blob = new Blob([buf], { type: 'video/mp4' });
     var cleanSeed = seed.replace(/[^A-Za-z0-9]+/g, '').slice(0, 14) || 'seed';
@@ -3170,7 +3191,12 @@ SeedConsole.init(window.SeedConsoleAdapter);
       '<div style="font-size:13px;color:#8b95ab;margin-bottom:20px;font-family:ui-monospace,monospace">' + esc(name) + ' \u00B7 ' + mb + ' MB</div>' +
       '<button id="rmShare" style="font-size:17px;font-weight:800;border:0;border-radius:14px;padding:16px 30px;background:#2f7bff;color:#fff;margin-bottom:12px">Share video</button>' +
       '<div style="font-size:12px;color:#8b95ab;max-width:300px;line-height:1.6">Share \u2192 Save to Files \u2192 your SSD.<br>Or use the download link below.</div>' +
-      '<a id="rmDl" href="' + url + '" download="' + esc(name) + '" style="margin-top:14px;color:#9cc3ff;font-size:14px">Download instead</a>';
+      '<a id="rmDl" href="' + url + '" download="' + esc(name) + '" style="margin-top:14px;color:#9cc3ff;font-size:14px">Download instead</a>' +
+      '<div><button id="rmBackDone" ' +
+      'style="margin-top:22px;font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 24px;background:#1a2236;color:#fff">Back to queue</button></div>';
+    document.getElementById('rmBackDone').onclick = function () {
+      location.href = 'https://bassseamoor.github.io/render-queue/';
+    };
     document.getElementById('rmShare').onclick = function () {
       var file = new File([blob], name, { type: 'video/mp4' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -3219,8 +3245,8 @@ SeedConsole.init(window.SeedConsoleAdapter);
       '<div style="font-size:13px;color:#8b95ab;margin-bottom:18px">No video was saved.</div>' +
       '<button id="rmBack" ' +
       'style="font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 24px;background:#1a2236;color:#fff">Back to queue</button>';
-    /* Was: inline onclick with \u2018\u2019 curly quotes around the URL —
-       a JS syntax error, so tapping the button silently did nothing. */
+    /* Was: inline onclick with curly quotes around the URL — a JS syntax
+       error, so tapping the button silently did nothing. */
     document.getElementById('rmBack').onclick = function () {
       location.href = 'https://bassseamoor.github.io/render-queue/';
     };
