@@ -7,7 +7,7 @@
  */
 (function(){
 'use strict';
-var VERSION='1.0.2';
+var VERSION='1.0.4';
 
 function clamp(x,a,b){return x<a?a:x>b?b:x;}
 
@@ -245,7 +245,7 @@ function drawLake(ctx,o,T){
 }
 
 function drawCanal(ctx,c,T){
-  var bank=(typeof P!=='undefined'&&P.theme===1)?'#42514f':(P&&P.theme===2)?'#7fa8c0':'#c9bfa2';
+  var bank=T.night?'#42514f':T.blue?'#7fa8c0':'#c9bfa2';
   ctx.strokeStyle=bank;ctx.lineWidth=c.w+6;strokePts(ctx,c.pts);
   ctx.strokeStyle=T.water;ctx.lineWidth=c.w;strokePts(ctx,c.pts);
   ctx.strokeStyle=T.waterLine;ctx.globalAlpha=0.6;ctx.lineWidth=1.2;strokePts(ctx,c.pts);ctx.globalAlpha=1;
@@ -347,13 +347,13 @@ function rewritePaint(src){
  * painter: rewritePaint transforms the adapted source string before it is
  * embedded via the Function constructor. No toString round-trip needed. */
 function transformConditions(text){
-  var open="\"use strict\";return ('+adapt(originalRender,1849429006,[";
+  var open="\"use strict\";return ('+adapt(originalRender,99227851,[";
   var close="])+');')(view,drawTopo,pathRings,ruralAllowed,rect);";
   if(text.indexOf(open)<0)throw new Error('carto: conditions open anchor not found');
   if(text.indexOf(open,text.indexOf(open)+open.length)>=0)throw new Error('carto: conditions open anchor ambiguous');
   if(text.indexOf(close)<0)throw new Error('carto: conditions close anchor not found');
   if(text.indexOf(close,text.indexOf(close)+close.length)>=0)throw new Error('carto: conditions close anchor ambiguous');
-  text=text.replace(open,"\"use strict\";return ('+RoadAtlasCarto.rewritePaint(adapt(originalRender,1849429006,[");
+  text=text.replace(open,"\"use strict\";return ('+RoadAtlasCarto.rewritePaint(adapt(originalRender,99227851,[");
   text=text.replace(close,"]))+');')(view,drawTopo,pathRings,ruralAllowed,rect);");
   return text;
 }
