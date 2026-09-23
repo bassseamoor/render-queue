@@ -47,9 +47,38 @@ precision highp float;
 in vec2 vQ; in vec4 vSeed; in float vFade; in float vCyc; in vec3 vWP;
 uniform float uMode; uniform float uTime; uniform float uAlpha; uniform float uFlick;
 uniform float uBurn;
-uniform vec4 uLogs[5]; uniform vec4 uLogAx[5];
+uniform vec4 uLogs[5]; uniform vec4 uLogAx[5]; uniform vec3 uCamPos;
 out vec4 oC;
 ${GLSL_NOISE}
+/* screen-space log silhouette: carve a tunnel through flame billboards along
+   each view ray that passes through a log, so flames visibly part around the
+   dark log silhouettes instead of washing over them in screen space.
+   Depth-independent on purpose: where the log covers the screen, flames die
+   there (the reference look) and lick harder in the halo around it.
+   Returns (suppress, rimBoost). Deterministic. */
+vec2 silhouette(vec3 p, float h01){
+  vec3 rdir = p - uCamPos;
+  float tFrag = length(rdir); rdir /= max(tFrag, 1e-4);
+  float sil = 1.0; float rim = 0.0;
+  for(int i=0;i<5;i++){
+    vec3 m = uLogs[i].xyz; float rad = max(uLogs[i].w, 1e-4);
+    vec3 ax = uLogAx[i].xyz; float h = uLogAx[i].w;
+    vec3 w0 = uCamPos - m;
+    float b = dot(rdir, ax);
+    float dd = dot(rdir, w0);
+    float e = dot(ax, w0);
+    float D = max(1.0 - b*b, 1e-5);
+    float sSeg = clamp((e - b*dd)/D, -h, h);
+    vec3 q = m + ax*sSeg;
+    float tRay = dot(q - uCamPos, rdir);
+    float dist = length((uCamPos + rdir*tRay) - q) / rad;
+    float prox = 1.0 - smoothstep(0.85, 1.45, dist);
+    sil *= 1.0 - prox*0.96;
+    float band = (1.0 - smoothstep(1.30, 2.30, dist)) * smoothstep(0.90, 1.25, dist);
+    rim += band;
+  }
+  return vec2(sil, min(rim,1.2)*0.50*(0.35+0.65*h01));
+}
 /* geometry-aware fire: analytic distance to the 5 firebox log segments
    (center+radius in uLogs, axis+halfLen in uLogAx). Returns distance in
    units of log radius, so 1.0 == the log surface. Deterministic. */
@@ -68,9 +97,21 @@ float logProx(vec3 p){
 float logWrap(float heat, float h01){
   float lp = logProx(vWP);
   float inside = 1.0 - smoothstep(0.70, 1.10, lp);
-  float edge = (1.0-smoothstep(1.15, 1.90, lp)) * smoothstep(0.75, 1.05, lp);
-  heat *= 1.0 - inside*0.92;
-  return clamp(heat + edge*0.55*(0.35+0.65*h01), 0.0, 1.0);
+  float edge = (1.0-smoothstep(1.10, 1.80, lp)) * smoothstep(0.72, 1.02, lp);
+  heat *= 1.0 - inside*0.94;
+  heat = clamp(heat + edge*0.70*(0.35+0.65*h01), 0.0, 1.0);
+  /* screen-space silhouette carve + rim lick */
+  vec2 silh = silhouette(vWP, h01);
+  return clamp(heat*silh.x + silh.y, 0.0, 1.0);
+}
+/* wash-parting for the non-flame particle modes (ember/glow): suppresses the
+   bright billboards inside the log volumes so the fire reads as parting
+   around dark log silhouettes. No edge boost here — the flame tongues
+   already provide the licking edge. */
+float logDampen(vec3 p){
+  float lp = logProx(p);
+  float inside = 1.0 - smoothstep(0.60, 1.05, lp);
+  return 1.0 - inside*0.88;
 }
 vec4 flameShade(vec2 q, float ph, float te, float flick, float burn){
   float h01 = q.y+0.5;
@@ -123,7 +164,7 @@ void main(){
     oC = vec4(fsh.rgb, fsh.a*uAlpha*vFade);
   } else if(uMode<1.5){
     float tw = 0.55+0.45*sin(uTime*(7.0+vSeed.x*9.0)+vSeed.y*47.0);
-    float b=smoothstep(1.0,0.0,r)*tw;
+    float b=smoothstep(1.0,0.0,r)*tw*logDampen(vWP)*silhouette(vWP, vQ.y+0.5).x;
     vec3 col=mix(vec3(1.0,0.72,0.28),vec3(0.85,0.12,0.02),clamp(vCyc*1.2,0.0,1.0));
     oC=vec4(col*2.0,b*uAlpha*vFade);
   } else if(uMode<2.5){
@@ -133,7 +174,7 @@ void main(){
     float dens = smoothstep(0.32,0.78,w);
     oC=vec4(vec3(0.12,0.115,0.115)*(0.55+0.9*w), b*dens*uAlpha*vFade*0.5);
   } else if(uMode<3.5){
-    float b=smoothstep(1.0,0.0,r); b*=b;
+    float b=smoothstep(1.0,0.0,r)*logDampen(vWP)*silhouette(vWP, vQ.y+0.5).x; b*=b;
     float puls = 0.65+0.35*sin(uTime*1.9+vSeed.x*43.0);
     oC=vec4(vec3(1.0,0.40,0.09)*b*puls*(0.65+0.7*uFlick), b*uAlpha*vFade);
   } else if(uMode<4.5){
