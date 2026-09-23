@@ -414,11 +414,23 @@ void main(){vec3 p=aPosition;float fade=1.,raw=10.;vBuild=vec2(10000.,0.);
   float bl=.5+.5*sin(uTime*2.3+aInfo.y*39.);
   fade*=smoothstep(.15,.85,bl);
  }
+ else if(aInfo.z>18.5&&aInfo.z<19.5){
+  // Worker C: chimney smoke — soft puffs rise, swell and loop, a pure function of uTime.
+  float cyc=fract(uTime*aRoute.w+aInfo.y*.0137),rise=cyc*aRoute.z,grow=.55+cyc*1.5;
+  p.y+=rise;p.xz=aRoute.xy+(p.xz-aRoute.xy)*grow;
+  fade*=(1.-cyc)*smoothstep(0.,.10,cyc);
+ }
+ else if(aInfo.z>19.5&&aInfo.z<20.5){
+  // Worker C: flags — ripple grows away from the pole edge, a pure function of uTime.
+  float hang=aTex.x;
+  p.z+=sin(uTime*7.3+aInfo.y*2.9+hang*8.5)*.045*hang;
+  p.y+=sin(uTime*5.1+aInfo.y*2.1+hang*6.0)*.016*hang;
+ }
  vPosition=p;vNormal=aNormal;vTint=aTint;vTex=aTex;vInfo=aInfo;vInfo.y=floor(aInfo.y*100.+.5);vFade=fade;vProgress=raw;vShadow=uLightMatrix*vec4(p,1.);gl_Position=uViewProjection*vec4(p,1.);if(fade<.0001)gl_Position=vec4(3.,3.,0.,1.);
 }`;
 const cityFragment=`precision highp float;
 varying vec3 vPosition,vNormal,vTint;varying vec2 vTex,vBuild;varying vec4 vInfo,vShadow;varying float vFade,vProgress;
-uniform mat4 uLightMatrix;uniform highp sampler2D uShadow;uniform sampler2D uMaterial;uniform sampler2D uBlimpSign;uniform sampler2D uBillboard;uniform sampler2D uFoliage;uniform vec3 uEye,uSun,uLandTint,uWaterTint;uniform vec4 uGeo,uMap;uniform vec2 uCenter,uSpacing,uBounds;uniform vec3 uPark;uniform float uTime,uStory,uWeather,uMist,uGlow,uRays,uPixelScale;uniform float uSunI,uAmbI,uTod;
+uniform mat4 uLightMatrix;uniform highp sampler2D uShadow;uniform sampler2D uMaterial;uniform sampler2D uBlimpSign;uniform sampler2D uBillboard;uniform sampler2D uFoliage;uniform sampler2D uSignage,uGraffiti,uFlag;uniform vec3 uEye,uSun,uLandTint,uWaterTint;uniform vec4 uGeo,uMap;uniform vec2 uCenter,uSpacing,uBounds;uniform vec3 uPark;uniform float uTime,uStory,uWeather,uMist,uGlow,uRays,uPixelScale;uniform float uSunI,uAmbI,uTod;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}
 float landDistance(vec2 p){float type=uGeo.x,phase=uGeo.y,offset=uGeo.z,water=uGeo.w;float river=offset+sin(p.y*uMap.x+phase)*uMap.y+p.y*uMap.z;
@@ -503,6 +515,54 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
  // Instanced foliage: leafy variation with a darker underside.
  if(mat>22.5&&mat<23.5){albedo*=.86+.28*noise(vPosition.xz*7.+vPosition.y*2.3);albedo*=.55+.45*max(N.y,0.);rough=1.;}
  if(mat>23.5&&mat<24.5){vec4 ftx=texture2D(uFoliage,vTex);if(ftx.a<.42)discard;albedo=ftx.rgb*(.72+.38*max(N.y,0.));rough=1.;}
+ // Worker C materials 24-32: signage, translucent glass, interiors, beacons, smoke,
+ // graffiti, brushed metal, copper, flags. Glass/interior/smoke stay LOD-cheap.
+ if(mat>32.5&&mat<33.5){vec3 sg=texture2D(uSignage,vTex).rgb;albedo=sg;emission=sg*.30*uGlow;rough=.5;}
+ if(mat>24.5&&mat<25.5){
+  // Translucent glass: cheap screen-door dither, denser far / sparse near.
+  float dist=length(uEye-vPosition);
+  float keep=mix(.40,.985,smoothstep(3.,17.,dist));
+  if(hash(gl_FragCoord.xy)>keep+.001)discard;
+  float bay=.29;vec2 coord=vec2(vTex.x/bay,vPosition.y/.34);vec2 cf=floor(coord),f=fract(coord);
+  float frame=1.-smoothstep(.015,.06,min(min(f.x,1.-f.x),min(f.y,1.-f.y)));
+  vec3 reflection=mix(vec3(.10,.17,.20),vec3(.44,.56,.59),clamp(V.y*.6+.35,0.,1.));
+  albedo=mix(vTint*.72,reflection,.55+.30*frame);
+  albedo*=.92+.08*hash(cf+seed);
+  rough=.16;metal=.32;
+ }
+ if(mat>25.5&&mat<26.5){
+  // Interior hints: warm, coarse, culled far away so they never cost a pixel at LOD.
+  float dist2=length(uEye-vPosition);
+  if(hash(gl_FragCoord.xy*1.71)<smoothstep(4.,13.,dist2))discard;
+  albedo*=.9+.1*hash(floor(vPosition.xz*20.)+seed);
+  emission=albedo*vec3(.55,.38,.22)*uGlow;rough=.9;
+ }
+ if(mat>26.5&&mat<27.5){float blink=step(.42,fract(uTime*.5+seed*.061));albedo=mix(vec3(.30,.03,.02),vec3(1.,.16,.10),blink);emission=vec3(1.2,.12,.06)*blink*uGlow;rough=.4;}
+ if(mat>27.5&&mat<28.5){
+  // Smoke: alpha-scaled dither (vFade carries the age ramp), soft procedural noise.
+  float a=clamp(vFade,0.,1.)*.5;
+  if(hash(gl_FragCoord.xy*1.31)>a+.001)discard;
+  float nse=hash(floor(vPosition.xz*24.)+floor(vPosition.y*24.));
+  albedo=vec3(.60,.62,.65)*(.88+.24*nse);rough=1.;
+ }
+ if(mat>28.5&&mat<29.5){vec3 tag=texture2D(uGraffiti,vTex).rgb;if(dot(tag,vec3(.333))<.04)discard;albedo=tag;emission=tag*.12;rough=.9;}
+ if(mat>29.5&&mat<30.5){
+  // Brushed metal: streaky roughness from the material atlas.
+  vec2 surface=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);
+  vec3 field=texture2D(uMaterial,fract(surface*vec2(.13,.53)+seed*.137)).rgb;
+  albedo*=.92+.16*field.g;
+  float streak=texture2D(uMaterial,fract(vec2(surface.x*3.,surface.y*36.)+seed*.137)).r;
+  albedo*=1.-streak*.10;rough=.44;metal=.82;
+ }
+ if(mat>30.5&&mat<31.5){
+  // Copper: subtle ribbed variation, warmer reflection.
+  vec2 surface2=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);
+  vec3 field2=texture2D(uMaterial,fract(surface2*.23+seed*.137)).rgb;
+  albedo*=.80+.30*field2.b;
+  float rib=1.-smoothstep(.10,.30,abs(fract(surface2.x*9.)-.5));
+  albedo*=1.-rib*.14;rough=.58;metal=.72;
+ }
+ if(mat>31.5&&mat<32.5){vec3 fl=texture2D(uFlag,vTex).rgb;albedo=fl*(.92+.08*hash(gl_FragCoord.xy));rough=.92;}
  if(mat>8.5&&mat<9.5){emission=albedo*uGlow*(.20+.95*nightF);rough=.2;}
  // Formation smoke: the ribbon pales and thins into the haze as it ages.
  if(vInfo.z>11.5&&vInfo.z<12.5){float sage=clamp(vTex.x/7.,0.,1.);albedo=mix(albedo,vec3(.45,.55,.60),sage*sage*.9);emission*=1.-sage*.75;}
@@ -516,7 +576,7 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
  vec3 H=normalize(V+uSun);float spec=pow(max(dot(N,H),0.),mix(125.,12.,rough))*(.10+metal*.7)*visibility;vec3 col=albedo*lighting+vec3(1.0,.86,.63)*spec+emission;
  float distance=length(uEye-vPosition);float haze=1.-exp(-max(distance-16.,0.)*.010*uMist*uMist);col=mix(col,vec3(.45,.55,.60),haze);col*=1.+.022*uWeather;col*=.45+.65*uGlow;gl_FragColor=vec4(col,1.);
 }`;
-const cityShadowFragment=`precision highp float;varying float vFade;varying highp vec4 vShadow;varying vec4 vInfo;varying vec2 vBuild;varying vec3 vPosition;void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x)||(vInfo.x>10.5&&vInfo.x<11.5)||(vInfo.x>20.5&&vInfo.x<22.5)||(vInfo.x>23.5&&vInfo.x<24.5))discard;highp float depth=clamp(vShadow.z/vShadow.w*.5+.5,0.,.999999);vec4 enc=fract(depth*vec4(1.,255.,65025.,16581375.));enc-=enc.yzww*vec4(1./255.,1./255.,1./255.,0.);gl_FragColor=enc;}`;
+const cityShadowFragment=`precision highp float;varying float vFade;varying highp vec4 vShadow;varying vec4 vInfo;varying vec2 vBuild;varying vec3 vPosition;void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x)||(vInfo.x>10.5&&vInfo.x<11.5)||(vInfo.x>20.5&&vInfo.x<22.5)||(vInfo.x>23.5&&vInfo.x<24.5)||(vInfo.x>24.5&&vInfo.x<26.5)||(vInfo.x>27.5&&vInfo.x<28.5))discard;highp float depth=clamp(vShadow.z/vShadow.w*.5+.5,0.,.999999);vec4 enc=fract(depth*vec4(1.,255.,65025.,16581375.));enc-=enc.yzww*vec4(1./255.,1./255.,1./255.,0.);gl_FragColor=enc;}`;
 let photoPrograms=null;
 function matMul(a,b){const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o}
 const dot3=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -882,8 +942,9 @@ function bakeCityMaterials(seed){
  for(let y=0;y<size;y++)for(let x=0;x<size;x++){const u=x/size,v=y/size,i=(y*size+x)*4,values=grids.map(g=>sample(g,u,v));bytes[i]=Math.round(255*(values[0]*.50+values[1]*.30+values[2]*.20));bytes[i+1]=Math.round(255*(values[2]*.50+values[3]*.32+values[4]*.18));bytes[i+2]=Math.round(255*(values[4]*.4+values[5]*.6));bytes[i+3]=255;}
  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,size,size,0,gl.RGBA,gl.UNSIGNED_BYTE,bytes);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);applyAniso(tex);return tex;
 }
-const architectureNames=['Lantern glass','Terracotta screen','Crown setback','Garden courtyard','Sawtooth works','Mansard house','Loggia residence','Hanging gardens','Bridge towers','Stepped garden tower','Grand courtyard','Wavy atelier','Canal warehouse','Needle spire','Dome pavilion','Green roof podium'];
-function architecturalType(c,l){return l.style*2+(hash(c.layout+':architecture:'+Math.floor(l.x/4)+':'+Math.floor(l.z/4))&1)}
+const architectureNames=['Lantern glass','Terracotta screen','Crown setback','Garden courtyard','Sawtooth works','Mansard house','Loggia residence','Hanging gardens','Bridge towers','Stepped garden tower','Grand courtyard','Wavy atelier','Canal warehouse','Needle spire','Dome pavilion','Green roof podium','Ziggurat steps','Twin skybridge','Drum tower','Thin slab','Notch corner','Spire stack'];
+function architecturalType(c,l){const t=l.style*2+(hash(c.layout+':architecture:'+Math.floor(l.x/4)+':'+Math.floor(l.z/4))&1);const nw=hash(c.layout+':arch-wc:'+l.id);return nw%7===0?16+(nw>>>4)%6:t;}
+// Worker C: six new silhouette families (types 16-21) take ~1/7 of lots.
 function roofKit(m,x,z,w,d,h,r,theme,far=false){
  const old=m.kind;m.kind=1;
  if(far){m.material=16;m.face([x,h+.025,z],[x+w,h+.025,z],[x+w,h+.025,z+d],[x,h+.025,z+d],[.26,.29,.27],[0,1,0]);m.material=0;m.kind=old;return;}
@@ -1049,6 +1110,95 @@ function architectureBuilding(m,l,s,c,stone,brick,glass){
    box(x+w*.40,ph+.09,z+d*.40,w*.20,.30,d*.20,glass,1);
    box(x+w*.44,ph+.39,z+d*.44,w*.12,.06,d*.12,trim,8);
   }
+ }else if(type===16){
+  // Worker C: ziggurat — broad stepped pyramid with a crown shrine. Strong stepped silhouette.
+  const flagship=hash(c.layout+':wc-flagship:'+l.id)%9===0;
+  const steps=4+Math.floor(r()*3);let yy=0,ww=w,dd=d,xx=x,zz=z;
+  for(let j=0;j<steps;j++){
+   const th=h/steps;
+   box(xx,yy,zz,ww,th,dd,j%2?color(stone,.93):stone,2);
+   box(xx-.02,yy+th-.05,zz-.02,ww+.04,.06,dd+.04,flagship?copper:trim,flagship?31:12);
+   const nx=ww*(.15+r()*.10),nz=dd*(.15+r()*.10);
+   xx+=nx*(.25+r()*.5);zz+=nz*(.25+r()*.5);ww-=nx;dd-=nz;yy+=th;
+   if(ww<.45||dd<.45)break;
+  }
+  if(!far)box(xx+ww*.32,yy,zz+dd*.32,Math.max(ww*.36,.18),Math.min(.5,h*.14),Math.max(dd*.36,.18),trim,8);
+  roof(xx,zz,Math.max(ww,.3),Math.max(dd,.3),yy,flagship?1:2);
+ }else if(type===17){
+  // Worker C: twin towers joined by a skybridge, with a glass atrium between them.
+  const flagship=hash(c.layout+':wc-flagship:'+l.id)%9===0;
+  const tw=w*.36,gapx=x+tw,gapw=w-tw*2;
+  box(x,0,z,tw,h,d,flagship?glass:stone,flagship?1:2);
+  box(x+w-tw,0,z,tw,h*.84,d,flagship?glass:stone,flagship?1:2);
+  box(x+tw-.03,h*(.52+r()*.18),z+d*.22,gapw+.06,Math.min(.30,h*.12),d*.56,trim,8);
+  if(!far){
+   box(x+tw*.35,h,z+d*.38,tw*.30,.32,d*.24,trim,8);
+   box(x+w-tw*.65,h*.84,z+d*.38,tw*.30,.32,d*.24,trim,8);
+  }
+  roof(x,z,tw,d,h,0);roof(x+w-tw,z,tw,d,h*.84,0);
+  if(!far&&gapw>.4){
+   // Translucent glass atrium walls (mat 25); simple interior baked direct (mat 26),
+   // visible up close through the dithered glass.
+   box(gapx+.02,0,z+d*.16,gapw-.04,.55,d*.68,glass,25);
+   const sv=m.solids;m.solids=null;
+   box(gapx+.07,.03,z+d*.21,gapw-.14,.05,d*.58,[.52,.50,.46],26);
+   box(gapx+.07,.30,z+d*.21,gapw-.14,.05,d*.58,[.52,.50,.46],26);
+   box(gapx+gapw*.32,.08,z+d*.42,gapw*.36,.14,.14,[.40,.30,.20],26);
+   box(gapx+.07,.50,z+d*.21,gapw-.14,.035,d*.58,[1.,.85,.55],9);
+   m.solids=sv;
+  }
+ }else if(type===18){
+  // Worker C: drum tower — stacked stone cylinder with glass bands and ring cornices.
+  const flagship=hash(c.layout+':wc-flagship:'+l.id)%9===0;
+  const cxp=x+w/2,czp=z+d/2,rad=Math.min(w,d)*.40,mm0=m.material;
+  m.material=2;m.cylinder(cxp,0,czp,rad,rad,h*.9,stone,18,1);m.material=mm0;
+  for(let j=1;j<=3;j++){
+   const yy2=h*.9*j/4;
+   m.material=12;m.cylinder(cxp,yy2-.03,czp,rad*1.06,rad*1.06,.07,trim,18);m.material=mm0;
+   m.material=flagship?25:1;m.cylinder(cxp,yy2+.04,czp,rad*1.015,rad*1.015,Math.min(.22,h*.1),glass,18);m.material=mm0;
+  }
+  m.material=30;m.cylinder(cxp,h*.9,czp,rad*.72,rad*.72,Math.min(.5,h*.12),color(trim,.9),14,.6);m.material=mm0;
+  if(!far){m.material=27;m.sphere(cxp,h*.9+Math.min(.5,h*.12)+.06,czp,.05,.06,.05,[1,.12,.07],8,4);m.material=mm0;}
+ }else if(type===19){
+  // Worker C: thin slab tower with a protruding glass lobby (simple interior inside).
+  const flagship=hash(c.layout+':wc-flagship:'+l.id)%9===0;
+  const sw=Math.max(w*.30,.34),sx=x+(w-sw)/2;
+  box(sx,0,z,sw,h,d,flagship?glass:stone,flagship?1:2);
+  if(!far)for(let j=1;j<=4;j++){const yy3=h*j/5;box(sx-.015,yy3-.025,z-.015,sw+.03,.05,d+.03,trim,12);}
+  box(sx-.03,h,z-.03,sw+.06,.14,d+.06,trim,12);
+  if(!far){
+   const lw=Math.min(sw*1.6,1.1),lx=sx+(sw-lw)/2;
+   box(lx,0,z+d-.02,lw,.5,.55,glass,25);
+   const sv=m.solids;m.solids=null;
+   box(lx+.06,.03,z+d+.03,lw-.12,.05,.45,[.52,.50,.46],26);
+   box(lx+lw*.32,.08,z+d+.16,lw*.36,.13,.14,[.40,.30,.20],26);
+   box(lx+.06,.44,z+d+.03,lw-.12,.03,.45,[1.,.85,.55],9);
+   m.solids=sv;
+  }
+ }else if(type===20){
+  // Worker C: corner-notch tower — L-shaped massing with a recessed glass slot.
+  const flagship=hash(c.layout+':wc-flagship:'+l.id)%9===0;
+  box(x,0,z,w,h*.92,d*.60,stone,2);
+  box(x,0,z+d*.60,w*.60,h,d*.40,flagship?glass:brick,flagship?1:3);
+  box(x+w*.60+.02,0,z+d*.62,w*.38-.04,h*.80,d*.36,glass,1);
+  if(!far){
+   box(x+w*.60-.03,0,z+d*.60-.03,.06,h*.80,.06,trim,12);
+   for(let j=1;j<=3;j++){const yy4=h*.92*j/4;box(x-.015,yy4-.02,z-.015,w+.03,.045,d*.60+.03,trim,12);}
+  }
+  roof(x,z,w,d*.60,h*.92,1);roof(x,z+d*.60,w*.60,d*.40,h,0);
+ }else if(type===21){
+  // Worker C: slender spire stack — ring terraces climbing a thin shaft, beacon tip.
+  const flagship=hash(c.layout+':wc-flagship:'+l.id)%9===0;
+  const cxp2=x+w/2,czp2=z+d/2,rad2=Math.min(w,d)*.20,ph=Math.min(h*.16,.7),mm0b=m.material;
+  box(x,0,z,w,ph,d,stone,2);
+  const floors=5,fh=(h-ph)/floors;
+  for(let j=0;j<floors;j++){
+   const yy5=ph+j*fh,rr2=rad2*(1-j*.09);
+   m.material=j%2?1:30;m.cylinder(cxp2,yy5,czp2,rr2,rr2,fh,j%2?glass:color(trim,.92),14);m.material=mm0b;
+   m.material=flagship?31:12;m.cylinder(cxp2,yy5+fh-.045,czp2,rr2*1.14,rr2*1.14,.06,flagship?copper:trim,14);m.material=mm0b;
+  }
+  m.material=8;m.cylinder(cxp2,h,czp2,.055,.055,h*.20,trim,10,.3);m.material=mm0b;
+  if(!far){m.material=27;m.sphere(cxp2,h+h*.20+.05,czp2,.05,.06,.05,[1,.12,.07],8,4);m.material=mm0b;}
  }else{
   box(x+w*.22,0,z,w*.56,h,d,stone,2);box(x,h*.12,z+d*.27,w,h*.76,d*.46,glass,1);
   box(x+w*.20,h-.065,z-.02,w*.60,.085,d+.04,trim,12);roof(x+w*.22,z,w*.56,d,h,2);
@@ -1127,6 +1277,211 @@ function bakeBillboardAtlas(seed){
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
  return t;
 }
+// ================= Worker C: buildings / signage / rooftops / radio / smoke / glass / gargoyles / flags / graffiti =================
+// Business theming: seeded goofy + normal businesses, each with brand colors.
+// Signage goes on small facade plates (mat 33), never the whole facade.
+const WC_BIZ=[
+ ['BIG CANAL COFFEE','#1f6f4a','#f5efe0'],['SEAGULL & SONS','#14324a','#ffd23f'],
+ ['PIGEON POST EXPRESS','#5a6b73','#ffffff'],['GONDOLA UBER','#c23b3b','#ffffff'],
+ ['CLOUD STORAGE','#7a5fd0','#ffffff'],['HARBOR & FINCH','#2b2b30','#e8dcc0'],
+ ['MERIDIAN LOFTS','#0e8f7a','#ffffff'],['THE DRIFTING DOCK','#8a5a2b','#ffe9c4'],
+ ['MOON CHEESE IMPORTS','#101c3a','#ffd23f'],['JUNIPER & CO.','#3f7a3f','#ffffff'],
+ ['SIR ROWS-A-LOT','#7a2e2e','#ffd9a0'],['TIDE LAUNDRY','#2b7fd4','#ffffff'],
+ ['COPPERLINE','#4a3220','#e0a458'],['NORTHLIGHT STUDIO','#d8d8d8','#1a1a1a'],
+ ['BLIMP PARKING LTD','#e07b1f','#141414'],['BREAD & SEAGULLS','#c8a24a','#3a2a10']];
+function wcCanvasTexture(cv){
+ const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cv);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+ return t;
+}
+function bakeSignageAtlas(seed){
+ const cv=document.createElement('canvas');cv.width=1024;cv.height=1024;const g=cv.getContext('2d');
+ WC_BIZ.forEach((b,i)=>{
+  const ox=(i%4)*256,oy=Math.floor(i/4)*256;
+  g.fillStyle=b[1];g.fillRect(ox,oy,256,256);
+  g.strokeStyle=b[2];g.lineWidth=6;g.strokeRect(ox+12,oy+12,232,232);
+  g.fillStyle=b[2];g.textAlign='center';g.textBaseline='middle';
+  let fs=46;g.font='900 '+fs+'px system-ui,sans-serif';
+  while(g.measureText(b[0]).width>200&&fs>16){fs-=4;g.font='900 '+fs+'px system-ui,sans-serif';}
+  const words=b[0].split(' ');
+  if(words.length>2&&fs<=30){
+   const mid=Math.ceil(words.length/2);
+   g.fillText(words.slice(0,mid).join(' '),ox+128,oy+106,200);
+   g.fillText(words.slice(mid).join(' '),ox+128,oy+152,200);
+  }else g.fillText(b[0],ox+128,oy+128,200);
+  g.font='400 20px system-ui,sans-serif';g.fillText('· EST. CANAL ·',ox+128,oy+198);
+ });
+ return wcCanvasTexture(cv);
+}
+const WC_TAGS=['ZEP','MIRA','KNOX','VELA'];
+function bakeGraffitiAtlas(seed){
+ const cv=document.createElement('canvas');cv.width=256;cv.height=256;const g=cv.getContext('2d');
+ const r=rng(hash(seed+':wc-graffiti'));
+ const cols=['#ff4fd8','#43f5ff','#c6ff4f','#ff9a3d'];
+ WC_TAGS.forEach((tag,i)=>{
+  const ox=(i%2)*128,oy=Math.floor(i/2)*128;
+  g.save();g.translate(ox+64,oy+64);g.rotate((r()-.5)*.5);
+  g.font='900 44px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';
+  g.lineWidth=7;g.strokeStyle='#101010';g.strokeText(tag,0,0);
+  g.fillStyle=cols[i];g.fillText(tag,0,0);
+  for(let k=0;k<4;k++){g.strokeStyle=cols[i];g.lineWidth=3;g.beginPath();
+   const sx=(r()-.5)*90;g.moveTo(sx,-30-r()*20);
+   g.quadraticCurveTo(sx+(r()-.5)*30,10,sx+(r()-.5)*20,44);g.stroke();}
+  g.restore();
+ });
+ return wcCanvasTexture(cv);
+}
+function bakeFlagTexture(){
+ const cv=document.createElement('canvas');cv.width=96;cv.height=64;const g=cv.getContext('2d');
+ for(let i=0;i<13;i++){g.fillStyle=i%2?'#f4f4f4':'#b22234';g.fillRect(0,Math.floor(i*64/13),96,Math.ceil(64/13)+1);}
+ g.fillStyle='#3c3b6e';g.fillRect(0,0,38,34);
+ g.fillStyle='#fff';for(let ry=0;ry<5;ry++)for(let rx=0;rx<6;rx++){g.beginPath();g.arc(3.5+rx*6,3.6+ry*6.2,1.6,0,7);g.fill();}
+ return wcCanvasTexture(cv);
+}
+// Rooftop kit: sparse, seeded, instanced-style merged boxes.
+function wcBeacon(m,x,y,z){const mm=m.material;m.material=27;m.sphere(x,y,z,.05,.06,.05,[1,.12,.07],8,4);m.material=mm;}
+function wcWaterTower(m,x,y,z,r){
+ const leg=[.30,.24,.16];
+ for(const sx of[-1,1])for(const sz of[-1,1])m.box(x+sx*.13-.02,y,z+sz*.13-.02,.04,.55,.04,leg,15);
+ m.box(x-.16,y+.55,z-.16,.32,.30,.32,[.55,.42,.30],3);
+ const mm=m.material;m.material=14;m.cylinder(x,y+.85,z,.19,.19,.12,[.48,.33,.24],10,.25);m.material=mm;
+}
+function wcAntenna(m,x,y,z,h,r){
+ m.box(x-.016,y,z-.016,.032,h,.032,[.36,.37,.39],8);
+ const n=Math.max(2,Math.floor(h/.5));
+ for(let j=1;j<=n;j++)m.box(x-.14,y+h*j/n-.012,z-.012,.28,.024,.024,[.40,.41,.43],8);
+ wcBeacon(m,x,y+h+.03,z);
+}
+function wcDish(m,x,y,z,s,r){
+ m.box(x-.02,y,z-.02,.04,.34,.04,[.42,.43,.45],8);
+ const mm=m.material;m.material=8;m.sphere(x,y+.40,z,s,s*.40,s,[.80,.82,.84],10,5);m.material=mm;
+ m.box(x-.008,y+.30,z-.008,.016,.16,.016,[.5,.5,.52],8);
+}
+function wcRoofDoor(m,x,y,z,r){
+ const w2=.22+r()*.10;
+ m.box(x,y,z,w2,.30,w2*.8,[.58,.55,.48],2);
+ m.box(x+w2*.28,y+.02,z+w2*.8+.004,w2*.44,.22,.015,[.20,.22,.20],3);
+ m.box(x-.015,y+.30,z-.015,w2+.03,.03,w2*.8+.03,[.40,.38,.34],12);
+}
+function wcVent(m,x,y,z,r){
+ const h2=.18+r()*.22;
+ m.box(x-.05,y,z-.05,.10,h2,.10,[.50,.52,.50],8);
+ m.box(x-.07,y+h2,z-.07,.14,.035,.14,[.44,.46,.44],8);
+}
+function wcSkylight(m,x,y,z,w,d,r){
+ m.box(x,y,z,w,.10,d,[.55,.57,.55],12);
+ m.box(x+.03,y+.10,z+.03,w-.06,.07,d-.06,[.35,.55,.60],18);
+}
+// Gargoyles: seeded part combinations (pose, wing angle, head tilt, scale) —
+// no two buildings share the same gargoyle.
+function wcGargoyle(m,x,y,z,r){
+ const s=.8+r()*.5,gc=[.40+r()*.06,.38+r()*.05,.34];
+ const pose=r(),wing=r(),tilt=r();
+ const lean=(pose<.35?.02:(pose<.7?.07:.11))*(0.7+tilt*.6);
+ const bh=(pose<.35?.10:.15)*s;
+ m.box(x-.05*s,y,z-.05*s,.10*s,.06*s,.10*s,[.50,.47,.42],12);
+ m.box(x-.035*s+lean*.5,y+.06*s,z-.028*s,.07*s,bh,.056*s,gc,2);
+ if(pose<.35){
+  m.box(x-.058*s,y+.06*s,z-.02*s,.026*s,.09*s,.05*s,gc,2);
+  m.box(x+.032*s,y+.06*s,z-.02*s,.026*s,.09*s,.05*s,gc,2);
+ }
+ const hy=y+.06*s+bh;
+ m.box(x-.026*s+lean,hy,z-.024*s,.052*s,.055*s,.048*s,gc,2);
+ m.box(x-.018*s+lean,hy-.012*s,z-.052*s,.036*s,.022*s,.030*s,gc,2);
+ const wa=(wing-.5)*.14;
+ for(let sgi=0;sgi<3;sgi++)for(const sd of[-1,1])
+  m.box(x+sd*(.035+sgi*.042)*s-.02*s,hy-.02*s+sgi*wa,z-.012*s,.04*s,Math.max(.03,(.09-sgi*.016)*s),.024*s,gc,2);
+ m.box(x-.012*s+lean*.2,hy-.05*s,z+.026*s,.024*s,.03*s,.06*s,gc,2);
+}
+// Tiny American flag: pole (static) + waving quad (kind 20 / mat 32).
+function wcFlag(m,x,y,z,r){
+ m.box(x-.012,y,z-.012,.024,.55,.024,[.55,.56,.58],8);
+ const fw=.24,fh=.15,fy=y+.55-fh;
+ const mm=m.material,kk=m.kind,pp=m.phase,rrt=m.route;
+ m.material=32;m.kind=20;m.phase=r()*100;m.route=[0,0,0,0];
+ const n=[0,0,1],c=[1,1,1];
+ const V=(px,py,pz,u,v,nn)=>m.vertex([px,py,pz],nn,c,[u,v]);
+ const b0=m.data.length/23;
+ V(x,fy,z,0,0,n);V(x+fw,fy,z,1,0,n);V(x+fw,fy+fh,z,1,1,n);V(x,fy+fh,z,0,1,n);
+ m.indices.push(b0,b0+1,b0+2,b0,b0+2,b0+3);
+ const b1=m.data.length/23;
+ V(x,fy,z,0,0,n);V(x,fy+fh,z,0,1,n);V(x+fw,fy+fh,z,1,1,n);V(x+fw,fy,z,1,0,n);
+ m.indices.push(b1,b1+3,b1+2,b1,b1+2,b1+1);
+ m.material=mm;m.kind=kk;m.phase=pp;m.route=rrt;
+}
+// Sparse lattice-ish radio tower with blinking red beacons.
+function wcRadioTower(m,x,z,h,r){
+ const base=.55,top=.13,levels=6,steel=[.34,.36,.38];
+ for(let j=0;j<levels;j++){
+  const y0=j/levels*h,y1=(j+1)/levels*h;
+  const r0=base+(top-base)*j/levels,r1=base+(top-base)*(j+1)/levels;
+  for(const sx of[-1,1])for(const sz of[-1,1])m.box(x+sx*r0-.03,y0,z+sz*r0-.03,.06,y1-y0+.02,.06,steel,8);
+  m.box(x-r1,y1-.025,z-r1,r1*2,.05,.05,steel,8);
+  m.box(x-r1,y1-.025,z+r1-.05,r1*2,.05,.05,steel,8);
+  m.box(x-r1,y1-.025,z-r1,.05,.05,r1*2,steel,8);
+  m.box(x+r1-.05,y1-.025,z-r1,.05,.05,r1*2,steel,8);
+ }
+ m.box(x-.045,h,z-.045,.09,1.3,.09,steel,8);
+ wcBeacon(m,x,h+.55,z);wcBeacon(m,x,h+1.15,z);
+ m.box(x-.35,0,z-.35,.7,.55,.7,[.46,.44,.40],2);
+ m.box(x-.35,.55,z-.35,.74,.05,.74,[.30,.32,.30],12);
+}
+// Light smoke from a stack: crossed quads rising on kind 19 / mat 28.
+function wcSmokeStack(m,x,y,z,r){
+ m.box(x-.045,y,z-.045,.09,.55,.09,[.48,.30,.22],3);
+ m.box(x-.06,y+.55,z-.06,.12,.05,.12,[.30,.20,.16],3);
+ const bx=x,by=y+.62,bz=z,NP=7;
+ const mm=m.material,kk=m.kind,pp=m.phase;
+ m.material=28;m.kind=19;
+ const c=[1,1,1];
+ const Q=(px,py,pz,u,v,nn)=>m.vertex([px,py,pz],nn,c,[u,v]);
+ for(let k=0;k<NP;k++){
+  const jx=(r()-.5)*.14,jz=(r()-.5)*.14,s=.13+r()*.10;
+  m.phase=r()*100;m.route=[bx+jx,bz+jz,.9+r()*.5,.14+r()*.10];
+  const v0=m.data.length/23;
+  Q(bx+jx-s,by,bz+jz,0,0,[0,0,1]);Q(bx+jx+s,by,bz+jz,1,0,[0,0,1]);
+  Q(bx+jx+s,by+s,bz+jz,1,1,[0,0,1]);Q(bx+jx-s,by+s,bz+jz,0,1,[0,0,1]);
+  m.indices.push(v0,v0+1,v0+2,v0,v0+2,v0+3,v0,v0+3,v0+2,v0,v0+2,v0+1);
+  const v1=m.data.length/23;
+  Q(bx+jx,by,bz+jz-s,0,0,[1,0,0]);Q(bx+jx,by,bz+jz+s,1,0,[1,0,0]);
+  Q(bx+jx,by+s,bz+jz+s,1,1,[1,0,0]);Q(bx+jx,by+s,bz+jz-s,0,1,[1,0,0]);
+  m.indices.push(v1,v1+1,v1+2,v1,v1+2,v1+3,v1,v1+3,v1+2,v1,v1+2,v1+1);
+ }
+ m.material=mm;m.kind=kk;m.phase=pp;m.route=[0,0,0,0];
+}
+// Small facade sign plate from the signage atlas (mat 33). vTex selects the cell.
+function wcSignQuad(m,cx,cy,z,w2,h2,biz,r){
+ const col=biz%4,row=Math.floor(biz/4)%4;
+ const uu0=col*.25,uu1=uu0+.25,vv0=1-(row+1)*.25,vv1=1-row*.25;
+ const mm=m.material,kk=m.kind,pp=m.phase,rrt=m.route;
+ m.material=33;m.kind=0;m.phase=r()*100;m.route=[0,0,0,0];
+ const b0=m.data.length/23,n=[0,0,1],c=[1,1,1];
+ m.vertex([cx-w2/2,cy-h2/2,z],n,c,[uu0,vv0]);m.vertex([cx+w2/2,cy-h2/2,z],n,c,[uu1,vv0]);
+ m.vertex([cx+w2/2,cy+h2/2,z],n,c,[uu1,vv1]);m.vertex([cx-w2/2,cy+h2/2,z],n,c,[uu0,vv1]);
+ m.indices.push(b0,b0+1,b0+2,b0,b0+2,b0+3);
+ m.material=mm;m.kind=kk;m.phase=pp;m.route=rrt;
+}
+// Tiny graffiti decal from the tag atlas (mat 29).
+function wcGrafQuad(m,cx,cy,z,w2,h2,tag,r){
+ const uu0=(tag%2)*.5,uu1=uu0+.5,vv0=1-(Math.floor(tag/2)+1)*.5,vv1=1-Math.floor(tag/2)*.5;
+ const mm=m.material,kk=m.kind,pp=m.phase,rrt=m.route;
+ m.material=29;m.kind=0;m.phase=r()*100;m.route=[0,0,0,0];
+ const b0=m.data.length/23,n=[0,0,1],c=[1,1,1];
+ m.vertex([cx-w2/2,cy-h2/2,z],n,c,[uu0,vv0]);m.vertex([cx+w2/2,cy-h2/2,z],n,c,[uu1,vv0]);
+ m.vertex([cx+w2/2,cy+h2/2,z],n,c,[uu1,vv1]);m.vertex([cx-w2/2,cy+h2/2,z],n,c,[uu0,vv1]);
+ m.indices.push(b0,b0+1,b0+2,b0,b0+2,b0+3);
+ m.material=mm;m.kind=kk;m.phase=pp;m.route=rrt;
+}
+// Flat-roof check for rooftop kit placement (sawtooth/spire/dome/drum roofs opt out).
+function wcFlatRoof(c,l){
+ if(l.lod===2)return true;
+ const t=architecturalType(c,l);
+ return t!==4&&t!==9&&t!==11&&t!==12&&t!==13&&t!==14&&t!==18&&t!==21;
+}
 // Blimp marquee sign: a canvas texture scrolled by render time, editable from the panel.
 let blimpSignTex=null,blimpSignCv=null,blimpSignG=null,blimpSignKey='';
 function blimpSignTexture(){
@@ -1162,7 +1517,7 @@ function bakeCityDetails(m,s,c,r){
  const TAU=Math.PI*2;
  m.solids=null;m.turn=0;m.construction=[0,0,0,0];m.material=0;
  // Goofy billboards on taller buildings, each on its own fade schedule (kind 13 / mat 21).
- const lots=c.lots||[];
+ const lots=s.lots||[]; // Worker C: was c.lots (always empty) — lots live on the city object.
  for(const l of lots){
   if(l.plane!==1||l.lod||!l.exists||l.height<1.6)continue;
   const br=rng(hash(c.layout+':bb:'+l.id));
@@ -1234,7 +1589,93 @@ function bakeCityDetails(m,s,c,r){
    m.box(bx-.1,.06,bz-.07,.22,.12,.14,[.30,.34,.36],8);
   }
  }
+ // Radio towers: up to 3 sparse lattice towers on open land, blinking beacons.
+ {
+  const tr2=rng(hash(c.layout+':wc-radio'));
+  let placed=0;
+  for(let k=0;k<8&&placed<3;k++){
+   const a=tr2()*Math.PI*2,rad=16+tr2()*22;
+   const tx=s.cx+Math.cos(a)*rad,tz=s.cz+Math.sin(a)*rad*1.35;
+   if(cityLand(s,tx,tz)<.9)continue;
+   let clash=false;
+   for(const l of lots){if(Math.abs(l.x+l.width/2-tx)<3.4&&Math.abs(l.z+l.depth/2-tz)<3.4){clash=true;break;}}
+   if(clash)continue;
+   m.turn=0;m.construction=[0,0,0,0];m.phase=tr2()*100;m.material=0;m.kind=0;
+   wcRadioTower(m,tx,tz,5.5+tr2()*2.5,tr2);
+   placed++;
+  }
+ }
  m.material=0;m.kind=0;m.turn=0;m.construction=[0,0,0,0];
+}
+// Worker C: per-plane detail pass — signage, rooftop kit, smoke, flags, graffiti.
+// Called for every plane (1-7); each plane details its own lots. Radio towers stay
+// in bakeCityDetails (index 1) so only one set is ever placed.
+function bakeWCDetails(m,s,c,index){
+ const lots=s.lots||[];
+ // Business signage: small seeded facade plates (mat 33), ~2/5 of lots.
+ for(const l of lots){
+  if(l.plane!==index||l.height<1.2)continue;
+  const sr=rng(hash(c.layout+':wc-sign:'+l.id));
+  if(sr()<.58)continue;
+  const flagship=hash(c.layout+':wc-flagship:'+l.id)%9===0;
+  const biz=Math.floor(sr()*WC_BIZ.length);
+  const sw=Math.min(flagship?1.3:.95,l.width*(flagship?.8:.62)),sh=sw*.24;
+  const sx=l.x+l.width*(.2+sr()*.6),sy=Math.min(l.height*.80,l.height-.28),sz=l.z+l.depth+.015;
+  m.turn=l.angle||0;m.pivot=[l.x+l.width/2,l.z+l.depth/2];m.construction=[l.birth,l.duration,0,l.height];
+  wcSignQuad(m,sx,sy,sz,sw,sh,biz,sr);
+  m.construction=[0,0,0,0];
+ }
+ // Rooftop kit: sparse seeded water towers, antennas, dishes, beacons, roof doors,
+ // vents, skylights; gargoyles on ~14% of flat roofs (each one unique); rooftop
+ // gardens stay rare (~4.5%) and never on every roof.
+ for(const l of lots){
+  if(l.plane!==index||l.height<1.0||!wcFlatRoof(c,l))continue;
+  const kr=rng(hash(c.layout+':wc-roof:'+l.id));
+  const x=l.x,z=l.z,w=l.width,d=l.depth,h=l.height;
+  m.turn=l.angle||0;m.pivot=[l.x+l.width/2,l.z+l.depth/2];m.construction=[l.birth,l.duration,0,h];m.phase=l.phase;m.material=0;m.kind=0;
+  const px=(f)=>x+w*f,pz=(f)=>z+d*f;
+  if(h>1.7&&kr()<.13)wcWaterTower(m,px(.3+kr()*.4),h,pz(.3+kr()*.4),kr);
+  if(h>2.2&&kr()<.20)wcAntenna(m,px(.2+kr()*.6),h,pz(.2+kr()*.6),.7+kr()*.9,kr);
+  if(kr()<.16)wcDish(m,px(.15+kr()*.7),h,pz(.15+kr()*.7),.09+kr()*.10,kr);
+  if(h>3.4&&kr()<.55)wcBeacon(m,px(.5),h+.42,pz(.5));
+  else if(h>2.4&&kr()<.3)wcBeacon(m,px(.5),h+.3,pz(.5));
+  if(kr()<.5)wcRoofDoor(m,px(.15+kr()*.5),h,pz(.6+kr()*.2),kr);
+  if(kr()<.55){const nv=1+Math.floor(kr()*2);for(let vi=0;vi<nv;vi++)wcVent(m,px(.15+kr()*.7),h,pz(.15+kr()*.7),kr);}
+  if(w>.8&&d>.8&&kr()<.28)wcSkylight(m,px(.2+kr()*.5),h,pz(.2+kr()*.5),Math.min(.5,w*.3),Math.min(.5,d*.3),kr);
+  if(kr()<.045){
+   m.box(px(.3),h+.02,pz(.3),w*.3,.05,d*.25,[.30,.40,.26],4);
+   m.material=5;m.sphere(px(.45),h+.2,pz(.42),.12,.14,.12,[.17,.30,.12],6,4);m.material=0;
+  }
+  if(h>1.8&&kr()<.14)wcGargoyle(m,x+(kr()<.5?.06:w-.06),h+.10,z+(kr()<.5?.06:d-.06),kr);
+  m.construction=[0,0,0,0];
+ }
+ // Chimney smoke on sparse existing buildings (kind 19 / mat 28), timeless geometry.
+ for(const l of lots){
+  if(l.plane!==index||!l.existing||l.height<1.5||!wcFlatRoof(c,l))continue;
+  const hr=rng(hash(c.layout+':wc-smoke:'+l.id));
+  if(hr()<.86)continue;
+  m.turn=l.angle||0;m.pivot=[l.x+l.width/2,l.z+l.depth/2];m.construction=[l.birth,l.duration,0,l.height];m.phase=l.phase;m.material=0;m.kind=0;
+  wcSmokeStack(m,l.x+l.width*(.2+hr()*.6),l.height,l.z+l.depth*(.2+hr()*.6),hr);
+ }
+ // Tiny waving American flags (kind 20 / mat 32) on ~10% of flat-roofed buildings.
+ for(const l of lots){
+  if(l.plane!==index||l.height<1.4||!wcFlatRoof(c,l))continue;
+  const fr2=rng(hash(c.layout+':wc-flag:'+l.id));
+  if(fr2()<.90)continue;
+  m.turn=l.angle||0;m.pivot=[l.x+l.width/2,l.z+l.depth/2];m.construction=[l.birth,l.duration,0,l.height];m.phase=l.phase;m.material=0;m.kind=0;
+  wcFlag(m,l.x+l.width*(.3+fr2()*.4),l.height,l.z+l.depth*(.3+fr2()*.4),fr2);
+ }
+ // Graffiti: tiny seeded tags on select walls (mat 29), ~20% of lots.
+ for(const l of lots){
+  if(l.plane!==index||l.height<.9)continue;
+  const gr2=rng(hash(c.layout+':wc-graf:'+l.id));
+  if(gr2()<.80)continue;
+  const gw=.45+gr2()*.35,gh=.32+gr2()*.2;
+  m.turn=l.angle||0;m.pivot=[l.x+l.width/2,l.z+l.depth/2];m.construction=[l.birth,l.duration,0,l.height];
+  wcGrafQuad(m,l.x+gr2()*(l.width-gw)+gw/2,.12+gr2()*.5,l.z+l.depth+.012,gw,gh,Math.floor(gr2()*4),gr2);
+  m.construction=[0,0,0,0];
+ }
+ m.material=0;m.kind=0;m.turn=0;m.pivot=[0,0];m.construction=[0,0,0,0];
 }
 // Worker B: near-field foliage as instanced-feel textured cross-quads (mat 24).
 function foliageTree(m,x,z,s,r){
@@ -1783,11 +2224,12 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
   m.turn=0;m.route=[0,0,0,0];m.kind=0;m.pivot=[0,0];m.construction=[0,0,0,0];}
  for(let i=index-1;i<s.boats.length;i+=7){const p=s.boats[i],dx=p.b[0]-p.a[0],dz=p.b[1]-p.a[1],length=Math.hypot(dx,dz);m.phase=r()*100;m.kind=6;m.anchor=0;m.route=[dx/length,dz/length,length,.05];m.turn=-Math.atan2(dz,dx);m.pivot=p.a;m.box(p.a[0],-.04,p.a[1],.50,.065,.17,[.74,.76,.70],8);m.box(p.a[0]+.12,.025,p.a[1]+.025,.19,.05,.12,[.15,.29,.34],1);m.kind=0;m.turn=0;m.route=[0,0,0,0];}
  if(index===1){bakeSkyLife(m,s,c);bakeCityDetails(m,s,c,r);bakeCityLife(m,s,c,r);}
+ bakeWCDetails(m,s,c,index); // Worker C: signage/rooftops/smoke/flags/graffiti, every plane.
  return m.upload();
 }
 function cityDraw(mesh,p,view,light,t,eye,sun,params,world){gl.useProgram(p.p);matrix(p,'uViewProjection',view);matrix(p,'uLightMatrix',light);uniform(p,'uStory',t);uniform(p,'uTime',elapsed);uniform(p,'uDensity',params.density*quality);uniform(p,'uRays',params.rays);uniform(p,'uPixelScale',.67/height);uniform(p,'uEye',eye);uniform(p,'uSun',sun);uniform(p,'uWeather',organic(elapsed*.8,world.city.phase));uniform(p,'uMist',params.mist);uniform(p,'uGlow',params.glow);uniform(p,'uGeo',world.city.geo);uniform(p,'uMap',world.city.map);uniform(p,'uCenter',[world.city.cx,world.city.cz]);uniform(p,'uSpacing',[world.city.sx,world.city.sz]);uniform(p,'uBounds',world.city.townBounds||(world.city.family===3?[38,38]:[world.city.sx*16.5,world.city.sz*16]));uniform(p,'uFlyby',world.city.flyby||[300,12]);uniform(p,'uPark',world.city.park);uniform(p,'uLandTint',world.city.landTint);uniform(p,'uWaterTint',world.city.waterTint);{const pph=(elapsed/53+world.city.phase*.013)%1,pu=Math.min(1,Math.max(0,(pph-.02)/.05))*(1-Math.min(1,Math.max(0,(pph-.32)/.10)));
 uniform(p,'uPigPulse',window.__renderMode?pu:0);}
-if(p===photoPrograms.surface){sampler(p,'uShadow',world.shadow.tex,2);sampler(p,'uMaterial',world.materialTexture,3);sampler(p,'uBlimpSign',blimpSignTexture(),6);if(world.billboardTex)sampler(p,'uBillboard',world.billboardTex,7);sampler(p,'uFoliage',world.foliageTex,8);uniform(p,'uSunI',lightUI.sun);uniform(p,'uAmbI',lightUI.amb);uniform(p,'uTod',lightUI.tod);}gl.bindBuffer(gl.ARRAY_BUFFER,mesh.buffer);attribute(p,'aPosition',3,92,0);attribute(p,'aNormal',3,92,12);attribute(p,'aTint',3,92,24);attribute(p,'aSchedule',4,92,36);attribute(p,'aTex',2,92,52);attribute(p,'aInfo',4,92,60);attribute(p,'aRoute',4,92,76);if(mesh.indexBuffer){gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,mesh.indexBuffer);gl.drawElements(gl.TRIANGLES,mesh.count,gl.UNSIGNED_SHORT,0);}else gl.drawArrays(gl.TRIANGLES,0,mesh.count);}
+if(p===photoPrograms.surface){sampler(p,'uShadow',world.shadow.tex,2);sampler(p,'uMaterial',world.materialTexture,3);sampler(p,'uBlimpSign',blimpSignTexture(),6);if(world.billboardTex)sampler(p,'uBillboard',world.billboardTex,7);sampler(p,'uFoliage',world.foliageTex,8);if(world.signageTex)sampler(p,'uSignage',world.signageTex,11);if(world.graffitiTex)sampler(p,'uGraffiti',world.graffitiTex,12);if(world.flagTex)sampler(p,'uFlag',world.flagTex,13);uniform(p,'uSunI',lightUI.sun);uniform(p,'uAmbI',lightUI.amb);uniform(p,'uTod',lightUI.tod);}gl.bindBuffer(gl.ARRAY_BUFFER,mesh.buffer);attribute(p,'aPosition',3,92,0);attribute(p,'aNormal',3,92,12);attribute(p,'aTint',3,92,24);attribute(p,'aSchedule',4,92,36);attribute(p,'aTex',2,92,52);attribute(p,'aInfo',4,92,60);attribute(p,'aRoute',4,92,76);if(mesh.indexBuffer){gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,mesh.indexBuffer);gl.drawElements(gl.TRIANGLES,mesh.count,gl.UNSIGNED_SHORT,0);}else gl.drawArrays(gl.TRIANGLES,0,mesh.count);}
 // ---- Free camera (live view only) ----
 // Touch: one-finger drag orbits, pinch zooms, two-finger drag pans.
 // Mouse: drag orbits, wheel zooms, Shift/right-drag pans.
@@ -1820,6 +2262,9 @@ function renderPhotoCity(w,t,params,dest){if(!photoPrograms)photoPrograms={surfa
  if(!w.materialTexture)w.materialTexture=bakeCityMaterials(w.config.detail);
  if(!w.foliageTex)w.foliageTex=bakeFoliageAtlas(w.config.detail);
  if(!w.billboardTex)w.billboardTex=bakeBillboardAtlas(w.config.detail);
+ if(!w.signageTex)w.signageTex=bakeSignageAtlas(w.config.layout); // Worker C: layout is the canonical seed.
+ if(!w.graffitiTex)w.graffitiTex=bakeGraffitiAtlas(w.config.layout);
+ if(!w.flagTex)w.flagTex=bakeFlagTexture();
  updateBlimpSign();
  if(!w.shadow){w.shadow=target(1024,1024);gl.bindTexture(gl.TEXTURE_2D,w.shadow.tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);w.shadowAt=-100;}
  const s=w.city,phase=s.phase,drift=params.drift,RM=window.__renderMode,fc=(!RM&&freeCam.active)?freeCam:null;
