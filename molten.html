@@ -1008,6 +1008,7 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
     '<button id="rmPause" style="font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 22px;background:#1a2236;color:#fff">\u23F8 Pause</button>' +
     '<button id="rmCancel" style="font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 22px;background:#3a1d1d;color:#ff9c9c">\u2715 Cancel</button>' +
     '</div>' +
+    '<button id="rmSound" style="margin-top:12px;font-size:14px;font-weight:700;border:0;border-radius:12px;padding:12px 20px;background:#1a2236;color:#c6cfe4">\uD83D\uDD0A Sound on</button>' +
     '<div style="font-size:12px;color:#5b6b8c;margin-top:18px;max-width:300px;line-height:1.6">Keep this tab open while rendering.<br>You can pause anytime \u2014 but closing this tab loses the render.</div>';
   document.body.appendChild(overlay);
 
@@ -1160,6 +1161,317 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
     return { codec: 'avc1.' + hx(sps[1]) + hx(sps[2]) + hx(sps[3]), description: avcC };
   }
 
+  /* ---- procedural ambience ----
+     Every sound is synthesized with Web Audio — no audio files, no
+     network. A seeded recipe per studio builds a quiet ambient bed
+     (rain, water, rumble, pads…), rendered offline into a seamless
+     60-second loop, then tiled across the full video duration.
+     Seeded from the render seed: same seed = same bed, every time.
+     Best-effort by design: any failure here yields a video-only
+     render, never a failed render. */
+  var soundOn = true, audioPlan = null, audioNote = '', audioMuxed = 0;
+
+  function hashSeed(s) {
+    var h = 2166136261 >>> 0;
+    s = String(s);
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function pickAmbience() {
+    var t = (studioLabel || '').toLowerCase();
+    if (t.indexOf('parallax') >= 0) {
+      var m = /^PX1-([0-5])/.exec(seed || '');
+      var r = m ? +m[1] : (hashSeed(seed) % 6);
+      return ['px-forest', 'px-canal', 'px-ember', 'px-cloud', 'px-mycel', 'px-orbital'][r];
+    }
+    if (t.indexOf('rainforest') >= 0) return 'rainforest';
+    if (t.indexOf('molten') >= 0) return 'molten';
+    if (t.indexOf('alien') >= 0) return 'alien';
+    if (t.indexOf('aquarium') >= 0) return 'aquarium';
+    if (t.indexOf('canal') >= 0) return 'canal';
+    if (t.indexOf('turtle') >= 0) return 'turtle';
+    if (t.indexOf('window') >= 0 || t.indexOf('weather') >= 0) return 'rainwindow';
+    if (t.indexOf('road') >= 0 || t.indexOf('atlas') >= 0) return 'road';
+    return 'neutral';
+  }
+  /* ---- procedural ambience: pure sample synthesis ----
+     The whole 60-second bed is computed directly to Float32Arrays —
+     no Web Audio graph, no oscillator/filter nodes. Every sample is
+     pure math from the seeded rng, so the same seed renders
+     bit-identical audio on every device, independent of any browser's
+     audio engine. (Audio nodes proved nondeterministic across runs in
+     one test browser's software audio engine; sample math removes the
+     entire class of risk.) Recipes keep their musical shape — only the
+     DSP backend changed. */
+  function ambBiquadCoefs(type, freq, q, sr) {
+    /* RBJ Audio EQ Cookbook, normalized. */
+    var w0 = 2 * Math.PI * freq / sr, cw = Math.cos(w0), sw = Math.sin(w0);
+    var alpha = sw / (2 * q), b0, b1, b2;
+    if (type === 'highpass') { b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = (1 + cw) / 2; }
+    else if (type === 'bandpass') { b0 = alpha; b1 = 0; b2 = -alpha; }
+    else { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = (1 - cw) / 2; }
+    var a0 = 1 + alpha;
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: -2 * cw / a0, a2: (1 - alpha) / a0 };
+  }
+  function ambContext(sr, L, seedStr, kind) {
+    var len = Math.ceil(sr * L), i;
+    var rng = mulberry32(hashSeed(seedStr + '|' + kind));
+    var noise = new Float32Array(len);
+    for (i = 0; i < len; i++) noise[i] = rng() * 2 - 1;
+    return { sr: sr, L: L, len: len, rng: rng, noise: noise,
+             mixL: new Float32Array(len), mixR: new Float32Array(len) };
+  }
+  /* Looped filtered noise. The LFO rate is k/L so it stays periodic
+     across the loop seam — no clicks, ever. */
+  function ambWash(g, o) {
+    var co = ambBiquadCoefs(o.type || 'lowpass', o.freq, o.q || 0.6, g.sr);
+    var x1 = 0, x2 = 0, y1 = 0, y2 = 0, n;
+    var lfoK = o.lfoK || 0;
+    var lfoDepth = (o.lfoDepth != null ? o.lfoDepth : o.gain * 0.4);
+    var ph = 0, lfoInc = lfoK / g.L / g.sr, TAU = 2 * Math.PI;
+    for (n = 0; n < g.len; n++) {
+      var x = g.noise[n];
+      var y = co.b0 * x + co.b1 * x1 + co.b2 * x2 - co.a1 * y1 - co.a2 * y2;
+      x2 = x1; x1 = x; y2 = y1; y1 = y;
+      var gg = o.gain;
+      if (lfoK) { ph += lfoInc; if (ph >= 1) ph -= 1; gg += lfoDepth * Math.sin(TAU * ph); }
+      g.mixL[n] += y * gg; g.mixR[n] += y * gg;
+    }
+  }
+  /* Short enveloped tone (chirp, ping, drip, horn). Full decay before
+     the loop seam, so it never clicks. */
+  function ambTone(g, t, f0, f1, dur, gain, type) {
+    f0 = Math.max(f0, 1);
+    var fEnd = (f1 && f1 !== f0) ? Math.max(f1, 1) : f0;
+    var startN = Math.floor(t * g.sr);
+    var nDur = Math.max(1, Math.ceil(dur * g.sr));
+    var atk = Math.max(1, Math.ceil(Math.min(0.02, dur * 0.2) * g.sr));
+    var sq = (type === 'square');
+    var g0 = 0.0001, g1 = Math.max(gain, 0.0002), TAU = 2 * Math.PI;
+    var pan = g.rng() * 1.2 - 0.6, pa = (pan + 1) * Math.PI / 4;
+    var lg = Math.cos(pa), rg = Math.sin(pa);
+    var ph = 0, n;
+    for (n = 0; n < nDur; n++) {
+      var idx = startN + n;
+      if (idx >= g.len) break;
+      var env = (n < atk) ? g0 * Math.pow(g1 / g0, n / atk)
+                          : g1 * Math.pow(g0 / g1, (n - atk) / (nDur - atk));
+      var f = f0 * Math.pow(fEnd / f0, n / nDur);
+      ph += f / g.sr; if (ph >= 1) ph -= 1;
+      var w = Math.sin(TAU * ph);
+      var s = (sq ? (w < 0 ? -1 : 1) : w) * env;
+      g.mixL[idx] += s * lg; g.mixR[idx] += s * rg;
+    }
+  }
+  /* Short filtered-noise tick (crackle, droplet hit, lap). */
+  function ambDrop(g, t, dur, gain, freq) {
+    var rate = 0.7 + g.rng() * 0.6;
+    var maxOff = Math.max(0.1, g.noise.length / g.sr - dur - 0.1);
+    var off = Math.floor(g.rng() * maxOff * g.sr);
+    var startN = Math.floor(t * g.sr);
+    var nlen = Math.ceil(dur * g.sr);
+    var co = ambBiquadCoefs('bandpass', freq, 1.2, g.sr);
+    var x1 = 0, x2 = 0, y1 = 0, y2 = 0, n;
+    var atkN = Math.max(1, Math.ceil(0.008 * g.sr));
+    var g1 = Math.max(gain, 0.0002), g0 = 0.0001;
+    var nlast = g.noise.length - 1;
+    for (n = 0; n < nlen; n++) {
+      var idx = startN + n;
+      if (idx >= g.len) break;
+      var pos = off + n * rate;
+      var i0 = Math.floor(pos), fr = pos - i0;
+      var x = g.noise[i0] * (1 - fr) + g.noise[i0 + 1 > nlast ? nlast : i0 + 1] * fr;
+      var y = co.b0 * x + co.b1 * x1 + co.b2 * x2 - co.a1 * y1 - co.a2 * y2;
+      x2 = x1; x1 = x; y2 = y1; y1 = y;
+      var env = (n < atkN) ? g0 * Math.pow(g1 / g0, n / atkN)
+                           : g1 * Math.pow(g0 / g1, (n - atkN) / (nlen - atkN));
+      g.mixL[idx] += y * env; g.mixR[idx] += y * env;
+    }
+  }
+  /* Slow evolving chord. Voice frequencies are quantized to k/L so the
+     whole pad is periodic over the loop — seamless by construction. */
+  function ambPad(g, base, ratios, gain) {
+    var nV = ratios.length, freq = [], lfoK = [], v;
+    for (v = 0; v < nV; v++) {
+      var det = g.rng() * 8 - 4;
+      var f = base * ratios[v] * Math.pow(2, det / 1200);
+      freq.push(Math.round(f * g.L) / g.L);
+      lfoK.push(1 + v);
+    }
+    var a = 1 - Math.exp(-2 * Math.PI * 700 / g.sr), TAU = 2 * Math.PI;
+    var ph = [], lph = [], v2;
+    for (v2 = 0; v2 < nV; v2++) { ph.push(0); lph.push(0); }
+    var lp = 0, n;
+    for (n = 0; n < g.len; n++) {
+      var x = 0;
+      for (v2 = 0; v2 < nV; v2++) {
+        ph[v2] += freq[v2] / g.sr; if (ph[v2] >= 1) ph[v2] -= 1;
+        lph[v2] += lfoK[v2] / g.L / g.sr; if (lph[v2] >= 1) lph[v2] -= 1;
+        var tri = 2 * Math.abs(2 * ph[v2] - 1) - 1;
+        x += tri * (1 + 0.35 * Math.sin(TAU * lph[v2]));
+      }
+      lp += a * (x * gain - lp);
+      g.mixL[n] += lp; g.mixR[n] += lp;
+    }
+  }
+  /* Constant low drone with a slow fade at the loop edges. */
+  function ambDrone(g, targetFreq, gain) {
+    var f = Math.round(targetFreq * g.L) / g.L, inc = f / g.sr, ph = 0, n, TAU = 2 * Math.PI;
+    for (n = 0; n < g.len; n++) {
+      ph += inc; if (ph >= 1) ph -= 1;
+      var t = n / g.sr, env;
+      if (t < 2) env = 0.0001 + (gain - 0.0001) * (t / 2);
+      else if (t > g.L - 2) env = 0.0001 + (gain - 0.0001) * ((g.L - t) / 2);
+      else env = gain;
+      var s = Math.sin(TAU * ph) * env;
+      g.mixL[n] += s; g.mixR[n] += s;
+    }
+  }
+  function ambBuild(kind, g) {
+    var L = g.L, i, rng = g.rng;
+    function ev(n, fn) { for (i = 0; i < n; i++) fn(0.5 + rng() * (L - 1.5)); }
+    switch (kind) {
+      case 'rainforest':
+        ambWash(g, { type: 'bandpass', freq: 4200, q: 0.5, gain: 0.11, lfoK: 2, lfoDepth: 0.025 });
+        ambWash(g, { type: 'lowpass', freq: 240, gain: 0.05, lfoK: 1, lfoDepth: 0.02 });
+        ev(7, function (tt) {
+          var f = 2300 + rng() * 2300, r0 = 2 + ((rng() * 3) | 0);
+          for (var r = 0; r < r0; r++) ambTone(g, tt + r * 0.13, f * (0.92 + rng() * 0.16), f * 1.25, 0.09, 0.030);
+        });
+        ev(9, function (tt) { ambTone(g, tt, 1500, 480, 0.12, 0.028); });
+        break;
+      case 'px-forest':
+        ambWash(g, { type: 'bandpass', freq: 900, q: 0.4, gain: 0.07, lfoK: 1, lfoDepth: 0.03 });
+        ambWash(g, { type: 'lowpass', freq: 140, gain: 0.06 });
+        ev(5, function (tt) { var f = 1800 + rng() * 1600; ambTone(g, tt, f, f * 1.3, 0.12, 0.025); });
+        ev(12, function (tt) { ambTone(g, tt, 1200, 420, 0.14, 0.030); });
+        break;
+      case 'aquarium':
+        ambWash(g, { type: 'lowpass', freq: 750, gain: 0.09, lfoK: 2, lfoDepth: 0.03 });
+        ambWash(g, { type: 'lowpass', freq: 180, gain: 0.05 });
+        ev(10, function (tt) { ambTone(g, tt, 500 + rng() * 300, 1300 + rng() * 500, 0.16, 0.035); });
+        break;
+      case 'molten':
+      case 'px-ember':
+        ambWash(g, { type: 'lowpass', freq: 110, gain: 0.17, lfoK: 1, lfoDepth: 0.06 });
+        ev(14, function (tt) { ambDrop(g, tt, 0.05 + rng() * 0.09, 0.05, 1800 + rng() * 2500); });
+        ev(3, function (tt) { ambTone(g, tt, 48, 38, 1.6, 0.06); });
+        break;
+      case 'rainwindow':
+        ambWash(g, { type: 'bandpass', freq: 5200, q: 0.4, gain: 0.10, lfoK: 3, lfoDepth: 0.02 });
+        ev(12, function (tt) { ambTone(g, tt, 1900, 950, 0.07, 0.030); });
+        ev(2, function (tt) { ambTone(g, tt, 55, 40, 2.2, 0.035); });
+        break;
+      case 'alien':
+      case 'px-orbital':
+        ambPad(g, 110, [1, 1.5, 2.02, 2.98], 0.026);
+        ambWash(g, { type: 'bandpass', freq: 700, q: 0.5, gain: 0.032, lfoK: 1, lfoDepth: 0.014 });
+        ev(6, function (tt) { var f = 840 + rng() * 480; ambTone(g, tt, f, f * 1.015, 1.4, 0.014); });
+        ev(2, function (tt) { ambTone(g, tt, 300 + rng() * 200, 700 + rng() * 300, 2.5, 0.018); });
+        break;
+      case 'px-cloud':
+        ambPad(g, 130, [1, 1.26, 1.5, 2.0], 0.024);
+        ambWash(g, { type: 'bandpass', freq: 500, q: 0.4, gain: 0.05, lfoK: 2, lfoDepth: 0.025 });
+        break;
+      case 'px-mycel':
+        ambPad(g, 55, [1, 1.5, 2.0], 0.035);
+        ambWash(g, { type: 'lowpass', freq: 200, gain: 0.05 });
+        ev(14, function (tt) { ambTone(g, tt, 900 + rng() * 500, 350, 0.18, 0.024); });
+        break;
+      case 'canal':
+      case 'px-canal':
+        ambWash(g, { type: 'lowpass', freq: 480, gain: 0.085, lfoK: 3, lfoDepth: 0.04 });
+        ambDrone(g, 98, 0.016); ambDrone(g, 196, 0.010);
+        ev(3, function (tt) { ambTone(g, tt, 520, 505, 0.5, 0.018, 'square'); });
+        ev(6, function (tt) { ambDrop(g, tt, 0.2, 0.03, 900 + rng() * 400); });
+        break;
+      case 'turtle':
+        ambWash(g, { type: 'lowpass', freq: 380, gain: 0.10, lfoK: 1, lfoDepth: 0.055 });
+        ambWash(g, { type: 'bandpass', freq: 280, q: 0.5, gain: 0.035, lfoK: 2, lfoDepth: 0.015 });
+        break;
+      case 'road':
+        ambWash(g, { type: 'bandpass', freq: 320, q: 0.5, gain: 0.030, lfoK: 1, lfoDepth: 0.015 });
+        ambWash(g, { type: 'lowpass', freq: 140, gain: 0.05, lfoK: 1, lfoDepth: 0.02 });
+        break;
+      default: /* neutral */
+        ambWash(g, { type: 'bandpass', freq: 400, q: 0.5, gain: 0.04, lfoK: 1, lfoDepth: 0.02 });
+    }
+  }
+
+  /* Render the seeded bed offline, then AAC-encode it, tiled across the
+     full video duration. Returns {chunks, decoderConfig, ...} or null.
+     Never throws past this boundary — audio is best-effort. */
+  async function prepareAudio() {
+    audioPlan = null; audioMuxed = 0;
+    if (!soundOn) { audioNote = 'off'; return null; }
+    try {
+      if (typeof AudioEncoder === 'undefined') { audioNote = 'no audio encoder'; return null; }
+      var sr = 44100, L = 60, kind = pickAmbience();
+      /* The bed is synthesized directly to samples — no audio nodes,
+         so there is no offline render step at all. */
+      var g = ambContext(sr, L, seed, kind);
+      ambBuild(kind, g);
+      var n, MG = 0.55; /* master gain */
+      for (n = 0; n < g.len; n++) { g.mixL[n] *= MG; g.mixR[n] *= MG; }
+      var ch0 = g.mixL, ch1 = g.mixR, loopLen = g.len;
+      /* Determinism fingerprint: same seed must yield the same bed. */
+      var fh = 2166136261 >>> 0, fi;
+      for (fi = 0; fi < loopLen; fi += 97) {
+        fh ^= (ch0[fi] * 1e6) | 0; fh = Math.imul(fh, 16777619);
+        fh ^= (ch1[fi] * 1e6) | 0; fh = Math.imul(fh, 16777619);
+      }
+      var bedHash = (fh >>> 0).toString(16);
+      var chunks = [], dc = null, encErr = '', nomDur = Math.round(1024 * 1e6 / sr), tsAcc = 0;
+      var aenc = new AudioEncoder({
+        output: function (ch, meta) {
+          if (meta && meta.decoderConfig && !dc) dc = meta.decoderConfig;
+          var b = new Uint8Array(ch.byteLength);
+          try { ch.copyTo(b); } catch (e) { return; }
+          var dur = (ch.duration > 0 && isFinite(ch.duration)) ? ch.duration : nomDur;
+          var ts = (ch.timestamp >= 0 && isFinite(ch.timestamp)) ? ch.timestamp : tsAcc;
+          tsAcc = ts + dur;
+          chunks.push({ ts: Math.round(ts), dur: Math.round(dur), bytes: b });
+        },
+        error: function (e) { encErr = (e && e.message) || String(e); }
+      });
+      /* Note: like the video path, we configure directly instead of
+         trusting isConfigSupported — iOS can misreport. */
+      aenc.configure({ codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: 2, bitrate: 128000 });
+      var total = Math.max(1, Math.ceil(seconds * sr)), frameLen = 1024, pos = 0, ts = 0;
+      while (pos < total) {
+        var n = Math.min(frameLen, total - pos);
+        var data = new Float32Array(n * 2), lp;
+        for (var i = 0; i < n; i++) { lp = (pos + i) % loopLen; data[2 * i] = ch0[lp]; data[2 * i + 1] = ch1[lp]; }
+        var ad = new AudioData({ format: 'f32', sampleRate: sr, numberOfFrames: n, numberOfChannels: 2, timestamp: ts, data: data });
+        aenc.encode(ad);
+        try { ad.close(); } catch (e) {}
+        ts += Math.round(n * 1e6 / sr); pos += n;
+      }
+      await aenc.flush();
+      try { aenc.close(); } catch (e) {}
+      if (!chunks.length) { audioNote = 'encoder silent' + (encErr ? ': ' + encErr : ''); return null; }
+      if (!dc || !dc.description) {
+        /* AAC-LC, 44100 Hz, stereo AudioSpecificConfig. */
+        dc = { codec: 'mp4a.40.2', sampleRate: sr, numberOfChannels: 2, description: new Uint8Array([0x12, 0x10]) };
+      }
+      audioNote = 'aac';
+      audioPlan = { chunks: chunks, decoderConfig: dc, sampleRate: sr, channels: 2, bedHash: bedHash, kind: kind };
+      try { window.__renderAudio = { bedHash: bedHash, note: audioNote, chunks: chunks.length, kind: kind }; } catch (e) {}
+      return audioPlan;
+    } catch (e) {
+      audioNote = 'failed: ' + (((e && e.message) || String(e)).slice(0, 80));
+      return null;
+    }
+  }
+
   RM.onPhase = function (phase) {
     if (phase === 'reset') doReset();
     else if (phase === 'done') finishRender();
@@ -1169,25 +1481,38 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
     RM.phase = 'reset';
     try { if (typeof window.__renderReset === 'function') window.__renderReset(); } catch (e) {}
     RM.frame = 0;
-    if (!setupEncoder()) return;
-    RM.phase = 'record';
-    t0 = performance.now();
-    setStatus('Rendering\u2026');
+    /* The sound choice locks when the render starts. */
+    var sb = document.getElementById('rmSound');
+    if (sb) { sb.disabled = true; sb.style.opacity = 0.45; }
+    setStatus(soundOn ? 'Preparing sound\u2026' : 'Preparing\u2026');
+    /* Audio first (fast, offline), then the video encoder — the muxer
+       needs to know up front whether it carries an audio track. */
+    prepareAudio().then(function (plan) {
+      if (RM.phase === 'cancelled') return;
+      if (!setupEncoder(!!plan)) return;
+      RM.phase = 'record';
+      t0 = performance.now();
+      setStatus('Rendering\u2026');
+    });
   }
 
-  function setupEncoder() {
+  function setupEncoder(withAudio) {
     if (typeof VideoEncoder === 'undefined') {
       fail('This browser can\u2019t do headless rendering (needs WebCodecs). Try Safari on iOS 17.4+.');
       return false;
     }
     if (typeof Mp4Muxer === 'undefined') { fail('Video muxer failed to load.'); return false; }
     try {
-      muxer = new Mp4Muxer.Muxer({
+      var mopts = {
         target: new Mp4Muxer.ArrayBufferTarget(),
         video: { codec: 'avc', width: W, height: H },
         fastStart: 'in-memory',
         firstTimestampBehavior: 'offset'
-      });
+      };
+      if (withAudio && audioPlan) {
+        mopts.audio = { codec: 'aac', sampleRate: audioPlan.sampleRate, numberOfChannels: audioPlan.channels };
+      }
+      muxer = new Mp4Muxer.Muxer(mopts);
       encoder = new VideoEncoder({
         output: function (chunk, meta) {
           /* Counted before anything can drop it: this is what the
@@ -1278,7 +1603,7 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
     var remain = rate > 0.01 ? (totalFrames - encodedFrames) / rate : 0;
     setStatus('Frame ' + encodedFrames.toLocaleString() + ' / ' + totalFrames.toLocaleString() + ' (' + pct.toFixed(0) + '%)');
     var eta = document.getElementById('rmEta');
-    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall \u00B7 ' + rawChunks + ' enc \u00B7 ' + muxedChunks + ' mux \u00B7 q' + encoder.encodeQueueSize;
+    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall \u00B7 ' + rawChunks + ' enc \u00B7 ' + muxedChunks + ' mux \u00B7 q' + encoder.encodeQueueSize + (audioPlan ? ' \u00B7 \u266A aac' : (soundOn ? ' \u00B7 \u266A\u2026' : ''));
   }
 
   async function finishRender() {
@@ -1287,6 +1612,22 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
     setStatus('Finishing video\u2026');
     try {
       if (encoder) await encoder.flush();
+      /* Best-effort audio: a mux problem here must never sink the video. */
+      if (audioPlan && audioPlan.chunks.length) {
+        try {
+          var sentDc = false;
+          for (var ai = 0; ai < audioPlan.chunks.length; ai++) {
+            var ac = audioPlan.chunks[ai];
+            var eac = new EncodedAudioChunk({ type: 'key', timestamp: ac.ts, duration: ac.dur, data: ac.bytes });
+            if (!sentDc) { muxer.addAudioChunk(eac, { decoderConfig: audioPlan.decoderConfig }); sentDc = true; }
+            else muxer.addAudioChunk(eac);
+            audioMuxed++;
+          }
+        } catch (ae) {
+          audioNote = 'mux failed: ' + (((ae && ae.message) || String(ae)).slice(0, 60));
+          audioPlan = null; audioMuxed = 0;
+        }
+      }
       if (muxer) muxer.finalize();
     } catch (e) { fail('Couldn\u2019t finish the video: ' + e.message); return; }
     var buf = muxer.target.buffer;
@@ -1314,7 +1655,7 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
     overlay.innerHTML =
       '<div style="font-size:44px;margin-bottom:10px">\u2705</div>' +
       '<div style="font-size:20px;font-weight:800;margin-bottom:6px">Your video is ready</div>' +
-      '<div style="font-size:13px;color:#8b95ab;margin-bottom:20px;font-family:ui-monospace,monospace">' + esc(name) + ' \u00B7 ' + mb + ' MB</div>' +
+      '<div style="font-size:13px;color:#8b95ab;margin-bottom:20px;font-family:ui-monospace,monospace">' + esc(name) + ' \u00B7 ' + mb + ' MB' + (audioMuxed > 0 ? ' \u00B7 \uD83D\uDD0A sound' : '') + '</div>' +
       '<button id="rmShare" style="font-size:17px;font-weight:800;border:0;border-radius:14px;padding:16px 30px;background:#2f7bff;color:#fff;margin-bottom:12px">Share video</button>' +
       '<div style="font-size:12px;color:#8b95ab;max-width:300px;line-height:1.6">Share \u2192 Save to Files \u2192 your SSD.<br>Or use the download link below.</div>' +
       '<a id="rmDl" href="' + url + '" download="' + esc(name) + '" style="margin-top:14px;color:#9cc3ff;font-size:14px">Download instead</a>' +
@@ -1357,6 +1698,10 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
     } catch (e) {}
   }
 
+  document.getElementById('rmSound').onclick = function () {
+    soundOn = !soundOn;
+    this.textContent = soundOn ? '\uD83D\uDD0A Sound on' : '\uD83D\uDD07 Muted';
+  };
   document.getElementById('rmPause').onclick = function () {
     if (RM.phase !== 'record' && RM.phase !== 'warmup') return;
     RM.paused = !RM.paused;
@@ -1394,7 +1739,6 @@ const context=document.modelContext;if(context?.registerTool){const lifecycle=ne
   } catch (e) {}
   setStatus('Preparing\u2026 (warming up)');
 })();
-
 
 </script>
 
