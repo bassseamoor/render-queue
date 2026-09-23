@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Video Encoder Test</title>
+<style>
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; padding: 20px 16px 48px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #101318; color: #eef1f6; line-height: 1.45;
+    touch-action: manipulation;
+  }
+  h1 { font-size: 24px; margin: 8px 0 6px; }
+  .sub { color: #a9b2c3; font-size: 15px; margin: 0 0 20px; }
+  button {
+    display: block; width: 100%; min-height: 60px;
+    font-size: 19px; font-weight: 700; border: 0; border-radius: 14px;
+    background: #2f7df6; color: #fff; margin: 0 0 14px; cursor: pointer;
+  }
+  button:disabled { background: #3a4354; color: #9aa4b8; cursor: default; }
+  button.copy { background: #1f9d55; }
+  #progress { font-size: 17px; font-weight: 600; margin: 6px 0 12px; min-height: 26px; }
+  ol { list-style: none; margin: 0; padding: 0; }
+  li {
+    background: #1a1f28; border-radius: 12px; padding: 14px;
+    margin: 0 0 10px; font-size: 16px;
+  }
+  li .row { display: flex; align-items: center; gap: 10px; }
+  li .num { color: #8b95a9; font-weight: 700; min-width: 26px; }
+  li .name { flex: 1; font-weight: 600; }
+  .pill {
+    font-size: 14px; font-weight: 700; padding: 6px 12px; border-radius: 999px;
+    background: #3a4354; color: #c6cddb; white-space: nowrap;
+  }
+  .pill.running { background: #5a4a1f; color: #ffd970; }
+  .pill.pass { background: #14532d; color: #7dffa8; }
+  .pill.fail { background: #5b1d1d; color: #ff9d9d; }
+  li .detail { color: #a9b2c3; font-size: 13.5px; margin-top: 8px; word-break: break-word; }
+  #summary { font-size: 19px; font-weight: 700; margin: 18px 0 14px; min-height: 28px; }
+</style>
+</head>
+<body>
+<h1>Video encoder test</h1>
+<p class="sub">This runs 8 quick video experiments to find out which ones your phone can do. It takes about a minute. Nothing is uploaded anywhere — the results stay on this page.</p>
+<button id="startBtn">Start tests</button>
+<div id="progress"></div>
+<ol id="testList"></ol>
+<div id="summary"></div>
+<button id="copyBtn" class="copy" hidden>Copy results</button>
+
+<script>
+(function () {
+  'use strict';
+
+  var startBtn = document.getElementById('startBtn');
+  var copyBtn = document.getElementById('copyBtn');
+  var progressEl = document.getElementById('progress');
+  var summaryEl = document.getElementById('summary');
+  var listEl = document.getElementById('testList');
+  var copyText = '';
+
+  var TESTS = [
+    { name: 'Standard HD video',        tech: 'avc1.640028, 1280x720, 2D-canvas frames', frame: 'canvas2d',
+      makeConfig: function () { return { codec: 'avc1.640028', width: 1280, height: 720, bitrate: 12000000, framerate: 30 }; } },
+    { name: 'Simple HD video',          tech: 'avc1.42001f, 1280x720, 2D-canvas frames', frame: 'canvas2d',
+      makeConfig: function () { return { codec: 'avc1.42001f', width: 1280, height: 720, bitrate: 12000000, framerate: 30 }; } },
+    { name: 'Middle HD video',          tech: 'avc1.4d0028, 1280x720, 2D-canvas frames', frame: 'canvas2d',
+      makeConfig: function () { return { codec: 'avc1.4d0028', width: 1280, height: 720, bitrate: 12000000, framerate: 30 }; } },
+    { name: 'Standard HD + fast mode',  tech: 'avc1.640028, 1280x720, latencyMode=realtime', frame: 'canvas2d',
+      makeConfig: function () { return { codec: 'avc1.640028', width: 1280, height: 720, bitrate: 12000000, framerate: 30, latencyMode: 'realtime' }; } },
+    { name: 'Standard HD + phone chip', tech: 'avc1.640028, 1280x720, hardwareAcceleration=prefer-hardware', frame: 'canvas2d',
+      makeConfig: function () { return { codec: 'avc1.640028', width: 1280, height: 720, bitrate: 12000000, framerate: 30, hardwareAcceleration: 'prefer-hardware' }; } },
+    { name: 'Photo-frame HD video',     tech: 'avc1.640028, 1280x720, ImageBitmap frames', frame: 'bitmap',
+      makeConfig: function () { return { codec: 'avc1.640028', width: 1280, height: 720, bitrate: 12000000, framerate: 30 }; } },
+    { name: 'Standard small video',     tech: 'avc1.640028, 640x360, 2D-canvas frames', frame: 'canvas2d',
+      makeConfig: function () { return { codec: 'avc1.640028', width: 640, height: 360, bitrate: 3000000, framerate: 30 }; } },
+    { name: "Phone's built-in recorder", tech: 'MediaRecorder fallback probe', recorder: true }
+  ];
+
+  var rows = TESTS.map(function (t, i) {
+    var li = document.createElement('li');
+    var row = document.createElement('div'); row.className = 'row';
+    var num = document.createElement('span'); num.className = 'num'; num.textContent = (i + 1);
+    var name = document.createElement('span'); name.className = 'name'; name.textContent = t.name;
+    var pill = document.createElement('span'); pill.className = 'pill'; pill.textContent = 'Waiting';
+    var detail = document.createElement('div'); detail.className = 'detail'; detail.textContent = t.tech;
+    row.appendChild(num); row.appendChild(name); row.appendChild(pill);
+    li.appendChild(row); li.appendChild(detail);
+    listEl.appendChild(li);
+    return { pill: pill, detail: detail };
+  });
+
+  function setStatus(i, cls, label, detailText) {
+    rows[i].pill.className = 'pill ' + cls;
+    rows[i].pill.textContent = label;
+    if (detailText !== undefined) rows[i].detail.textContent = detailText;
+  }
+
+  function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+
+  function withTimeout(promise, ms, msg) {
+    return Promise.race([
+      promise,
+      new Promise(function (_, rej) { setTimeout(function () { rej(new Error(msg)); }, ms); })
+    ]);
+  }
+
+  function drawFrame(ctx, w, h, i, n) {
+    var hue = (i * 9) % 360;
+    var g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, 'hsl(' + hue + ',65%,38%)');
+    g.addColorStop(1, 'hsl(' + ((hue + 140) % 360) + ',65%,22%)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    var k, t = i / n * Math.PI * 2;
+    for (k = 0; k < 6; k++) {
+      var x = w * (0.5 + 0.42 * Math.cos(t + k * 1.05));
+      var y = h * (0.5 + 0.42 * Math.sin(t * 1.3 + k * 2.1));
+      ctx.beginPath();
+      ctx.arc(x, y, Math.min(w, h) * 0.07, 0, Math.PI * 2);
+      ctx.fillStyle = 'hsla(' + ((hue + k * 60) % 360) + ',80%,60%,0.85)';
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = 'bold ' + Math.round(h / 10) + 'px system-ui, sans-serif';
+    ctx.fillText('frame ' + i, Math.round(w * 0.04), Math.round(h * 0.14));
+  }
+
+  function errText(e) {
+    if (e && e.message) return e.message;
+    return String(e);
+  }
+
+  function runEncodeTest(t) {
+    var result = { chunks: 0, errors: [], support: 'not checked' };
+    var cfg = t.makeConfig();
+    return Promise.resolve()
+      .then(function () {
+        if (typeof VideoEncoder === 'undefined') throw new Error('VideoEncoder not available on this browser');
+        if (VideoEncoder.isConfigSupported) {
+          return VideoEncoder.isConfigSupported(cfg).then(function (s) {
+            result.support = s && s.supported ? 'browser says supported' : 'browser says NOT supported';
+          }).catch(function () { result.support = 'browser check failed'; });
+        }
+      })
+      .then(function () {
+        var enc;
+        try {
+          enc = new VideoEncoder({
+            output: function (chunk) {
+              result.chunks++;
+              try { if (chunk && chunk.close) chunk.close(); } catch (e) {}
+            },
+            error: function (e) { result.errors.push('encoder error: ' + errText(e)); }
+          });
+        } catch (e) {
+          result.errors.push('could not create encoder: ' + errText(e));
+          return result;
+        }
+        try { enc.configure(cfg); }
+        catch (e) {
+          result.errors.push('configure failed: ' + errText(e));
+          try { enc.close(); } catch (e2) {}
+          return result;
+        }
+        var N = 30;
+        var canvas = document.createElement('canvas');
+        canvas.width = cfg.width; canvas.height = cfg.height;
+        var ctx = canvas.getContext('2d');
+        if (!ctx) {
+          result.errors.push('could not get 2D context');
+          try { enc.close(); } catch (e) {}
+          return result;
+        }
+        var chain = Promise.resolve();
+        for (var i = 0; i < N; i++) {
+          (function (i) {
+            chain = chain.then(function () {
+              drawFrame(ctx, cfg.width, cfg.height, i, N);
+              var srcPromise = (t.frame === 'bitmap')
+                ? createImageBitmap(canvas)
+                : Promise.resolve(canvas);
+              return srcPromise.then(function (src) {
+                var vf;
+                try {
+                  vf = new VideoFrame(src, { timestamp: Math.round(i * 1e6 / 30), duration: 33333, alpha: 'discard' });
+                } catch (e) {
+                  if (t.frame === 'bitmap') { try { src.close(); } catch (e2) {} }
+                  throw new Error('VideoFrame failed on frame ' + i + ': ' + errText(e));
+                }
+                if (t.frame === 'bitmap') { try { src.close(); } catch (e) {} }
+                enc.encode(vf, { keyFrame: (i % 15 === 0) });
+                vf.close();
+              });
+            });
+          })(i);
+        }
+        return chain
+          .then(function () { return withTimeout(enc.flush(), 10000, 'flush timed out after 10s'); })
+          .catch(function (e) { result.errors.push(errText(e)); })
+          .then(function () { try { enc.close(); } catch (e) {} return result; });
+      })
+      .catch(function (e) { result.errors.push(errText(e)); return result; });
+  }
+
+  function runRecorderTest() {
+    var result = { chunks: 0, errors: [], blobBytes: 0, mime: '', support: '' };
+    return Promise.resolve().then(function () {
+      if (typeof MediaRecorder === 'undefined') throw new Error('MediaRecorder not available on this browser');
+      var cands = ['video/mp4', 'video/mp4;codecs=avc1.640028', 'video/webm;codecs=h264', 'video/webm;codecs=vp9', 'video/webm'];
+      var supported = cands.filter(function (m) {
+        try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; }
+      });
+      result.support = 'mime types this browser offers: ' + (supported.join(', ') || 'none of the tried types');
+      if (!supported.length) throw new Error('no supported recording format found');
+      var mime = supported[0];
+      var canvas = document.createElement('canvas');
+      canvas.width = 640; canvas.height = 360;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('could not get 2D context');
+      var stream = canvas.captureStream(30);
+      var rec;
+      try { rec = new MediaRecorder(stream, { mimeType: mime }); }
+      catch (e) { throw new Error('could not start recorder: ' + errText(e)); }
+      var parts = [];
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) parts.push(e.data); };
+      var stopped = new Promise(function (res, rej) {
+        rec.onstop = res;
+        rec.onerror = function () { rej(new Error('recorder error')); };
+      });
+      rec.start(250);
+      return new Promise(function (res) {
+        var t0 = performance.now(), i = 0;
+        (function tick() {
+          drawFrame(ctx, 640, 360, i++, 60);
+          if (performance.now() - t0 < 2000) requestAnimationFrame(tick); else res();
+        })();
+      }).then(function () {
+        rec.stop();
+        return withTimeout(stopped, 8000, 'recorder stop timed out');
+      }).then(function () {
+        var blob = new Blob(parts, { type: mime });
+        result.chunks = parts.length;
+        result.blobBytes = blob.size;
+        result.mime = rec.mimeType || mime;
+        if (!blob.size) result.errors.push('recorded 0 bytes');
+        return result;
+      });
+    }).catch(function (e) { result.errors.push(errText(e)); return result; });
+  }
+
+  function detailLine(t, res) {
+    var d = t.tech + ' | browser check: ' + res.support;
+    if (t.recorder) {
+      d += ' | data pieces: ' + res.chunks + ', bytes: ' + res.blobBytes + (res.mime ? ', format: ' + res.mime : '');
+    } else {
+      d += ' | recorded chunks: ' + res.chunks;
+    }
+    if (res.errors.length) d += ' | problems: ' + res.errors.join('; ');
+    return d;
+  }
+
+  function plainLine(idx, t, res, ok) {
+    var s = 'Test ' + (idx + 1) + ' (' + t.name + '): ' + (ok ? 'PASS' : 'FAIL') + ' — ' + detailLine(t, res);
+    return s;
+  }
+
+  startBtn.addEventListener('click', function () {
+    startBtn.disabled = true;
+    copyBtn.hidden = true;
+    summaryEl.textContent = '';
+    var lines = ['Video encoder probe — ' + new Date().toISOString(), 'browser: ' + navigator.userAgent];
+    var passed = 0;
+    var seq = Promise.resolve();
+    TESTS.forEach(function (t, i) {
+      seq = seq.then(function () {
+        progressEl.textContent = 'Test ' + (i + 1) + ' of ' + TESTS.length + '…';
+        setStatus(i, 'running', 'Running');
+        var p = t.recorder ? runRecorderTest() : runEncodeTest(t);
+        return p.then(function (res) {
+          var ok = t.recorder ? (res.blobBytes > 0 && !res.errors.length)
+                              : (res.chunks > 0 && !res.errors.length);
+          if (ok) passed++;
+          setStatus(i, ok ? 'pass' : 'fail', ok ? 'PASS' : 'FAIL', detailLine(t, res));
+          lines.push(plainLine(i, t, res, ok));
+          return sleep(400);
+        });
+      });
+    });
+    seq.then(function () {
+      progressEl.textContent = 'Done.';
+      summaryEl.textContent = passed + ' of ' + TESTS.length + ' passed.';
+      lines.push('Summary: ' + passed + ' of ' + TESTS.length + ' passed.');
+      copyText = lines.join('\n');
+      copyBtn.hidden = false;
+      startBtn.disabled = false;
+      startBtn.textContent = 'Run tests again';
+    });
+  });
+
+  copyBtn.addEventListener('click', function () {
+    function done(label) {
+      copyBtn.textContent = label;
+      setTimeout(function () { copyBtn.textContent = 'Copy results'; }, 2500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(copyText).then(function () { done('Copied!'); }, function () { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = copyText;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        if (document.execCommand('copy')) done('Copied!');
+        else done('Copy failed');
+      } catch (e) { done('Copy failed'); }
+      ta.remove();
+    }
+  });
+})();
+</script>
+</body>
+</html>
