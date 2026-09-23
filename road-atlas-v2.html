@@ -43,8 +43,20 @@
   .ametric{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:9px}
   .ametric strong{display:block;font-size:18px;color:#f1f6fb}.ametric span{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#76899d}
   .achain{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;line-height:1.55;color:#91a0b2}
-  @media(max-width:720px){#topbar .sub,#topbar .meta{display:none}.tbtn{padding:8px 10px;font-size:12px}#topbar{gap:6px;padding:0 8px;flex-wrap:wrap;height:auto;min-height:92px}#topbar .brand{width:100%}#topbar .spacer{display:none}#stage{inset:96px 0 0}#layersPanel,#analysisPanel{top:104px}#scene{width:calc(100vw - 8px)}}
+  #stage3d{position:fixed;inset:52px 0 0 0;z-index:900;display:none;background:#0b0e13;}
+  #stage3d.on{display:block;}
+  #stage3d canvas{display:block;width:100%;height:100%;touch-action:none;}
+  #veil3d{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:950;display:none;
+    background:rgba(10,14,20,.88);color:#f0e8d8;border:1px solid rgba(255,255,255,.15);
+    border-radius:14px;padding:16px 22px;font-size:14px;box-shadow:0 12px 40px rgba(0,0,0,.5);}
+  #veil3d.on{display:block;}
+  #hint3d{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:950;display:none;
+    background:rgba(10,14,20,.72);color:#cfd8e3;border:1px solid rgba(255,255,255,.12);
+    border-radius:999px;padding:8px 16px;font-size:12px;white-space:nowrap;}
+  #hint3d.on{display:block;}
+  @media(max-width:720px){#topbar .sub,#topbar .meta{display:none}.tbtn{padding:8px 10px;font-size:12px}#topbar{gap:6px;padding:0 8px;flex-wrap:wrap;height:auto;min-height:92px}#topbar .brand{width:100%}#topbar .spacer{display:none}#stage{inset:96px 0 0}#stage3d{inset:96px 0 0}#layersPanel,#analysisPanel{top:104px}#scene{width:calc(100vw - 8px)}}
 </style>
+<script type="importmap">{"imports":{"three":"./three.module.js?v=1.0.0"}}</script>
 <link rel="stylesheet" href="studio-shell.css?v=4">
 <script defer src="studio-shell.js?v=3"></script>
 </head>
@@ -60,6 +72,7 @@
   <button class="tbtn" id="analysisBtn" title="Network analysis">◫ Analysis</button>
   <button class="tbtn" id="dataBtn" title="Export reusable city data">⇩ Data</button>
   <button class="tbtn" id="shareBtn" title="Copy a link to this exact map">🔗 Share</button>
+  <button class="tbtn" id="btn3d" title="Explore this city in 3D">🧊 3D</button>
 </header>
 <div id="layersPanel">
   <div class="ltitle">Data layers</div>
@@ -86,6 +99,9 @@
   <div class="achain" id="pipelineChain">Terrain + water → districts → tensor field → Delaunay/MST/loops → cost-routed streets → true enclosed blocks → parcels/buildings. V2 keeps this proven synthesis core and exposes more of its outputs instead of replacing it.</div>
 </div>
 <div id="stage"><canvas id="scene" width="1600" height="1000"></canvas></div>
+<div id="stage3d"></div>
+<div id="veil3d">🧊 Building your city in 3D…</div>
+<div id="hint3d">Drag to orbit · pinch to zoom · two fingers to pan · double-tap to reset</div>
 <div id="err"></div>
 <script>
 /* Immutable first-party baseline, not a rewritten engine. Load its existing
@@ -107,6 +123,44 @@
   }catch(error){
     const e=document.getElementById('err');e.style.display='block';e.textContent='Road Atlas could not start: '+error.message+' — original road-atlas.html remains available.';
     console.error(error);
+  }
+})();
+</script>
+<script type="module">
+/* Road Atlas 3D toggle — lazy-loads the 3D twin on demand. */
+(function(){
+  const btn=document.getElementById('btn3d'), stage=document.getElementById('stage3d'),
+        veil=document.getElementById('veil3d'), hint=document.getElementById('hint3d'),
+        scene2d=document.getElementById('stage'), err=document.getElementById('err');
+  let api=null, active=false, hintTimer=0;
+  function showErr(m){ err.style.display='block'; err.textContent=m; setTimeout(()=>{err.style.display='none';},7000); }
+  async function enter(){
+    veil.classList.add('on');
+    try{
+      const mod=await import('./road-atlas-3d.js?v=1.0.0');
+      stage.classList.add('on'); // visible BEFORE enter3D measures it
+      const sess=await mod.enter3D(stage);
+      window.__ra3dsess=sess;
+      active=true; api=mod;
+      scene2d.style.display='none';
+      btn.textContent='🗺 2D';
+      hint.classList.add('on');
+      clearTimeout(hintTimer); hintTimer=setTimeout(()=>hint.classList.remove('on'),6000);
+    }catch(e){ console.error(e); showErr('3D could not start: '+((e&&e.message)||e)); }
+    veil.classList.remove('on');
+  }
+  function exit(){
+    try{ if(api) api.exit3D(); }catch(e){ console.error(e); }
+    api=null; active=false;
+    stage.classList.remove('on'); stage.innerHTML='';
+    hint.classList.remove('on'); clearTimeout(hintTimer);
+    scene2d.style.display=''; btn.textContent='🧊 3D';
+  }
+  window.__roadAtlas3D={ get active(){return active;}, exit:exit };
+  btn.addEventListener('click',()=>{ active?exit():enter(); });
+  for(const id of ['randomBtn','remixBtn']){
+    const b=document.getElementById(id);
+    if(b) b.addEventListener('click',()=>{ if(active) exit(); },true);
   }
 })();
 </script></body></html>
