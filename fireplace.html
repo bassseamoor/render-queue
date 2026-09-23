@@ -135,10 +135,11 @@ const MOTIONS= ["still","drift","slow push"];
 const FIRES  = ["low","medium","roaring"];
 const WATERS = ["calm","rippled","choppy"];
 const DECKS  = ["slatted lounger","bench","minimal"];
+const GRAINS = ["Heavy","Off","Subtle","Medium","Max"]; /* 0=Heavy keeps legacy seeds identical */
 const settings = {
   seed: 0, ver: 3,
   stone:0, floor:0, wood:0, rug:0, weather:0, time:0, water:0,
-  camera:0, motion:1, fire:1, sparks:60, glow:0, deck:0
+  camera:0, motion:1, fire:1, sparks:60, glow:0, deck:0, grain:0
 };
 function parseSeed(s){
   s = String(s||"").trim();
@@ -407,10 +408,10 @@ function bakeMountainH(){
   const h=new Float32Array(size*size);
   for(let y=0;y<size;y++)for(let x=0;x<size;x++){
     const u=x/size, v=y/size;
-    let r=1-Math.abs(2*fbm(u*5,v*2.2,5)-1);
-    r=Math.pow(r,1.6);
-    const p1=Math.exp(-Math.pow((u-0.30)*3.4,2)), p2=Math.exp(-Math.pow((u-0.72)*2.8,2));
-    let hgt=r*(0.35+0.65*Math.max(p1,p2))*(0.55+0.45*fbm(u*9,v*4,3));
+    let r=1-Math.abs(2*fbm(u*7,v*3.0,6)-1);
+    r=Math.pow(r,2.1);
+    const p1=Math.exp(-Math.pow((u-0.30)*3.4,2)), p2=Math.exp(-Math.pow((u-0.72)*2.8,2)), p3=Math.exp(-Math.pow((u-0.52)*5.2,2));
+    let hgt=r*(0.35+0.65*Math.max(p1,Math.max(p2,p3)))*(0.55+0.45*fbm(u*14,v*6,4));
     hgt*=1.0-sstep(0.78,0.98,v); /* valley carve near the lake line (v=1 = wall base) */
     h[y*size+x]=clamp(hgt,0,1);
   }
@@ -574,7 +575,7 @@ const M_CYL=makeMesh(geoCyl(14,3));
 const M_SPH=makeMesh(geoSphere(400,28,18));
 const M_PLANE=makeMesh(geoPlane(1,1,1,1));
 const M_WALL=makeMesh(geoWall(1,1,1,1));
-const M_MTNWALL=makeMesh(geoWall(1,1,180,28));
+const M_MTNWALL=makeMesh(geoWall(1,1,256,40));
 const M_WATERMESH=makeMesh(geoPlane(1,1,48,24));
 
 /* ============================================================================
@@ -778,7 +779,7 @@ void main(){
   float dist = length(uCamPos-vWP);
   vec3 mistC = skyColor(normalize(vec3(V.x,0.12,V.z)), t);
   col = mix(col, mistC, clamp(dist/170.0,0.0,1.0)*(0.30+uMist*0.60));
-  oC = vec4(1.0, 0.0, 0.0, 1.0);
+  oC = vec4(col, 1.0);
 }`;
 
 const GLASS_VS = `#version 300 es
@@ -1025,11 +1026,15 @@ void main(){
 /* ============================================================================
    PROGRAMS
    ============================================================================ */
-function compileProg(vsSrc, fsSrc){
+window.__fpShaderLogs=[];
+function compileProg(vsSrc, fsSrc, progName){
   function sh(type,src){
     const s=gl.createShader(type);
     gl.shaderSource(s,src); gl.compileShader(s);
-    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+    const ok=!!gl.getShaderParameter(s,gl.COMPILE_STATUS);
+    window.__fpShaderLogs.push({prog:progName||"?", stage:type===gl.VERTEX_SHADER?"vertex":"fragment",
+      ok:ok, log:String(gl.getShaderInfoLog(s)||"(empty)")});
+    if(!ok)
       throw new Error("shader: "+gl.getShaderInfoLog(s)+"\n---\n"+src.slice(0,600));
     return s;
   }
@@ -1037,7 +1042,10 @@ function compileProg(vsSrc, fsSrc){
   gl.attachShader(p,sh(gl.VERTEX_SHADER,vsSrc));
   gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fsSrc));
   gl.linkProgram(p);
-  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error("link: "+gl.getProgramInfoLog(p));
+  const lok=!!gl.getProgramParameter(p,gl.LINK_STATUS);
+  window.__fpShaderLogs.push({prog:progName||"?", stage:"link", ok:lok,
+    log:String(gl.getProgramInfoLog(p)||"(empty)")});
+  if(!lok) throw new Error("link: "+gl.getProgramInfoLog(p));
   return p;
 }
 function locCache(prog){
@@ -1047,15 +1055,48 @@ function locCache(prog){
     return c[n];
   };
 }
-const skyProg=compileProg(SKY_VS,SKY_FS);     const KU=locCache(skyProg);
-const mtnProg=compileProg(MTN_VS,MTN_FS);     const NU=locCache(mtnProg);
-const waterProg=compileProg(WATER_VS,WATER_FS); const WU=locCache(waterProg);
-const glassProg=compileProg(GLASS_VS,GLASS_FS); const GU=locCache(glassProg);
-const litProg=compileProg(LIT_VS,LIT_FS);     const LU=locCache(litProg);
-const shadProg=compileProg(SHADOW_VS,SHADOW_FS); const HU=locCache(shadProg);
-const depthProg=compileProg(DEPTH_VS,DEPTH_FS); const DU=locCache(depthProg);
-const partProg=compileProg(PART_VS,PART_FS);  const PU=locCache(partProg);
-const postProg=compileProg(POST_VS,POST_FS);  const OU=locCache(postProg);
+const skyProg=compileProg(SKY_VS,SKY_FS,"sky");     const KU=locCache(skyProg);
+const mtnProg=compileProg(MTN_VS,MTN_FS,"mountain");     const NU=locCache(mtnProg);
+const waterProg=compileProg(WATER_VS,WATER_FS,"water"); const WU=locCache(waterProg);
+const glassProg=compileProg(GLASS_VS,GLASS_FS,"glass"); const GU=locCache(glassProg);
+const litProg=compileProg(LIT_VS,LIT_FS,"lit");     const LU=locCache(litProg);
+const shadProg=compileProg(SHADOW_VS,SHADOW_FS,"shadow"); const HU=locCache(shadProg);
+const depthProg=compileProg(DEPTH_VS,DEPTH_FS,"depth"); const DU=locCache(depthProg);
+const partProg=compileProg(PART_VS,PART_FS,"particles");  const PU=locCache(partProg);
+const postProg=compileProg(POST_VS,POST_FS,"post");  const OU=locCache(postProg);
+/* ?sherr=1 — shader diagnostics overlay (screenshot this on iPhone Safari) */
+(function(){
+  if(!/[?&]sherr=1/.test(location.search)) return;
+  let renderer="n/a";
+  try{
+    const ext=gl.getExtension("WEBGL_debug_renderer_info");
+    renderer=String(ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER));
+  }catch(e){ renderer="err: "+e; }
+  const d=document.createElement("div");
+  d.id="fp-sherr";
+  d.style.cssText="position:fixed;left:0;right:0;top:0;max-height:72vh;overflow:auto;z-index:999999;"+
+    "background:rgba(0,0,0,0.93);color:#7dff7d;font:11px/1.45 ui-monospace,Menlo,monospace;"+
+    "white-space:pre-wrap;word-break:break-word;padding:12px;margin:0;text-align:left;";
+  let t="FIREPLACE SHADER DIAGNOSTICS\nrenderer: "+renderer+
+    "\nwebgl2: "+(!!gl).toString()+"  seed: "+(window.__fpGetSeed?window.__fpGetSeed():"n/a")+"\n\n";
+  let fails=0;
+  for(const e of window.__fpShaderLogs){
+    if(!e.ok) fails++;
+    t+=(e.ok?"[OK]  ":"[FAIL]")+e.prog+" / "+e.stage+": "+e.log+"\n---\n";
+  }
+  t+="\n"+fails+" failing stage(s). Screenshot this and send it back.";
+  d.textContent=t;
+  document.body.appendChild(d);
+  window.__fpShaderReport=t;
+  /* also stamp the failing-stage summary on the seed chip title (deferred: Seed Console inits later) */
+  setTimeout(function(){
+    try{
+      const chip=document.querySelector(".sc-seed");
+      const seed=(window.__fpGetSeed?window.__fpGetSeed():"n/a");
+      if(chip) chip.title="SHADER DIAG ("+seed+"): "+fails+" failing stage(s). "+renderer;
+    }catch(e){}
+  },3000);
+})();
 /* particle instancing VAO: fullscreen quad + per-instance seed attribute */
 const partVAO=(function(){
   const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -1211,12 +1252,12 @@ function computeRig(st){
     const el=0.66;
     R.sunDir=[Math.sin(az+2.4)*0.6, -Math.sin(el), Math.cos(az+2.4)*0.5-0.4];
     const l=Math.hypot(...R.sunDir); R.sunDir=R.sunDir.map(v=>v/l);
-    R.sunCol=[0.55,0.68,0.92]; R.sunI=0.55;
-    R.moonI=1.0; R.exposure=1.32; R.warmth=0.25; R.amb=[0.30,0.34,0.44];
+    R.sunCol=[0.55,0.68,0.92]; R.sunI=0.70;
+    R.moonI=1.0; R.exposure=1.45; R.warmth=0.25; R.amb=[0.36,0.40,0.50];
   }
   R.moonDir=R.sunDir.slice();
   R.moonCol=[0.62,0.74,0.95];
-  const fi=[0.7,1.0,1.45][st.fire|0]*(t===2?1.25:1.0);
+  const fi=[0.7,1.0,1.45][st.fire|0]*(t===2?1.6:1.0);
   R.fireI=fi;
   S.rig=R;
   return R;
@@ -1441,7 +1482,7 @@ function drawMtns(view, proj, te){
     gl.uniform1f(NU("uHScale"),m.hs);
     gl.uniform1f(NU("uHazeM"),m.haze*(0.5+S.rig.haze));
     gl.uniform1f(NU("uSnow"),m.snow*(S.rig.snow?1.15:1.0));
-    gl.uniform1f(NU("uRelief"),6.0);
+    gl.uniform1f(NU("uRelief"),9.0);
     gl.bindVertexArray(M_MTNWALL.vao);
     gl.drawElements(gl.TRIANGLES,M_MTNWALL.count,gl.UNSIGNED_INT,0);
   }
@@ -1622,7 +1663,8 @@ function renderPasses(te, frame){
     gl.uniform2f(OU("uRes"),w,h);
     gl.uniform1f(OU("uExposure"),S.rig.exposure);
     gl.uniform1f(OU("uVig"),0.32);
-    gl.uniform1f(OU("uGrain"),S.rig.night?0.028:0.020);
+    const GI=[[0.020,0.028],[0,0],[0.006,0.008],[0.012,0.016],[0.035,0.045]][settings.grain|0]||[0.020,0.028];
+    gl.uniform1f(OU("uGrain"),S.rig.night?GI[1]:GI[0]);
     gl.uniform1f(OU("uWarm"),S.rig.warmth);
     gl.uniform1f(OU("uNight"),S.rig.night);
     gl.uniform1f(OU("uAO"),0.75);
@@ -1653,12 +1695,12 @@ function frameLoop(){
 }
 
 /* ============================================================================
-   SEED WIRING — v3 mixed-radix: the seed number packs all 12 params exactly,
+   SEED WIRING — v3 mixed-radix: the seed number packs all 13 params exactly,
    so a "#3XXXXXXXX" seed always rebuilds the identical scene. Legacy seeds
    keep their number and are hashed into the nearest v3 scene.
    ============================================================================ */
-const PARAM_KEYS=["stone","floor","wood","rug","weather","time","water","camera","motion","fire","deck","sparks"];
-const PARAM_SIZES=[4,4,3,4,5,3,3,6,3,3,3,101];
+const PARAM_KEYS=["stone","floor","wood","rug","weather","time","water","camera","motion","fire","deck","sparks","grain"];
+const PARAM_SIZES=[4,4,3,4,5,3,3,6,3,3,3,101,5];
 function hashMix(n){ n=Math.imul(n^0x9e3779b9,0x85ebca6b)>>>0; n^=n>>>13; n=Math.imul(n,0xc2b2ae35)>>>0; n^=n>>>16; return n>>>0; }
 function decodeParams(n){
   const out={}; let k=n>>>0;
@@ -1759,7 +1801,7 @@ window.__fpRemixSeed=function(s){
   for(const ii of idx) q[PARAM_KEYS[ii]]=(r()*PARAM_SIZES[ii])|0;
   return "#3"+paramsToNum(q).toString(16).toUpperCase().padStart(8,"0");
 };
-window.__fpLabels={STONES:STONES,FLOORS:FLOORS,WOODS:WOODS,RUGS:RUGS,WEATHERS:WEATHERS,TIMES:TIMES,WATERS:WATERS,CAMS:CAMS,MOTIONS:MOTIONS,FIRES:FIRES,DECKS:DECKS};
+window.__fpLabels={STONES:STONES,FLOORS:FLOORS,WOODS:WOODS,RUGS:RUGS,WEATHERS:WEATHERS,TIMES:TIMES,WATERS:WATERS,CAMS:CAMS,MOTIONS:MOTIONS,FIRES:FIRES,DECKS:DECKS,GRAINS:GRAINS};
 
 /* resize */
 function sizeCanvas(){
@@ -2374,7 +2416,8 @@ window.SeedConsoleAdapter = {
     enumParam("motion",  L.MOTIONS,  "Camera motion"),
     enumParam("fire",    L.FIRES,    "Fire"),
     enumParam("deck",    L.DECKS,    "Deck set"),
-    sparksParam
+    sparksParam,
+    enumParam("grain",   L.GRAINS,   "Film grain")
   ],
   canvas: function(){ return document.getElementById("scene"); },
   fileBase: function(seedStr){ return "fireplace-studio-"+String(seedStr).replace(/^#/,"").toLowerCase(); }
