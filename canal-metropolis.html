@@ -303,7 +303,7 @@ const depths=[0,.12,.26,.35,.46,.62,.88,1.12];
 // CITY / elevated miniature photography. All meshes and materials are generated.
 const cityVertex=`precision highp float;
 attribute vec3 aPosition,aNormal,aTint;attribute vec4 aSchedule,aInfo,aRoute;attribute vec2 aTex;
-uniform mat4 uViewProjection,uLightMatrix;uniform float uStory,uTime,uDensity;
+uniform mat4 uViewProjection,uLightMatrix;uniform float uStory,uTime,uDensity;uniform vec2 uFlyby;
 varying vec3 vPosition,vNormal,vTint;varying vec2 vTex,vBuild;varying vec4 vInfo,vShadow;varying float vFade,vProgress;
 void main(){vec3 p=aPosition;float fade=1.,raw=10.;vBuild=vec2(10000.,0.);
  if(aSchedule.y>0.){raw=(uStory-aSchedule.x)/aSchedule.y;float progress=smoothstep(0.,1.,raw),height=aSchedule.z+aSchedule.w*progress,frontier=height+max(1.2,aSchedule.w*.15)*smoothstep(1.,1.16,raw);
@@ -323,6 +323,15 @@ void main(){vec3 p=aPosition;float fade=1.,raw=10.;vBuild=vec2(10000.,0.);
   else if(aInfo.z>6.5){float lower=1.-smoothstep(1.09,1.20,raw);p.y=.032+(p.y-.032)/max(.1,aSchedule.w+.50)*(height+.50)*lower;fade*=lower;}
  }
  if(aInfo.z>4.5&&aInfo.z<6.5){float travel=mod(aInfo.y*.13+uTime*aRoute.w,aRoute.z);p.xz+=aRoute.xy*travel;fade*=smoothstep(0.,.22,travel)*(1.-smoothstep(aRoute.z-.22,aRoute.z,travel));if(aInfo.z<5.5)fade*=1.-smoothstep(uDensity*66.,uDensity*66.+5.,aInfo.y);else p.y+=.004*sin(uTime*.31+aInfo.y)+.002*sin(uTime*.53+aInfo.y*1.7);}
+ // Sky life: birds, blimp, airliners, formation flyby and its smoke. All motion is a
+ // pure function of seed-baked values and uTime, so renders stay deterministic.
+ else if(aInfo.z>7.5&&aInfo.z<12.5){
+  if(aInfo.z<8.5){float brnd=fract(aInfo.y*.618034);float ang=uTime*aRoute.w+aInfo.y*2.1;vec2 bc=aRoute.xy+vec2(cos(ang),sin(ang))*(aRoute.z*(.62+.76*brnd));float head=ang+(aRoute.w>0.?1.5707963:-1.5707963),ch=cos(head),sh=sin(head);vec2 lp=vec2(p.x*ch-p.z*sh,p.x*sh+p.z*ch);p.x=bc.x+lp.x;p.z=bc.y+lp.y;p.y+=sin(uTime*.9+aInfo.y)*1.1+sin(uTime*(7.+brnd*3.)+aInfo.y*40.)*.26*abs(aTex.x);}
+  else if(aInfo.z<9.5){float ang=uTime*aRoute.w+aInfo.y*2.1;vec2 bc=aRoute.xy+vec2(cos(ang),sin(ang))*aRoute.z;float head=ang+(aRoute.w>0.?1.5707963:-1.5707963),ch=cos(head),sh=sin(head);vec2 lp=vec2(p.x*ch-p.z*sh,p.x*sh+p.z*ch);p.x=bc.x+lp.x;p.z=bc.y+lp.y;p.y+=sin(uTime*.45+aInfo.y)*.6;}
+  else if(aInfo.z<10.5){float travel=mod(aInfo.y*29.3+uTime*aRoute.w,aRoute.z);p.x+=aRoute.x*(travel-aRoute.z*.5);p.z+=aRoute.y*(travel-aRoute.z*.5);p.y+=sin(uTime*.8+aInfo.y*2.)*.35;fade*=smoothstep(0.,8.,travel)*(1.-smoothstep(aRoute.z-8.,aRoute.z,travel));}
+  else if(aInfo.z<11.5){float tc=uTime-uFlyby.y;float tIn=mod(tc,uFlyby.x);float L=aRoute.z,spd=aRoute.w;p.x+=aRoute.x*(tIn*spd-L*.5);p.z+=aRoute.y*(tIn*spd-L*.5);fade*=step(0.,tc)*step(tIn,L/spd+1.5)*smoothstep(0.,3.,tIn);}
+  else{float tc=uTime-uFlyby.y;float tIn=mod(tc,uFlyby.x);float L=aRoute.z,spd=aRoute.w,age=aTex.x;float et=tIn-age;float ok=step(0.,tc)*step(0.,et)*step(et,L/spd)*step(age,7.);float wdt=ok*(1.-age/7.)*smoothstep(0.,.25,age);vec2 fw=aRoute.xy,pv=vec2(-fw.y,fw.x);vec2 joff=aSchedule.zw;vec2 ep=fw*(et*spd-L*.5)+joff+vec2(.55,.18)*age;vec2 lp=p.xz*(1.+age*.18)*wdt;p.x=ep.x+fw.x*lp.x+pv.x*lp.y;p.z=ep.y+fw.y*lp.x+pv.y*lp.y;p.y+=sin(age*2.2+aInfo.y*3.)*.14*age*wdt;}
+ }
  vPosition=p;vNormal=aNormal;vTint=aTint;vTex=aTex;vInfo=aInfo;vInfo.y=floor(aInfo.y*100.+.5);vFade=fade;vProgress=raw;vShadow=uLightMatrix*vec4(p,1.);gl_Position=uViewProjection*vec4(p,1.);if(fade<.0001)gl_Position=vec4(3.,3.,0.,1.);
 }`;
 const cityFragment=`precision highp float;
@@ -404,6 +413,8 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
   else{albedo=vec3(.49,.50,.46)*(.96+.05*broad);rough=.94;}
  }
  if(mat>8.5&&mat<9.5){emission=albedo*.60*uGlow;rough=.2;}
+ // Formation smoke: the ribbon pales and thins into the haze as it ages.
+ if(vInfo.z>11.5&&vInfo.z<12.5){float sage=clamp(vTex.x/7.,0.,1.);albedo=mix(albedo,vec3(.45,.55,.60),sage*sage*.9);emission*=1.-sage*.75;}
  // Fresh concrete at the active frontier settles into the finished facade below it.
  if(vBuild.y>.5&&mat>.5&&mat<3.5){float finish=smoothstep(.07,.54,vBuild.x-vPosition.y);albedo=mix(vec3(.45,.47,.44),albedo,finish);emission*=finish;rough=mix(.92,rough,finish);metal*=finish;}
  float direct=max(dot(N,uSun),0.),visibility=shadow(normalize(vNormal));float sky=.58+.42*max(N.y,0.);
@@ -515,6 +526,7 @@ function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.l
  if(family===1)s.geo[2]=3+r()*4;if(family===5)s.geo[2]=-4+r()*5;
  s.palette=family===5?[[.76,.71,.57],[.69,.39,.20],[.14,.29,.34]]:family===2?[[.66,.65,.56],[.45,.28,.19],[.15,.34,.42]]:family===3?[[.58,.56,.44],[.39,.25,.16],[.18,.32,.28]]:family===4?[[.73,.67,.49],[.37,.23,.14],[.12,.32,.39]]:[[.62,.61,.53],[.42,.22,.13],[.20,.34,.38]];
  s.landTint=family===2?[.24,.42,.18]:family===5?[.32,.34,.20]:[.13,.22,.14];s.waterTint=family===2?[.045,.34,.43]:family===5?[.045,.25,.32]:family===4?[.065,.23,.20]:[.055,.19,.21];
+ if(family===2){const br0=rng(hash(c.layout+':grand-bridge'));s.bridgeX=(br0()<.5?-1:1)*(1.15+br0()*.35);s.bridgeArch=1.05+br0()*.5;}
  function roadPath(pts,width,opts){opts=opts||{};const seq=[pts[0].slice()];
   for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/.8));
    for(let k=1;k<=n;k++)seq.push([mix(a[0],b[0],k/n),mix(a[1],b[1],k/n)]);}
@@ -522,25 +534,49 @@ function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.l
   const isLand=(x,z)=>cityLand(s,x,z)>.18&&!cityPark(s,x,z);
   const pushRun=(a,b,bridge)=>{const len=Math.hypot(b[0]-a[0],b[1]-a[1]);if(len<.5)return;
    s.roads.push({a:a.slice(),b:b.slice(),width:bridge?width*.94:width,y:bridge?.065:.012,bridge:bridge,cls:opts.cls||''});
-   if(len>1.4)s.traffic.push({a:a.slice(),b:b.slice()});};
+   if(len>1.4&&!opts.noTraffic)s.traffic.push({a:a.slice(),b:b.slice()});};
   for(let k=0;k<seq.length-1;k++){const p=seq[k],q=seq[k+1],mx=(p[0]+q[0])/2,mz=(p[1]+q[1])/2;
    const land=isLand(mx,mz),water=!land&&opts.bridge&&cityLand(s,mx,mz)<-.28,br=water&&!land;
    if(land||water){if(!open){open=p;bridging=br;}else if(br!==bridging){pushRun(open,p,bridging);open=p;bridging=br;}}
    if(open&&((!land&&!water)||k===seq.length-2)){pushRun(open,(land||water)?q:p,bridging);open=null;}}
  }
  function road(a,b,width,opts){roadPath([a,b],width,opts);}
- function lot(x,z,w,d,angle,id){const reach=Math.hypot(w,d)*.53;if(cityLand(s,x,z)<reach||cityPark(s,x,z))return;const cluster=Math.exp(-((x-s.cx)**2+(z-s.cz)**2)/(family===2?85:50));const district=hash(c.layout+':district:'+Math.floor(x/5)+':'+Math.floor(z/5))%5;let style=family===5?(r()<.74?2:1):family===2?(r()<.65?0:4):family===3?(r()<.55?1:3):district;
- let h=(.5+r()*1.5+cluster*(1+r()*4));if(family===2)h*=1.75;if(family===5)h*=.55;if(family===4)h*=1.15;if(style===2)h*=.70;const existing=r()<(family===5?.50:family===2?1:.28);let birth=existing?-35000:r()*19800; if(!existing&&r()>.91)birth=29000+r()*28000;const duration=1500+h*630+r()*800;s.lots.push({id,x:x-w/2,z:z-d/2,y:0,width:w,depth:d,height:h,birth,duration,phase:r()*100,style,landmark:0,row:Math.floor((z+20)/s.sz),col:Math.floor((x+20)/s.sx),angle,existing,lod:Math.hypot(x,z)>22?1:0});}
+ function lotR(rr,x,z,w,d,angle,id){const reach=Math.hypot(w,d)*.53;if(cityLand(s,x,z)<reach||cityPark(s,x,z))return;if(family===2&&Math.abs(x-s.bridgeX)<1.45&&Math.abs(z-s.cz)<6.6)return;const cluster=Math.exp(-((x-s.cx)**2+(z-s.cz)**2)/(family===2?85:50));const district=hash(c.layout+':district:'+Math.floor(x/5)+':'+Math.floor(z/5))%5;let style=district;
+ if(family===5)style=rr()<.74?2:1;else if(family===2){const sv=rr();style=sv<.36?0:sv<.58?4:sv<.70?5:sv<.82?6:7;}else if(family===3)style=rr()<.55?1:3;
+ let h=(.5+rr()*1.5+cluster*(1+rr()*4));if(family===2)h*=1.75;if(family===5)h*=.55;if(family===4)h*=1.15;if(style===2)h*=.70;const existing=rr()<(family===5?.50:family===2?1:.28);let birth=existing?-35000:rr()*19800; if(!existing&&rr()>.91)birth=29000+rr()*28000;const duration=1500+h*630+rr()*800;const rad=Math.hypot(x,z);s.lots.push({id,x:x-w/2,z:z-d/2,y:0,width:w,depth:d,height:h,birth,duration,phase:rr()*100,style,landmark:0,row:Math.floor((z+20)/s.sz),col:Math.floor((x+20)/s.sx),angle,existing,lod:rad>30?2:(rad>22?1:0)});}
+ function lot(x,z,w,d,angle,id){lotR(r,x,z,w,d,angle,id);}
  if(family===3){const rings=13+Math.floor(r()*2),spacing=2.0+r()*.4;for(let ring=0;ring<rings;ring++){const radius=4.8+ring*spacing,count=Math.floor(TAU*radius/(2.0+r()*.45)),offset=r()*TAU;
  for(let k=0;k<count;k++){const a=k/count*TAU+offset,px=Math.cos(a)*radius,pz=Math.sin(a)*radius;const spoke=Math.abs(Math.sin(a*3));if(spoke>.16)lot(px,pz,1.25+r()*.38,1.18+r()*.35,-a+Math.PI/2,'r'+ring+':'+k);const b=(k+1)/count*TAU+offset;road([Math.cos(a)*(radius+spacing*.48),Math.sin(a)*(radius+spacing*.48)],[Math.cos(b)*(radius+spacing*.48),Math.sin(b)*(radius+spacing*.48)],.30);}
  }for(let k=0;k<6;k++){const a=k/6*TAU;road([Math.cos(a)*3.4,Math.sin(a)*3.4],[Math.cos(a)*37,Math.sin(a)*37],.46);}}
  else{const shift=r()*.7,wob=(hash(c.layout+':road-wob')%628)/100,wobAmp=.45+(hash(c.layout+':road-amp')%90)/100,wob2=(hash(c.layout+':road-wob2')%628)/100;
-  const hCurve=(z)=>{const pts=[];for(let x=-44;x<=44;x+=3.2)pts.push([x,z+Math.sin(x*.085+wob)*wobAmp+Math.sin(x*.031+wob2)*wobAmp*.55]);return pts;};
+  const hCurve=(z)=>{const pts=[];for(let x=-64;x<=64;x+=3.2)pts.push([x,z+Math.sin(x*.085+wob)*wobAmp+Math.sin(x*.031+wob2)*wobAmp*.55]);return pts;};
   const vCurve=(x,z0,z1)=>{const pts=[];for(let z=z0;z<=z1;z+=2.2)pts.push([x+Math.sin(z*.11+wob2)*wobAmp*.6,z]);return pts;};
   for(let row=-9;row<23;row++){const z=(row-6.5)*s.sz,offset=family===5?Math.sin(row*.47+s.phase)*1.2:family===4?(row%2)*s.sx*.35:Math.sin(row*.23+s.phase)*shift;
    const blvd=row%4===1;
    roadPath(hCurve(z+s.sz*.48),blvd?.5:(family===2?.42:.3),{bridge:blvd,cls:blvd?'blvd':'street'});
    for(let col=-9;col<24;col++){const x=(col-7)*s.sx+offset,w=s.sx*(.57+r()*.14),d=s.sz*(.55+r()*.16);lot(x,z,w,d,0,'g'+row+':'+col);if(row<22)roadPath(vCurve(x+s.sx*.48,z-s.sz*.5,z+s.sz*.5),.22,{cls:'lane'});}}
+  // The street grid runs past the old map edge, so roads continue instead of ending mid-frame.
+  const re=rng(hash(c.layout+':urban-plan-v4:far'));
+  for(let row=-14;row<31;row++){if(row>=-9&&row<23)continue;const z=(row-6.5)*s.sz,offset2=family===5?Math.sin(row*.47+s.phase)*1.2:family===4?(row%2)*s.sx*.35:Math.sin(row*.23+s.phase)*shift;
+   roadPath(hCurve(z+s.sz*.48),.42,{bridge:row%4===1,cls:row%4===1?'blvd':'street'});
+   for(let col=-14;col<30;col++){const x=(col-7)*s.sx+offset2;
+    if(col<-9||col>=24){const w=s.sx*(.57+re()*.14),d=s.sz*(.55+re()*.16);lotR(re,x,z,w,d,0,'f'+row+':'+col);}
+    if(row<30)roadPath(vCurve(x+s.sx*.48,z-s.sz*.5,z+s.sz*.5),.22,{cls:'lane'});}}
+  for(let row=-9;row<23;row++){const z=(row-6.5)*s.sz,offset2=family===5?Math.sin(row*.47+s.phase)*1.2:family===4?(row%2)*s.sx*.35:Math.sin(row*.23+s.phase)*shift;
+   for(let col=-14;col<30;col++){if(col>=-9&&col<24)continue;const x=(col-7)*s.sx+offset2,w=s.sx*(.57+re()*.14),d=s.sz*(.55+re()*.16);lotR(re,x,z,w,d,0,'f'+row+':'+col);}}
+  if(family===2){
+   // Elliptical ring boulevards tie the grid together around the water.
+   for(const rr of[13,26]){const pts=[];for(let i=0;i<=72;i++){const a=i/72*TAU;pts.push([s.cx+Math.cos(a)*rr*1.15,s.cz+Math.sin(a)*rr*2.2]);}roadPath(pts,.5,{bridge:true,cls:'blvd',noTraffic:true});}
+   // Far-field blocks keep the city going toward the horizon, dissolving into haze.
+   const re2=rng(hash(c.layout+':urban-plan-v4:far2'));
+   for(let gx=-60;gx<=60;gx+=6.8)for(let gz=-60;gz<=60;gz+=6.8){
+    const x=gx+(re2()-.5)*4,z=gz+(re2()-.5)*4,rad=Math.hypot(x-s.cx,z-s.cz);
+    if(rad<28||rad>62)continue;if(cityLand(s,x,z)<1.6||cityPark(s,x,z))continue;
+    if(Math.abs(x-s.bridgeX)<2&&Math.abs(z-s.cz)<7)continue;
+    let clash=false;for(const l of s.lots){if(Math.abs(l.x+l.width/2-x)<4.4&&Math.abs(l.z+l.depth/2-z)<4.4){clash=true;break;}}
+    if(clash)continue;const w=2.2+re2()*2.6,d=2.2+re2()*2.6;
+    s.lots.push({id:'s'+gx+':'+gz,x:x-w/2,z:z-d/2,y:0,width:w,depth:d,height:(.9+re2()*2.6)*(1.3-rad/72),birth:-35000,duration:1,phase:re2()*100,style:0,landmark:0,row:99,col:99,angle:(re2()-.5)*.4,existing:true,lod:2});}
+  }
   if(family===0||family===4){
    // Quay boulevards trace both banks of each waterway; landmark bridges join them.
    const[type,phase,offset,water]=s.geo,[bend,amp,slope]=s.map,riverX=z=>offset+Math.sin(z*bend+phase)*amp+z*slope;
@@ -560,6 +596,15 @@ function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.l
  const candidates=s.lots.filter(l=>Math.hypot(l.x-s.cx,l.z-s.cz)<8).sort((a,b)=>hash(c.layout+a.id)-hash(c.layout+b.id));
  if(candidates[0]){const l=candidates[0];l.landmark=family===5?3:family===2?4:1;l.height=family===5?4.3:family===2?10.5+r()*2:6+r()*3;l.birth=family===2?-35000:250;l.duration=5600;l.existing=family===2;}
  if(candidates[3]){candidates[3].landmark=2;candidates[3].height=1.7+r()*.9;}
+ if(candidates[1]){candidates[1].landmark=5;candidates[1].height=3.6+r()*1.4;}
+ if(family===2){
+  // A rooftop-garden quarter: low podiums with planted roofs near the water.
+  const gd=rng(hash(c.layout+':gardens'));
+  const pool=s.lots.filter(l=>{if(l.landmark||l.lod!==0||!l.existing)return false;const d=Math.hypot(l.x+l.width/2-s.cx,l.z+l.depth/2-s.cz);return d>5.5&&d<12;});
+  for(let k=0;k<7&&pool.length;k++){const l=pool.splice(Math.floor(gd()*pool.length),1)[0];l.style=7;l.height=Math.min(l.height,1.1+gd()*.9);}
+  s.townBounds=[64,64];
+ }
+ const fb=rng(hash(c.layout+':flyby'));s.flyby=[240+fb()*120,8+fb()*20];
  if(family===2){for(let ring=0;ring<2;ring++){const count=ring?28:18,radius=ring?3.82:2.40;for(let i=0;i<count;i++){const a=i/count*TAU+ring*.10,rr=radius+.12*Math.sin(i*2.17+ring);const x=s.cx+Math.cos(a)*rr*1.15,z=s.cz+Math.sin(a)*rr*2.2;if(cityLand(s,x,z)>.12&&cityPark(s,x,z))s.green.push([x,z,.64+r()*.32]);}}}
  else for(let k=0;k<250;k++){const x=(r()-.5)*39,z=(r()-.5)*39;if(cityLand(s,x,z)>.6&&cityPark(s,x,z))s.green.push([x,z,.55+r()*.55]);}
  // Straight, land-tested navigation reaches prevent vehicles from crossing water.
@@ -579,7 +624,7 @@ function bakeCityMaterials(seed){
  for(let y=0;y<size;y++)for(let x=0;x<size;x++){const u=x/size,v=y/size,i=(y*size+x)*4,values=grids.map(g=>sample(g,u,v));bytes[i]=Math.round(255*(values[0]*.50+values[1]*.30+values[2]*.20));bytes[i+1]=Math.round(255*(values[2]*.50+values[3]*.32+values[4]*.18));bytes[i+2]=Math.round(255*(values[4]*.4+values[5]*.6));bytes[i+3]=255;}
  const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,size,size,0,gl.RGBA,gl.UNSIGNED_BYTE,bytes);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return tex;
 }
-const architectureNames=['Lantern glass','Terracotta screen','Crown setback','Garden courtyard','Sawtooth works','Mansard house','Loggia residence','Hanging gardens','Bridge towers','Cruciform atelier'];
+const architectureNames=['Lantern glass','Terracotta screen','Crown setback','Garden courtyard','Sawtooth works','Mansard house','Loggia residence','Hanging gardens','Bridge towers','Stepped garden tower','Grand courtyard','Wavy atelier','Canal warehouse','Needle spire','Dome pavilion','Green roof podium'];
 function architecturalType(c,l){return l.style*2+(hash(c.layout+':architecture:'+Math.floor(l.x/4)+':'+Math.floor(l.z/4))&1)}
 function roofKit(m,x,z,w,d,h,r,theme,far=false){
  const old=m.kind;m.kind=1;
@@ -671,6 +716,81 @@ function architectureBuilding(m,l,s,c,stone,brick,glass){
   box(x,0,z,w*.36,h,d,glass,1);box(x+w*.64,0,z,w*.36,h*.84,d,glass,1);box(x+w*.34,h*.55,z+d*.25,w*.32,Math.min(.22,h*.18),d*.50,stone,2);
   if(!far){box(x+w*.02,0,z-.018,.035,h,.05,trim,8);box(x+w*.95,0,z-.018,.035,h*.84,.05,trim,8);}
   roof(x,z,w*.36,d,h,0);roof(x+w*.64,z,w*.36,d,h*.84,0);
+ }else if(type===9){
+  // Stepped garden tower: each setback becomes a planted terrace.
+  const tiers=3+Math.floor(r()*2);let xx=x,yy=0,zz=z,ww=w,dd=d;
+  for(let j=0;j<tiers;j++){
+   const th=j===0?h*.44:(h-yy)/(tiers-j);
+   box(xx,yy,zz,ww,th,dd,j%2?glass:stone,j%2?1:2);
+   if(j<tiers-1){
+    const ix=ww*(.11+r()*.09),iz=dd*(.11+r()*.09);
+    if(!far){box(xx+.14,yy+th,zz+.14,Math.max(ww-.28,.15),.10,Math.max(dd-.28,.15),[.30,.40,.26],4);
+     if(ww>1&&dd>1){m.material=5;m.sphere(xx+ww*.5,yy+th+.28,zz+dd*.5,Math.min(ww,dd)*.10,.24,Math.min(ww,dd)*.10,[.17,.30,.12],6,3);m.material=0;}}
+    xx+=ix*.5;zz+=iz*.5;ww-=ix;dd-=iz;yy+=th;
+    if(ww<.5||dd<.5)break;
+   }else yy+=th;
+  }
+  if(!far)box(xx+ww*.32,yy,zz+dd*.32,Math.max(ww*.36,.24),.42,Math.max(dd*.36,.24),trim,8);
+ }else if(type===10){
+  // Grand courtyard block: four wings around a planted court.
+  const wh=h*.72,cw=w*.38,cd=d*.38,cx0=x+(w-cw)/2,cz0=z+(d-cd)/2;
+  box(x,0,z,cx0-x,wh,d,stone,2);box(cx0+cw,0,z,x+w-(cx0+cw),wh,d,stone,2);
+  box(cx0,0,z,cw,cz0-z,wh,brick,3);box(cx0,0,cz0+cd,cw,z+d-(cz0+cd),wh,brick,3);
+  box(cx0,.03,cz0,cw,.09,cd,[.30,.40,.26],4);
+  if(!far){
+   for(let k=0;k<3;k++){m.material=5;m.sphere(cx0+cw*(.25+.25*k),.34,cz0+cd*.5,.15,.26,.15,[.16,.30,.12],6,3);m.material=0;}
+   for(const[px,pz]of[[x,z],[x+w-.44,z],[x,z+d-.44],[x+w-.44,z+d-.44]])box(px,wh,pz,.44,.36,.44,trim,8);
+  }
+  roof(x,z,cx0-x,d,wh,0);roof(cx0+cw,z,x+w-(cx0+cw),d,wh,0);
+ }else if(type===11){
+  // Wavy atelier: soft sinusoidal slabs over a sharp stone base.
+  const slabs=6,ph=h*.16;
+  box(x,0,z,w,ph,d,stone,2);
+  for(let j=0;j<slabs;j++){
+   const sy=ph+j/slabs*(h-ph),sh=(h-ph)/slabs;
+   const ox=Math.sin(j*1.35+r()*.6)*w*.085,oz=Math.cos(j*.95)*d*.085;
+   box(x+w*.07+ox,sy,z+d*.07+oz,w*.86,sh,d*.86,j%2?glass:color(glass,.82),1);
+  }
+  if(!far)box(x+w*.38,h,z+d*.38,w*.24,.34,d*.24,trim,8);
+ }else if(type===12){
+  // Canal warehouse: long brick shed, sawtooth roof, loading doors.
+  const wh=Math.min(h,1.5);
+  box(x,0,z,w,wh,d,brick,3);
+  const teeth=3;m.kind=1;
+  for(let k=0;k<teeth;k++){const tx=x+w*k/teeth,tw=w/teeth;
+   m.material=14;m.face([tx,wh,z],[tx+tw,wh,z],[tx+tw,wh+.5,z+d*.7],[tx,wh+.5,z+d*.7],copper,[0,.83,-.55]);
+   m.material=1;m.face([tx,wh+.5,z+d*.7],[tx+tw,wh+.5,z+d*.7],[tx+tw,wh,z+d],[tx,wh,z+d],glass,[0,.55,.83]);
+   m.material=3;m.face([tx,wh,z],[tx,wh,z+d],[tx,wh+.5,z+d*.7],[tx,wh+.5,z+d*.7],brick,[-1,0,0]);
+   m.face([tx+tw,wh,z+d],[tx+tw,wh,z],[tx+tw,wh+.5,z+d*.7],[tx+tw,wh+.5,z+d*.7],brick,[1,0,0]);
+  }
+  m.material=0;m.kind=0;
+  if(!far){
+   for(let k=0;k<3;k++)box(x+w*(.12+.31*k),.03,z+d-.05,w*.17,wh*.5,.07,[.15,.13,.11],2);
+   box(x+w*.5-.05,wh,z+d*.32,.10,wh*.55,.10,trim,8);
+  }
+ }else if(type===13){
+  // Needle spire: tapered stone tiers under a slender crown and beacon.
+  const tiers=4;let yy=0,ww=w,dd=d,xx=x,zz=z;
+  for(let j=0;j<tiers;j++){const th=h*.20;box(xx,yy,zz,ww,th,dd,stone,2);const nx=ww*.24,nz=dd*.24;xx+=nx/2;zz+=nz/2;ww-=nx;dd-=nz;yy+=th;}
+  const cxp=xx+ww/2,czp=zz+dd/2;
+  m.material=8;m.cylinder(cxp,yy,czp,Math.max(ww*.30,.10),Math.max(dd*.30,.10),h*.30,trim,10,.18);m.material=0;
+  if(!far){const mm=m.material;m.material=9;m.sphere(cxp,yy+h*.30,czp,.085,.085,.085,[1.,.55,.20],8,4);m.material=mm;}
+ }else if(type===14){
+  // Dome pavilion: colonnade podium under a copper dome.
+  const ph=Math.min(h*.5,1.1);
+  box(x,0,z,w,ph,d,stone,2);
+  if(!far)for(let k=0;k<6;k++)box(x+w*(.07+.165*k),ph,z+d*.05,.11,h*.34,.11,trim,8);
+  m.material=14;m.dome(x+w/2,ph+(far?0:h*.34),z+d/2,w*.30,Math.min(h*.40,1.6),d*.30,color(copper,1.06),16,5);m.material=0;
+ }else if(type===15){
+  // Green-roof podium: the LAWN step as architecture.
+  const ph=Math.min(h,1.5);
+  box(x,0,z,w,ph,d,stone,2);
+  box(x+w*.06,ph,z+d*.06,w*.88,.09,d*.88,[.31,.41,.27],4);
+  if(!far){
+   for(let k=0;k<4;k++){m.material=5;m.sphere(x+w*(.18+.21*k),ph+.30,z+d*(.30+.13*(k%3)),.15,.26,.15,[.16,.30,.12],6,3);m.material=0;}
+   box(x+w*.40,ph+.09,z+d*.40,w*.20,.30,d*.20,glass,1);
+   box(x+w*.44,ph+.39,z+d*.44,w*.12,.06,d*.12,trim,8);
+  }
  }else{
   box(x+w*.22,0,z,w*.56,h,d,stone,2);box(x,h*.12,z+d*.27,w,h*.76,d*.46,glass,1);
   box(x+w*.20,h-.065,z-.02,w*.60,.085,d+.04,trim,12);roof(x+w*.22,z,w*.56,d,h,2);
@@ -682,6 +802,112 @@ function architectureBuilding(m,l,s,c,stone,brick,glass){
   if(type===4||type===5){box(x+w*.08,.015,z-.10,w*.17,.06,.12,[.30,.34,.25],12);box(x+w*.10,.075,z-.085,w*.13,.055,.09,[.17,.30,.12],5);}
  }
  m.material=0;m.kind=0;m.anchor=0;
+}
+// Cheap far-field massing: the city continues toward the horizon and dissolves into haze.
+function farFieldBlock(m,l,s,c,stone,brick,glass){
+ const{x,z,width:w,depth:d,height:h}=l;
+ m.anchor=0;
+ const rr=rng(hash(c.detail+':far:'+l.id));
+ const tiers=2+Math.floor(rr()*2);
+ let xx=x,yy=0,zz=z,ww=w,dd=d;
+ for(let j=0;j<tiers;j++){
+  const th=j===0?h*.52:(h-yy)/Math.max(1,tiers-j);
+  const t=j===0?stone:(rr()<.45?glass:(rr()<.5?brick:stone));
+  m.box(xx,yy,zz,ww,th,dd,t,j===0?2:1);
+  const ix=ww*(.12+rr()*.12),iz=dd*(.12+rr()*.12);
+  xx+=ix*rr();zz+=iz*rr();ww-=ix;dd-=iz;yy+=th;
+  if(ww<.4||dd<.4)break;
+ }
+ m.box(xx,yy,zz,Math.max(ww,.3),.07,Math.max(dd,.3),[.27,.29,.28],0);
+}
+// Clock tower landmark: stone shaft, glowing clock stage, spire.
+function clockTower(m,l,s,c,r){
+ const{x,z,width:w,depth:d,height:h}=l;
+ const stone=color(s.palette[0],.95),trim=color(s.palette[3]||[.6,.58,.5],1.02);
+ m.box(x+w*.28,0,z+d*.28,w*.44,h,d*.44,stone,2);
+ const cy=h*.74;
+ m.box(x+w*.22,cy,z+d*.22,w*.56,h*.18,d*.56,trim,8);
+ const mm=m.material;m.material=9;
+ const fc=[1.,.85,.55],fh=h*.10;
+ m.box(x+w*.30,cy+h*.04,z-.015,w*.40,fh,.03,fc);
+ m.box(x+w*.30,cy+h*.04,z+d-.015,w*.40,fh,.03,fc);
+ m.box(x-.015,cy+h*.04,z+d*.30,.03,fh,d*.40,fc);
+ m.box(x+w-.015,cy+h*.04,z+d*.30,.03,fh,d*.40,fc);
+ m.material=8;
+ m.cylinder(x+w/2,cy+h*.18,z+d/2,Math.max(w*.14,.12),Math.max(d*.14,.12),h*.22,trim,10,.15);
+ m.material=mm;
+}
+// Sky life: bird flocks, a drifting blimp, airliners and the formation flyby.
+// Everything is baked once per world; all motion happens in the vertex shader as a
+// pure function of the seed-baked values and uTime, so live view and export agree.
+function bakeSkyLife(m,s,c){
+ const r=rng(hash(c.layout+':sky-life'));
+ const reset=()=>{m.construction=[0,0,0,0];m.kind=0;m.route=[0,0,0,0];m.turn=0;m.pivot=[0,0];m.phase=0;m.anchor=0;m.material=0;};
+ // Double-sided quad with explicit UVs (aTex.x drives wing flap / smoke age).
+ const quad=(a,b,c2,d2,col,n,uvs)=>{
+  const base=m.data.length/23;
+  m.vertex(a,n,col,uvs[0]);m.vertex(b,n,col,uvs[1]);m.vertex(c2,n,col,uvs[2]);m.vertex(d2,n,col,uvs[3]);
+  m.indices.push(base,base+1,base+2,base,base+2,base+3,base,base+3,base+2,base,base+2,base+1);
+ };
+ // Bird flocks circle low over the far rooftops, where the camera actually sees sky.
+ const birdC=[.07,.08,.10];
+ for(let f=0;f<3;f++){
+  const fx=(r()-.5)*36,fz=(r()-.5)*32,frad=12+r()*8,falt=7.5+r()*4.5,spd=(.10+r()*.08)*(r()<.5?1:-1);
+  const n=8+Math.floor(r()*6);
+  for(let b=0;b<n;b++){
+   reset();m.kind=8;m.phase=r()*100;m.route=[fx,fz,frad,spd];m.material=0;
+   quad([-0.45,falt,-0.08],[0.45,falt,-0.08],[0.45,falt,0.08],[-0.45,falt,0.08],birdC,[0,1,0],[[0,0],[0,0],[0,0],[0,0]]);
+   for(const sd of[1,-1])
+    quad([-0.09,falt,sd*0.05],[0.21,falt,sd*0.05],[0.15,falt,sd*0.93],[-0.15,falt,sd*0.93],birdC,[0,1,0],[[0,0],[0,0],[1,0],[1,0]]);
+  }
+ }
+ // One slow blimp circling the far rooftops, where the camera can actually see it.
+ {
+  reset();m.kind=9;m.phase=r()*100;m.route=[(r()-.5)*12,(r()-.5)*12,16+r()*6,(.020+r()*.012)*(r()<.5?1:-1)];m.material=8;
+  const by=9+r()*2,bc=[.70,.66,.60];
+  m.sphere(0,by,0,3.4,1.15,1.15,bc,14,8);
+  m.box(-0.5,by-1.5,-0.45,1.7,.55,.9,color(bc,.7),8);
+  m.box(-3.7,by-.4,-0.06,1.0,1.5,.12,color(bc,.82),8);
+  m.box(-3.7,by-.1,-0.75,1.0,.12,1.5,color(bc,.82),8);
+  m.box(2.2,by-.1,-1.16,1.2,.5,.06,[.55,.12,.10],8);
+  m.box(2.2,by-.1,1.10,1.2,.5,.06,[.55,.12,.10],8);
+ }
+ // A few airliners, high and fast on the horizon.
+ for(let pI=0;pI<3;pI++){
+  reset();m.kind=10;m.phase=r()*100;
+  const a=r()*TAU,dx=Math.cos(a),dz=Math.sin(a),alt=13+r()*7,len=190,spd=7+r()*3;
+  m.route=[dx,dz,len,spd];m.material=8;m.turn=-a;m.pivot=[0,0];
+  const pc=[.82,.83,.85],pz=(r()-.5)*60;
+  m.box(-1.3,alt,pz-.14,2.6,.26,.28,pc,8);
+  m.box(-0.25,alt+.02,pz-1.5,.9,.07,3.0,color(pc,.9),8);
+  m.box(-1.55,alt+.05,pz-.06,.5,.62,.12,color(pc,.85),8);
+  m.turn=0;
+ }
+ // Formation flyby: a rare seeded event with red, white and blue smoke.
+ {
+  const fa=r()*TAU,fdx=Math.cos(fa),fdz=Math.sin(fa),flen=200,fspd=26,falt=9+r()*4;
+  const form=[[0,0],[-1.8,-1.6],[-1.8,1.6],[-3.6,-3.2],[-3.6,3.2],[-4.6,0]];
+  const smokeCols=[[.95,.13,.09],[.95,.95,.95],[.10,.28,.95],[.95,.13,.09],[.95,.95,.95],[.10,.28,.95]];
+  const jc=[.16,.17,.20],SEG=40;
+  for(let j=0;j<6;j++){
+   const ox=form[j][0],oz=form[j][1];
+   reset();m.kind=11;m.phase=j*7.3;m.route=[fdx,fdz,flen,fspd];m.material=8;m.turn=-fa;m.pivot=[0,0];
+   m.box(ox-1.15,falt-.09,oz-.11,2.3,.18,.22,jc,8);
+   m.box(ox-.45,falt-.02,oz-1.0,.8,.05,2.0,color(jc,1.25),8);
+   m.box(ox-1.30,falt-.02,oz-.05,.5,.42,.10,color(jc,1.15),8);
+   m.box(ox+1.00,falt-.07,oz-.07,.35,.14,.14,color(jc,1.1),8);
+   m.turn=0;
+   // Smoke ribbon: baked in the flight frame, emission solved in the shader.
+   reset();m.kind=12;m.phase=j*3.1+1;m.route=[fdx,fdz,flen,fspd];m.material=9;
+   m.construction=[0,0,ox*fdx-oz*fdz,ox*fdz+oz*fdx];
+   const col=smokeCols[j];
+   for(let sgi=0;sgi<SEG;sgi++){
+    const age0=sgi*(7/SEG),age1=(sgi+1)*(7/SEG),w0=.09+age0*.15,w1=.09+age1*.15;
+    quad([0,falt,w0],[0,falt,-w0],[0,falt,-w1],[0,falt,w1],col,[0,1,0],[[age0,1],[age0,-1],[age1,-1],[age1,1]]);
+   }
+  }
+ }
+ reset();
 }
 function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(c.detail+':photo-finish:'+index));
  if(index===1){m.material=11;m.face([-65,-.055,-65],[65,-.055,-65],[65,-.055,65],[-65,-.055,65],s.landTint,[0,1,0]);m.material=0;
@@ -702,13 +928,28 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
   }
  }
  if(s.family===2){
-  // A clean promenade and timber crossing give the central water a readable scale.
+  // A clean promenade rings the central water; a grand arched bridge crosses it.
   const walk=[];for(let i=0;i<=96;i++){const a=i/96*TAU;walk.push([s.cx+Math.cos(a)*3.18*1.15,s.cz+Math.sin(a)*3.18*2.2]);}
   for(let i=0;i<walk.length-1;i++)cityRoad(m,walk[i],walk[i+1],.105,.018,[.64,.58,.44],0);
-  const x0=s.cx-2.38,x1=s.cx+2.38,z=s.cz-.62;
-  cityRoad(m,[x0,z],[x1,z],.30,.055,[.43,.30,.18],0);
-  for(let i=1;i<14;i++){const x=mix(x0,x1,i/14);cityRoad(m,[x,z-.14],[x,z+.14],.022,.061,[.66,.48,.27],0);}
-  for(const side of[-1,1]){m.box(x0,.17,z+side*.145,x1-x0,.035,.035,[.33,.24,.14],0);for(let i=0;i<=7;i++)m.box(mix(x0,x1,i/7)-.022,.075,z+side*.145,.044,.18,.044,[.36,.26,.15],0);}
+  const bx=s.bridgeX,bz0=s.cz-5.6,bz1=s.cz+5.6,archH=s.bridgeArch;
+  const bstone=color(s.palette[0],.95),btrim=color(s.palette[3]||[.6,.58,.5],1.02);
+  const NSEG=16;
+  for(let i=0;i<NSEG;i++){
+   const t0=i/NSEG,t1=(i+1)/NSEG,z0=bz0+(bz1-bz0)*t0,z1=bz0+(bz1-bz0)*t1,zm=(z0+z1)/2;
+   const ym=.10+Math.sin(Math.PI*(t0+t1)/2)*archH,segLen=(z1-z0)+.12;
+   m.box(bx-.42,ym-.14,zm-segLen/2,.84,.14,segLen,bstone,2);
+   m.box(bx-.42,ym,zm-segLen/2,.09,.5,segLen,btrim,12);
+   m.box(bx+.33,ym,zm-segLen/2,.09,.5,segLen,btrim,12);
+  }
+  for(let i=0;i<=6;i++){const t=i/6,z=bz0+(bz1-bz0)*t,y=.10+Math.sin(Math.PI*t)*archH;
+   m.box(bx-.5,y-.42,z-.13,1.0,.14,.26,color(s.palette[0],.8),2);}
+  for(let i=0;i<=4;i++){const t=i/4,z=bz0+(bz1-bz0)*t,y=.10+Math.sin(Math.PI*t)*archH+.62;
+   m.box(bx-.40,y-.55,z-.05,.09,.55,.09,[.13,.13,.14],8);
+   m.box(bx+.31,y-.55,z-.05,.09,.55,.09,[.13,.13,.14],8);
+   const lmm=m.material;m.material=9;
+   m.sphere(bx-.355,y+.08,z,.085,.085,.085,[1.,.72,.30],8,4);
+   m.sphere(bx+.355,y+.08,z,.085,.085,.085,[1.,.72,.30],8,4);
+   m.material=lmm;}
  }
  for(let i=0;i<s.green.length;i++)cityTree(m,...s.green[i],r);
  // Waterfront crossings vary with each plan, and are separate from the streets.
@@ -723,6 +964,8 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
   else if(l.landmark===2){const dh=Math.min(h*.45,w*.47,d*.47),base=h-dh;m.box(x,0,z,w,base,d,[.68,.66,.56],2);m.material=8;m.dome(x+w*.5,base,z+d*.5,w*.49,dh,d*.49,[.44,.55,.53],16,5);}
   else if(l.landmark===3){m.box(x+w*.27,0,z+d*.27,w*.46,h,d*.46,stone,2);m.material=8;m.cylinder(x+w*.5,h,z+d*.5,w*.30,d*.30,.18,[.36,.40,.35],12);m.kind=1;m.box(x+w*.37,h+.18,z+d*.37,w*.26,.26,d*.26,glass,1);m.kind=0;}
   else if(l.landmark===4){for(let k=0;k<5;k++){const inset=k*.065;m.box(x+w*inset,h*k/5,z+d*inset,w*(1-inset*2),h/5,d*(1-inset*2),glass,1);}m.kind=1;m.box(x+w*.47,h,z+d*.47,.05,.8,.05,[.65,.67,.60],8);m.kind=0;}
+  else if(l.landmark===5)clockTower(m,l,s,c,r);
+  else if(l.lod===2)farFieldBlock(m,l,s,c,stone,brick,glass);
   else architectureBuilding(m,l,s,c,stone,brick,glass);
   finishBuilding(m);
   // Grounded cranes retract their jibs before lowering; site screens retire after handover.
@@ -736,9 +979,10 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
  for(let i=index-1;i<s.traffic.length*3;i+=7){const p=s.traffic[Math.floor(i/3)],dx=p.b[0]-p.a[0],dz=p.b[1]-p.a[1],length=Math.hypot(dx,dz);m.phase=r()*100;m.kind=5;m.anchor=0;m.route=[dx/length,dz/length,length,.38+r()*.28];m.turn=-Math.atan2(dz,dx);m.pivot=p.a;
  const tint=r()>.6?[.75,.28,.13]:[.75,.77,.71];m.box(p.a[0],.023,p.a[1],.22,.085,.105,tint,8);m.box(p.a[0]+.055,.108,p.a[1]+.012,.10,.04,.079,[.10,.20,.23],1);m.turn=0;m.route=[0,0,0,0];m.kind=0;}
  for(let i=index-1;i<s.boats.length;i+=7){const p=s.boats[i],dx=p.b[0]-p.a[0],dz=p.b[1]-p.a[1],length=Math.hypot(dx,dz);m.phase=r()*100;m.kind=6;m.anchor=0;m.route=[dx/length,dz/length,length,.05];m.turn=-Math.atan2(dz,dx);m.pivot=p.a;m.box(p.a[0],-.04,p.a[1],.50,.065,.17,[.74,.76,.70],8);m.box(p.a[0]+.12,.025,p.a[1]+.025,.19,.05,.12,[.15,.29,.34],1);m.kind=0;m.turn=0;m.route=[0,0,0,0];}
+ if(index===1)bakeSkyLife(m,s,c);
  return m.upload();
 }
-function cityDraw(mesh,p,view,light,t,eye,sun,params,world){gl.useProgram(p.p);matrix(p,'uViewProjection',view);matrix(p,'uLightMatrix',light);uniform(p,'uStory',t);uniform(p,'uTime',elapsed);uniform(p,'uDensity',params.density*quality);uniform(p,'uRays',params.rays);uniform(p,'uPixelScale',.67/height);uniform(p,'uEye',eye);uniform(p,'uSun',sun);uniform(p,'uWeather',organic(elapsed*.8,world.city.phase));uniform(p,'uMist',params.mist);uniform(p,'uGlow',params.glow);uniform(p,'uGeo',world.city.geo);uniform(p,'uMap',world.city.map);uniform(p,'uCenter',[world.city.cx,world.city.cz]);uniform(p,'uSpacing',[world.city.sx,world.city.sz]);uniform(p,'uBounds',world.city.family===3?[38,38]:[world.city.sx*16.5,world.city.sz*16]);uniform(p,'uPark',world.city.park);uniform(p,'uLandTint',world.city.landTint);uniform(p,'uWaterTint',world.city.waterTint);if(p===photoPrograms.surface){sampler(p,'uShadow',world.shadow.tex,2);sampler(p,'uMaterial',world.materialTexture,3);uniform(p,'uSunI',lightUI.sun);uniform(p,'uAmbI',lightUI.amb);uniform(p,'uTod',lightUI.tod);}gl.bindBuffer(gl.ARRAY_BUFFER,mesh.buffer);attribute(p,'aPosition',3,92,0);attribute(p,'aNormal',3,92,12);attribute(p,'aTint',3,92,24);attribute(p,'aSchedule',4,92,36);attribute(p,'aTex',2,92,52);attribute(p,'aInfo',4,92,60);attribute(p,'aRoute',4,92,76);if(mesh.indexBuffer){gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,mesh.indexBuffer);gl.drawElements(gl.TRIANGLES,mesh.count,gl.UNSIGNED_SHORT,0);}else gl.drawArrays(gl.TRIANGLES,0,mesh.count);}
+function cityDraw(mesh,p,view,light,t,eye,sun,params,world){gl.useProgram(p.p);matrix(p,'uViewProjection',view);matrix(p,'uLightMatrix',light);uniform(p,'uStory',t);uniform(p,'uTime',elapsed);uniform(p,'uDensity',params.density*quality);uniform(p,'uRays',params.rays);uniform(p,'uPixelScale',.67/height);uniform(p,'uEye',eye);uniform(p,'uSun',sun);uniform(p,'uWeather',organic(elapsed*.8,world.city.phase));uniform(p,'uMist',params.mist);uniform(p,'uGlow',params.glow);uniform(p,'uGeo',world.city.geo);uniform(p,'uMap',world.city.map);uniform(p,'uCenter',[world.city.cx,world.city.cz]);uniform(p,'uSpacing',[world.city.sx,world.city.sz]);uniform(p,'uBounds',world.city.townBounds||(world.city.family===3?[38,38]:[world.city.sx*16.5,world.city.sz*16]));uniform(p,'uFlyby',world.city.flyby||[300,12]);uniform(p,'uPark',world.city.park);uniform(p,'uLandTint',world.city.landTint);uniform(p,'uWaterTint',world.city.waterTint);if(p===photoPrograms.surface){sampler(p,'uShadow',world.shadow.tex,2);sampler(p,'uMaterial',world.materialTexture,3);uniform(p,'uSunI',lightUI.sun);uniform(p,'uAmbI',lightUI.amb);uniform(p,'uTod',lightUI.tod);}gl.bindBuffer(gl.ARRAY_BUFFER,mesh.buffer);attribute(p,'aPosition',3,92,0);attribute(p,'aNormal',3,92,12);attribute(p,'aTint',3,92,24);attribute(p,'aSchedule',4,92,36);attribute(p,'aTex',2,92,52);attribute(p,'aInfo',4,92,60);attribute(p,'aRoute',4,92,76);if(mesh.indexBuffer){gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,mesh.indexBuffer);gl.drawElements(gl.TRIANGLES,mesh.count,gl.UNSIGNED_SHORT,0);}else gl.drawArrays(gl.TRIANGLES,0,mesh.count);}
 // ---- Free camera (live view only) ----
 // Touch: one-finger drag orbits, pinch zooms, two-finger drag pans.
 // Mouse: drag orbits, wheel zooms, Shift/right-drag pans.
