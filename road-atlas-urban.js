@@ -8,7 +8,7 @@
  */
 (function () {
 'use strict';
-var VERSION='2.6.0', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
+var VERSION='2.6.2', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
 var CHARACTERS={balanced:'Context-led mix',courtyard:'Courts & shared gardens',terraced:'Stepped garden fabric',compact:'Compact centers'};
 function num(v,f,lo,hi){var n=Number(v);return v!=null&&v!==''&&Number.isFinite(n)?clamp(n,lo,hi):f;}
 var settings={enabled:query.get('urban')!=='0',character:Object.prototype.hasOwnProperty.call(CHARACTERS,query.get('character'))?query.get('character'):'balanced',openness:num(query.get('openness'),.32,.15,.65),relief:num(query.get('relief'),.85,.25,1.25)};
@@ -250,7 +250,10 @@ function faceShade(hex,cx,cy,pts,amt){
  var fx=px-cx,fy=py-cy,fl=Math.hypot(fx,fy)||1;
  return shadeHex(hex,(fx/fl*-.55+fy/fl*-.83)*amt);
 }
-var PITCH_WARM=['#c08a5e','#7a5c40','#e2cba6'],PITCH_COOL=['#a5906f','#46587e','#cfdef2'];
+var PITCH_WARM=['#c08a5e','#7a5c40','#e2cba6', /* 3-9: sage, ember, harbor, dusk, neon, ink, canyon */
+ '#b08d5e','#c08a5e','#b08d5e','#8a5f4a','#7a5f4a','#8a7a66','#c08a5e'];
+var PITCH_COOL=['#a5906f','#46587e','#cfdef2',
+ '#7d8a6a','#8a6f52','#5f7f95','#4a4a6e','#2a4a5e','#5a5a5e','#8a6f52'];
 /* Small solid box drawn in plan space: chimneys, rooftop stair bulkheads. */
 function miniBox(ctx,b,planPt,ang,half,z0,z1,fill,ink){
  var c=Math.cos(ang),s=Math.sin(ang);
@@ -306,7 +309,7 @@ function drawSawtooth(ctx,W,b,v,ink,roofCol,ti){
  poly(ctx,e,null,ink,.85);
 }
 function drawBuilding(ctx,W,b){
- var m=b.architecture,q=W.conditions.parcels[b.parcelId],ti=clamp(Math.round(P.theme),0,2),T=THEMES[ti];
+ var m=b.architecture,q=W.conditions.parcels[b.parcelId],ti=clamp(Math.round(P.theme),0,THEMES.length-1),T=THEMES[ti];
  var ink=ti===0?'#3a332a':'rgba(232,240,252,.9)';
  ctx.save();ringsPath(ctx,q.rings);ctx.clip('evenodd');
  m.landscape.surfaces.forEach(function(s){ringsPath(ctx,s.rings);ctx.fillStyle=s.kind==='garden'?(ti===0?'#adbb91':'#29483e'):(ti===0?'#c6b999':'#34454d');ctx.globalAlpha=s.kind==='garden'?.42:.28;ctx.fill('evenodd');});ctx.globalAlpha=1;
@@ -349,7 +352,7 @@ function drawBuilding(ctx,W,b){
    ctx.stroke();
   }
   // roofs: each style speaks its own roof language
-  var roofCol=v.warmRoof?PITCH_WARM[ti]:PITCH_COOL[ti];
+  var roofCol=v.warmRoof?PITCH_WARM[clamp(ti,0,PITCH_WARM.length-1)]:PITCH_COOL[clamp(ti,0,PITCH_COOL.length-1)];
   if(v.roof==='gable')drawGable(ctx,W,b,v,ink,roofCol,body,q);
   else if(v.roof==='hip')drawHip(ctx,W,b,v,ink,roofCol);
   else if(v.roof==='sawtooth')drawSawtooth(ctx,W,b,v,ink,roofCol,ti);
