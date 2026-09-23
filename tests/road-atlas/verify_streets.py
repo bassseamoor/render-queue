@@ -1,4 +1,4 @@
-"""Road Atlas 2.5: exercise exact shipped bootstrap, graph and parameterized kit.
+"""Road Atlas Streets 2.5.1: full shipped-bootstrap and graph validation.
 Run: python tests/road-atlas/verify_streets.py
 Requires Playwright/Chromium, Shapely and beautifulsoup4. No live-CDN or iOS claim.
 All source responses are first-party local files; source hashes are recorded.
@@ -13,7 +13,7 @@ OUT=ROOT/'tests/road-atlas/streets-proof';OUT.mkdir(parents=True,exist_ok=True)
 NAMES=['road-atlas-v2.html','road-atlas-pipeline.js','road-atlas-conditions.js','road-atlas-urban.js','road-atlas-navigation.js','road-atlas-streets.js','road-atlas-street-hooks.js','vendor/road-atlas-baseline-329a68a.html']
 SOURCES={n:(ROOT/n).read_text() for n in NAMES}
 SEEDS=['RA1-821c9gee01c3','RA1-8339djhi11zg','RA1-821c9gee01aa','RA1-821c9gee01ab','RA1-821c9gee01z9','RA1-c21c9gee01r2','RA1-g42o9kee01m3','RA1-04269a8a01x7','RA1-821c90ee01w0']
-REPORT={'version':'2.5.0','execution':'Local exact seven-resource async bootstrap; headless Chromium, independent Shapely geometry','sourceSHA256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in NAMES},'checks':[],'seeds':[],'errors':[],'warnings':[]}
+REPORT={'version':'2.5.1','execution':'Local exact seven-resource async bootstrap; headless Chromium, independent Shapely geometry','sourceSHA256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in NAMES},'checks':[],'seeds':[],'errors':[],'warnings':[]}
 def check(name,ok,detail=None):
  REPORT['checks'].append({'name':name,'passed':bool(ok),'detail':detail})
  print(('PASS ' if ok else 'FAIL ')+name,detail if not ok else '',flush=True)
@@ -84,10 +84,11 @@ with sync_playwright() as pw:
  browser=pw.chromium.launch(executable_path=os.getenv('CHROMIUM') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
  for si,seed in enumerate(SEEDS):
   page=browser.new_page(viewport={'width':1440,'height':960});events(page);t=time.time();boot(page,seed)
-  check(seed+' shipped street module executed',page.evaluate("world.streetKit?.version==='2.5.0'"),page.locator('#err').text_content())
+  check(seed+' shipped street module executed',page.evaluate("world.streetKit?.version==='2.5.1'"),page.locator('#err').text_content())
   data=json.loads(page.evaluate('JSON.stringify(RoadAtlasPipeline.exportData())'));res=geometry_check(data);m=data['streetKit']['metrics']
   check(seed+' independently valid ports, pavement, crossing groups and buildings',res['problemCount']==0,res)
   check(seed+' actual map coverage at least 90% of eligible 16x10 samples',m['coverageShare']>=.9,m)
+  check(seed+' every remaining local dead end is near a service district',m['unservedLocalTerminals']==0 and m['serviceableLocalTerminalShare']==1,m)
   check(seed+' truthful component count and exported types',m['components']==data['diagnostics']['metrics']['components'] and sum(m['junctionTypes'].values())==len(data['network']['nodes']))
   signature=digest(page,'({network:world.network.roads,kit:world.streetKit,buildings:world.blocks.buildings})');pixels=page.evaluate('worldCanvas.toDataURL()');page.evaluate('regenerate()')
   check(seed+' repeated recipe reproduces graph, kit, buildings and pixels',signature==digest(page,'({network:world.network.roads,kit:world.streetKit,buildings:world.blocks.buildings})') and pixels==page.evaluate('worldCanvas.toDataURL()'))

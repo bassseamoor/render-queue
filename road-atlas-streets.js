@@ -1,11 +1,11 @@
-/* Road Atlas Streets 2.5.0 — hierarchy-first parametric street fabric, not a tile map.
+/* Road Atlas Streets 2.5.1 — hierarchy-first, district-serving street fabric.
  * Uses the pinned V1 district-grid builder, terrain, parcels and site grammar.
  * All land reservations consume the finalized graph and junction envelopes.
  * This is illustrative procedural cartography, not a certified road design.
  */
 (function(){
 'use strict';
-var VERSION='2.5.0',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
+var VERSION='2.5.1',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
 var indexCache=new WeakMap();
 var widths=[8,11,15],H=RoadAtlasPipeline.debug;
 function cp(p){return{x:p.x,y:p.y};}
@@ -67,11 +67,20 @@ function primaryCorridors(F){
  });return roads;
 }
 function regraph(N){return H.planarize(N.roads.filter(function(r){return r.pts.length>1&&len(r.pts)>.5;}));}
+function serviceRadius(){return 230*Math.sqrt(WEXT);}
+function hasServiceCenter(F,p){var radius=serviceRadius();return F.centers.some(function(c){return c.kind!=='park'&&d(p,c)<=radius;});}
+function atMapEdge(p){return p.x<30||p.y<30||p.x>WORLD_W-30||p.y>WORLD_H-30;}
 function prune(N,F){
+ var removedUnserved=0,removedShort=0;
  for(var pass=0;pass<3;pass++){
-  var keep=N.roads.filter(function(r){var dead=N.adj[r.from].length===1||N.adj[r.to].length===1;if(!dead||r.source==='edge-portal')return true;return r.length>=42;});
+  var keep=N.roads.filter(function(r){var fromLeaf=N.adj[r.from].length===1,toLeaf=N.adj[r.to].length===1,dead=fromLeaf||toLeaf;if(!dead||r.source==='edge-portal'||r.source==='bridge-link')return true;
+   var terminal=N.nodes[fromLeaf?r.from:r.to];if(atMapEdge(terminal))return true;
+   if(r.length<42){removedShort++;return false;}
+   if(r.cls===0&&!hasServiceCenter(F,terminal)){removedUnserved++;return false;}
+   return true;
+  });
   if(keep.length===N.roads.length)break;N=H.planarize(keep,F);
- }return N;
+ }N.utilityPrune={unservedLocalTerminalsRemoved:removedUnserved,shortDeadEndsRemoved:removedShort};return N;
 }
 function edgeDirection(N,edge,node){var r=N.roads[edge],p=r.from===node?r.pts:r.pts.slice().reverse(),q=at(p,Math.min(18,len(p)));return norm(q.x-p[0].x,q.y-p[0].y);}
 function outgoing(N,i){var e=N.adj[i][0];return edgeDirection(N,e.e,i);}
@@ -241,7 +250,7 @@ function build(F,G){
  var roads=primaryCorridors(F),kinds=F.centers.map(function(c){return c.kind;});
  try{F.centers.forEach(function(c){if(c.kind==='waterfront')c.kind='residential';});cityGrids(F,roads,function(){});}finally{F.centers.forEach(function(c,i){c.kind=kinds[i];});}
  if(!roads.length)throw new Error('No viable V1 city fabric');
- var N=H.planarize(roads,F);N=connect(F,N);var changes=N.changes;N=portals(F,N);N=finishEnds(F,N);N=collapse(N,F);N=removeTinyCycles(N,F);var tiny=N.tinyCyclesRemoved||0;N=resolveIsolated(F,N);var repair=N.repair;N=prune(N,F);N=hierarchy(N,F,G);N=mergeThrough(N,F);N=prune(N,F);N.changes=Object.assign({},changes,repair,{tinyCyclesRemoved:tiny});return N;
+ var N=H.planarize(roads,F);N=connect(F,N);var changes=N.changes;N=portals(F,N);N=finishEnds(F,N);N=collapse(N,F);N=removeTinyCycles(N,F);var tiny=N.tinyCyclesRemoved||0;N=resolveIsolated(F,N);var repair=N.repair;N=prune(N,F);var firstPrune=N.utilityPrune;N=hierarchy(N,F,G);N=mergeThrough(N,F);N=prune(N,F);var finalPrune=N.utilityPrune;N.changes=Object.assign({},changes,repair,{tinyCyclesRemoved:tiny,unservedLocalTerminalsRemoved:firstPrune.unservedLocalTerminalsRemoved+finalPrune.unservedLocalTerminalsRemoved,shortDeadEndsRemoved:firstPrune.shortDeadEndsRemoved+finalPrune.shortDeadEndsRemoved});return N;
 }
 function polyArea(p){var a=0;for(var i=0;i<p.length;i++){var q=p[(i+1)%p.length];a+=p[i].x*q.y-q.x*p[i].y;}return Math.abs(a)/2;}
 function rings(ctx,poly){ctx.beginPath();poly.forEach(function(p,i){if(i)ctx.lineTo(p.x,p.y);else ctx.moveTo(p.x,p.y);});ctx.closePath();}
@@ -326,13 +335,14 @@ function drawLabels(ctx,W){if(!P.labelsOn||!W.names)return;var T=THEMES[clamp(Ma
  W.names.districts.forEach(function(n){label(n.name,n.x,n.y,fs,0,true);});
  W.names.streets.forEach(function(n){var a=n.ang;if(a>Math.PI/2)a-=Math.PI;if(a< -Math.PI/2)a+=Math.PI;label(n.name,n.x,n.y,small,a,false);});ctx.restore();
 }
-function metrics(W){var N=W.network,F=W.F,index=H.makeIndex(N.roads),eligible=0,covered=0,tiles=[],r=100*Math.sqrt(WEXT);
+function metrics(W){var N=W.network,F=W.F,index=H.makeIndex(N.roads),eligible=0,covered=0,tiles=[],r=100*Math.sqrt(WEXT),terminalRadius=serviceRadius(),localTerminalCount=0,unservedLocalTerminals=0;
  for(var y=0;y<10;y++)for(var x=0;x<16;x++){var p={x:(x+.5)*WORLD_W/16,y:(y+.5)*WORLD_H/10};if(F.waterDist(p.x,p.y)<20||F.districtAt(p.x,p.y).kind==='park'){tiles.push({x:x,y:y,eligible:false});continue;}eligible++;var hit=index.near(p,r,-1),ok=!!hit;if(ok)covered++;tiles.push({x:x,y:y,eligible:true,served:ok,distance:hit?+hit.d.toFixed(2):null});}
- var types={},turnSum=0,turnCount=0,primary=0;N.roads.forEach(function(r){if(r.source==='primary-corridor')primary++;});W.streetKit.junctions.forEach(function(j){types[j.type]=(types[j.type]||0)+1;if(j.throughEdges&&j.throughEdges.length===2){var a=j.ports.find(function(p){return p.edge===j.throughEdges[0];}),b=j.ports.find(function(p){return p.edge===j.throughEdges[1];});if(a&&b&&a.cls===2&&b.cls===2){turnSum+=Math.acos(clamp(-(a.direction.x*b.direction.x+a.direction.y*b.direction.y),-1,1))*180/Math.PI;turnCount++;}}});return{coverageSamples:eligible,coveredSamples:covered,coverageShare:eligible?covered/eligible:0,samplingRadiusWorldUnits:r,tiles:tiles,junctionTypes:types,crosswalkGroups:W.streetKit.crosswalks.length,components:N.components.length,primaryCorridorSegments:primary,meanArterialDeflectionDeg:turnCount?turnSum/turnCount:0,tinyCyclesRemoved:(N.changes&&N.changes.tinyCyclesRemoved)||0};
+ N.nodes.forEach(function(p,i){if(N.adj[i].length!==1||N.roads[N.adj[i][0].e].cls!==0||atMapEdge(p))return;localTerminalCount++;if(!hasServiceCenter(F,p))unservedLocalTerminals++;});
+ var types={},turnSum=0,turnCount=0,primary=0;N.roads.forEach(function(r){if(r.source==='primary-corridor')primary++;});W.streetKit.junctions.forEach(function(j){types[j.type]=(types[j.type]||0)+1;if(j.throughEdges&&j.throughEdges.length===2){var a=j.ports.find(function(p){return p.edge===j.throughEdges[0];}),b=j.ports.find(function(p){return p.edge===j.throughEdges[1];});if(a&&b&&a.cls===2&&b.cls===2){turnSum+=Math.acos(clamp(-(a.direction.x*b.direction.x+a.direction.y*b.direction.y),-1,1))*180/Math.PI;turnCount++;}}});return{coverageSamples:eligible,coveredSamples:covered,coverageShare:eligible?covered/eligible:0,samplingRadiusWorldUnits:r,tiles:tiles,junctionTypes:types,crosswalkGroups:W.streetKit.crosswalks.length,components:N.components.length,primaryCorridorSegments:primary,meanArterialDeflectionDeg:turnCount?turnSum/turnCount:0,tinyCyclesRemoved:(N.changes&&N.changes.tinyCyclesRemoved)||0,localTerminalCount:localTerminalCount,unservedLocalTerminals:unservedLocalTerminals,serviceableLocalTerminalShare:localTerminalCount?1-unservedLocalTerminals/localTerminalCount:1,terminalServiceRadiusWorldUnits:terminalRadius,unservedLocalTerminalsRemoved:(N.changes&&N.changes.unservedLocalTerminalsRemoved)||0,shortDeadEndsRemoved:(N.changes&&N.changes.shortDeadEndsRemoved)||0};
 }
-function refresh(){var e=document.getElementById('streetsStatus');if(!e)return;if(!world||!world.streetKit){e.textContent='Previous ordered streets; original comparison retained.';return;}var m=world.streetKit.metrics;e.textContent=m.coveredSamples+'/'+m.coverageSamples+' eligible map samples near a road · '+m.components+' component(s) · '+m.crosswalkGroups+' crossing groups · arterial deflection '+m.meanArterialDeflectionDeg.toFixed(1)+'°.';}
+function refresh(){var e=document.getElementById('streetsStatus');if(!e)return;if(!world||!world.streetKit){e.textContent='Previous ordered streets; original comparison retained.';return;}var m=world.streetKit.metrics;e.textContent=m.coveredSamples+'/'+m.coverageSamples+' eligible map samples near a road · '+m.components+' component(s) · '+m.crosswalkGroups+' crossing groups · '+Math.round(m.serviceableLocalTerminalShare*100)+'% of local dead ends near a service district · '+m.unservedLocalTerminalsRemoved+' unserved ends removed.';}
 window.RoadAtlasStreets={version:VERSION,isEnabled:function(){return settings.enabled;},prepare:prepare,build:build,geometry:geometry,draw:drawRoads,cssScale:cssScale,metrics:metrics,refresh:refresh,queryParameters:function(u){u.searchParams.set('streets',settings.enabled?'connected':'previous');u.searchParams.set('corners',settings.radius);return u;},exportData:function(W){return W.streetKit||null;},getSettings:function(){return Object.assign({},settings);},setRadius:function(v){if(!Number.isFinite(+v))return;settings.radius=clamp(+v,4,14);regenerate();},setEnabled:function(v){settings.enabled=!!v;regenerate();},debug:{junction:junction,geometry:geometry,at:at,slice:slice,dry:dry,polyArea:polyArea,validateKit:validateKit}};
-var panel=document.getElementById('analysisPanel'),section=document.createElement('details');section.className='cond-detail';section.innerHTML='<summary>Street assembly · 2.5</summary><label>Network build<select id="streetAssembly"><option value="connected">Connected, map-wide fabric</option><option value="previous">Previous ordered streets</option></select></label><label>Corner rounding <output id="streetRadiusValue"></output><input id="streetRadius" type="range" min="4" max="14" step="1"></label><p class="cond-note">Road hierarchy now favors straight through-corridors, coherent planning axes, useful loops, T-junction priority and residential cul-de-sacs. Junction shapes remain parametric, not fixed tiles. This changes streets, so dependent parcels rebuild.</p><p class="cond-note" id="streetsStatus"></p>';panel.appendChild(section);var sel=document.getElementById('streetAssembly');sel.value=settings.enabled?'connected':'previous';sel.onchange=function(){settings.enabled=sel.value==='connected';regenerate();};var radius=document.getElementById('streetRadius'),value=document.getElementById('streetRadiusValue');radius.value=settings.radius;value.value=settings.radius;radius.oninput=function(){value.value=radius.value;};radius.onchange=function(){RoadAtlasStreets.setRadius(radius.value);};
+var panel=document.getElementById('analysisPanel'),section=document.createElement('details');section.className='cond-detail';section.innerHTML='<summary>Street assembly · 2.5.1</summary><label>Network build<select id="streetAssembly"><option value="connected">Connected, map-wide fabric</option><option value="previous">Previous ordered streets</option></select></label><label>Corner rounding <output id="streetRadiusValue"></output><input id="streetRadius" type="range" min="4" max="14" step="1"></label><p class="cond-note">Road hierarchy favors continuous corridors, coherent neighborhood axes, T-junctions and residential access. Short local dead ends are retained when they serve a nearby non-park district; unsupported local ends are removed. Junction geometry remains parametric, not fixed tiles.</p><p class="cond-note" id="streetsStatus"></p>';panel.appendChild(section);var sel=document.getElementById('streetAssembly');sel.value=settings.enabled?'connected':'previous';sel.onchange=function(){settings.enabled=sel.value==='connected';regenerate();};var radius=document.getElementById('streetRadius'),value=document.getElementById('streetRadiusValue');radius.value=settings.radius;value.value=settings.radius;radius.oninput=function(){value.value=radius.value;};radius.onchange=function(){RoadAtlasStreets.setRadius(radius.value);};
 // A first control tap after panning can be consumed as hover by touch browsers.
 // One deliberate pointer-up activates once; compatibility click is deduplicated.
 var controls=document.querySelector('.ra-camera-controls');

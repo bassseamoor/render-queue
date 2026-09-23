@@ -1,4 +1,4 @@
-"""Independent 2.3 site-massing validation and actual browser proof.
+"""Independent 2.4 site-massing validation and actual browser proof.
 Run from repo: python tests/road-atlas/verify_urban.py
 Requires beautifulsoup4, playwright, shapely and Chromium (CHROMIUM overrides).
 Tests use exact first-party local bytes, not live delivery or actual iPhone Safari.
@@ -18,7 +18,7 @@ baseline=(ROOT/'vendor/road-atlas-baseline-329a68a.html').read_text()
 scripts=[s.text for s in BeautifulSoup(baseline,'html.parser').find_all('script')]
 head=sources['road-atlas-v2.html'].split('<script>')[0]
 SEEDS=['RA1-821c9gee01aa','RA1-821c9gee01ab','RA1-821c9gee01c3','RA1-821c9gee01z9','RA1-c21c9gee01r2','RA1-g42o9kee01m3','RA1-04269a8a01x7','RA1-821c90ee01w0']
-report={'version':'2.3.0','execution':'Headless Chromium; local source + first-party async fetch fixture', 'sourceSHA256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in FILES},'checks':[],'seeds':[],'errors':[]}
+report={'version':'2.4.0','execution':'Headless Chromium; local source + first-party async fetch fixture', 'sourceSHA256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in FILES},'checks':[],'seeds':[],'errors':[]}
 def check(name,ok,detail=None):
  report['checks'].append({'name':name,'passed':bool(ok),'detail':detail})
  if not ok: print('FAIL',name,detail,flush=True)
@@ -39,11 +39,12 @@ def shape(rings):
 def independent(data):
  C=data['conditions']; parcels={q['id']:shape(q['rings']) for q in C['parcels']}
  cell=C['resolution'];rw=C['raster']['w'];owners=C['raster']['parcelOwner'];flags=C['raster']['flags']
- errors=[];masses=0;surfaces=0;forms={};ground_sum=0
+ errors=[];masses=0;surfaces=0;forms={};ground_sum=0;envelope_sum=0
  def sq(k): return box(k%rw*cell,k//rw*cell,(k%rw+1)*cell,(k//rw+1)*cell)
  for b in data['buildings']:
   m=b['architecture']; q=parcels[b['parcelId']]; volumes=m['volumes']; plans=[];ground=[];forms[m['form']]=forms.get(m['form'],0)+1
   if m['parcelId']!=b['parcelId']: errors.append(['owner',b['parcelId']])
+  envelope_sum+=b['w']*b['h']
   for i,v in enumerate(volumes):
    masses+=1; plan=polygon(v['plan']); bottom=polygon(v['projectedBase']);roof=polygon(v['projectedRoof']);sweep=unary_union([bottom,roof]).convex_hull
    if not plan.is_valid or not q.buffer(1e-7).covers(plan) or not q.buffer(1e-7).covers(sweep):errors.append(['containment',b['parcelId'],i])
@@ -79,7 +80,7 @@ def independent(data):
   for t in m['landscape']['trees']:
    if not q.buffer(1e-7).covers(Point(t['x'],t['y']).buffer(t['r'])) or Point(t['x'],t['y']).buffer(t['r']).intersection(footprint).area>1e-6:errors.append(['tree',b['parcelId']])
  if abs(ground_sum-data['urban']['metrics']['groundArea'])>1e-6:errors.append('total metrics')
- return {'errors':errors[:25],'errorCount':len(errors),'masses':masses,'surfaces':surfaces,'forms':forms}
+ return {'errors':errors[:25],'errorCount':len(errors),'masses':masses,'surfaces':surfaces,'forms':forms,'envelopeCoverage':ground_sum/envelope_sum if envelope_sum else 0}
 
 with sync_playwright() as pw:
  browser=pw.chromium.launch(executable_path=os.getenv('CHROMIUM') or shutil.which('chromium'),headless=True,args=['--no-sandbox'])
@@ -93,12 +94,13 @@ with sync_playwright() as pw:
   check(seed+' old fitted envelopes unchanged',envelopes==signature(page,'world.blocks.buildings.map(({architecture,...b})=>b)'))
   data=json.loads(page.evaluate('JSON.stringify(RoadAtlasPipeline.exportData())'));res=independent(data)
   check(seed+' independent full prism/parcel/surface/support validation',not res['errors'],res)
+  check(seed+' fitted envelopes receive dense ground coverage',res['envelopeCoverage']>=.62 and abs(data['urban']['metrics']['envelopeCoverage']-res['envelopeCoverage'])<1e-6,res)
   model=signature(page,'world.blocks.buildings');newpix=page.evaluate('worldCanvas.toDataURL()');page.evaluate('regenerate()')
   check(seed+' same seed reproduces volumes and pixels',model==signature(page,'world.blocks.buildings') and newpix==page.evaluate('worldCanvas.toDataURL()'))
   page.evaluate('RoadAtlasUrban.setSettings({enabled:false})')
-  check(seed+' disabled grammar restores exact 2.2 pixels and envelopes',pixels==page.evaluate('worldCanvas.toDataURL()') and envelopes==signature(page,'world.blocks.buildings'))
+  check(seed+' disabled grammar restores cartographic pixels and envelopes',pixels==page.evaluate('worldCanvas.toDataURL()') and envelopes==signature(page,'world.blocks.buildings'))
   page.evaluate('RoadAtlasUrban.setSettings({enabled:true})')
-  check(seed+' enabling grammar restores exact 2.3 output',newpix==page.evaluate('worldCanvas.toDataURL()'))
+  check(seed+' enabling grammar restores exact 2.4 output',newpix==page.evaluate('worldCanvas.toDataURL()'))
   if n in (0,2,5): snapshot(page,OUT/f'city-{n}.png');page.locator('#urbanDesignBtn').click();page.wait_for_timeout(100);page.screenshot(path=str(OUT/f'study-{n}.png'));page.evaluate('RoadAtlasUrban.closeStudy()')
   if n==0:(OUT/'example-city.json').write_text(json.dumps(data,separators=(',',':')))
   report['seeds'].append({'seed':seed,'validation':res,'metrics':data['urban']['metrics']});page.close();print(seed,res['masses'],'masses',len(res['errors']),'errors',flush=True)
@@ -133,7 +135,7 @@ with sync_playwright() as pw:
  page.locator('#urbanPlateBtn').click();page.wait_for_function('window.__urbanPlate?.width===1680')
  snapshot(page,OUT/'six-stage-plate.png','window.__urbanPlate')
  check('Six-stage export produces full resolution canvas',page.evaluate('window.__urbanPlate.height===2040'))
- page.locator('#urbanSiteDataBtn').click();check('Site JSON includes owner, rings, settings and actual volumes',page.evaluate("window.__urbanSiteExport.format==='MOOR-Site-2.3'&&window.__urbanSiteExport.parcel.rings.length>0&&window.__urbanSiteExport.model.volumes.length>0&&window.__urbanSiteExport.model.parcelId===window.__urbanSiteExport.parcel.id"))
+ page.locator('#urbanSiteDataBtn').click();check('Site JSON includes owner, rings, settings and actual volumes',page.evaluate("window.__urbanSiteExport.format==='MOOR-Site-2.4'&&window.__urbanSiteExport.parcel.rings.length>0&&window.__urbanSiteExport.model.volumes.length>0&&window.__urbanSiteExport.model.parcelId===window.__urbanSiteExport.parcel.id"))
  page.screenshot(path=str(OUT/'study-controls.png'))
  page.locator('#urbanNext').click();check('Site navigation selects a different committed parcel',page.locator('#urbanSiteSelect').input_value()!='')
  page.keyboard.press('Escape');check('Escape closes study and restores focus',not page.locator('#urbanStudy').is_visible() and page.evaluate('document.activeElement.id')=='urbanDesignBtn')
@@ -147,7 +149,7 @@ with sync_playwright() as pw:
  check('Invalid numeric/enum settings preserve valid state',page.evaluate("RoadAtlasUrban.getSettings().character==='balanced'&&RoadAtlasUrban.getSettings().openness===.32&&RoadAtlasUrban.getSettings().relief===.85"))
  page.evaluate("RoadAtlasPipeline.setMode('legacy')");legacy=page.evaluate('worldCanvas.toDataURL()')
  orig=browser.new_page();orig.set_content(html(SEEDS[2],legacy=True),wait_until='load');check('Original V1 remains pixel-identical with urban module loaded',orig.evaluate('worldCanvas.toDataURL()')==legacy);orig.close();page.close()
- # Actual four-file loader, parameter roundtrip, and mobile touch controls.
+ # Actual seven-resource loader, parameter roundtrip, and mobile touch controls.
  for viewport in [{'width':390,'height':844},{'width':844,'height':390}]:
   page=browser.new_page(viewport=viewport,device_scale_factor=2,is_mobile=True,has_touch=True);page.set_default_timeout(120000);page.on('pageerror',lambda e:report['errors'].append(str(e)))
   files={k:v for k,v in sources.items() if k.endswith('.js')};files['road-atlas-navigation.js']=(ROOT/'road-atlas-navigation.js').read_text();files['road-atlas-streets.js']=(ROOT/'road-atlas-streets.js').read_text();files['road-atlas-street-hooks.js']=(ROOT/'road-atlas-street-hooks.js').read_text();files['vendor/road-atlas-baseline-329a68a.html']=baseline
@@ -158,7 +160,7 @@ with sync_playwright() as pw:
   url='https://atlas.test/road-atlas-v2.html?seed='+SEEDS[0]+'&urban=1&character=courtyard&openness=0.45&relief=0.65'
   query_fixture='<script>const NativeQuery=window.URLSearchParams;window.URLSearchParams=class extends NativeQuery {constructor(input){super(input===""?'+json.dumps('?'+url.split('?',1)[1])+':input);}};</script>'
   page.set_content(query_fixture+boot,wait_until='load',timeout=120000);page.wait_for_function('world?.urban?.enabled')
-  check(str(viewport)+' async four-file boot exactly once',page.evaluate("RoadAtlasPipeline.version==='2.3.0'&&RoadAtlasUrban.version==='2.3.0'&&document.querySelectorAll('.sc-pill').length===1"))
+  check(str(viewport)+' seven-resource boot exactly once',page.evaluate("RoadAtlasPipeline.version==='2.3.0'&&RoadAtlasUrban.version==='2.4.0'&&document.querySelectorAll('.sc-pill').length===1"))
   check(str(viewport)+' shared settings restored on boot',page.evaluate("RoadAtlasUrban.getSettings().character==='courtyard'&&RoadAtlasUrban.getSettings().openness===.45&&RoadAtlasUrban.getSettings().relief===.65"))
   check(str(viewport)+' wrapped toolbar and stage fit',page.evaluate('document.getElementById("topbar").scrollWidth<=innerWidth && document.getElementById("stage").getBoundingClientRect().top>=document.getElementById("topbar").getBoundingClientRect().bottom-1'))
   page.locator('#urbanDesignBtn').tap();check(str(viewport)+' touch study opens without horizontal overflow',page.evaluate('document.getElementById("urbanStudy").open && document.getElementById("urbanStudy").scrollWidth<=document.getElementById("urbanStudy").clientWidth+1'))

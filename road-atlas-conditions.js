@@ -1,4 +1,4 @@
-/* Road Atlas Conditions 2.2.0 — terrain-derived contours and conditional parcels.
+/* Road Atlas Conditions 2.3.0 — terrain-derived parcels and denser district lots.
  * First-party V1 block packer / renderer are retained below, with explicit hooks.
  * Canonical placement boundary: union of full 4-world-unit raster cells, NOT
  * a smoothed outline. Raster-derived rings preserve holes and concavity.
@@ -7,7 +7,7 @@
  */
 (function () {
 'use strict';
-var VERSION='2.2.0', HALF_DIAG=Math.SQRT2*2, stored={};
+var VERSION='2.3.0', HALF_DIAG=Math.SQRT2*2, stored={};
 try {stored=JSON.parse(localStorage.getItem('ra.conditions.v1')||'{}')||{};} catch(e) {}
 var qs=new URLSearchParams(location.search);
 function number(q,fallback,lo,hi){var n=Number(q);return q!=null&&q!==''&&Number.isFinite(n)?Math.max(lo,Math.min(hi,n)):fallback;}
@@ -199,6 +199,8 @@ function adapt(fn,expected,edits){
  for(var j=edits.length-1;j>=0;j--){var e=edits[j];if(source.slice(e[0],e[1])!==e[2])throw new Error('V1 hook mismatch: '+fn.name);source=source.slice(0,e[0])+e[3]+source.slice(e[1]);}
  return source;
 }
+var subdivisionSource=Function.prototype.toString.call(buildBlocks),subdivisionAnchor='var SUBD={downtown:4,commercial:3,residential:3,waterfront:3,industrial:2,park:0};',subdivisionStart=subdivisionSource.indexOf(subdivisionAnchor);
+if(subdivisionStart<0||subdivisionSource.indexOf(subdivisionAnchor,subdivisionStart+subdivisionAnchor.length)>=0)throw new Error('V1 hook mismatch: district lot depth');
 var buildConditionalBlocks=Function("reservations","ringsFromCells","createParcel","fit","finalize","rect","at",'"use strict";return ('+adapt(buildBlocks,3686607643,[
  [
   0,
@@ -217,6 +219,12 @@ var buildConditionalBlocks=Function("reservations","ringsFromCells","createParce
   3887,
   "",
   "  blocks.forEach(function(b,i){\n    b.id=i; b.rings=ringsFromCells(b.cells,C.w,C.cell);\n    C.blocks.push({id:i,rings:b.rings,area:b.cells.length*C.cell*C.cell});\n    b.cells.forEach(function(k){C.blockOwner[k]=i;});\n  });\n"
+ ],
+ [
+  subdivisionStart,
+  subdivisionStart+subdivisionAnchor.length,
+  subdivisionAnchor,
+  'var SUBD={downtown:4,commercial:4,residential:4,waterfront:3,industrial:2,park:0};'
  ],
  [
   6620,

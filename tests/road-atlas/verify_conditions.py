@@ -1,4 +1,4 @@
-"""Reproducible checks for the 2.2 conditional-boundary/topo pass.
+"""Reproducible checks for the 2.3 conditional-parcel and topography pass.
 Requires Python: beautifulsoup4, playwright, shapely; Chromium in PATH.
 Uses local first-party bytes with set_content and local fetch fixtures.
 This validates code/rendering, NOT actual iPhone Safari or live network delivery.
@@ -19,7 +19,7 @@ previous_path=ROOT/'tests/road-atlas/fixtures/pipeline-2.1.0.js'
 previous=previous_path.read_text()
 SEEDS=['RA1-821c9gee01aa','RA1-821c9gee01ab','RA1-821c9gee01c3','RA1-821c9gee01z9',
        'RA1-c21c9gee01r2','RA1-g42o9kee01m3','RA1-04269a8a01x7','RA1-821c90ee01w0']
-report={'version':'2.2.0','execution':'Headless Chromium, local first-party source','seeds':[],'checks':[],'errors':[], 'sourceSHA256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in ['road-atlas-pipeline.js','road-atlas-conditions.js','road-atlas-v2.html']}}
+report={'version':'2.3.0','execution':'Headless Chromium, local first-party source','seeds':[],'checks':[],'errors':[], 'sourceSHA256':{f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in ['road-atlas-pipeline.js','road-atlas-conditions.js','road-atlas-v2.html']}}
 def html(seed,which='new'):
  ss=scripts.copy();ss[0]=ss[0].replace('randomSeed:function(){return randomSeedStr();}',"randomSeed:function(){return '"+seed+"';}")
  extra=[module,conditions] if which=='new' else [previous] if which=='previous' else []
@@ -130,7 +130,7 @@ with sync_playwright() as p:
  mock='<script>window.fetch=async function(path){const f='+json.dumps(sources).replace('</','<\\/')+';const k=String(path).replace(/^\\.\\//,\'\').split(\'?\')[0];return new Response(f[k]||\'missing\',{status:f[k]?200:404});};</script>'
  boot=(ROOT/'road-atlas-v2.html').read_text().replace('<script>',mock+'<script>',1)
  page.set_content(boot,wait_until='load');page.wait_for_function('world?.conditions && world?.pipeline')
- check('Shipped four-file async boot completes once',page.evaluate("RoadAtlasPipeline.version==='2.3.0'&&RoadAtlasConditions.version==='2.2.0'&&document.querySelectorAll('.sc-pill').length===1"))
+ check('Shipped seven-resource async boot completes once',page.evaluate("RoadAtlasPipeline.version==='2.3.0'&&RoadAtlasConditions.version==='2.3.0'&&document.querySelectorAll('.sc-pill').length===1"))
  check('Mobile toolbar fits',page.evaluate('document.getElementById("topbar").scrollWidth<=innerWidth'));check('Mobile stage clears full wrapped toolbar',page.evaluate('document.getElementById("stage").getBoundingClientRect().top>=document.getElementById("topbar").getBoundingClientRect().bottom-1'))
  page.locator('#layersBtn').tap();check('Touch layers open',page.locator('#layersPanel').is_visible());page.screenshot(path=str(OUT/'mobile-layers.png'))
  page.locator('#inspectConditions').tap();bld=page.evaluate('({x:world.blocks.buildings[0].cx,y:world.blocks.buildings[0].cy,W:WORLD_W,H:WORLD_H})');box=page.locator('#scene').bounding_box();page.touchscreen.tap(box['x']+box['width']*bld['x']/bld['W'],box['y']+box['height']*bld['y']/bld['H']);check('Touch parcel inspection works',page.locator('#conditionInspector').is_visible());page.screenshot(path=str(OUT/'mobile-inspector.png'))

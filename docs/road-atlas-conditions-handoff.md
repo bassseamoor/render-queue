@@ -1,4 +1,10 @@
-# Road Atlas 2.2 — conditional boundaries and topography
+# Road Atlas Conditions 2.3 — conditional boundaries, topography and denser lots
+
+## 2.3 lot density follow-up
+
+Residential and commercial V1 blocks now permit one extra recursive guillotine-split level (maximum depth 4). Existing minimum parcel width/depth, area and per-block count stops still apply; this raises the number of candidate lots where a block has room, while all accepted footprints remain checked against the same final reservation grid. The adapter verifies the exact V1 source anchor and the integration hook fingerprints this updated module. This is a lot-count opportunity, not a guarantee that every candidate receives a building.
+
+The conditions browser suite expects module 2.3.0, but it was not run in this environment because Python Playwright and Chromium are unavailable.
 
 ## Scope
 

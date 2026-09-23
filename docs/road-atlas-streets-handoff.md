@@ -1,4 +1,4 @@
-# Road Atlas 2.5 — hierarchy-first street realism
+# Road Atlas Streets 2.5.1 — hierarchy and local service
 
 ## What changed in 2.5
 
@@ -10,7 +10,13 @@ Primary corridors are derived from district projections along the dominant city 
 
 Metrics now include mean arterial deflection, primary-corridor segment count and removed tiny cycles. These are diagnostics, not civil-engineering guarantees.
 
-## Validation delta
+## 2.5.1 local terminal service rule
+
+The map review found a few local streets ending away from any active neighborhood. Internal degree-one local endpoints are now retained only within 230 × sqrt(WEXT) world units of a non-park district center. Map-edge continuations and bridge links are exempt; collectors and arterials are preserved. Short dead ends keep the prior 42-unit pruning rule. Exported metrics report remaining unserved local terminals, the service radius and how many unsupported terminals were removed. This is a neighborhood-reach heuristic, not a parcel-frontage or traffic-use proof.
+
+The street fast and full browser tests now assert zero unserved internal local terminals for their fixed seeds. They were not run in this environment because the Python Playwright/Chromium test dependency is unavailable. The prior 2.5.0 test totals below are historical and do not validate these 2.5.1 changes. The versioned loader now requests Streets 2.5.1; its guarded integration fingerprint is 2.4.1.
+
+## 2.5.0 validation record (before 2.5.1)
 
 The fast 2.5 suite passed 46 checks on the default seed and the user's mobile screenshot seed, including independent junction/crosswalk/building geometry, deterministic regeneration, map coverage, previous-mode comparison, all corner-radius fixtures, touch navigation and fail-closed integration. The existing ordered suite also passed all 53 checks. A full legacy 2.4 regression run is expensive on the largest generated seed and was not completed in this session; the geometry test on the two targeted seeds independently validates every exported building volume.
 
@@ -44,7 +50,7 @@ District/street and topo labels use bounded screen sizes during the existing idl
 
 ## Integration and contracts
 
-road-atlas-street-hooks.js fingerprints the whole prior first-party pipeline and conditions source before injecting explicit call points. FNV32 values: pipeline 3614172088, conditions 4119026627. Each replacement must match exactly once; unexpected edits stop boot, not silently mispatch. No user or third-party code is compiled. The V1 grid adapter likewise checks exact source anchors. When changing either upstream source, review every hook and update the fingerprint only after rerunning the suites. Existing Original mode invokes the original source unchanged.
+road-atlas-street-hooks.js fingerprints the whole prior first-party pipeline and conditions source before injecting explicit call points. FNV32 values: pipeline 3614172088, conditions 1622085547. Each replacement must match exactly once; unexpected edits stop boot, not silently mispatch. No user or third-party code is compiled. The V1 grid adapter likewise checks exact source anchors. When changing either upstream source, review every hook and update the fingerprint; a static transform check does not replace the browser suites before release. Existing Original mode invokes the original source unchanged.
 
 The loader fetches seven same-origin resources: pinned baseline, pipeline, conditions, urban, navigation, streets and hook adapter. It transforms the two known sources before executing their existing initialization sequence. RoadAtlasStreets exposes prepare/build/geometry/draw/metrics, settings and export methods. Runtime validation rejects malformed port ownership, non-positive/self-crossing junction outlines and disconnected mouths before publishing a new world. Existing orchestration retains the previous successful world on failure.
 

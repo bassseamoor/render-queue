@@ -1,5 +1,5 @@
-/* Road Atlas Urban 2.3.0 — site-first massing, not a replacement city engine.
- * Reads finalized 2.2 parcels, road graph, topography and accessibility.
+/* Road Atlas Urban 2.4.0 — denser site massing, not a replacement city engine.
+ * Reads finalized 2.3 parcels, road graph, topography and accessibility.
  * Geometry units are V1 world units, not construction dimensions. Volume height
  * is illustrative. No zoning, daylight, wind, structural or traffic certification.
  * Invariants: no changes to streets/parcels/envelopes; every volume is supported,
@@ -8,7 +8,7 @@
  */
 (function () {
 'use strict';
-var VERSION='2.3.0', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
+var VERSION='2.4.0', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
 var CHARACTERS={balanced:'Context-led mix',courtyard:'Courts & shared gardens',terraced:'Stepped garden fabric',compact:'Compact centers'};
 function num(v,f,lo,hi){var n=Number(v);return v!=null&&v!==''&&Number.isFinite(n)?clamp(n,lo,hi):f;}
 var settings={enabled:query.get('urban')!=='0',character:Object.prototype.hasOwnProperty.call(CHARACTERS,query.get('character'))?query.get('character'):'balanced',openness:num(query.get('openness'),.32,.15,.65),relief:num(query.get('relief'),.85,.25,1.25)};
@@ -63,7 +63,7 @@ function chooseForm(site,q,rng,civic){
  if(site.charter.rule==='center')return f.w*f.h>700?'podium':'terrace';
  if(site.charter.rule==='terraced')return f.w>32?'row':'terrace';
  if(site.charter.rule==='courtyard')return Math.min(f.w,f.h)>35&&settings.openness<.45?'perimeter':'court';
- return f.w>34&&f.h>22?(rng()<.4?'row':'court'):'wing';
+ return f.w>34&&f.h>22?(rng()<.65?'row':'court'):'wing';
 }
 /* All grammar rectangles are local to the already fitted envelope. Widths,
  * voids and parent-supported upper volumes derive from the same ground model.
@@ -72,7 +72,7 @@ function makeModel(W,b,q,index){
  var rng=makeRng(W.seed,'urban.site.'+q.id),site=siteContext(W,b,q,index),civic=W.layers.pois.some(function(p){return p.parcelId===q.id;}),kind=chooseForm(site,q,rng,civic),F=site.frame;
  var H=Math.max(3,Math.min(44,b.placement.requestedHeight||12))*settings.relief*(.72+.38*site.accessibilityIndex);
  if(site.charter.rule==='waterfront'||site.slopeIndex>.52)H*=.7;
- var inset=.07,gap=.09+settings.openness*.19,thick=.16+(1-settings.openness)*.19,ground=[],uppers=[],volumes=[],heightLimited=0;
+ var inset=.07,gap=.055+settings.openness*.12,thick=.22+(1-settings.openness)*.235,ground=[],uppers=[],volumes=[],heightLimited=0;
  function add(u0,v0,u1,v1,h){var r={u0:u0,v0:v0,u1:u1,v1:v1,h:h};ground.push(r);return ground.length-1;}
  function upper(i,u0,v0,u1,v1,h){uppers.push({parent:i,u0:u0,v0:v0,u1:u1,v1:v1,h:h});}
  if(kind==='wing'){
@@ -98,7 +98,11 @@ function makeModel(W,b,q,index){
  }else{
   var a=add(.1,.12,.9,.9,H*.5);if(F.w>12&&F.h>12)upper(a,.18,.37,.82,.84,H*.25);
  }
- var area=ground.reduce(function(a,r){return a+Math.max(0,r.u1-r.u0)*Math.max(0,r.v1-r.v0);},0),scale=Math.min(1,Math.sqrt((1-settings.openness)/Math.max(area,1e-9)));
+ var area=ground.reduce(function(a,r){return a+Math.max(0,r.u1-r.u0)*Math.max(0,r.v1-r.v0);},0);
+ // The former scale could only shrink massing. A 1.14 ceiling lets buildings
+ // use almost all of their already-fitted envelope while staying inside its
+ // 7% edge reserve; the selected openness still caps ground occupancy.
+ var scale=Math.min(1.14,Math.sqrt((1-settings.openness)/Math.max(area,1e-9)));
  function shape(r){var u0=.5+(r.u0-.5)*scale,u1=.5+(r.u1-.5)*scale,v0=.5+(r.v0-.5)*scale,v1=.5+(r.v1-.5)*scale,c=tr(F,((u0+u1)/2-.5)*F.w,((v0+v1)/2-.5)*F.h);return {cx:c.x,cy:c.y,w:(u1-u0)*F.w,h:(v1-v0)*F.h,ang:F.ang};}
  function accept(r,z0,height,parent,role){
   if(r.w<2.5||r.h<2.5||!D.allowed(W.conditions,r,q.id))return null;
@@ -118,7 +122,7 @@ function makeModel(W,b,q,index){
  }
  if(!volumes.length)throw new Error('No valid supported mass in fitted parcel '+q.id);
  var base=volumes.filter(function(v){return v.parent==null;}),groundArea=base.reduce(function(a,v){return a+rectArea(v.rect);},0),totalVolume=volumes.reduce(function(a,v){return a+rectArea(v.rect)*(v.z1-v.z0);},0),maxHeight=Math.max.apply(null,volumes.map(function(v){return v.z1;}));
- var model={version:VERSION,parcelId:q.id,buildingId:q.buildingId,form:kind,label:FORM_NAMES[kind],context:site,volumes:volumes,limits:{heightLimited:heightLimited,boundaryCell:W.conditions.cell},metrics:{parcelArea:q.area,envelopeArea:b.w*b.h,groundArea:groundArea,groundCoverage:groundArea/q.area,unbuiltArea:q.area-groundArea,volume:totalVolume,maxHeight:maxHeight},reasons:[site.charter.reason,'Orientation follows the nearest existing street side; the 2.2 fitted envelope is retained.',site.slopeIndex>.52?'Higher slope index selects a stepped, reduced-height form.':'Slope passes the existing placement condition.',kind==='bar'?'Small-site fallback avoids unusably thin wings.':'Voids are carved before upper volumes are placed.','Every upper volume stays inside its supporting mass and parcel.']};
+ var envelopeArea=b.w*b.h,model={version:VERSION,parcelId:q.id,buildingId:q.buildingId,form:kind,label:FORM_NAMES[kind],context:site,volumes:volumes,limits:{heightLimited:heightLimited,boundaryCell:W.conditions.cell},metrics:{parcelArea:q.area,envelopeArea:envelopeArea,groundArea:groundArea,groundCoverage:groundArea/q.area,envelopeCoverage:groundArea/envelopeArea,targetEnvelopeCoverage:1-settings.openness,unbuiltArea:q.area-groundArea,volume:totalVolume,maxHeight:maxHeight},reasons:[site.charter.reason,'Orientation follows the nearest existing street side; the fitted envelope and road setback are retained.',site.slopeIndex>.52?'Higher slope index selects a stepped, reduced-height form.':'Slope passes the existing placement condition.',kind==='row'?'Fine-grain residential rows add more street-scale building fronts.':kind==='bar'?'Small-site fallback avoids unusably thin wings.':'Ground forms expand toward the selected occupancy target while preserving open-space gaps.','Every upper volume stays inside its supporting mass and parcel.']};
  model.landscape=siteLandscape(W,b,q,model,index,rng);
  return model;
 }
@@ -163,14 +167,15 @@ function validate(W){
  return {models:W.blocks.buildings.length,invalid:0,volumes:W.urban.metrics.volumes};
 }
 function compile(W){
- var urban={version:VERSION,enabled:settings.enabled,settings:Object.assign({},settings),units:'V1 world units; mass heights/volumes are illustrative, not construction data',priority:['parcel ownership','pavement/water/slope reservations','ground support','frontage','district character','bounded variation'],metrics:{sites:0,volumes:0,groundArea:0,parcelArea:0,volume:0,heightLimited:0},districts:[],forms:{}};
+ var urban={version:VERSION,enabled:settings.enabled,settings:Object.assign({},settings),units:'V1 world units; mass heights/volumes are illustrative, not construction data',priority:['parcel ownership','pavement/water/slope reservations','ground support','frontage','district character','bounded variation'],metrics:{sites:0,volumes:0,groundArea:0,parcelArea:0,envelopeArea:0,volume:0,heightLimited:0,targetEnvelopeCoverage:1-settings.openness},districts:[],forms:{}};
  W.urban=urban;if(!settings.enabled){W.blocks.buildings.forEach(function(b){delete b.architecture;});return urban;}
  var index=RoadAtlasPipeline.debug.makeIndex(W.roads),groups=new Map();
  W.blocks.buildings.forEach(function(b){var q=W.conditions.parcels[b.parcelId],m=makeModel(W,b,q,index);b.architecture=m;urban.metrics.sites++;urban.metrics.volumes+=m.volumes.length;urban.metrics.groundArea+=m.metrics.groundArea;urban.metrics.parcelArea+=q.area;urban.metrics.volume+=m.metrics.volume;urban.metrics.heightLimited+=m.limits.heightLimited;urban.forms[m.form]=(urban.forms[m.form]||0)+1;
   if(!groups.has(q.districtId))groups.set(q.districtId,{id:q.districtId,kind:q.district,charter:m.context.charter.rule,reason:m.context.charter.reason,sites:0,parcelArea:0,groundArea:0,forms:{}});
   var g=groups.get(q.districtId);g.sites++;g.parcelArea+=q.area;g.groundArea+=m.metrics.groundArea;g.forms[m.form]=(g.forms[m.form]||0)+1;
+  urban.metrics.envelopeArea+=m.metrics.envelopeArea;
  });
- urban.districts=Array.from(groups.values()).sort(function(a,b){return a.id-b.id;});urban.metrics.coverage=urban.metrics.parcelArea?urban.metrics.groundArea/urban.metrics.parcelArea:0;urban.validation=validate(W);return urban;
+ urban.districts=Array.from(groups.values()).sort(function(a,b){return a.id-b.id;});urban.metrics.coverage=urban.metrics.parcelArea?urban.metrics.groundArea/urban.metrics.parcelArea:0;urban.metrics.envelopeCoverage=urban.metrics.envelopeArea?urban.metrics.groundArea/urban.metrics.envelopeArea:0;urban.validation=validate(W);return urban;
 }
 /* Map representation uses the existing cartographic projection and palette.
  * Every face's entire projected sweep was validated before this draws. */
@@ -271,7 +276,7 @@ function phaseText(b,step){var m=b.architecture;return [
 function paintStudy(){
  if(!studyCanvas)return;var dialog=document.getElementById('urbanStudy');if(!dialog.open)return;var r=studyCanvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),w=Math.max(1,Math.round(r.width*dpr)),h=Math.max(1,Math.round(r.height*dpr));if(studyCanvas.width!==w)studyCanvas.width=w;if(studyCanvas.height!==h)studyCanvas.height=h;var ctx=studyCanvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,r.width,r.height);var b=studyBuilding();
  if(b)drawStudy(ctx,{x:0,y:0,w:r.width,h:r.height},world,b,phase);else{ctx.fillStyle='#f7f8f5';ctx.fillRect(0,0,r.width,r.height);ctx.fillStyle='#69746e';ctx.font='15px system-ui';ctx.fillText('Enable building grammar in Ordered mode to inspect a site.',22,42);}
- var info=document.getElementById('urbanStudyInfo');info.replaceChildren();document.getElementById('urbanPlateBtn').disabled=!b;document.getElementById('urbanSiteDataBtn').disabled=!b;if(!b){document.getElementById('urbanStudyTitle').textContent='Site study · grammar inactive';document.getElementById('urbanPhaseText').textContent='Enable building grammar in Ordered mode. The existing 2.2 or Original V1 buildings remain available without this layer.';document.getElementById('urbanReason').textContent='';return;}var m=b.architecture;
+ var info=document.getElementById('urbanStudyInfo');info.replaceChildren();document.getElementById('urbanPlateBtn').disabled=!b;document.getElementById('urbanSiteDataBtn').disabled=!b;if(!b){document.getElementById('urbanStudyTitle').textContent='Site study · grammar inactive';document.getElementById('urbanPhaseText').textContent='Enable building grammar in Ordered mode. The existing cartographic or Original V1 buildings remain available without this layer.';document.getElementById('urbanReason').textContent='';return;}var m=b.architecture;
  document.getElementById('urbanStudyTitle').textContent='Parcel '+b.parcelId+' · '+m.label;
  document.getElementById('urbanPhaseText').textContent=phaseText(b,phase);
  var facts=[['District pattern',m.context.charter.rule],['Site area',m.metrics.parcelArea.toFixed(0)+' units²'],['Ground coverage',(m.metrics.groundCoverage*100).toFixed(1)+'% of parcel'],['Supported volumes',String(m.volumes.length)],['Highest mass',m.metrics.maxHeight.toFixed(1)+' world units'],['Slope index',m.context.slopeIndex.toFixed(3)],['Height constraints',m.limits.heightLimited+' mass caps']];
@@ -296,17 +301,17 @@ function exportPlate(){var b=studyBuilding();if(!b)return;var c=document.createE
 function exportSiteData(id){
  var b=id==null?studyBuilding():world&&world.blocks.buildings.find(function(b){return b.parcelId===id&&b.architecture;});if(!b)return null;
  var q=world.conditions.parcels[b.parcelId],m=b.architecture,front=m.context.frontage,r=front?world.roads[front.roadId]:null;
- return JSON.parse(JSON.stringify({format:'MOOR-Site-2.3',version:VERSION,seed:world.seed,units:'V1 world units; illustrative vertical massing',settings:settings,parcel:{id:q.id,rings:q.rings,area:q.area,district:q.district,frame:q.frame,rasterCell:world.conditions.cell,rasterColumns:world.conditions.w},envelope:{cx:b.cx,cy:b.cy,w:b.w,h:b.h,ang:b.ang},frontageRoad:r?{class:r.cls,points:r.pts}:null,model:m}));
+ return JSON.parse(JSON.stringify({format:'MOOR-Site-2.4',version:VERSION,seed:world.seed,units:'V1 world units; illustrative vertical massing',settings:settings,parcel:{id:q.id,rings:q.rings,area:q.area,district:q.district,frame:q.frame,rasterCell:world.conditions.cell,rasterColumns:world.conditions.w},envelope:{cx:b.cx,cy:b.cy,w:b.w,h:b.h,ang:b.ang},frontageRoad:r?{class:r.cls,points:r.pts}:null,model:m}));
 }
 function exportSite(){var d=exportSiteData();if(!d)return;window.__urbanSiteExport=d;downloadBlob(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),'road-atlas-site-'+d.parcel.id+'.json');}
-function onInspect(d){var slot=document.getElementById('urbanInspectorSlot');if(!slot)return;slot.hidden=!d.building||!world.urban||!world.urban.enabled;if(slot.hidden)return;var b=world.blocks.buildings[d.building.index];if(!b||!b.architecture){slot.hidden=true;return;}document.getElementById('urbanInspectorText').textContent=b.architecture.label+' · '+b.architecture.volumes.length+' supported volumes · '+(b.architecture.metrics.groundCoverage*100).toFixed(1)+'% site coverage';document.getElementById('urbanInspectStudy').onclick=function(){openStudy(d.parcelId);};}
+function onInspect(d){var slot=document.getElementById('urbanInspectorSlot');if(!slot)return;slot.hidden=!d.building||!world.urban||!world.urban.enabled;if(slot.hidden)return;var b=world.blocks.buildings[d.building.index];if(!b||!b.architecture){slot.hidden=true;return;}document.getElementById('urbanInspectorText').textContent=b.architecture.label+' · '+b.architecture.volumes.length+' supported masses · '+(b.architecture.metrics.envelopeCoverage*100).toFixed(1)+'% of fitted envelope occupied';document.getElementById('urbanInspectStudy').onclick=function(){openStudy(d.parcelId);};}
 function syncControls(){document.querySelectorAll('[data-urban-setting]').forEach(function(el){var k=el.dataset.urbanSetting;if(el.type==='checkbox')el.checked=settings[k];else el.value=String(settings[k]);});document.querySelectorAll('[data-urban-output]').forEach(function(el){var k=el.dataset.urbanOutput;el.textContent=k==='openness'?Math.round(settings[k]*100)+'%':settings[k].toFixed(2)+'×';});}
 function refresh(reset){
  if(reset!==false){selectedId=null;var slot=document.getElementById('urbanInspectorSlot');if(slot)slot.hidden=true;}
  var status=document.getElementById('urbanStatus'),list=document.getElementById('urbanDistrictList'),selector=document.getElementById('urbanSiteSelect');if(!status)return;
  list.replaceChildren();selector.replaceChildren();var U=world&&world.urban;
- if(!U||!U.enabled){status.textContent='Building grammar is off. Existing 2.2 buildings are retained; Original V1 is also unchanged.';syncControls();paintStudy();return;}
- status.textContent=U.metrics.sites+' fitted sites · '+U.metrics.volumes+' supported masses · '+(U.metrics.coverage*100).toFixed(1)+'% occupied-site ground coverage. Streets and parcel boundaries are unchanged.';
+ if(!U||!U.enabled){status.textContent='Building grammar is off. Existing cartographic buildings are retained; Original V1 is also unchanged.';syncControls();paintStudy();return;}
+ status.textContent=U.metrics.sites+' fitted sites · '+U.metrics.volumes+' supported masses · '+(U.metrics.envelopeCoverage*100).toFixed(1)+'% of fitted envelopes occupied · '+(U.metrics.coverage*100).toFixed(1)+'% occupied-parcel ground coverage. Streets and parcel boundaries are unchanged.';
  U.districts.forEach(function(d){var row=document.createElement('div');row.className='urbanDistrict';var strong=document.createElement('strong');strong.textContent=d.kind+' / '+d.charter;var note=document.createElement('span');note.textContent=d.sites+' sites · '+(d.groundArea/d.parcelArea*100).toFixed(0)+'% ground coverage';row.append(strong,note);list.appendChild(row);});
  world.blocks.buildings.forEach(function(b){if(!b.architecture)return;var o=document.createElement('option');o.value=b.parcelId;o.textContent='#'+b.parcelId+' · '+b.architecture.label;selector.appendChild(o);});
  if(!studyBuilding()){var b=pickStudy();selectedId=b?b.parcelId:null;}selector.value=String(selectedId);syncControls();paintStudy();

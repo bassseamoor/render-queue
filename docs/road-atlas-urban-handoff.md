@@ -1,22 +1,28 @@
-# Road Atlas 2.3 — site-first massing and district character
+# Road Atlas 2.4 — fuller building massing and district character
+
+## 2.4 occupancy follow-up
+
+The 2.5 comparison showed that building roofs read too small and sparse against the street widths. This follow-up scales ground forms toward the selected openness target, selects residential rows more often on larger sites, and allows one extra V1 lot-splitting level in residential and commercial blocks where existing size limits permit it. The 1.14 maximum normalized massing scale leaves about a 1% margin at the outer edges of the fitted envelope. Analysis reports fitted-envelope occupancy as well as parcel-area coverage. Roads, parcel ownership and fitted envelopes remain fixed during a building-grammar-only edit; the new conditions version can create more lots during scene generation.
+
+Integration base: GitHub `main` at `39f7d4b18451a7ef30f6e62e8c0fd69fff9c5e68`; the shipped 2.5 merge `72989b236634e536e8f20f30bcb3c9a17e7fd49f` is an ancestor. `tests/road-atlas/verify_urban.py` includes independent aggregate envelope-coverage validation; its browser suite was not run in this environment because Python Playwright and Chromium are unavailable. The condition and street browser suites were also not run for this follow-up.
 
 ## Scope and ownership
 
 The user supplied an architectural site-to-building sequence, an urban-elements reference board, and a point/line/area spatial-organization matrix. This pass interprets those references as a bounded building-grammar layer. It does not implement every item on the reference boards and does not replace the improved road engine.
 
-Owned runtime: `road-atlas-urban.js` (new), small explicit hooks in `road-atlas-pipeline.js` and `road-atlas-conditions.js`, and the fourth same-origin module in `road-atlas-v2.html`. Original `road-atlas.html`, pinned vendor source, routing, topography sampling, parcel creation and unrelated studios are unchanged. Git is canonical. Work from the latest tree; preserve other workers' changes outside this scope.
+Owned runtime: `road-atlas-urban.js`, `road-atlas-streets.js`, the guarded `road-atlas-conditions.js` adapter, its `road-atlas-street-hooks.js` fingerprint, and the module loader in `road-atlas-v2.html`. Original `road-atlas.html`, pinned vendor source, routing and topography sampling are unchanged. The V1 recursive parcel splitter now allows depth 4 for residential and commercial blocks, within its prior minimum-size and count guards. Git is canonical. Work from the latest tree; preserve other workers' changes outside this scope.
 
 ## First useful actions
 
-Open `road-atlas-v2.html?seed=RA1-821c9gee01c3&pipeline=ordered&topo=1&urban=1&v=2.3.0`. Select **Design**. The six stages are Site, Envelope, Ground form, Upper form, Open space and Finished. The selector and Previous/Next buttons browse actual committed city parcels, not a separately randomized model. An occupied parcel in the existing condition inspector also offers **Site → building study**.
+Open `road-atlas-v2.html?seed=RA1-821c9gee01c3&pipeline=ordered&topo=1&urban=1&v=2.4.0`. Select **Design**. The six stages are Site, Envelope, Ground form, Upper form, Open space and Finished. The selector and Previous/Next buttons browse actual committed city parcels, not a separately randomized model. An occupied parcel in the existing condition inspector also offers **Site → building study**.
 
-In Design, Neighborhood character, Courts & gaps, and Illustrative height rebuild massing only. Roads, terrain, parcel ownership and prior fitted envelopes stay fixed. Turning Building grammar off restores the 2.2 cartographic buildings, pixel-identically for the tested seeds. Original V1 remains under Analysis > Build order. Layers > Neighborhood pattern field colors actual occupied parcels by their district charter. Analysis > Building grammar & district patterns lists measured per-district site counts and ground coverage.
+In Design, Neighborhood character, Courts & gaps, and Illustrative height rebuild massing only. Roads, terrain, parcel ownership and prior fitted envelopes stay fixed. Turning Building grammar off restores the existing cartographic building style; exact visual comparison for this denser lot build is pending. Original V1 remains under Analysis > Build order. Layers > Neighborhood pattern field colors actual occupied parcels by their district charter. Analysis > Building grammar & district patterns lists measured per-district site counts and ground coverage.
 
-**Export six-stage PNG** makes a 1680 × 2040 plate using the same scene renderer and committed model. **Export this site as JSON** returns a self-contained parcel, envelope, frontage road, model, landscape and settings. Existing Data exports all models plus the existing city graph and conditions. Share includes urban, character, openness and relief along with seed, build order and the 2.2 conditions. Existing Seed Console favorites remain seed-only; use Share or Data for the full extended recipe.
+**Export six-stage PNG** makes a 1680 × 2040 plate using the same scene renderer and committed model. **Export this site as JSON** returns a self-contained parcel, envelope, frontage road, model, landscape and settings. Existing Data exports all models plus the existing city graph and conditions. Share includes urban, character, openness and relief along with seed, build order and the active conditions settings. Existing Seed Console favorites remain seed-only; use Share or Data for the full extended recipe.
 
 ## Build order and contracts
 
-The ordered 2.2 pipeline remains unchanged through roads, reservations, parcels, object fitting, network accessibility and hosted civic markers. The new stage then runs before labels and final rendering:
+The ordered pipeline keeps its existing stage order through roads, reservations, parcel fitting, network accessibility and hosted civic markers; the conditions adapter permits finer residential/commercial subdivision during parcel generation. The new stage then runs before labels and final rendering:
 
 `finalized site + district + frontage + slope + accessibility → district charter → ground grammar → supported upper masses → bounded landscape → validation → existing map renderer / site-study renderer`
 
