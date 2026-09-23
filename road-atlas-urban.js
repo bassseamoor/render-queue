@@ -1,4 +1,4 @@
-/* Road Atlas Urban 2.5.0 — denser site massing, not a replacement city engine.
+/* Road Atlas Urban 2.6.0 — denser site massing, not a replacement city engine.
  * Reads finalized 2.3 parcels, road graph, topography and accessibility.
  * Geometry units are V1 world units, not construction dimensions. Volume height
  * is illustrative. No zoning, daylight, wind, structural or traffic certification.
@@ -8,13 +8,14 @@
  */
 (function () {
 'use strict';
-var VERSION='2.5.0', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
+var VERSION='2.6.0', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
 var CHARACTERS={balanced:'Context-led mix',courtyard:'Courts & shared gardens',terraced:'Stepped garden fabric',compact:'Compact centers'};
 function num(v,f,lo,hi){var n=Number(v);return v!=null&&v!==''&&Number.isFinite(n)?clamp(n,lo,hi):f;}
 var settings={enabled:query.get('urban')!=='0',character:Object.prototype.hasOwnProperty.call(CHARACTERS,query.get('character'))?query.get('character'):'balanced',openness:num(query.get('openness'),.32,.15,.65),relief:num(query.get('relief'),.85,.25,1.25)};
 var selectedId=null, phase=5, patternView=false, timer=0, studyCanvas=null, focusBefore=null;
 var PHASES=['Site','Envelope','Ground form','Upper form','Open space','Finished'];
-var FORM_NAMES={bar:'Compact bar',wing:'L-wing garden',court:'Open courtyard',perimeter:'Gated perimeter court',terrace:'Stepped terraces',podium:'Podium + setback tower',pavilion:'Paired civic pavilions',row:'Fine-grain row',workshop:'Workshop + service yard'};
+var FORM_NAMES={bar:'Compact bar',wing:'L-wing garden',court:'Open courtyard',perimeter:'Gated perimeter court',terrace:'Stepped terraces',podium:'Podium + setback tower',pavilion:'Paired civic pavilions',row:'Fine-grain row',workshop:'Workshop + service yard',tower:'Point tower',slab:'Linear slab',villa:'Garden villa',twin:'Paired villas',corner:'Corner anchor',shed:'Sawtooth sheds',stepblock:'Stepped ziggurat',civic:'Civic hall'};
+var FORM_REASONS={tower:'A point tower concentrates height on a compact footprint.',slab:'A linear slab gives long dual-aspect fronts.',villa:'A detached villa keeps a pitched roof and a private garden.',twin:'Paired villas share a party wall and mirror gardens.',corner:'An L-shaped corner anchor holds the street intersection.',shed:'Parallel sheds carry sawtooth north-light roofs.',stepblock:'Stepped tiers cut the mass into a ziggurat.',civic:'A civic hall gets a symmetric front and a hipped cap.'};
 function point(x,y){return{x:x,y:y};}
 function tr(f,x,y){var c=Math.cos(f.ang),s=Math.sin(f.ang);return point(f.cx+c*x-s*y,f.cy+s*x+c*y);}
 function loc(f,p){var c=Math.cos(f.ang),s=Math.sin(f.ang),x=p.x-f.cx,y=p.y-f.cy;return point(c*x+s*y,-s*x+c*y);}
@@ -54,15 +55,31 @@ function siteContext(W,b,q,index){
  return {frame:frame,frontage:hit?{x:hit.x,y:hit.y,roadId:hit.ri,distance:hit.d,class:W.roads[hit.ri].cls}:null,slopeIndex:slope,elevation:elevation,accessibilityIndex:access,waterDistance:Math.max(0,W.F.waterDist(b.cx,b.cy)),charter:charter(W,q)};
 }
 function chooseForm(site,q,rng,civic){
- var f=site.frame,small=Math.min(f.w,f.h)<15;
+ var f=site.frame,small=Math.min(f.w,f.h)<15,area=f.w*f.h;
  if(small)return'bar';
- if(q.district==='industrial')return'workshop';
+ if(q.district==='industrial')return rng()<.55?'shed':'workshop';
  if(civic&&Math.min(f.w,f.h)>24)return'pavilion';
- if(site.slopeIndex>.52&&f.h>22)return'terrace';
- if(site.charter.rule==='waterfront')return f.w>26?'pavilion':'wing';
- if(site.charter.rule==='center')return f.w*f.h>700?'podium':'terrace';
+ if(civic)return'civic';
+ if(site.slopeIndex>.52&&f.h>22)return rng()<.5?'terrace':'stepblock';
+ if(site.charter.rule==='waterfront')return f.w>26?'pavilion':(rng()<.5?'villa':'wing');
+ if(site.charter.rule==='center'){
+  if(area>900&&rng()<.4)return'tower';
+  return area>700?'podium':'terrace';
+ }
  if(site.charter.rule==='terraced')return f.w>32?'row':'terrace';
  if(site.charter.rule==='courtyard')return Math.min(f.w,f.h)>35&&settings.openness<.45?'perimeter':'court';
+ if(q.district==='residential'){
+  var r=rng();
+  if(f.w>34&&f.h>22)return r<.4?'row':(r<.7?'twin':'court');
+  if(area>500&&rng()<.35)return'slab';
+  return rng()<.55?'villa':'wing';
+ }
+ if(q.district==='commercial'){
+  var r2=rng();
+  if(area>600&&r2<.3)return'slab';
+  if(r2<.55)return'corner';
+  return f.w>34&&f.h>22?(rng()<.65?'row':'court'):'wing';
+ }
  return f.w>34&&f.h>22?(rng()<.65?'row':'court'):'wing';
 }
 /* All grammar rectangles are local to the already fitted envelope. Widths,
@@ -94,7 +111,27 @@ function makeModel(W,b,q,index){
   var count=F.w>55?4:3,t=(.86-gap*(count-1))/count;
   for(var i=0;i<count;i++){var u=.07+i*(t+gap),p=add(u,.12+(i%2)*.045,u+t,.9,H*(.42+.035*i));upper(p,u+.018,.32,u+t-.018,.85,H*.24);}
  }else if(kind==='workshop'){
-  var a=add(.08,.35,.92,.91,H*.35);add(.08,.08,.35,.35,H*.24);upper(a,.68,.47,.86,.84,H*.15);
+  var a=add(.08,.35,.92,.91,H*.35),o=add(.08,.08,.35,.35,H*.24);
+  upper(o,.1,.1,.33,.33,H*.2);
+ }else if(kind==='tower'){
+  var a=add(.32,.3,.68,.7,H*1.05);upper(a,.37,.38,.63,.62,H*.55);
+ }else if(kind==='slab'){
+  var a=add(.08,.3,.92,.7,H*.55);upper(a,.13,.36,.87,.64,H*.3);
+ }else if(kind==='villa'){
+  add(.25,.22,.75,.78,H*.34);
+ }else if(kind==='twin'){
+  add(.07,.22,.46,.78,H*.32);add(.54,.22,.93,.78,H*.32);
+ }else if(kind==='corner'){
+  var a=add(.07,.07,.5,.93,H*.5),c=add(.5,.07,.93,.42,H*.5);
+  upper(a,.1,.12,.47,.55,H*.3);
+ }else if(kind==='shed'){
+  var n=F.w>52?3:2,sw=(.86-(n-1)*.06)/n;
+  for(var si=0;si<n;si++){var u=.07+si*(sw+.06);add(u,.12,u+sw,.88,H*.34);}
+ }else if(kind==='stepblock'){
+  var a=add(.1,.1,.9,.9,H*.3);upper(a,.2,.2,.8,.8,H*.3);
+ }else if(kind==='civic'){
+  var a=add(.2,.25,.8,.85,H*.45),pt=add(.32,.06,.68,.25,H*.3);
+  upper(a,.26,.42,.74,.79,H*.28);
  }else{
   var a=add(.1,.12,.9,.9,H*.5);if(F.w>12&&F.h>12)upper(a,.18,.37,.82,.84,H*.25);
  }
@@ -108,7 +145,10 @@ function makeModel(W,b,q,index){
   if(r.w<2.5||r.h<2.5||!D.allowed(W.conditions,r,q.id))return null;
   if(parent!=null&&!supported(r,volumes[parent].rect))return null;
   var top=z0+height;
-  function ok(z){return D.allowed(W.conditions,projectedBound(b,r,z0,z),q.id);}
+  // Reserve headroom for the tallest pitched roof this footprint could carry,
+  // so any later roof assignment stays inside the validated extrusion.
+  var ridgeMax=Math.min(6,Math.min(r.w,r.h)*.26);
+  function ok(z){return D.allowed(W.conditions,projectedBound(b,r,z0,z+ridgeMax),q.id);}
   if(!ok(z0))return null;
   if(!ok(top)){var lo=z0,hi=top;for(var i=0;i<14;i++){var m=(lo+hi)*.5;if(ok(m))lo=m;else hi=m;}top=lo;heightLimited++;}
   if(top-z0<.25)return null;
@@ -117,12 +157,27 @@ function makeModel(W,b,q,index){
  var parents=ground.map(function(r){return accept(shape(r),0,r.h,null,'ground');});
  uppers.forEach(function(r){var pi=parents[r.parent];if(pi!=null)accept(shape(r),volumes[pi].z1,r.h,pi,'upper');});
  if(kind==='terrace'&&volumes.length>1){var p=volumes[1],r=p.rect;accept({cx:r.cx-Math.sin(r.ang)*r.h*.12,cy:r.cy+Math.cos(r.ang)*r.h*.12,w:r.w*.84,h:r.h*.66,ang:r.ang},p.z1,H*.28,p.id,'upper');}
+ if(kind==='stepblock'&&volumes.length>1){var sp=volumes[1],sr=sp.rect;accept({cx:sr.cx,cy:sr.cy,w:sr.w*.68,h:sr.h*.68,ang:sr.ang},sp.z1,H*.3,sp.id,'upper');}
  if(!volumes.some(function(v){return v.z0===0;})){
   kind='bar';var r=shape({u0:.2,v0:.2,u1:.8,v1:.8});accept(r,0,3,null,'ground');
  }
+ /* Roof language per style. Pitched roofs only crown terminal volumes — a
+  * parent carrying an upper mass always stays flat so nothing intersects.
+  * Runs after the small-site fallback so every volume gets a roof. */
+ var ROOF_FOR={tower:'flat',slab:'flat',podium:'flat',terrace:'flat',court:'flat',perimeter:'flat',bar:'flat',wing:'flat',stepblock:'flat',corner:'flat',row:'gable',villa:'gable',twin:'gable',pavilion:'hip',civic:'hip',shed:'sawtooth',workshop:'sawtooth'};
+ volumes.forEach(function(v){
+  var hasChild=volumes.some(function(u){return u.parent===v.id;});
+  var vr=makeRng(W.seed,'urban.roof.'+q.id+'.'+v.id),want=ROOF_FOR[kind]||'flat';
+  if(hasChild)want='flat';
+  if(want==='flat'&&vr()<.16&&v.rect.w*v.rect.h>70)want='green';
+  if((kind==='villa'||kind==='twin')&&vr()<.3)want='hip';
+  v.roof=want;
+  v.ridge=(want==='flat'||want==='green')?0:Math.min(6,Math.min(v.rect.w,v.rect.h)*.26);
+  v.warmRoof=(want==='gable'||want==='hip')&&(kind==='villa'||kind==='twin'||kind==='row'||q.district==='residential');
+ });
  if(!volumes.length)throw new Error('No valid supported mass in fitted parcel '+q.id);
  var base=volumes.filter(function(v){return v.parent==null;}),groundArea=base.reduce(function(a,v){return a+rectArea(v.rect);},0),totalVolume=volumes.reduce(function(a,v){return a+rectArea(v.rect)*(v.z1-v.z0);},0),maxHeight=Math.max.apply(null,volumes.map(function(v){return v.z1;}));
- var envelopeArea=b.w*b.h,model={version:VERSION,parcelId:q.id,buildingId:q.buildingId,form:kind,label:FORM_NAMES[kind],context:site,volumes:volumes,limits:{heightLimited:heightLimited,boundaryCell:W.conditions.cell},metrics:{parcelArea:q.area,envelopeArea:envelopeArea,groundArea:groundArea,groundCoverage:groundArea/q.area,envelopeCoverage:groundArea/envelopeArea,targetEnvelopeCoverage:1-settings.openness,unbuiltArea:q.area-groundArea,volume:totalVolume,maxHeight:maxHeight},reasons:[site.charter.reason,'Orientation follows the nearest existing street side; the fitted envelope and road setback are retained.',site.slopeIndex>.52?'Higher slope index selects a stepped, reduced-height form.':'Slope passes the existing placement condition.',kind==='row'?'Fine-grain residential rows add more street-scale building fronts.':kind==='bar'?'Small-site fallback avoids unusably thin wings.':'Ground forms expand toward the selected occupancy target while preserving open-space gaps.','Every upper volume stays inside its supporting mass and parcel.']};
+ var envelopeArea=b.w*b.h,model={version:VERSION,parcelId:q.id,buildingId:q.buildingId,form:kind,label:FORM_NAMES[kind],context:site,volumes:volumes,limits:{heightLimited:heightLimited,boundaryCell:W.conditions.cell},metrics:{parcelArea:q.area,envelopeArea:envelopeArea,groundArea:groundArea,groundCoverage:groundArea/q.area,envelopeCoverage:groundArea/envelopeArea,targetEnvelopeCoverage:1-settings.openness,unbuiltArea:q.area-groundArea,volume:totalVolume,maxHeight:maxHeight},reasons:[site.charter.reason,'Orientation follows the nearest existing street side; the fitted envelope and road setback are retained.',site.slopeIndex>.52?'Higher slope index selects a stepped, reduced-height form.':'Slope passes the existing placement condition.',FORM_REASONS[kind]||(kind==='row'?'Fine-grain residential rows add more street-scale building fronts.':kind==='bar'?'Small-site fallback avoids unusably thin wings.':'Ground forms expand toward the selected occupancy target while preserving open-space gaps.'),'Every upper volume stays inside its supporting mass and parcel.']};
  model.landscape=siteLandscape(W,b,q,model,index,rng);
  return model;
 }
@@ -157,7 +212,7 @@ function validate(W){
  if(!W.urban||!W.urban.enabled)return {models:0,invalid:0};var invalid=[];
  W.blocks.buildings.forEach(function(b){var m=b.architecture,q=W.conditions.parcels[b.parcelId];if(!m||m.parcelId!==q.id){invalid.push('missing owner');return;}
   m.volumes.forEach(function(v,i){if(![v.z0,v.z1,v.rect.cx,v.rect.cy,v.rect.w,v.rect.h,v.rect.ang].every(Number.isFinite)||v.z1<=v.z0||v.rect.w<=0||v.rect.h<=0||v.id!==i)invalid.push('nonfinite/empty mass');
-   if(!D.allowed(W.conditions,v.rect,q.id)||!D.allowed(W.conditions,projectedBound(b,v.rect,v.z0,v.z1),q.id))invalid.push('parcel extrusion');
+   if(!D.allowed(W.conditions,v.rect,q.id)||!D.allowed(W.conditions,projectedBound(b,v.rect,v.z0,v.z1+(v.ridge||0)),q.id))invalid.push('parcel extrusion');
    if(v.parent!=null){var p=m.volumes[v.parent];if(!p||p.id>=i||Math.abs(v.z0-p.z1)>1e-7||!supported(v.rect,p.rect))invalid.push('unsupported upper mass');}else if(v.z0!==0)invalid.push('floating ground');
   });var g=m.volumes.filter(function(v){return v.parent==null;});for(var i=0;i<g.length;i++)for(var j=i+1;j<g.length;j++)if(groundOverlap(g[i].rect,g[j].rect))invalid.push('overlapping ground');
   for(var a=0;a<m.volumes.length;a++)for(var z=a+1;z<m.volumes.length;z++){var A=m.volumes[a],B=m.volumes[z];if(Math.min(A.z1,B.z1)-Math.max(A.z0,B.z0)>1e-7&&groundOverlap(A.rect,B.rect))invalid.push('interpenetrating volumes');}
@@ -189,15 +244,76 @@ function shadeHex(hex,amt){
  r=Math.max(0,Math.min(255,r|0));g=Math.max(0,Math.min(255,g|0));b=Math.max(0,Math.min(255,b|0));
  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
 }
+function lerpPt(a,b,f){return point(lerp(a.x,b.x,f),lerp(a.y,b.y,f));}
+function faceShade(hex,cx,cy,pts,amt){
+ var px=0,py=0;pts.forEach(function(p){px+=p.x;py+=p.y;});px/=pts.length;py/=pts.length;
+ var fx=px-cx,fy=py-cy,fl=Math.hypot(fx,fy)||1;
+ return shadeHex(hex,(fx/fl*-.55+fy/fl*-.83)*amt);
+}
+var PITCH_WARM=['#c08a5e','#7a5c40','#e2cba6'],PITCH_COOL=['#a5906f','#46587e','#cfdef2'];
+/* Small solid box drawn in plan space: chimneys, rooftop stair bulkheads. */
+function miniBox(ctx,b,planPt,ang,half,z0,z1,fill,ink){
+ var c=Math.cos(ang),s=Math.sin(ang);
+ var d=[[-1,-1],[1,-1],[1,1],[-1,1]].map(function(q){return{x:planPt.x+(q[0]*c-q[1]*s)*half,y:planPt.y+(q[0]*s+q[1]*c)*half};});
+ var bot=d.map(function(p){return mapPoint(b,p,z0);}),top=d.map(function(p){return mapPoint(b,p,z1);});
+ var cx=(top[0].x+top[2].x)/2,cy=(top[0].y+top[2].y)/2;
+ for(var i=0;i<4;i++){var j=(i+1)%4;poly(ctx,[bot[i],bot[j],top[j],top[i]],faceShade(fill,cx,cy,[bot[i],bot[j],top[j],top[i]],.3));}
+ poly(ctx,top,shadeHex(fill,.12),ink,.7);
+}
+function roofRidge(b,v){
+ var p=v.plan,d01=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y),d12=Math.hypot(p[1].x-p[2].x,p[1].y-p[2].y),alongW=d01>=d12,A,B;
+ if(alongW){A=lerpPt(p[3],p[0],.5);B=lerpPt(p[1],p[2],.5);}
+ else{A=lerpPt(p[0],p[1],.5);B=lerpPt(p[2],p[3],.5);}
+ return{A:A,B:B,Ar:mapPoint(b,A,v.z1+v.ridge),Br:mapPoint(b,B,v.z1+v.ridge),alongW:alongW};
+}
+function drawGable(ctx,W,b,v,ink,roofCol,body,q){
+ var e=v.projectedRoof,rg=roofRidge(b,v),Ar=rg.Ar,Br=rg.Br;
+ var rcx=(e[0].x+e[1].x+e[2].x+e[3].x)/4,rcy=(e[0].y+e[1].y+e[2].y+e[3].y)/4,slopes,gables;
+ if(rg.alongW){slopes=[[e[0],e[1],Br,Ar],[Ar,Br,e[2],e[3]]];gables=[[e[3],e[0],Ar],[e[1],e[2],Br]];}
+ else{slopes=[[e[3],e[0],Ar,Br],[Ar,e[1],e[2],Br]];gables=[[e[0],e[1],Ar],[e[2],e[3],Br]];}
+ slopes.forEach(function(s){poly(ctx,s,faceShade(roofCol,rcx,rcy,s,.38),ink,.7);});
+ gables.forEach(function(g){poly(ctx,g,faceShade(shadeHex(body,.10),rcx,rcy,g,.25),ink,.7);});
+ ctx.beginPath();ctx.moveTo(Ar.x,Ar.y);ctx.lineTo(Br.x,Br.y);ctx.strokeStyle=ink;ctx.lineWidth=1;ctx.stroke();
+ poly(ctx,e,null,ink,.85);
+ var vrng=makeRng(W.seed,'urban.chimney.'+q.buildingId+'.'+v.id);
+ if(vrng()<.45){var cp=lerpPt(rg.A,rg.B,.28+vrng()*.44);miniBox(ctx,b,cp,v.rect.ang,1,v.z1+v.ridge*.55,v.z1+v.ridge*.55+2.4,shadeHex(body,-.08),ink);}
+}
+function drawHip(ctx,W,b,v,ink,roofCol){
+ var e=v.projectedRoof,p=v.plan;
+ var apex=mapPoint(b,{x:(p[0].x+p[1].x+p[2].x+p[3].x)/4,y:(p[0].y+p[1].y+p[2].y+p[3].y)/4},v.z1+v.ridge);
+ var rcx=(e[0].x+e[1].x+e[2].x+e[3].x)/4,rcy=(e[0].y+e[1].y+e[2].y+e[3].y)/4;
+ for(var i=0;i<4;i++){var j=(i+1)%4,tri=[e[i],e[j],apex];poly(ctx,tri,faceShade(roofCol,rcx,rcy,tri,.38),ink,.7);}
+ poly(ctx,e,null,ink,.85);
+}
+function drawSawtooth(ctx,W,b,v,ink,roofCol,ti){
+ var p=v.plan,e=v.projectedRoof;
+ var d01=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y),d12=Math.hypot(p[1].x-p[2].x,p[1].y-p[2].y),alongW=d01>=d12;
+ function P2(s,t){
+  var a,c;
+  if(alongW){a=lerpPt(p[0],p[1],t);c=lerpPt(p[3],p[2],t);}
+  else{a=lerpPt(p[1],p[2],t);c=lerpPt(p[0],p[3],t);}
+  return lerpPt(a,c,s);
+ }
+ function Q(s,t,z){return mapPoint(b,P2(s,t),z);}
+ var k=clamp(Math.round((alongW?d01:d12)/9),2,4),glass=ti===0?'#93a7ba':'#5f7fa8';
+ for(var i=0;i<k;i++){var t0=i/k,t1=(i+1)/k;
+  var slope=[Q(0,t0,v.z1),Q(1,t0,v.z1),Q(1,t1,v.z1+v.ridge),Q(0,t1,v.z1+v.ridge)];
+  var vert=[Q(0,t1,v.z1),Q(1,t1,v.z1),Q(1,t1,v.z1+v.ridge),Q(0,t1,v.z1+v.ridge)];
+  var rcx=(slope[0].x+slope[2].x)/2,rcy=(slope[0].y+slope[2].y)/2;
+  poly(ctx,slope,faceShade(roofCol,rcx,rcy,slope,.3),ink,.6);
+  poly(ctx,vert,glass,ink,.6);
+ }
+ poly(ctx,e,null,ink,.85);
+}
 function drawBuilding(ctx,W,b){
- var m=b.architecture,q=W.conditions.parcels[b.parcelId],T=THEMES[clamp(Math.round(P.theme),0,2)];
- var ink=P.theme===0?'#3a332a':'rgba(232,240,252,.9)';
+ var m=b.architecture,q=W.conditions.parcels[b.parcelId],ti=clamp(Math.round(P.theme),0,2),T=THEMES[ti];
+ var ink=ti===0?'#3a332a':'rgba(232,240,252,.9)';
  ctx.save();ringsPath(ctx,q.rings);ctx.clip('evenodd');
- m.landscape.surfaces.forEach(function(s){ringsPath(ctx,s.rings);ctx.fillStyle=s.kind==='garden'?(P.theme===0?'#adbb91':'#29483e'):(P.theme===0?'#c6b999':'#34454d');ctx.globalAlpha=s.kind==='garden'?.42:.28;ctx.fill('evenodd');});ctx.globalAlpha=1;
+ m.landscape.surfaces.forEach(function(s){ringsPath(ctx,s.rings);ctx.fillStyle=s.kind==='garden'?(ti===0?'#adbb91':'#29483e'):(ti===0?'#c6b999':'#34454d');ctx.globalAlpha=s.kind==='garden'?.42:.28;ctx.fill('evenodd');});ctx.globalAlpha=1;
  // soft shadows: 3 expanding offsets, fading alpha — a cheap blur
  m.volumes.forEach(function(v){
   for(var s=3;s>=1;s--){
-   var dx=(3+v.z1*.22)*s/2.2,dy=(4+v.z1*.24)*s/2.2;
+   var dx=(3+v.z1*.22+(v.ridge||0)*.35)*s/2.2,dy=(4+v.z1*.24+(v.ridge||0)*.35)*s/2.2;
    ctx.globalAlpha=s===3?.10:s===2?.07:.05;
    poly(ctx,v.plan.map(function(p){return point(p.x+dx,p.y+dy);}),T.bShadow);
   }
@@ -213,22 +329,46 @@ function drawBuilding(ctx,W,b){
   ctx.fillStyle=shadeHex(T.tree,.22);ctx.beginPath();ctx.arc(t.x,t.y-t.r*.3,t.r*.5,0,TAU);ctx.fill();
  });
  m.volumes.forEach(function(v){
-  var bottom=v.projectedBase,roof=v.projectedRoof,body=b.kind==='industrial'?T.ind:T.bCols[b.shade%T.bCols.length];
+  var bottom=v.projectedBase,roof=v.projectedRoof,body=b.kind==='industrial'?T.ind:T.bCols[b.shade%T.bCols.length],hgt=v.z1-v.z0;
   var cx=(roof[0].x+roof[1].x+roof[2].x+roof[3].x)/4,cy=(roof[0].y+roof[1].y+roof[2].y+roof[3].y)/4;
   // walls shaded by which way they face the upper-left light
   for(var i=0;i<4;i++){var j=(i+1)%4;
-   var fx=(roof[i].x+roof[j].x)/2-cx,fy=(roof[i].y+roof[j].y)/2-cy,fl=Math.hypot(fx,fy)||1;
-   poly(ctx,[bottom[i],bottom[j],roof[j],roof[i]],shadeHex(body,(fx/fl*-.55+fy/fl*-.83)*.30));
+   poly(ctx,[bottom[i],bottom[j],roof[j],roof[i]],faceShade(body,cx,cy,[bottom[i],bottom[j],roof[j],roof[i]],.30));
   }
-  // roof: bright cap, crisp dark outline, parapet inner line
-  poly(ctx,roof,T.bTop,ink,.85);
-  ctx.globalAlpha=.55;
-  poly(ctx,roof.map(function(p){return point(lerp(p.x,cx,.10),lerp(p.y,cy,.10));}),null,shadeHex(T.bTop,-.20),.6);
-  ctx.globalAlpha=1;
-  if(v.role==='upper'){ctx.save();ctx.globalAlpha=.12;poly(ctx,roof,'#ffffff');ctx.restore();}
-  if(v.rect.w>12&&v.rect.h>10){var c=point((roof[0].x+roof[2].x)*.5,(roof[0].y+roof[2].y)*.5);ctx.beginPath();ctx.moveTo(lerp(roof[0].x,c.x,.3),lerp(roof[0].y,c.y,.3));ctx.lineTo(lerp(roof[1].x,c.x,.3),lerp(roof[1].y,c.y,.3));ctx.strokeStyle=P.theme===0?'#c7ba99':'#64828c';ctx.lineWidth=.45;ctx.stroke();}
+  // plinth: darker ground-floor band on street-level volumes
+  if(v.parent==null&&hgt>2){var ph=Math.min(1.7,hgt*.22)/hgt;
+   for(var pq=0;pq<4;pq++){var pr=(pq+1)%4;
+    poly(ctx,[bottom[pq],bottom[pr],lerpPt(bottom[pr],roof[pr],ph),lerpPt(bottom[pq],roof[pq],ph)],shadeHex(body,-.20));}
+  }
+  // window bands on tall flat volumes: one line per ~3 world units
+  if(hgt>=9&&(v.roof==='flat'||v.roof==='green')){
+   var bands=Math.min(4,Math.floor(hgt/3.2));
+   ctx.strokeStyle=ti===0?'rgba(58,51,42,.32)':'rgba(215,228,248,.32)';ctx.lineWidth=.8;ctx.beginPath();
+   for(var bi=1;bi<=bands;bi++){var f=bi/(bands+1);
+    for(var fi=0;fi<4;fi++){var fj=(fi+1)%4,wa=lerpPt(bottom[fi],roof[fi],f),wb=lerpPt(bottom[fj],roof[fj],f);ctx.moveTo(wa.x,wa.y);ctx.lineTo(wb.x,wb.y);}}
+   ctx.stroke();
+  }
+  // roofs: each style speaks its own roof language
+  var roofCol=v.warmRoof?PITCH_WARM[ti]:PITCH_COOL[ti];
+  if(v.roof==='gable')drawGable(ctx,W,b,v,ink,roofCol,body,q);
+  else if(v.roof==='hip')drawHip(ctx,W,b,v,ink,roofCol);
+  else if(v.roof==='sawtooth')drawSawtooth(ctx,W,b,v,ink,roofCol,ti);
+  else{
+   var flatCol=v.roof==='green'?(ti===0?'#8aa377':'#2c5a44'):T.bTop;
+   poly(ctx,roof,flatCol,ink,.85);
+   ctx.globalAlpha=.55;
+   poly(ctx,roof.map(function(p){return point(lerp(p.x,cx,.10),lerp(p.y,cy,.10));}),null,shadeHex(flatCol,-.20),.6);
+   ctx.globalAlpha=1;
+   if(v.role==='upper'){ctx.save();ctx.globalAlpha=.12;poly(ctx,roof,'#ffffff');ctx.restore();}
+   // rooftop stair bulkhead on big flat roofs
+   var vrng=makeRng(W.seed,'urban.roofbox.'+q.buildingId+'.'+v.id);
+   if(vrng()<.35&&v.rect.w*v.rect.h>110){
+    miniBox(ctx,b,lerpPt(lerpPt(v.plan[0],v.plan[2],.5),v.plan[0],.28),v.rect.ang,Math.min(2.6,v.rect.w*.14),v.z1,v.z1+2.3,shadeHex(body,.06),ink);
+   }
+   if(v.rect.w>12&&v.rect.h>10){var c=point((roof[0].x+roof[2].x)*.5,(roof[0].y+roof[2].y)*.5);ctx.beginPath();ctx.moveTo(lerp(roof[0].x,c.x,.3),lerp(roof[0].y,c.y,.3));ctx.lineTo(lerp(roof[1].x,c.x,.3),lerp(roof[1].y,c.y,.3));ctx.strokeStyle=ti===0?'#c7ba99':'#64828c';ctx.lineWidth=.45;ctx.stroke();}
+  }
  });
- var path=m.landscape.internalPath.points;if(path.length>1){ctx.beginPath();path.forEach(function(p,i){if(!i)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);});ctx.strokeStyle=P.theme===0?'#e5d8b9':'#68796e';ctx.lineWidth=1.25;ctx.stroke();}
+ var path=m.landscape.internalPath.points;if(path.length>1){ctx.beginPath();path.forEach(function(p,i){if(!i)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);});ctx.strokeStyle=ti===0?'#e5d8b9':'#68796e';ctx.lineWidth=1.25;ctx.stroke();}
  ctx.restore();
 }
 function drawPatterns(ctx,W){
