@@ -8,7 +8,9 @@ uniform vec2 resolution,sunUv;
 uniform mat4 inverseProjection,cameraWorld;
 uniform vec3 sunDirection,fogColor,sunColor;
 uniform float time,focus,grain,fogDensity,exposure,scattering,sunVisible;
+uniform float uRays;
 uniform int debugPass;
+uniform int uAoTaps;
 float hash(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
 vec3 positionAt(vec2 uv){float d=texture2D(tDepth,uv).r;vec4 p=inverseProjection*vec4(uv*2.-1.,d*2.-1.,1.);return p.xyz/p.w;}
 float lum(vec3 c){return dot(c,vec3(.299,.587,.114));}
@@ -23,9 +25,11 @@ void main(){
  vec3 color=fxaa(uv);
  vec3 n=normalize(cross(dFdx(p),dFdy(p)));if(dot(n,-p)<0.)n=-n;
  float ao=0.;
- if(!sky&&distance<500.){
+ // Ambient occlusion tap count is quality-gated (uAoTaps): 0 skips the block
+ // entirely, which saves ten full inverse-projection texture taps per pixel.
+ if(uAoTaps>0&&!sky&&distance<500.){
   float rad=clamp(1.8/max(distance,1.),.0015,.05);float angle=hash(floor(uv*resolution*.25))*6.283185;
-  for(int i=0;i<10;i++){float a=angle+float(i)*2.39996;vec2 off=vec2(cos(a),sin(a))*rad*(.35+.65*float(i)/10.);vec3 delta=positionAt(clamp(uv+off,vec2(.001),vec2(.999)))-p;float dd=length(delta);ao+=max(0.,dot(n,delta/max(dd,.001))-.14)*(1.-smoothstep(.1,2.7,dd));}
+  for(int i=0;i<10;i++){if(i>=uAoTaps)break;float a=angle+float(i)*2.39996;vec2 off=vec2(cos(a),sin(a))*rad*(.35+.65*float(i)/10.);vec3 delta=positionAt(clamp(uv+off,vec2(.001),vec2(.999)))-p;float dd=length(delta);ao+=max(0.,dot(n,delta/max(dd,.001))-.14)*(1.-smoothstep(.1,2.7,dd));}
   ao=clamp(ao*.20,0.,.5);color*=1.-ao;
  }
  // Conservative depth of field. Keep the road, hero car and most texture
@@ -37,7 +41,8 @@ void main(){
  float alignment=max(0.,dot(ray,sunDirection));float haze=sky?0.:1.-exp(-distance*fogDensity*(.65+.65*exp(-max(world.y-12.,0.)*.009)));
  vec3 atmosphere=fogColor+sunColor*pow(alignment,12.)*.19*scattering;color=mix(color,atmosphere,min(haze,.91));
  // Depth-tested sun scattering: foreground silhouettes occlude samples.
- float rays=0.;if(sunVisible>.5){for(int i=0;i<10;i++){vec2 q=mix(uv,sunUv,float(i)/10.*.65);float open=step(.99998,texture2D(tDepth,clamp(q,vec2(.001),vec2(.999))).r);rays+=open*(1.-float(i)/13.);}color+=sunColor*rays*.0028*pow(alignment,4.)*scattering;}
+ // Eight taps instead of ten; disabled entirely on the Balanced tier.
+ float rays=0.;if(sunVisible>.5&&uRays>.5){for(int i=0;i<8;i++){vec2 q=mix(uv,sunUv,float(i)/8.*.65);float open=step(.99998,texture2D(tDepth,clamp(q,vec2(.001),vec2(.999))).r);rays+=open*(1.-float(i)/11.);}color+=sunColor*rays*.0034*pow(alignment,4.)*scattering;}
  color=aces(color*exposure);color=pow(color,vec3(1./2.2));
  float vignette=smoothstep(.24,.86,length((uv-.5)*vec2(1.,.85)));color*=1.-vignette*.19;
  float g=(hash(uv*resolution+vec2(mod(floor(time*24.),1000.),17.))-.5)*grain;color+=g;
@@ -45,16 +50,33 @@ void main(){
  gl_FragColor=vec4(color,1.);
 }`;
 
-export function createPost(renderer){
+export function createPost(renderer,quality='high'){
  const target=new T.WebGLRenderTarget(1,1,{type:renderer.extensions?.has('EXT_color_buffer_float')?T.HalfFloatType:T.UnsignedByteType,format:T.RGBAFormat,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:true});
- target.samples=renderer.capabilities.isWebGL2?Math.min(4,renderer.capabilities.maxSamples??4):0;target.depthTexture=new T.DepthTexture(1,1,T.UnsignedIntType);target.depthTexture.format=T.DepthFormat;
- const uniforms={tColor:{value:target.texture},tDepth:{value:target.depthTexture},resolution:{value:new T.Vector2(1,1)},sunUv:{value:new T.Vector2()},sunVisible:{value:1},inverseProjection:{value:new T.Matrix4()},cameraWorld:{value:new T.Matrix4()},sunDirection:{value:new T.Vector3()},fogColor:{value:new T.Color()},sunColor:{value:new T.Color()},time:{value:0},focus:{value:20},grain:{value:.014},fogDensity:{value:.0013},exposure:{value:1.2},scattering:{value:1},debugPass:{value:0}};
+ // MSAA is quality-gated. The post shader already runs FXAA, so full-res 4x
+ // MSAA on a half-float target was pure overdraw — the single most expensive
+ // line in the old renderer on mobile GPUs.
+ const msaaFor=q=>q==='ultra'?4:q==='balanced'?0:2;
+ target.samples=renderer.capabilities.isWebGL2?Math.min(msaaFor(quality),renderer.capabilities.maxSamples??4):0;
+ target.depthTexture=new T.DepthTexture(1,1,T.UnsignedIntType);target.depthTexture.format=T.DepthFormat;
+ const uniforms={tColor:{value:target.texture},tDepth:{value:target.depthTexture},resolution:{value:new T.Vector2(1,1)},sunUv:{value:new T.Vector2()},sunVisible:{value:1},inverseProjection:{value:new T.Matrix4()},cameraWorld:{value:new T.Matrix4()},sunDirection:{value:new T.Vector3()},fogColor:{value:new T.Color()},sunColor:{value:new T.Color()},time:{value:0},focus:{value:20},grain:{value:.014},fogDensity:{value:.0013},exposure:{value:1.2},scattering:{value:1},uRays:{value:1},uAoTaps:{value:6},debugPass:{value:0}};
  const mat=new T.ShaderMaterial({uniforms,vertexShader:vert,fragmentShader:frag,depthTest:false,depthWrite:false});
  // Project the sun once per frame, keeping matrix inversions out of the
  // full-resolution fragment pass.
  const sunPoint=new T.Vector3();
  const scene=new T.Scene(),camera=new T.Camera();scene.add(new T.Mesh(new T.PlaneGeometry(2,2),mat));
- return {target,uniforms,resize(w,h){target.setSize(w,h);uniforms.resolution.value.set(w,h);},draw(main,cam,time){uniforms.time.value=time;uniforms.inverseProjection.value.copy(cam.projectionMatrixInverse);uniforms.cameraWorld.value.copy(cam.matrixWorld);sunPoint.copy(uniforms.sunDirection.value).multiplyScalar(2000).add(cam.position).applyMatrix4(cam.matrixWorldInverse);uniforms.sunVisible.value=sunPoint.z<0?1:0;sunPoint.applyMatrix4(cam.projectionMatrix);uniforms.sunUv.value.set(sunPoint.x*.5+.5,sunPoint.y*.5+.5);renderer.setRenderTarget(target);renderer.render(main,cam);renderer.setRenderTarget(null);renderer.render(scene,camera);}};
+ const post={target,uniforms,
+  // Applies a quality tier to the post chain. Changing MSAA sample count
+  // disposes the target so the framebuffer is rebuilt at the new count.
+  setQuality(q){
+   const s=renderer.capabilities.isWebGL2?Math.min(msaaFor(q),renderer.capabilities.maxSamples??4):0;
+   if(target.samples!==s){target.samples=s;target.dispose();}
+   uniforms.uAoTaps.value=q==='balanced'?0:q==='ultra'?10:6;
+   uniforms.uRays.value=q==='balanced'?0:1;
+  },
+  resize(w,h){target.setSize(w,h);uniforms.resolution.value.set(w,h);},
+  draw(main,cam,time){uniforms.time.value=time;uniforms.inverseProjection.value.copy(cam.projectionMatrixInverse);uniforms.cameraWorld.value.copy(cam.matrixWorld);sunPoint.copy(uniforms.sunDirection.value).multiplyScalar(2000).add(cam.position).applyMatrix4(cam.matrixWorldInverse);uniforms.sunVisible.value=sunPoint.z<0?1:0;sunPoint.applyMatrix4(cam.projectionMatrix);uniforms.sunUv.value.set(sunPoint.x*.5+.5,sunPoint.y*.5+.5);renderer.setRenderTarget(target);renderer.render(main,cam);renderer.setRenderTarget(null);renderer.render(scene,camera);}};
+ post.setQuality(quality);
+ return post;
 }
 
 export const MOODS={
