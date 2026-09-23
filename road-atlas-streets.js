@@ -1,13 +1,13 @@
-/* Road Atlas Streets 2.5.1 — hierarchy-first, district-serving street fabric.
+/* Road Atlas Streets 2.6.0 — hierarchy-first, district-serving street fabric.
  * Uses the pinned V1 district-grid builder, terrain, parcels and site grammar.
  * All land reservations consume the finalized graph and junction envelopes.
  * This is illustrative procedural cartography, not a certified road design.
  */
 (function(){
 'use strict';
-var VERSION='2.5.1',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
+var VERSION='2.6.0',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
 var indexCache=new WeakMap();
-var widths=[8,11,15],H=RoadAtlasPipeline.debug;
+var widths=[7,11,16],H=RoadAtlasPipeline.debug;
 function cp(p){return{x:p.x,y:p.y};}
 function d(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function len(a){var n=0;for(var i=1;i<a.length;i++)n+=d(a[i-1],a[i]);return n;}
@@ -242,7 +242,7 @@ function mergeThrough(N,F){
    seen.add(ri);var r=N.roads[ri],p=r.from===current?r.pts:r.pts.slice().reverse();path=path.concat(p.slice(path.length?1:0));sources.push(r.source);current=r.from===current?r.to:r.from;
    if(N.adj[current].length!==2)break;var next=N.adj[current].find(function(e){return!seen.has(e.e);});if(!next||N.roads[next.e].cls!==cls)break;ri=next.e;
   }
-  path=relaxPath(simplify(path,.35),F,cls);path=smoothCorners(path,F,Math.max(8,widths[cls]+(cls===2?5:2)));if(len(path)>.1)roads.push({pts:resample(path,5),cls:cls,bridges:[],source:sources.includes('primary-corridor')?'primary-corridor':sources.includes('edge-portal')?'edge-portal':sources.includes('bridge-link')?'bridge-link':sources[0]});
+  path=relaxPath(simplify(path,.35),F,cls);path=smoothCorners(path,F,Math.max(9,widths[cls]*1.25+(cls===2?6:3)));if(len(path)>.1)roads.push({pts:resample(path,5),cls:cls,bridges:[],source:sources.includes('primary-corridor')?'primary-corridor':sources.includes('edge-portal')?'edge-portal':sources.includes('bridge-link')?'bridge-link':sources[0]});
  }
  N.nodes.forEach(function(p,i){if(N.adj[i].length!==2||N.roads[N.adj[i][0].e].cls!==N.roads[N.adj[i][1].e].cls)N.adj[i].forEach(function(e){if(!seen.has(e.e))follow(e.e,i);});});N.roads.forEach(function(r,i){if(!seen.has(i))follow(i,r.from);});return H.planarize(roads,F);
 }
@@ -342,7 +342,7 @@ function metrics(W){var N=W.network,F=W.F,index=H.makeIndex(N.roads),eligible=0,
 }
 function refresh(){var e=document.getElementById('streetsStatus');if(!e)return;if(!world||!world.streetKit){e.textContent='Previous ordered streets; original comparison retained.';return;}var m=world.streetKit.metrics;e.textContent=m.coveredSamples+'/'+m.coverageSamples+' eligible map samples near a road · '+m.components+' component(s) · '+m.crosswalkGroups+' crossing groups · '+Math.round(m.serviceableLocalTerminalShare*100)+'% of local dead ends near a service district · '+m.unservedLocalTerminalsRemoved+' unserved ends removed.';}
 window.RoadAtlasStreets={version:VERSION,isEnabled:function(){return settings.enabled;},prepare:prepare,build:build,geometry:geometry,draw:drawRoads,cssScale:cssScale,metrics:metrics,refresh:refresh,queryParameters:function(u){u.searchParams.set('streets',settings.enabled?'connected':'previous');u.searchParams.set('corners',settings.radius);return u;},exportData:function(W){return W.streetKit||null;},getSettings:function(){return Object.assign({},settings);},setRadius:function(v){if(!Number.isFinite(+v))return;settings.radius=clamp(+v,4,14);regenerate();},setEnabled:function(v){settings.enabled=!!v;regenerate();},debug:{junction:junction,geometry:geometry,at:at,slice:slice,dry:dry,polyArea:polyArea,validateKit:validateKit}};
-var panel=document.getElementById('analysisPanel'),section=document.createElement('details');section.className='cond-detail';section.innerHTML='<summary>Street assembly · 2.5.1</summary><label>Network build<select id="streetAssembly"><option value="connected">Connected, map-wide fabric</option><option value="previous">Previous ordered streets</option></select></label><label>Corner rounding <output id="streetRadiusValue"></output><input id="streetRadius" type="range" min="4" max="14" step="1"></label><p class="cond-note">Road hierarchy favors continuous corridors, coherent neighborhood axes, T-junctions and residential access. Short local dead ends are retained when they serve a nearby non-park district; unsupported local ends are removed. Junction geometry remains parametric, not fixed tiles.</p><p class="cond-note" id="streetsStatus"></p>';panel.appendChild(section);var sel=document.getElementById('streetAssembly');sel.value=settings.enabled?'connected':'previous';sel.onchange=function(){settings.enabled=sel.value==='connected';regenerate();};var radius=document.getElementById('streetRadius'),value=document.getElementById('streetRadiusValue');radius.value=settings.radius;value.value=settings.radius;radius.oninput=function(){value.value=radius.value;};radius.onchange=function(){RoadAtlasStreets.setRadius(radius.value);};
+var panel=document.getElementById('analysisPanel'),section=document.createElement('details');section.className='cond-detail';section.innerHTML='<summary>Street assembly · 2.6.0</summary><label>Network build<select id="streetAssembly"><option value="connected">Connected, map-wide fabric</option><option value="previous">Previous ordered streets</option></select></label><label>Corner rounding <output id="streetRadiusValue"></output><input id="streetRadius" type="range" min="4" max="14" step="1"></label><p class="cond-note">Road hierarchy favors continuous corridors, coherent neighborhood axes, T-junctions and residential access. Short local dead ends are retained when they serve a nearby non-park district; unsupported local ends are removed. Junction geometry remains parametric, not fixed tiles.</p><p class="cond-note" id="streetsStatus"></p>';panel.appendChild(section);var sel=document.getElementById('streetAssembly');sel.value=settings.enabled?'connected':'previous';sel.onchange=function(){settings.enabled=sel.value==='connected';regenerate();};var radius=document.getElementById('streetRadius'),value=document.getElementById('streetRadiusValue');radius.value=settings.radius;value.value=settings.radius;radius.oninput=function(){value.value=radius.value;};radius.onchange=function(){RoadAtlasStreets.setRadius(radius.value);};
 // A first control tap after panning can be consumed as hover by touch browsers.
 // One deliberate pointer-up activates once; compatibility click is deduplicated.
 var controls=document.querySelector('.ra-camera-controls');
