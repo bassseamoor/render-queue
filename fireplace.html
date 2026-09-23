@@ -697,13 +697,13 @@ void main(){
 const WATER_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec2 aUv;
 uniform mat4 uModel; uniform mat4 uView; uniform mat4 uProj;
-uniform float uTime; uniform float uChop; uniform float uSeedF;
+uniform float uTime; uniform float uChop; uniform float uSeedF; uniform float uWSpd;
 out vec3 vWP; out vec2 vUv;
 ${GLSL_NOISE}
 void main(){
   vec4 wp0 = uModel*vec4(aPos,1.0);
   vec3 wpos = wp0.xyz;
-  float t = uTime;
+  float t = uTime*uWSpd;
   float w = sin(wpos.x*0.35+t*1.1)*0.5 + sin(wpos.z*0.5-t*0.9+uSeedF)*0.3 + sin((wpos.x+wpos.z)*0.18+t*0.6)*0.4;
   w += vnoise(wpos.xz*0.6+vec2(t*0.35,-t*0.22))*0.8-0.4;
   wpos.y += w*0.055*(0.35+uChop);
@@ -714,7 +714,7 @@ const WATER_FS = `#version 300 es
 precision highp float;
 in vec3 vWP; in vec2 vUv;
 uniform sampler2D uScene; uniform sampler2D uDepth;
-uniform float uTime; uniform vec3 uCamPos;
+uniform float uTime; uniform vec3 uCamPos; uniform float uWSpd;
 uniform float uChop; uniform float uRain; uniform float uMist; uniform float uShoreX;
 uniform mat4 uViewI; uniform mat4 uViewM; uniform mat4 uProjM;
 ${SKY_U}
@@ -738,7 +738,7 @@ vec3 ssrHit(vec3 p, vec3 r){
 }
 void main(){
   vec2 p = vWP.xz;
-  float t = uTime;
+  float t = uTime*uWSpd;
   float e = 0.35;
   vec2 wob = vec2(t*0.45,-t*0.28)*(0.5+uChop);
   float hC = fbm(p*0.55+wob);
@@ -1206,12 +1206,12 @@ function draw(mesh, x,y,z, sx,sy,sz, mat, o){
 }
 const WOOD_TINTS = [[0.62,0.55,0.50],[1.25,1.15,1.05],[0.22,0.20,0.19]];
 const CAMS_DEF = [
-  { n:"reference",  eye:[2.6,1.65,-1.6],  tgt:[-3.2,1.00,3.2],  fov:55 },
-  { n:"fireside",   eye:[-2.7,1.15,0.9],  tgt:[-4.6,0.80,-0.9], fov:50 },
-  { n:"lakeside",   eye:[0.2,1.60,2.0],   tgt:[1.5,1.30,40.0],  fov:52 },
-  { n:"daybed",     eye:[-2.8,1.35,-0.6], tgt:[2.3,0.50,2.75],  fov:55 },
-  { n:"deck",       eye:[2.8,1.75,7.6],   tgt:[1.6,1.00,45.0],  fov:55 },
-  { n:"ember macro",eye:[-3.3,0.90,0.2],  tgt:[-4.7,0.70,-0.9], fov:42 },
+  { n:"reference",  eye:[-2.6,1.52,-2.2], tgt:[2.9,0.95,3.2],   fov:62 },
+  { n:"fireside",   eye:[1.5,1.05,0.9],   tgt:[4.6,0.72,-0.9],  fov:50 },
+  { n:"lakeside",   eye:[1.0,1.55,2.3],   tgt:[0.9,1.15,40.0],  fov:56 },
+  { n:"daybed",     eye:[-2.2,0.85,2.75], tgt:[2.0,1.00,20.0],  fov:62 },
+  { n:"deck",       eye:[-0.6,1.70,8.0],  tgt:[2.2,1.05,-1.0],  fov:55 },
+  { n:"ember macro",eye:[2.60,0.85,0.60], tgt:[4.62,0.60,-0.9], fov:40 },
 ];
 function cameraAt(te){
   const A = CAMS_DEF[clamp(settings.camera|0,0,CAMS_DEF.length-1)];
@@ -1273,36 +1273,36 @@ function generateScene(st){
   const R = computeRig(st);
   const woodT = WOOD_TINTS[st.wood|0];
 
-  /* ============ FIREPLACE WALL (west, front face x=-4.4) ============
+  /* ============ FIREPLACE WALL (east, front face x=4.42) ============
      firebox: z -1.75..-0.05, y 0.30..1.25 | log niche: z 0.05..1.00, y 0.30..1.55 */
-  const WX=-4.7, WD=0.6;
+  const WX=4.72, WD=0.6;
   function stoneSeg(z0,z1,y0,y1){
     draw(M_BOX, WX,(y0+y1)/2,(z0+z1)/2, WD,y1-y0,z1-z0, 0, {uv:0.55});
   }
-  stoneSeg(-4.0,-1.75, 0,3.2);
+  stoneSeg(-4.02,-1.75, 0,3.2);
   stoneSeg(-0.05,0.05, 0,3.2);
   stoneSeg(1.00,1.60, 0,3.2);
   stoneSeg(-1.75,-0.05, 1.25,3.2);
   stoneSeg(0.05,1.00, 1.55,3.2);
   const soot=[0.06,0.05,0.045];
-  draw(M_BOX, -4.95,0.775,-0.9, 0.1,0.95,1.7, 3, {tintA:soot, uv:2});
-  draw(M_BOX, -4.7,1.275,-0.9, 0.6,0.05,1.7, 3, {tintA:soot, uv:2});
-  draw(M_BOX, -4.7,0.275,-0.9, 0.6,0.05,1.7, 3, {tintA:soot, uv:2});
-  draw(M_BOX, -4.7,0.775,-1.78, 0.6,0.95,0.06, 3, {tintA:soot, uv:2});
-  draw(M_BOX, -4.7,0.775,-0.02, 0.6,0.95,0.06, 3, {tintA:soot, uv:2});
-  draw(M_BOX, -4.95,0.925,0.525, 0.1,1.25,0.95, 3, {tintA:[0.10,0.085,0.07], uv:2});
-  draw(M_BOX, -4.7,1.575,0.525, 0.6,0.05,0.95, 3, {tintA:[0.10,0.085,0.07], uv:2});
-  draw(M_RBOX, -4.05,0.24,-0.35, 0.75,0.14,3.4, 0, {uv:0.55}); /* hearth ledge */
+  draw(M_BOX, 4.95,0.775,-0.9, 0.1,0.95,1.7, 3, {tintA:soot, uv:2});
+  draw(M_BOX, 4.7,1.275,-0.9, 0.6,0.07,1.7, 3, {tintA:soot, uv:2});
+  draw(M_BOX, 4.7,0.275,-0.9, 0.6,0.05,1.7, 3, {tintA:soot, uv:2});
+  draw(M_BOX, 4.7,0.775,-1.76, 0.6,0.95,0.06, 3, {tintA:soot, uv:2});
+  draw(M_BOX, 4.7,0.775,-0.06, 0.6,0.95,0.06, 3, {tintA:soot, uv:2});
+  draw(M_BOX, 4.95,0.925,0.525, 0.1,1.25,0.95, 3, {tintA:[0.10,0.085,0.07], uv:2});
+  draw(M_BOX, 4.7,1.575,0.525, 0.6,0.07,0.95, 3, {tintA:[0.10,0.085,0.07], uv:2});
+  draw(M_RBOX, 4.05,0.24,-0.35, 0.75,0.14,3.4, 0, {uv:0.55}); /* hearth ledge */
   const logR=0.085;
   for(let row=0;row<4;row++){
     const n=4-(row%2);
     for(let i=0;i<n;i++)
-      draw(M_CYL, -4.72, 0.40+row*0.155, 0.16+i*0.20+(row%2)*0.05, logR*2,0.5,logR*2, 2, {rz:Math.PI/2, uv:1.4});
+      draw(M_CYL, 4.72, 0.40+row*0.155, 0.16+i*0.20+(row%2)*0.05, logR*2,0.5,logR*2, 2, {rz:Math.PI/2, uv:1.4});
   }
   const fl=[0.72,1.0,1.32][st.fire|0];
-  draw(M_CYL, -4.55,0.42,-0.9, 0.16,0.95,0.16, 2, {rz:Math.PI/2, ry:0.25});
-  draw(M_CYL, -4.55,0.40,-0.75, 0.15,0.85,0.15, 2, {rz:Math.PI/2, ry:-0.3});
-  draw(M_CYL, -4.55,0.58,-0.85, 0.13,0.8,0.13, 2, {rz:Math.PI/2, ry:0.9});
+  draw(M_CYL, 4.55,0.42,-0.9, 0.16,0.95,0.16, 2, {rz:Math.PI/2, ry:0.25});
+  draw(M_CYL, 4.55,0.40,-0.75, 0.15,0.85,0.15, 2, {rz:Math.PI/2, ry:-0.3});
+  draw(M_CYL, 4.55,0.58,-0.85, 0.13,0.8,0.13, 2, {rz:Math.PI/2, ry:0.9});
   draw(M_BOX, -4.62,0.335,-0.9, 0.5,0.03,1.2, 3,
     {tintA:[0.08,0.05,0.035], emis:[1.35*fl,0.38*fl,0.07*fl], uv:2}); /* ember bed */
 
@@ -1316,35 +1316,35 @@ function generateScene(st){
   draw(M_BOX, 5.05,1.6,0, 0.1,3.2,8.4, 3, {tintA:plaster, uv:0.3});
   draw(M_BOX, 0,3.26,0, 10.4,0.12,8.4, 1, {tintA:[0.30,0.24,0.18], uv:0.4, shadow:false});
   for(let i=0;i<8;i++)
-    draw(M_BOX, -4.4+i*1.28,3.08,0, 0.20,0.24,8.2, 1, {tintA:woodT, uv:0.5});
+    draw(M_BOX, 4.4-i*1.28,3.10,0, 0.20,0.24,8.2, 1, {tintA:woodT, uv:0.5});
   const glassY=1.60, glassH=2.90;
-  for(const mx of [-5,-3.4,-1.8,-0.2,1.4,3.0])
+  for(const mx of [5,3.4,1.8,0.2,-1.4,-3.0])
     draw(M_BOX, mx,glassY,4.0, 0.09,glassH+0.1,0.12, 7, {tintA:[0.05,0.05,0.055], rough:0.4});
   draw(M_BOX, 0,3.10,4.0, 10.2,0.12,0.14, 7, {tintA:[0.05,0.05,0.055], rough:0.4});
   draw(M_BOX, 0,0.10,4.0, 10.2,0.20,0.14, 7, {tintA:[0.05,0.05,0.055], rough:0.4});
-  draw(M_BOX, 3.45,1.6,4.0, 0.55,3.2,0.55, 0, {uv:0.55}); /* stone pier */
+  draw(M_BOX, -3.45,1.59,4.0, 0.55,3.2,0.55, 0, {uv:0.55}); /* stone pier */
   S.glass={ y0:0.20, y1:3.05, x0:-5, x1:5, z:4.0 };
 
   /* ============ FURNISHINGS ============ */
-  draw(M_RBOX, 0.3,0.035,1.1, 4.4,0.07,3.1, 6, {uv:1, shadow:false}); /* rug */
-  draw(M_RBOX, 0.3,0.40,1.1, 1.95,0.10,1.0, 7, {tintA:[0.04,0.04,0.045], rough:0.32}); /* table slab */
-  draw(M_BOX, 0.3,0.19,1.1, 0.55,0.32,0.55, 7, {tintA:[0.05,0.05,0.055], rough:0.5});   /* plinth */
-  draw(M_RBOXS, -0.15,0.475,1.05, 0.44,0.05,0.32, 8, {tintA:[0.16,0.18,0.24], ry:0.12, uv:2});
-  draw(M_RBOXS, -0.12,0.525,1.08, 0.38,0.045,0.28, 8, {tintA:[0.38,0.16,0.12], ry:-0.18, uv:2});
-  draw(M_CYL, 0.95,0.47,1.35, 0.20,0.035,0.20, 7, {tintA:[0.08,0.08,0.085], rough:0.5}); /* tray */
-  draw(M_RBOX, 2.3,0.17,2.75, 2.7,0.34,1.2, 1, {tintA:woodT, uv:0.5});   /* daybed base */
-  draw(M_RBOX, 2.3,0.44,2.75, 2.55,0.20,1.08, 5, {tintA:[0.72,0.68,0.62], uv:1.2}); /* mattress */
-  draw(M_RBOXS, 1.45,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.80,0.77,0.72], ry:0.25, uv:1.5});
-  draw(M_RBOXS, 2.30,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.62,0.58,0.53], ry:-0.15, uv:1.5});
-  draw(M_RBOXS, 3.10,0.60,2.80, 0.58,0.18,0.58, 5, {tintA:[0.30,0.30,0.32], ry:0.4, uv:1.5});
-  draw(M_RBOXS, -1.15,0.16,1.9, 0.66,0.22,0.66, 5, {tintA:[0.74,0.70,0.64], ry:0.5, uv:1.5});
-  draw(M_RBOXS, -0.45,0.15,2.35, 0.60,0.20,0.60, 5, {tintA:[0.36,0.34,0.36], ry:-0.3, uv:1.5});
+  draw(M_RBOX, -0.3,0.030,1.1, 4.4,0.07,3.1, 6, {uv:1, shadow:false}); /* rug */
+  draw(M_RBOX, -0.3,0.40,1.1, 1.95,0.10,1.0, 7, {tintA:[0.04,0.04,0.045], rough:0.32}); /* table slab */
+  draw(M_BOX, -0.3,0.20,1.1, 0.55,0.36,0.55, 7, {tintA:[0.05,0.05,0.055], rough:0.5});   /* plinth */
+  draw(M_RBOXS, 0.15,0.465,1.05, 0.44,0.05,0.32, 8, {tintA:[0.16,0.18,0.24], ry:-0.12, uv:2});
+  draw(M_RBOXS, 0.12,0.505,1.08, 0.38,0.045,0.28, 8, {tintA:[0.38,0.16,0.12], ry:0.18, uv:2});
+  draw(M_CYL, -0.95,0.462,1.35, 0.20,0.035,0.20, 7, {tintA:[0.08,0.08,0.085], rough:0.5}); /* tray */
+  draw(M_RBOX, -2.3,0.17,2.75, 2.7,0.34,1.2, 1, {tintA:woodT, uv:0.5});   /* daybed base */
+  draw(M_RBOX, -2.3,0.435,2.75, 2.55,0.20,1.08, 5, {tintA:[0.72,0.68,0.62], uv:1.2}); /* mattress */
+  draw(M_RBOXS, -1.45,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.80,0.77,0.72], ry:-0.25, uv:1.5});
+  draw(M_RBOXS, -2.30,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.62,0.58,0.53], ry:0.15, uv:1.5});
+  draw(M_RBOXS, -3.10,0.60,2.80, 0.58,0.18,0.58, 5, {tintA:[0.30,0.30,0.32], ry:-0.4, uv:1.5});
+  draw(M_RBOXS, 1.15,0.16,1.9, 0.66,0.22,0.66, 5, {tintA:[0.74,0.70,0.64], ry:-0.5, uv:1.5});
+  draw(M_RBOXS, 0.45,0.15,2.30, 0.60,0.20,0.60, 5, {tintA:[0.36,0.34,0.36], ry:0.3, uv:1.5});
 
   /* ============ DECK + EXTERIOR ============ */
   draw(M_BOX, 0,-0.03,7.0, 10.4,0.10,6.0, 1, {tintA:[0.55,0.48,0.40], uv:0.3, shadow:false});
   const dv=st.deck|0;
   if(dv===0){
-    const cx=2.4, cz=6.3, ry=0.45;
+    const cx=4.3, cz=6.5, ry=0.45;
     const px=Math.cos(ry), pz=-Math.sin(ry);
     for(const s of [-0.26,0.26])
       draw(M_BOX, cx+px*s,0.36,cz+pz*s, 0.07,0.09,1.6, 1, {tintA:woodT, ry, uv:0.6});
@@ -1371,15 +1371,15 @@ function generateScene(st){
 
   /* ============ WATER + MOUNTAINS ============ */
   const chop=[0.25,0.7,1.4][st.water|0]*(R.rain?1.5:1)*(R.snow?0.5:1);
-  S.water={ x0:-70, x1:70, z0:10, z1:75, y:-0.38, chop, seedF:S.texSeed };
+  S.water={ x0:-70, x1:70, z0:10, z1:68, y:-0.38, chop, seedF:S.texSeed };
   S.mtns=[
     { x:0,   y:-1.2, z:72,  w:520, h:30, hs:0.95, haze:0.35, snow:1.0 },
-    { x:-40, y:-1.6, z:125, w:620, h:48, hs:1.0,  haze:0.65, snow:1.0 },
-    { x:60,  y:-2.0, z:195, w:760, h:70, hs:1.05, haze:0.9,  snow:1.0 },
+    { x:-40, y:-1.6, z:135, w:620, h:48, hs:1.0,  haze:0.65, snow:1.0 },
+    { x:60,  y:-2.0, z:210, w:760, h:70, hs:1.05, haze:0.9,  snow:1.0 },
   ];
   draw(M_BOX, 0,-0.30,9.7, 140,0.25,1.2, 3, {tintA:[0.22,0.21,0.20], uv:0.4, shadow:false}); /* shore */
 
-  S.firePos=[-4.25,0.85,-0.9];
+  S.firePos=[4.25,0.85,-0.9];
   S.fireCol=[1.0,0.42,0.12];
   S.flick=1.0;
 }
@@ -1399,14 +1399,14 @@ function buildParticles(st){
   S.parts.length=0;
   const sd=st.seed>>>0;
   const fl=[14,26,40][st.fire|0];
-  S.parts.push(makePartSystem({mode:0, count:fl, seed:sd^0xF1, origin:[-4.45,0.42,-0.9],
+  S.parts.push(makePartSystem({mode:0, count:fl, seed:sd^0xF1, origin:[4.45,0.42,-0.9],
     rise:0.85, size:0.34, spread:0.42, rate:0.9, sway:0.10, grow:1.5, alpha:0.95}));
   const emN=Math.round((st.sparks|0)/100*46);
-  if(emN>0) S.parts.push(makePartSystem({mode:1, count:emN, seed:sd^0xE2, origin:[-4.45,0.55,-0.9],
+  if(emN>0) S.parts.push(makePartSystem({mode:1, count:emN, seed:sd^0xE2, origin:[4.45,0.55,-0.9],
     rise:1.7, size:0.022, spread:0.35, rate:0.5, sway:0.16, grow:0.6, alpha:0.9}));
-  S.parts.push(makePartSystem({mode:2, count:9, seed:sd^0x5E, origin:[-4.45,1.35,-0.9],
+  S.parts.push(makePartSystem({mode:2, count:9, seed:sd^0x5E, origin:[4.45,1.35,-0.9],
     rise:1.5, size:0.5, spread:0.2, rate:0.22, sway:0.25, grow:2.6, alpha:0.30}));
-  S.parts.push(makePartSystem({mode:3, count:1, seed:sd^0x60, origin:[-4.30,0.85,-0.9],
+  S.parts.push(makePartSystem({mode:3, count:1, seed:sd^0x60, origin:[4.30,0.85,-0.9],
     rise:0.01, size:2.6, spread:0.01, rate:0.05, sway:0, grow:1, alpha:0.16}));
   const w=st.weather|0;
   if(w===3) S.parts.push(makePartSystem({mode:4, count:420, seed:sd^0x5F, origin:[0,8.5,6],
@@ -1497,6 +1497,8 @@ function drawWater(view, proj, te){
   gl.uniform3fv(WU("uCamPos"),S.cam.eye);
   setSkyUniforms(WU,te);
   gl.uniform1f(WU("uChop"),Wd.chop);
+  let wspd=1/6; if(S.rig.mist>0.01) wspd*=0.5; if(S.rig.rain>0.01) wspd*=1.4;
+  gl.uniform1f(WU("uWSpd"),wspd);
   gl.uniform1f(WU("uRain"),S.rig.rain);
   gl.uniform1f(WU("uMist"),S.rig.mist);
   gl.uniform1f(WU("uShoreX"),10.0);
@@ -1521,7 +1523,7 @@ function drawGlass(view, proj, te){
   gl.uniform3fv(GU("uCamPos"),S.cam.eye);
   setSkyUniforms(GU,te);
   gl.uniform1f(GU("uRain"),S.rig.rain); gl.uniform1f(GU("uMist"),S.rig.mist);
-  const spans=[[-5,-3.4],[-3.4,-1.8],[-1.8,-0.2],[-0.2,1.4],[1.4,3.175],[3.725,5.0]];
+  const spans=[[-5,-3.725],[-3.175,-1.4],[-1.4,0.2],[0.2,1.8],[1.8,3.4],[3.4,5.0]];
   for(const sp of spans){
     gl.uniformMatrix4fv(GU("uModel"),false,
       mMul(mT((sp[0]+sp[1])/2,(G.y0+G.y1)/2,G.z),mS(sp[1]-sp[0],G.y1-G.y0,1)));
