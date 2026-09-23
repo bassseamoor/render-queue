@@ -7,7 +7,7 @@
  */
 (function(){
 'use strict';
-var VERSION='2.7.0',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
+var VERSION='2.7.1',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
 var indexCache=new WeakMap();
 var widths=[6,10,15],H=RoadAtlasPipeline.debug;
 function cp(p){return{x:p.x,y:p.y};}
@@ -319,7 +319,7 @@ function strokeSmooth(ctx,pts){
  for(var i=1;i<pts.length-1;i++)ctx.quadraticCurveTo(pts[i].x,pts[i].y,(pts[i].x+pts[i+1].x)/2,(pts[i].y+pts[i+1].y)/2);
  var l=pts[pts.length-1];ctx.lineTo(l.x,l.y);ctx.stroke();
 }
-function drawRoads(ctx,W){var K=W.streetKit,T=THEMES[clamp(Math.round(P.theme),0,2)],night=P.theme===1,blue=P.theme===2,asphalt=night?'#5a7a8c':blue?'#5d97b5':'#cfc9bd',curb=night?'#2c3f4d':blue?'#2a4f66':'#a89f8d',major=night?'#8fb8c9':blue?'#a8d4e8':'#e8e2d2',halo=night?'#7fb2c9':blue?'#9fd0e8':'#fffbe8';
+function drawRoads(ctx,W){var K=W.streetKit,T=THEMES[clamp(Math.round(P.theme),0,THEMES.length-1)],night=!!T.night,blue=!!T.blue,asphalt=night?'#5a7a8c':blue?'#5d97b5':'#cfc9bd',curb=night?'#2c3f4d':blue?'#2a4f66':'#a89f8d',major=night?'#8fb8c9':blue?'#a8d4e8':'#e8e2d2',halo=night?'#7fb2c9':blue?'#9fd0e8':'#fffbe8';
  ctx.save();ctx.lineJoin='round';ctx.lineCap='round';ctx.shadowBlur=0;
  // 1. Luminous halo under everything: the soft glow that makes roads float.
  ctx.globalAlpha=.16;ctx.strokeStyle=halo;
@@ -342,7 +342,7 @@ function drawRoads(ctx,W){var K=W.streetKit,T=THEMES[clamp(Math.round(P.theme),0
  ctx.fillStyle='#e8e4da';K.crosswalks.forEach(function(c){c.bars.forEach(function(bar){rings(ctx,bar);ctx.fill();});});
  ctx.restore();drawLabels(ctx,W);
 }
-function drawLabels(ctx,W){if(!P.labelsOn||!W.names)return;var T=THEMES[clamp(Math.round(P.theme),0,2)],scale=1;
+function drawLabels(ctx,W){if(!P.labelsOn||!W.names)return;var T=THEMES[clamp(Math.round(P.theme),0,THEMES.length-1)],scale=1;
  if(ctx.canvas.classList.contains('ra-map-detail')){var viewport=document.getElementById('stage').getBoundingClientRect();scale=ctx.getTransform().a/(ctx.canvas.width/Math.max(1,viewport.width));}
  scale=cssScale(ctx);var fs=16/scale,small=11/scale,placed=[],matrix=ctx.getTransform();
  var box={x0:-matrix.e/matrix.a,y0:-matrix.f/matrix.d,x1:(ctx.canvas.width-matrix.e)/matrix.a,y1:(ctx.canvas.height-matrix.f)/matrix.d};
