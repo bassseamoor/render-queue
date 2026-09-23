@@ -337,6 +337,7 @@ function raBreed(parentSeed, locks, saltStr) {
 /* ================= STUDIO REGISTRY ================= */
 const OWNER = "bassseamoor", REPO = "render-queue";
 const STUDIOS = {
+  "vita-verde": { name: "Vita Verde", url: "https://bassseamoor.github.io/render-queue/vita-verde.html", renders: true, kind: "video", thumb: "thumbs/vita-verde.jpg", desc: "A bent carrot’s 90-second journey: harvest, sorting, a second chance, and a place at the table. Twenty directed shots, seeded worlds, original sound, project files, and film exports." },
   "roadtrip": { name: "Grand Tour", url: "https://bassseamoor.github.io/render-queue/roadtrip.html", renders: true, kind: "video", thumb: "thumbs/roadtrip.jpg", desc: "A cinematic road trip through a flowering mountain valley. One touring coupe, five tracking cameras, three lighting moods, original seeded landscapes, and clean MP4 exports." },
   "turtle-life":  { name: "Turtle Life", url: "https://bassseamoor.github.io/turtle-life-studio/turtle-life-studio.html", renders: true, kind: "video", thumb: "thumbs/turtle-life.jpg", desc: "A sea turtle's life, from egg to ocean. Hatchlings crawl, predators hunt, the reef glows." },
   "rain-window":  { name: "Rain Window", url: "https://bassseamoor.github.io/rain-window-studio/rain-window-studio.html", renders: true, kind: "video", thumb: "thumbs/rain-window.jpg", desc: "A rainy city street seen through glass. Streaks, droplets, mist, and lamplight." },
@@ -351,11 +352,12 @@ const STUDIOS = {
   "strata-parallax": { name: "STRATA", url: "https://bassseamoor.github.io/render-queue/strata-parallax.html", renders: true, kind: "video", thumb: "thumbs/strata-parallax.jpg", desc: "A living canyon world. Baked cloud-cliff textures on real 3D depth planes, drifting camera, mist and dust." },
   "forge-2": { name: "FORGE 2.0", url: "https://bassseamoor.github.io/render-queue/forge-2.html", renders: false, kind: "image", thumb: "thumbs/forge-2.jpg", desc: "MOOR's procedural scene-construction runtime: plugin layers, canonical scene documents, world bus, CREATE / EDIT / BUILD modes. Makes stills, not video." },
 };
-const FSC = { "roadtrip": "roadtrip", "turtle-life": "turtle-life", "rainwindow": "rain-window", "molten": "molten", "fireplace": "fireplace", "aquarium": "aquarium", "alien-planet": "alien-planet", "rainforest": "rainforest", "parallax": "parallax", "canal-metropolis": "canal-metropolis", "roadatlas": "road-atlas", "strata-parallax": "strata-parallax" };
+const FSC = { "vita-verde": "vita-verde", "roadtrip": "roadtrip", "turtle-life": "turtle-life", "rainwindow": "rain-window", "molten": "molten", "fireplace": "fireplace", "aquarium": "aquarium", "alien-planet": "alien-planet", "rainforest": "rainforest", "parallax": "parallax", "canal-metropolis": "canal-metropolis", "roadatlas": "road-atlas", "strata-parallax": "strata-parallax" };
 
 // Curated hero seeds — hand-picked good-looking starting points (captured 2026-09-22).
 // The Studios tab "Generate" uses these so the first scene you see is a known-good one.
 const HERO_SEEDS = {
+  "vita-verde": "VV1-7C41A2",
   "roadtrip": "TRIP1-9A71C3-B-C-10",
   "turtle-life": "#0179B3BB",
   "rain-window": "728419",
@@ -384,6 +386,7 @@ const INTENTS = {
   "wallpaper":    { name: "Desktop Wallpaper", kind: "still", w: 3840, h: 2160 },
   "thumbnail":    { name: "Thumbnail", kind: "still", w: 1280, h: 720 },
 };
+INTENTS["narrative-film"] = { name: "Vita Verde · 90s film", kind: "video", w: 1920, h: 1080, fps: 24, seconds: 90, camera: "20-shot director", loop: false, audio: "original score + foley" };
 /* ================= RENDER TIERS ================= */
 const TIERS = {
   live:    { name: "LIVE",    sub: "quick check · 480p",  longSide: 854,  fps: 24, seconds: 30 },
@@ -406,12 +409,14 @@ function renderUrl(job, tierId) {
   const st = STUDIOS[job.studio];
   if (job.kind === "still" || !st.renders) return st.url + "?seed=" + encodeURIComponent(job.seed);
   const d = tierDims(job, tierId);
+  if (job.studio === "vita-verde") { d.seconds = Math.min(90, d.seconds || 90); d.fps = 24; }
   return st.url + "?render=1&seed=" + encodeURIComponent(job.seed) +
-    "&fps=" + d.fps + "&seconds=" + d.seconds + "&w=" + d.w + "&h=" + d.h + "&qid=" + job.id + (job.studio === "roadtrip" ? "&tier=" + encodeURIComponent(tierId) : "");
+    "&fps=" + d.fps + "&seconds=" + d.seconds + "&w=" + d.w + "&h=" + d.h + "&qid=" + job.id + (["roadtrip", "vita-verde"].includes(job.studio) ? "&tier=" + encodeURIComponent(tierId) : "");
 }
 
 /* ================= IDEA → STUDIO ROUTING ================= */
 const ROUTES = [
+  { re: /vita.?verde|vegetable|carrot|farm.to.table|harvest.*film|bent produce/, studio: "vita-verde", sys: ["Procedural Produce", "Narrative Director"] },
   { re: /road.?trip|grand tour|car commercial|\bb.?roll\b|scenic drive|chase cam|touring car|cypress valley/, studio: "roadtrip", sys: ["Procedural Valley", "Tracking Camera"] },
   { re: /rain|drizzl|storm|puddle|window pane/, studio: "rain-window", sys: ["Rain System", "Glass & Droplets"] },
   { re: /aquarium|fish|reef|tank|jellyfish|coral|shark/, studio: "aquarium", sys: ["Reef System", "Water & Light"] },
@@ -435,6 +440,7 @@ function routeIdea(text) {
 /* ================= SEED GENERATORS (deterministic) ================= */
 function genSeed(studio, rng, realmHint) {
   switch (studio) {
+    case "vita-verde": return "VV1-" + hex(rng, 6);
     case "roadtrip": return "TRIP1-" + hex(rng, 6) + "-B-C-10";
     case "turtle-life": return "#" + hex(rng, 8);
     case "rain-window": return "RW-" + b36(rng, 6);
@@ -461,6 +467,7 @@ function childSeed(studio, parentSeed, index) {
   return genSeed(studio, rng);
 }
 const REPORTS = {
+  "vita-verde": { blurb: "A 90-second film about a bent carrot finding a place at the table.", generators: ["Harvest-first story with 20 fixed shots", "A stable hero, left/right grading, a clearly imagined trash bubble, and a gentle rescue", "Seeded scenery, three grocers and three houses", "Mixed delivery box, pickup journey, doorstep and roasted-carrot dinner", "PBR preview with soft shadows, depth AO, DOF and antialiasing", "Project JSON, PNG, fixed-frame MP4 and original procedural audio", "Separate Blender Cycles render adapter; preview is rasterized"], seedFormat: "VV1-SEED; 90-second narrative, no ambient loops", seedExample: "VV1-7C41A2", params: [] },
   "roadtrip": {
     blurb: "One original touring coupe follows a seeded road through a cypress and wildflower valley. Designed for cinematic B-roll, with continuous travel and direct silent MP4 clips.",
     generators: ["Continuous terrain and road generation with matching surface normals at chunk boundaries", "Instanced cypresses, broadleaf trees, blue asters, rocks and roadside posts", "Detailed coupe with rotating wheels, clearcoat paint, glass, alloy rims and emissive lamps", "Five cameras: follow, road level, profile, aerial and a continuous director route", "Blue valley, golden hour and morning mist", "2048 × 512 height-baked surface maps with albedo, normals, roughness and cavity AO", "Up to 4× MSAA, FXAA, soft shadows, depth AO, atmospheric scattering, subtle DOF, bloom and film grain", "PNG stills and silent H.264 MP4 clips; portrait, landscape and cinema framing"],
@@ -696,6 +703,7 @@ function jobName(studio, intentId, seed) {
 }
 function makeJob(studio, seed, intentId, opts) {
   opts = opts || {};
+  if (studio === "vita-verde" && INTENTS[intentId]?.kind !== "still") intentId = "narrative-film";
   const intent = INTENTS[intentId] || INTENTS["yt-ambient"];
   const st = STUDIOS[studio] || {};
   let recipe = null, salt = null;
@@ -1292,7 +1300,7 @@ function thumbHeuristic(job) {
 const PACKAGE_PRESETS = ["yt-ambient", "yt-1h", "yt-short", "tiktok", "thumbnail", "wallpaper"];
 function makePackage(job) {
   const st = STUDIOS[job.studio];
-  const presets = st.renders ? PACKAGE_PRESETS : ["wallpaper", "thumbnail"];
+  const presets = job.studio === "vita-verde" ? ["narrative-film", "thumbnail", "wallpaper"] : st.renders ? PACKAGE_PRESETS : ["wallpaper", "thumbnail"];
   const made = [];
   for (const pid of presets) {
     const intent = INTENTS[pid];
@@ -1556,7 +1564,7 @@ function renderStudios() {
       if (!job) {
         const rng = rngFrom("studiogen:" + key + ":" + Date.now().toString(36));
         const seed = hero || genSeed(key, rng);
-        const intentId = st.kind === "image" ? "wallpaper" : "yt-ambient";
+        const intentId = key === "vita-verde" ? "narrative-film" : st.kind === "image" ? "wallpaper" : "yt-ambient";
         job = makeJob(key, seed, intentId, { status: "DRAFT" });
         JOBS.push(job); saveAll();
       }
