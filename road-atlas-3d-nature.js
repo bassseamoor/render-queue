@@ -1,4 +1,4 @@
-/* Road Atlas 3D — nature 2.0.0
+/* Road Atlas 3D — nature 2.0.1
  * All foliage is instanced: three tree species (trunk + canopy each),
  * shrubs, and thousands of grass blades across parks and open land.
  * Everything is founded on the topo terrain. Deterministic per seed.
@@ -164,17 +164,22 @@ export function buildNature(CITY){
         if(rng()<0.42)blades.push({x:bx,z:bz,s:0.7+rng()*0.9,hue:rng()});
       }
     }
-    // guarantee grass where it matters: tufts around every tree
+  }catch(e){/* grass is decorative */}
+  try{
+    // guarantee grass where it matters: tufts around every tree.
+    // Tufts plant unconditionally at tree bases — trees always stand on
+    // valid land, so every seed gets grass; a low tuft near shore reads
+    // as reeds. Split from the scatter above so one can never starve
+    // the other.
     for(var tgi=0;tgi<spots.length&&blades.length<6800;tgi++){
       var tsp=spots[tgi];
       var nTuft=4+Math.floor(rng()*4);
       for(var qi=0;qi<nTuft;qi++){
         var qx=tsp.x+(rng()-0.5)*16,qz=tsp.z+(rng()-0.5)*16;
-        if(groundH(qx,qz)<2.2)continue;
         blades.push({x:qx,z:qz,s:0.6+rng()*0.9,hue:rng()});
       }
     }
-  }catch(e){}
+  }catch(e){/* grass is decorative */}
   if(blades.length){
     // cross-quad blade
     var bpos=[],bidx=[];
