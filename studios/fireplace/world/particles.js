@@ -43,7 +43,7 @@ function buildParticles(st){
   S.parts.push(makePartSystem({mode:2, count:9, seed:sd^0x5E, origin:[4.50,1.35,-0.9],
     rise:1.5, size:0.5, spread:0.2, rate:0.22, sway:0.25, grow:2.6, alpha:0.30}));
   S.parts.push(makePartSystem({mode:3, count:4, seed:sd^0x60, origin:[4.55,0.34,-0.9],
-    rise:0.02, size:0.68, spread:0.45, rate:0.25, sway:0, grow:1, alpha:0.45}));
+    rise:0.02, size:0.68, spread:0.45, rate:0.25, sway:0, grow:1, alpha:0.38}));
   const shN=[6,9,12][st.fire|0];
   S.parts.push(makePartSystem({mode:6, count:shN, seed:sd^0xF6, origin:[4.55,0.72,-0.9],
     rise:0.01, size:0.55, spread:0.16, rate:0.40, sway:0, grow:1, alpha:0.70}));
@@ -54,8 +54,9 @@ function buildParticles(st){
     rise:9.0, size:0.30, spread:17, rate:0.9, sway:0.02, grow:1, alpha:0.5}));
 }
 /* firebox log segments for geometry-aware flames: (x,y,z,radius) and (axis.xyz,halfLen).
-   Matches the 5-log stack in generateScene: A/B along z, C crosswise, D leaning, E chunk. */
-const FIRE_LOGS=new Float32Array([4.60,0.475,-0.92,0.15, 4.73,0.465,-0.88,0.14, 4.66,0.615,-0.90,0.13, 4.62,0.575,-0.68,0.115, 4.70,0.60,-1.18,0.11]);
+   Matches the 5-log stack in generateScene: A/B along z, C crosswise, D leaning, E chunk.
+   NOTE: geoCyl has unit radius 0.5, so true radius = 0.5*sx from the draw() calls. */
+const FIRE_LOGS=new Float32Array([4.60,0.475,-0.92,0.075, 4.73,0.465,-0.88,0.07, 4.66,0.615,-0.90,0.065, 4.62,0.575,-0.68,0.0575, 4.70,0.60,-1.18,0.055]);
 const FIRE_LOGAX=new Float32Array([0,0,1,0.44, 0,0,1,0.40, -0.993,0,0.120,0.36, -0.8525,0,0.5227,0.31, 0,0,1,0.275]);
 function drawParticles(view, proj, te){
   gl.enable(gl.BLEND);
@@ -66,6 +67,7 @@ function drawParticles(view, proj, te){
   gl.uniform1f(PU("uBurn"), 0.30+0.25*(settings.fire|0));
   gl.uniform4fv(PU("uLogs"), FIRE_LOGS);
   gl.uniform4fv(PU("uLogAx"), FIRE_LOGAX);
+  gl.uniform3fv(PU("uCamPos"), S.cam.eye);
   gl.uniformMatrix4fv(PU("uProj"),false,proj);
   gl.uniformMatrix4fv(PU("uView"),false,view);
   gl.uniform1f(PU("uTime"),te);
