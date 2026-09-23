@@ -1,4 +1,4 @@
-/* Road Atlas Urban 2.4.0 — denser site massing, not a replacement city engine.
+/* Road Atlas Urban 2.5.0 — denser site massing, not a replacement city engine.
  * Reads finalized 2.3 parcels, road graph, topography and accessibility.
  * Geometry units are V1 world units, not construction dimensions. Volume height
  * is illustrative. No zoning, daylight, wind, structural or traffic certification.
@@ -8,7 +8,7 @@
  */
 (function () {
 'use strict';
-var VERSION='2.4.0', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
+var VERSION='2.5.0', D=RoadAtlasConditions.debug, query=new URLSearchParams(location.search);
 var CHARACTERS={balanced:'Context-led mix',courtyard:'Courts & shared gardens',terraced:'Stepped garden fabric',compact:'Compact centers'};
 function num(v,f,lo,hi){var n=Number(v);return v!=null&&v!==''&&Number.isFinite(n)?clamp(n,lo,hi):f;}
 var settings={enabled:query.get('urban')!=='0',character:Object.prototype.hasOwnProperty.call(CHARACTERS,query.get('character'))?query.get('character'):'balanced',openness:num(query.get('openness'),.32,.15,.65),relief:num(query.get('relief'),.85,.25,1.25)};
@@ -179,19 +179,53 @@ function compile(W){
 }
 /* Map representation uses the existing cartographic projection and palette.
  * Every face's entire projected sweep was validated before this draws. */
+/* Architectural massing illustration: crisp outlined volumes, soft layered
+ * shadows, walls shaded by orientation to the light, designed tree clusters.
+ * Shadows are layered-alpha fakes (no shadowBlur) so phones stay fast. */
+function shadeHex(hex,amt){
+ var n=parseInt(hex.slice(1),16),r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+ if(amt>=0){r+=(255-r)*amt;g+=(255-g)*amt;b+=(255-b)*amt;}
+ else{r*=1+amt;g*=1+amt;b*=1+amt;}
+ r=Math.max(0,Math.min(255,r|0));g=Math.max(0,Math.min(255,g|0));b=Math.max(0,Math.min(255,b|0));
+ return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
 function drawBuilding(ctx,W,b){
  var m=b.architecture,q=W.conditions.parcels[b.parcelId],T=THEMES[clamp(Math.round(P.theme),0,2)];
+ var ink=P.theme===0?'#3a332a':'rgba(232,240,252,.9)';
  ctx.save();ringsPath(ctx,q.rings);ctx.clip('evenodd');
- m.landscape.surfaces.forEach(function(s){ringsPath(ctx,s.rings);ctx.fillStyle=s.kind==='garden'?(P.theme===0?'#adbb91':'#29483e'):(P.theme===0?'#c6b999':'#34454d');ctx.globalAlpha=s.kind==='garden'?.4:.25;ctx.fill('evenodd');});ctx.globalAlpha=1;
- m.volumes.forEach(function(v){var ps=v.plan.map(function(p){return point(p.x+3+v.z1*.22,p.y+4+v.z1*.24);});poly(ctx,ps,T.bShadow);});
- m.landscape.trees.forEach(function(t){ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,TAU);ctx.fillStyle=T.tree;ctx.fill();});
+ m.landscape.surfaces.forEach(function(s){ringsPath(ctx,s.rings);ctx.fillStyle=s.kind==='garden'?(P.theme===0?'#adbb91':'#29483e'):(P.theme===0?'#c6b999':'#34454d');ctx.globalAlpha=s.kind==='garden'?.42:.28;ctx.fill('evenodd');});ctx.globalAlpha=1;
+ // soft shadows: 3 expanding offsets, fading alpha — a cheap blur
+ m.volumes.forEach(function(v){
+  for(var s=3;s>=1;s--){
+   var dx=(3+v.z1*.22)*s/2.2,dy=(4+v.z1*.24)*s/2.2;
+   ctx.globalAlpha=s===3?.10:s===2?.07:.05;
+   poly(ctx,v.plan.map(function(p){return point(p.x+dx,p.y+dy);}),T.bShadow);
+  }
+ });
+ ctx.globalAlpha=1;
+ // trees: soft shadow ellipse + clustered canopy with a highlight puff
+ m.landscape.trees.forEach(function(t){
+  ctx.globalAlpha=.14;ctx.fillStyle=T.bShadow;
+  ctx.beginPath();ctx.ellipse(t.x+t.r*.5,t.y+t.r*.7,t.r*1.15,t.r*.8,0,0,TAU);ctx.fill();
+  ctx.globalAlpha=1;
+  ctx.fillStyle=shadeHex(T.tree,-.14);ctx.beginPath();ctx.arc(t.x-t.r*.25,t.y-t.r*.15,t.r*.8,0,TAU);ctx.fill();
+  ctx.fillStyle=T.tree;ctx.beginPath();ctx.arc(t.x+t.r*.2,t.y+t.r*.2,t.r*.85,0,TAU);ctx.fill();
+  ctx.fillStyle=shadeHex(T.tree,.22);ctx.beginPath();ctx.arc(t.x,t.y-t.r*.3,t.r*.5,0,TAU);ctx.fill();
+ });
  m.volumes.forEach(function(v){
   var bottom=v.projectedBase,roof=v.projectedRoof,body=b.kind==='industrial'?T.ind:T.bCols[b.shade%T.bCols.length];
-  // Full closed shell, clipped to its own allowed parcel. Thin dark outlines
-  // read at map scale without the old exaggerated floating roof displacement.
-  for(var i=0;i<4;i++){var j=(i+1)%4;poly(ctx,[bottom[i],bottom[j],roof[j],roof[i]],body,T.bShadow,.45);}
-  poly(ctx,roof,T.bTop,T.bShadow,.65);
-  if(v.role==='upper'){ctx.save();ctx.globalAlpha=.10;poly(ctx,roof,'#ffffff');ctx.restore();}
+  var cx=(roof[0].x+roof[1].x+roof[2].x+roof[3].x)/4,cy=(roof[0].y+roof[1].y+roof[2].y+roof[3].y)/4;
+  // walls shaded by which way they face the upper-left light
+  for(var i=0;i<4;i++){var j=(i+1)%4;
+   var fx=(roof[i].x+roof[j].x)/2-cx,fy=(roof[i].y+roof[j].y)/2-cy,fl=Math.hypot(fx,fy)||1;
+   poly(ctx,[bottom[i],bottom[j],roof[j],roof[i]],shadeHex(body,(fx/fl*-.55+fy/fl*-.83)*.30));
+  }
+  // roof: bright cap, crisp dark outline, parapet inner line
+  poly(ctx,roof,T.bTop,ink,.85);
+  ctx.globalAlpha=.55;
+  poly(ctx,roof.map(function(p){return point(lerp(p.x,cx,.10),lerp(p.y,cy,.10));}),null,shadeHex(T.bTop,-.20),.6);
+  ctx.globalAlpha=1;
+  if(v.role==='upper'){ctx.save();ctx.globalAlpha=.12;poly(ctx,roof,'#ffffff');ctx.restore();}
   if(v.rect.w>12&&v.rect.h>10){var c=point((roof[0].x+roof[2].x)*.5,(roof[0].y+roof[2].y)*.5);ctx.beginPath();ctx.moveTo(lerp(roof[0].x,c.x,.3),lerp(roof[0].y,c.y,.3));ctx.lineTo(lerp(roof[1].x,c.x,.3),lerp(roof[1].y,c.y,.3));ctx.strokeStyle=P.theme===0?'#c7ba99':'#64828c';ctx.lineWidth=.45;ctx.stroke();}
  });
  var path=m.landscape.internalPath.points;if(path.length>1){ctx.beginPath();path.forEach(function(p,i){if(!i)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);});ctx.strokeStyle=P.theme===0?'#e5d8b9':'#68796e';ctx.lineWidth=1.25;ctx.stroke();}
