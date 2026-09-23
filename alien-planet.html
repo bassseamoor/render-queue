@@ -1199,6 +1199,30 @@ setTimeout(boot,60);
     }
   }
   var rcanvas = window.__renderCanvas || document.querySelector('canvas');
+
+  /* ---- iOS-safe frame source ----
+     Never hand the encoder a VideoFrame taken straight from the studio's
+     WebGL canvas: on iOS Safari the hardware H.264 encoder silently drops
+     those frames (no error, zero output chunks — the classic 581-byte empty
+     MP4). Copying through a plain 2D canvas first works everywhere. */
+  var frame2d = null, fctx = null;
+  function ensureFrame2d() {
+    if (frame2d && frame2d.width === W && frame2d.height === H && fctx) return true;
+    try {
+      frame2d = document.createElement('canvas');
+      frame2d.width = W; frame2d.height = H;
+      fctx = frame2d.getContext('2d');
+      return !!fctx;
+    } catch (e) { frame2d = null; fctx = null; return false; }
+  }
+
+  /* Shared "empty video" message: 60+ frames drained through the encoder,
+     zero chunks came out. Used both mid-render (fail fast) and at finish. */
+  function failEmpty() {
+    fail('The video came out empty \u2014 ' + framesAttempted + ' frames went in, but this device\u2019s encoder recorded 0 of them' +
+      (encodeErrors ? ' (' + encodeErrors + ' were rejected).' : '.') +
+      ' Please try again; if it keeps happening, use a lower resolution.');
+  }
   var _avcDc = null;
   function withAvcDecoderConfig(chunk, meta) {
     meta = meta || {};
@@ -1307,6 +1331,7 @@ setTimeout(boot,60);
         bitrate: Math.min(40000000, Math.round(12000000 * (W * H) / (1280 * 720))),
         framerate: fps
       });
+      ensureFrame2d();
       RM.onFrame = encodeFrame;
       return true;
     } catch (e) {
@@ -1318,14 +1343,25 @@ setTimeout(boot,60);
   function encodeFrame(idx) {
     if (!encoder || RM.phase !== 'record' || !rcanvas) return;
     if (encoder.encodeQueueSize > 90) { RM._bp = true; return; }
+    var src = rcanvas;
+    if (fctx && frame2d) {
+      try { fctx.drawImage(rcanvas, 0, 0, W, H); src = frame2d; }
+      catch (e) { noteEncodeError(); return; }
+    }
     var vf = null;
-    try { vf = new VideoFrame(rcanvas, { timestamp: Math.round(idx * 1e6 / fps) }); }
+    try { vf = new VideoFrame(src, { timestamp: Math.round(idx * 1e6 / fps), alpha: 'discard' }); }
     catch (e) { noteEncodeError(); return; }
     framesAttempted++;
     try { encoder.encode(vf, { keyFrame: idx % (fps * 5) === 0 }); }
     catch (e) { noteEncodeError(); }
     try { vf.close(); } catch (e) {}
     encodedFrames = idx + 1;
+    /* Fail fast on a silently stalled encoder: 60 frames fully drained,
+       nothing recorded. Saves the user sitting through a doomed render. */
+    if (framesAttempted >= 60 && muxedChunks === 0 && encoder.encodeQueueSize === 0) {
+      failEmpty();
+      return;
+    }
     if ((idx & 15) === 0) updateProgress();
   }
 
@@ -1338,7 +1374,7 @@ setTimeout(boot,60);
     var remain = rate > 0.01 ? (totalFrames - encodedFrames) / rate : 0;
     setStatus('Frame ' + encodedFrames.toLocaleString() + ' / ' + totalFrames.toLocaleString() + ' (' + pct.toFixed(0) + '%)');
     var eta = document.getElementById('rmEta');
-    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall';
+    if (eta) eta.textContent = '\u2248 ' + fmtTime(remain) + ' left \u00B7 ' + rate.toFixed(1) + ' fps wall \u00B7 ' + muxedChunks + ' chunks \u00B7 q' + encoder.encodeQueueSize;
   }
 
   async function finishRender() {
@@ -1351,7 +1387,7 @@ setTimeout(boot,60);
     } catch (e) { fail('Couldn\u2019t finish the video: ' + e.message); return; }
     var buf = muxer.target.buffer;
     if (!buf || !buf.byteLength) { fail('The video came out empty.'); return; }
-    if (muxedChunks === 0) { fail('The video came out empty \u2014 ' + framesAttempted + ' frames went in, but this device\u2019s encoder recorded 0 of them' + (encodeErrors ? ' (' + encodeErrors + ' were rejected).' : '.') + ' Please try again; if it keeps happening, use a lower resolution.'); return; }
+    if (muxedChunks === 0) { failEmpty(); return; }
     try { window.__renderResult = buf; } catch (e) {} /* lets automated tests grab the MP4 */
     var blob = new Blob([buf], { type: 'video/mp4' });
     var cleanSeed = seed.replace(/[^A-Za-z0-9]+/g, '').slice(0, 14) || 'seed';
@@ -1417,8 +1453,13 @@ setTimeout(boot,60);
     overlay.innerHTML =
       '<div style="font-size:20px;font-weight:800;margin-bottom:8px">Cancelled</div>' +
       '<div style="font-size:13px;color:#8b95ab;margin-bottom:18px">No video was saved.</div>' +
-      '<button onclick="location.href=\u2018https://bassseamoor.github.io/render-queue/\u2019" ' +
+      '<button id="rmBack" ' +
       'style="font-size:16px;font-weight:700;border:0;border-radius:12px;padding:14px 24px;background:#1a2236;color:#fff">Back to queue</button>';
+    /* Was: inline onclick with curly quotes around the URL — a JS syntax
+       error, so tapping the button silently did nothing. */
+    document.getElementById('rmBack').onclick = function () {
+      location.href = 'https://bassseamoor.github.io/render-queue/';
+    };
   };
 
   /* ---- force render-size drawing buffer, keep screen awake ----
