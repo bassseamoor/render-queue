@@ -1,13 +1,15 @@
-/* Road Atlas Streets 2.6.0 — hierarchy-first, district-serving street fabric.
+/* Road Atlas Streets 2.7.0 — hierarchy-first, district-serving street fabric.
  * Uses the pinned V1 district-grid builder, terrain, parcels and site grammar.
  * All land reservations consume the finalized graph and junction envelopes.
+ * Paint pass redrawn for the smooth luminous look: true curve smoothing in
+ * every stroke, soft halo underlays, slim soft casings, no dashes.
  * This is illustrative procedural cartography, not a certified road design.
  */
 (function(){
 'use strict';
-var VERSION='2.6.0',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
+var VERSION='2.7.0',query=new URLSearchParams(location.search),settings={enabled:query.get('streets')!=='previous',radius:Math.max(4,Math.min(14,Number(query.get('corners'))||8))},last=null;
 var indexCache=new WeakMap();
-var widths=[7,11,16],H=RoadAtlasPipeline.debug;
+var widths=[6,10,15],H=RoadAtlasPipeline.debug;
 function cp(p){return{x:p.x,y:p.y};}
 function d(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
 function len(a){var n=0;for(var i=1;i<a.length;i++)n+=d(a[i-1],a[i]);return n;}
@@ -308,19 +310,36 @@ function validateKit(N,roads,K){
  return true;
 }
 function cssScale(ctx){if(!ctx.canvas.classList.contains('ra-map-detail'))return 1;var r=document.getElementById('stage').getBoundingClientRect(),m=ctx.getTransform();return Math.max(.001,Math.hypot(m.a,m.b)/(ctx.canvas.width/Math.max(1,r.width)));}
-function drawRoads(ctx,W){var K=W.streetKit,T=THEMES[clamp(Math.round(P.theme),0,2)],night=P.theme===1,blue=P.theme===2,asphalt=night?'#334652':blue?'#326884':'#b8b8a8',curb=night?'#6b817f':blue?'#8eafc3':'#eee4cd',mark=night?'#e0e0d1':blue?'#ebf5f6':'#ffffee',major=night?'#556e6e':blue?'#50859b':'#a5a990';
+/* Buttery curve smoothing: draws a dense polyline as one flowing stroke using
+ * midpoint quadratics, so roads read as continuous brushstrokes, not segments. */
+function strokeSmooth(ctx,pts){
+ if(!pts||pts.length<2)return;
+ if(pts.length<3){strokePts(ctx,pts);return;}
+ ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
+ for(var i=1;i<pts.length-1;i++)ctx.quadraticCurveTo(pts[i].x,pts[i].y,(pts[i].x+pts[i+1].x)/2,(pts[i].y+pts[i+1].y)/2);
+ var l=pts[pts.length-1];ctx.lineTo(l.x,l.y);ctx.stroke();
+}
+function drawRoads(ctx,W){var K=W.streetKit,T=THEMES[clamp(Math.round(P.theme),0,2)],night=P.theme===1,blue=P.theme===2,asphalt=night?'#5a7a8c':blue?'#5d97b5':'#cfc9bd',curb=night?'#2c3f4d':blue?'#2a4f66':'#a89f8d',major=night?'#8fb8c9':blue?'#a8d4e8':'#e8e2d2',halo=night?'#7fb2c9':blue?'#9fd0e8':'#fffbe8';
  ctx.save();ctx.lineJoin='round';ctx.lineCap='round';ctx.shadowBlur=0;
- // Every curb first, then every surface: no dark casing crosses a junction.
- W.roads.forEach(function(r){ctx.strokeStyle=curb;ctx.lineWidth=r.width+3;strokePts(ctx,r.pts);});
- K.junctions.forEach(function(j){if(j.polygon.length){rings(ctx,j.polygon);ctx.fillStyle=asphalt;ctx.fill();ctx.strokeStyle=curb;ctx.lineWidth=3;ctx.stroke();}});
- W.roads.forEach(function(r){ctx.strokeStyle=r.cls===2?major:asphalt;ctx.lineWidth=r.width;strokePts(ctx,r.pts);});
+ // 1. Luminous halo under everything: the soft glow that makes roads float.
+ ctx.globalAlpha=.16;ctx.strokeStyle=halo;
+ W.roads.forEach(function(r){ctx.lineWidth=r.width+8;strokeSmooth(ctx,r.pts);});
+ // 2. Slim soft casing: a whisper of edge, not a chunky outline.
+ ctx.globalAlpha=.5;ctx.strokeStyle=curb;
+ W.roads.forEach(function(r){ctx.lineWidth=r.width+2;strokeSmooth(ctx,r.pts);});
+ ctx.globalAlpha=1;
+ // 3. Junction bases, then every surface: no casing crosses a junction.
+ K.junctions.forEach(function(j){if(j.polygon.length){rings(ctx,j.polygon);ctx.fillStyle=asphalt;ctx.fill();}});
+ W.roads.forEach(function(r){ctx.strokeStyle=r.cls===2?major:asphalt;ctx.lineWidth=r.width;strokeSmooth(ctx,r.pts);});
  K.junctions.forEach(function(j){if(j.polygon.length){rings(ctx,j.polygon);ctx.fillStyle=j.cls===2?major:asphalt;ctx.fill();}});
+ // 4. Arterial light core: the bright centerline that reads as a glowing highway.
+ ctx.globalAlpha=.35;ctx.strokeStyle='#ffffff';
+ W.roads.forEach(function(r){if(r.cls!==2)return;ctx.lineWidth=Math.max(1.5,r.width*.28);strokeSmooth(ctx,r.pts);});
+ ctx.globalAlpha=1;
  W.roads.forEach(function(r){
-  if(r.bridges&&r.bridges.length)r.bridges.forEach(function(run){if(run.length<2)return;ctx.lineWidth=.9;ctx.strokeStyle=night?'#aecac4':'#667b79';strokePts(ctx,offsetPts(run,r.width/2+1));strokePts(ctx,offsetPts(run,-r.width/2-1));});
-  if(r.cls===0)return;
-  var path=slice(r.pts,10,Math.max(10,len(r.pts)-10));if(path.length<2)return;ctx.lineWidth=.7;ctx.strokeStyle=mark;ctx.setLineDash([5,6]);strokePts(ctx,path);ctx.setLineDash([]);
+  if(r.bridges&&r.bridges.length)r.bridges.forEach(function(run){if(run.length<2)return;ctx.lineWidth=.9;ctx.strokeStyle=night?'#aecac4':'#667b79';strokeSmooth(ctx,offsetPts(run,r.width/2+1));strokeSmooth(ctx,offsetPts(run,-r.width/2-1));});
  });
- ctx.fillStyle=mark;K.crosswalks.forEach(function(c){c.bars.forEach(function(bar){rings(ctx,bar);ctx.fill();});});
+ ctx.fillStyle='#e8e4da';K.crosswalks.forEach(function(c){c.bars.forEach(function(bar){rings(ctx,bar);ctx.fill();});});
  ctx.restore();drawLabels(ctx,W);
 }
 function drawLabels(ctx,W){if(!P.labelsOn||!W.names)return;var T=THEMES[clamp(Math.round(P.theme),0,2)],scale=1;
@@ -342,7 +361,7 @@ function metrics(W){var N=W.network,F=W.F,index=H.makeIndex(N.roads),eligible=0,
 }
 function refresh(){var e=document.getElementById('streetsStatus');if(!e)return;if(!world||!world.streetKit){e.textContent='Previous ordered streets; original comparison retained.';return;}var m=world.streetKit.metrics;e.textContent=m.coveredSamples+'/'+m.coverageSamples+' eligible map samples near a road · '+m.components+' component(s) · '+m.crosswalkGroups+' crossing groups · '+Math.round(m.serviceableLocalTerminalShare*100)+'% of local dead ends near a service district · '+m.unservedLocalTerminalsRemoved+' unserved ends removed.';}
 window.RoadAtlasStreets={version:VERSION,isEnabled:function(){return settings.enabled;},prepare:prepare,build:build,geometry:geometry,draw:drawRoads,cssScale:cssScale,metrics:metrics,refresh:refresh,queryParameters:function(u){u.searchParams.set('streets',settings.enabled?'connected':'previous');u.searchParams.set('corners',settings.radius);return u;},exportData:function(W){return W.streetKit||null;},getSettings:function(){return Object.assign({},settings);},setRadius:function(v){if(!Number.isFinite(+v))return;settings.radius=clamp(+v,4,14);regenerate();},setEnabled:function(v){settings.enabled=!!v;regenerate();},debug:{junction:junction,geometry:geometry,at:at,slice:slice,dry:dry,polyArea:polyArea,validateKit:validateKit}};
-var panel=document.getElementById('analysisPanel'),section=document.createElement('details');section.className='cond-detail';section.innerHTML='<summary>Street assembly · 2.6.0</summary><label>Network build<select id="streetAssembly"><option value="connected">Connected, map-wide fabric</option><option value="previous">Previous ordered streets</option></select></label><label>Corner rounding <output id="streetRadiusValue"></output><input id="streetRadius" type="range" min="4" max="14" step="1"></label><p class="cond-note">Road hierarchy favors continuous corridors, coherent neighborhood axes, T-junctions and residential access. Short local dead ends are retained when they serve a nearby non-park district; unsupported local ends are removed. Junction geometry remains parametric, not fixed tiles.</p><p class="cond-note" id="streetsStatus"></p>';panel.appendChild(section);var sel=document.getElementById('streetAssembly');sel.value=settings.enabled?'connected':'previous';sel.onchange=function(){settings.enabled=sel.value==='connected';regenerate();};var radius=document.getElementById('streetRadius'),value=document.getElementById('streetRadiusValue');radius.value=settings.radius;value.value=settings.radius;radius.oninput=function(){value.value=radius.value;};radius.onchange=function(){RoadAtlasStreets.setRadius(radius.value);};
+var panel=document.getElementById('analysisPanel'),section=document.createElement('details');section.className='cond-detail';section.innerHTML='<summary>Street assembly · 2.7.0</summary><label>Network build<select id="streetAssembly"><option value="connected">Connected, map-wide fabric</option><option value="previous">Previous ordered streets</option></select></label><label>Corner rounding <output id="streetRadiusValue"></output><input id="streetRadius" type="range" min="4" max="14" step="1"></label><p class="cond-note">Road hierarchy favors continuous corridors, coherent neighborhood axes, T-junctions and residential access. Short local dead ends are retained when they serve a nearby non-park district; unsupported local ends are removed. Junction geometry remains parametric, not fixed tiles.</p><p class="cond-note" id="streetsStatus"></p>';panel.appendChild(section);var sel=document.getElementById('streetAssembly');sel.value=settings.enabled?'connected':'previous';sel.onchange=function(){settings.enabled=sel.value==='connected';regenerate();};var radius=document.getElementById('streetRadius'),value=document.getElementById('streetRadiusValue');radius.value=settings.radius;value.value=settings.radius;radius.oninput=function(){value.value=radius.value;};radius.onchange=function(){RoadAtlasStreets.setRadius(radius.value);};
 // A first control tap after panning can be consumed as hover by touch browsers.
 // One deliberate pointer-up activates once; compatibility click is deduplicated.
 var controls=document.querySelector('.ra-camera-controls');
