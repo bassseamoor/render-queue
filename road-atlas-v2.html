@@ -54,6 +54,14 @@
     background:rgba(10,14,20,.72);color:#cfd8e3;border:1px solid rgba(255,255,255,.12);
     border-radius:999px;padding:8px 16px;font-size:12px;white-space:nowrap;}
   #hint3d.on{display:block;}
+  /* Floating 3D button: always visible on every screen size, outside the
+     topbar the studio shell hides on mobile. Hidden in Clean View. */
+  #fab3d{position:fixed;right:16px;bottom:88px;z-index:1200;display:flex;align-items:center;gap:8px;
+    padding:13px 18px;border-radius:999px;border:1px solid rgba(255,255,255,.18);
+    background:rgba(14,20,28,.85);color:#f2ead8;font-size:15px;font-weight:700;cursor:pointer;
+    box-shadow:0 10px 30px rgba(0,0,0,.45);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
+  #fab3d:active{transform:scale(.96);}
+  .su-clean #fab3d{display:none;}
   @media(max-width:720px){#topbar .sub,#topbar .meta{display:none}.tbtn{padding:8px 10px;font-size:12px}#topbar{gap:6px;padding:0 8px;flex-wrap:wrap;height:auto;min-height:92px}#topbar .brand{width:100%}#topbar .spacer{display:none}#stage{inset:96px 0 0}#stage3d{inset:96px 0 0}#layersPanel,#analysisPanel{top:104px}#scene{width:calc(100vw - 8px)}}
 </style>
 <script type="importmap">{"imports":{"three":"./three.module.js?v=1.0.0"}}</script>
@@ -72,7 +80,6 @@
   <button class="tbtn" id="analysisBtn" title="Network analysis">◫ Analysis</button>
   <button class="tbtn" id="dataBtn" title="Export reusable city data">⇩ Data</button>
   <button class="tbtn" id="shareBtn" title="Copy a link to this exact map">🔗 Share</button>
-  <button class="tbtn" id="btn3d" title="Explore this city in 3D">🧊 3D</button>
 </header>
 <div id="layersPanel">
   <div class="ltitle">Data layers</div>
@@ -102,6 +109,7 @@
 <div id="stage3d"></div>
 <div id="veil3d">🧊 Building your city in 3D…</div>
 <div id="hint3d">Drag to orbit · pinch to zoom · two fingers to pan · double-tap to reset</div>
+<button id="fab3d" title="Explore this city in 3D">🧊 3D</button>
 <div id="err"></div>
 <script>
 /* Immutable first-party baseline, not a rewritten engine. Load its existing
@@ -110,14 +118,14 @@
 (async function bootRoadAtlas(){
   function run(text){const s=document.createElement('script');s.textContent=text;document.body.appendChild(s);}
   try {
-    const paths=['./vendor/road-atlas-baseline-329a68a.html','./road-atlas-pipeline.js?v=2.4.0','./road-atlas-conditions.js?v=2.3.0','./road-atlas-urban.js?v=2.6.0','./road-atlas-navigation.js?v=1.0.0','./road-atlas-streets.js?v=2.7.0','./road-atlas-street-hooks.js?v=2.4.1','./road-atlas-cartography.js?v=1.0.2'];
+    const paths=['./vendor/road-atlas-baseline-329a68a.html','./road-atlas-pipeline.js?v=2.4.0','./road-atlas-conditions.js?v=2.3.2','./road-atlas-urban.js?v=2.6.2','./road-atlas-navigation.js?v=1.0.0','./road-atlas-streets.js?v=2.7.1','./road-atlas-street-hooks.js?v=2.4.3','./road-atlas-cartography.js?v=1.0.4','./road-atlas-themes.js?v=1.0.0'];
     const texts=await Promise.all(paths.map(async path=>{const r=await fetch(path);if(!r.ok)throw new Error(path+' ('+r.status+')');return r.text();}));
-    run(texts[6]);[texts[1],texts[2]]=RoadAtlasStreetHooks.transform(texts[1],texts[2]);run(texts[7]);texts[2]=RoadAtlasCarto.transformConditions(texts[2]);
+    run(texts[6]);[texts[1],texts[2]]=RoadAtlasStreetHooks.transform(texts[1],texts[2]);run(texts[7]);texts[2]=RoadAtlasCarto.transformConditions(texts[2]);run(texts[8]);
     const parsed=new DOMParser().parseFromString(texts[0],'text/html');
     const scripts=Array.from(parsed.querySelectorAll('script'));
     if(scripts.length!==5||!scripts[0].textContent.includes('function buildFields(')||!scripts[2].textContent.includes('SeedConsole.init('))throw new Error('Unexpected baseline. Original V1 is unchanged.');
-    run(scripts[0].textContent);run(texts[1]);run(texts[2]);run(texts[3]);run(texts[4]);run(texts[5]);
-    if(!window.RoadAtlasPipeline||!window.RoadAtlasConditions||!window.RoadAtlasUrban||!window.RoadAtlasNavigation||!window.RoadAtlasStreets||!window.RoadAtlasCarto)throw new Error('Ordered pipeline did not initialize');
+    run(RoadAtlasThemes.transform(scripts[0].textContent));RoadAtlasThemes.install();run(texts[1]);run(texts[2]);run(texts[3]);run(texts[4]);run(texts[5]);
+    if(!window.RoadAtlasPipeline||!window.RoadAtlasConditions||!window.RoadAtlasUrban||!window.RoadAtlasNavigation||!window.RoadAtlasStreets||!window.RoadAtlasCarto||!window.RoadAtlasThemes)throw new Error('Ordered pipeline did not initialize');
     for(let i=1;i<scripts.length;i++)run(scripts[i].textContent);
     window.dispatchEvent(new Event("studio:ready"));
   }catch(error){
@@ -129,7 +137,7 @@
 <script type="module">
 /* Road Atlas 3D toggle — lazy-loads the 3D twin on demand. */
 (function(){
-  const btn=document.getElementById('btn3d'), stage=document.getElementById('stage3d'),
+  const btn=document.getElementById('fab3d'), stage=document.getElementById('stage3d'),
         veil=document.getElementById('veil3d'), hint=document.getElementById('hint3d'),
         scene2d=document.getElementById('stage'), err=document.getElementById('err');
   let api=null, active=false, hintTimer=0;
@@ -137,7 +145,7 @@
   async function enter(){
     veil.classList.add('on');
     try{
-      const mod=await import('./road-atlas-3d.js?v=1.0.0');
+      const mod=await import('./road-atlas-3d.js?v=1.0.1');
       stage.classList.add('on'); // visible BEFORE enter3D measures it
       const sess=await mod.enter3D(stage);
       window.__ra3dsess=sess;
