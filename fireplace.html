@@ -1725,13 +1725,16 @@ layout(location=0) in vec2 aQuad;
 layout(location=1) in vec3 aBase;
 layout(location=2) in vec4 aP0; /* leanX, leanZ, height, width */
 layout(location=3) in vec4 aP1; /* rotY, toneR, toneG, toneB */
+layout(location=4) in vec4 aP2; /* curlDirX, curlDirZ, curlAmp, curlPhase (shag only; nubs read defaults) */
 uniform mat4 uView; uniform mat4 uProj;
 out vec2 vQ; out vec3 vWP; out vec3 vTone;
 void main(){
   vQ=aQuad; vTone=aP1.yzw;
   float cr=cos(aP1.x), sr=sin(aP1.x);
   float t=aQuad.y+0.5;
-  vec3 center=aBase+vec3(aP0.x,aP0.z,aP0.y)*t;
+  float bend=t*t; /* curl grows along the strand so the root stays planted */
+  vec2 curl=vec2(aP2.x,aP2.y)*(aP2.z*bend+0.30*aP2.z*sin(aP2.w+t*4.0)*t);
+  vec3 center=aBase+vec3(aP0.x,aP0.z,aP0.y)*t+vec3(curl.x,-aP2.z*bend*0.35,curl.y);
   vec3 off=vec3(cr*aQuad.x*aP0.w, 0.0, -sr*aQuad.x*aP0.w)*(1.0-t*0.55);
   vec3 pos=center+off;
   vWP=pos;
@@ -2432,10 +2435,11 @@ function detFreeVAO(vao, bufs){
   if(vao) gl.deleteVertexArray(vao);
   for(const b of bufs) gl.deleteBuffer(b);
 }
-function detBuild(n, fill){
+function detBuild(n, fill, withP2){
   const quad=new Float32Array([-0.5,-0.5, 0.5,-0.5, -0.5,0.5, -0.5,0.5, 0.5,-0.5, 0.5,0.5]);
   const base=new Float32Array(n*3), p0=new Float32Array(n*4), p1=new Float32Array(n*4);
-  for(let i=0;i<n;i++) fill(i, base, p0, p1);
+  const p2=withP2?new Float32Array(n*4):null;
+  for(let i=0;i<n;i++) fill(i, base, p0, p1, p2);
   const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
   const bufs=[];
   function attr(loc, arr, size, divisor){
@@ -2445,6 +2449,7 @@ function detBuild(n, fill){
     gl.vertexAttribDivisor(loc,divisor);
   }
   attr(0,quad,2,0); attr(1,base,3,1); attr(2,p0,4,1); attr(3,p1,4,1);
+  if(p2) attr(4,p2,4,1);
   gl.bindVertexArray(null);
   return {vao,bufs};
 }
@@ -2452,20 +2457,38 @@ function buildShagNubs(st){
   detFreeVAO(shagVAO,shagBufs); detFreeVAO(nubVAO,nubBufs);
   shagVAO=null; nubVAO=null; shagBufs=[]; nubBufs=[];
   const rng=mulberry32((st.seed^0x51ab)>>>0);
-  /* shag rug strands: count by rug variant (index 2 = shag); dense, short, near-upright */
-  const counts=[2300,2600,5200,2000];
-  const n=counts[st.rug|0]||2300;
-  const r=detBuild(n,(i,base,p0,p1)=>{
-    const x=-0.3+(rng()-0.5)*4.3, z=1.1+(rng()-0.5)*3.0;
+  /* shag rug strands: dense curly tufts on a jittered clump grid, soft fringe edge */
+  const counts=[4500,5000,9000,4000];
+  const n=counts[st.rug|0]||4500;
+  const cw=0.30, cl=[];
+  for(let gx=-2.45; gx<1.85; gx+=cw) for(let gz=-0.4; gz<2.6; gz+=cw)
+    cl.push([gx+cw*0.5+(rng()-0.5)*cw*0.7, gz+cw*0.5+(rng()-0.5)*cw*0.7, 0.72+rng()*0.60]);
+  const r=detBuild(n,(i,base,p0,p1,p2)=>{
+    let x=-0.3+(rng()-0.5)*4.3, z=1.1+(rng()-0.5)*3.0, ch=1.0;
+    if(rng()<0.72){ /* most strands snap toward a clump center -> chunky tufts */
+      const c=cl[(rng()*cl.length)|0], pull=0.45+rng()*0.30;
+      x+=(c[0]-x)*pull; z+=(c[1]-z)*pull; ch=c[2];
+    }
+    const dxe=Math.min(x+2.45,1.85-x), dze=Math.min(z+0.4,2.6-z), de=Math.min(dxe,dze);
+    const fr=de<0.38 ? 1-de/0.38 : 0; /* fringe band at the rug border */
     base[i*3]=x; base[i*3+1]=0.065; base[i*3+2]=z;
-    const la=rng()*Math.PI*2;
-    const lean=0.002+rng()*0.008; /* near-upright: lean stays well below strand height */
+    let la=rng()*Math.PI*2, lean=0.002+rng()*0.010; /* near-upright, random tilt */
+    let hgt=(0.024+rng()*0.030)*ch;
+    if(fr>0){ /* fringe: longer strands leaning outward, soft wavy silhouette */
+      const ox=dxe<dze?(x<-0.3?-1:1):0, oz=dxe<dze?0:(z<1.1?-1:1);
+      la=Math.atan2(oz,ox)+(rng()-0.5)*0.9;
+      lean+=fr*(0.020+rng()*0.022);
+      hgt*=1.0+fr*0.7;
+    }
     p0[i*4]=Math.cos(la)*lean; p0[i*4+1]=Math.sin(la)*lean;
-    p0[i*4+2]=0.012+rng()*0.018; p0[i*4+3]=0.004+rng()*0.005;
+    p0[i*4+2]=hgt; p0[i*4+3]=0.0035+rng()*0.0035;
+    const ca=rng()*Math.PI*2; /* per-strand curl: random direction + amplitude */
+    p2[i*4]=Math.cos(ca); p2[i*4+1]=Math.sin(ca);
+    p2[i*4+2]=(0.25+rng()*0.85)*hgt*(1+fr*0.3); p2[i*4+3]=rng()*Math.PI*2;
     const tv=0.72+rng()*0.56, tw=0.90+rng()*0.20;
     p1[i*4]=rng()*Math.PI*2;
     p1[i*4+1]=0.55*tv*tw; p1[i*4+2]=0.50*tv*tw; p1[i*4+3]=0.44*tv;
-  });
+  },true);
   shagVAO=r.vao; shagBufs=r.bufs; shagCount=n; S.shagN=n;
   /* couch micro-tufts: mattress + two fabric seats, 8-14mm tall */
   const spots=[
