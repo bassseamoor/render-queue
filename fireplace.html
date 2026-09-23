@@ -72,14 +72,23 @@ function mulberry32(seed){
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+/* Seed format v2: "#2" + 8 hex digits unlocks the full variety set
+   (room families, moods, arches, new decor sets, camera angles).
+   Plain "#XXXXXXXX" seeds stay v1: same room, fire, stone and decor as before. */
 function parseSeed(s){
   s = String(s == null ? "" : s).trim();
   if (s.charAt(0) === "#") s = s.slice(1);
-  if (/^[0-9a-fA-F]{1,8}$/.test(s)) return parseInt(s, 16) >>> 0;
-  if (/^\d{1,10}$/.test(s)) return parseInt(s, 10) >>> 0;
-  let h = 0x811c9dc5;
-  for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
-  return h >>> 0;
+  let ver = 1;
+  if (/^2[0-9a-fA-F]{8}$/.test(s)){ ver = 2; s = s.slice(1); }
+  let n;
+  if (/^[0-9a-fA-F]{1,8}$/.test(s)) n = parseInt(s, 16) >>> 0;
+  else if (/^\d{1,10}$/.test(s)) n = parseInt(s, 10) >>> 0;
+  else { let h = 0x811c9dc5; for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } n = h >>> 0; }
+  return { n: n >>> 0, ver };
+}
+function seedText(){
+  const h = (settings.seed>>>0).toString(16).toUpperCase().padStart(8,"0");
+  return settings.ver === 2 ? "#2"+h : "#"+h;
 }
 function cryptoUint32(){
   try { const a = new Uint32Array(1); (window.crypto||window.msCrypto).getRandomValues(a); return a[0]>>>0; }
@@ -88,19 +97,34 @@ function cryptoUint32(){
 
 /* ---------------- settings ---------------- */
 const FIRE_LV = ["low","medium","high"];
-const STONES  = ["limestone","slate","riverrock","plaster"];
-const DECORS  = ["cozy","minimal","candles","wreath"];
+const STONES  = ["limestone","slate","riverrock","plaster","concrete"];
+const DECORS  = ["cozy","minimal","candles","wreath","garland","books"];
 const WALLS   = ["forest","cocoa","midnight","plum"];
-const CAMS    = ["locked","drift","orbit"];
+const MOTIONS = ["Still","Drift","Orbit"];   // camera motion overlay
+const ANGLES  = [
+  {n:"Fireside",     eye:[0.90,0.85,1.60], tgt:[0, 0.75,-0.20], fov:42},
+  {n:"Wide room",    eye:[0.15,1.45,4.75], tgt:[0, 0.98,-0.10], fov:38},
+  {n:"Ember macro",  eye:[0.05,0.55,0.75], tgt:[0, 0.50,-0.25], fov:40},
+  {n:"Mantel",       eye:[-0.50,2.00,2.60],tgt:[0, 1.90,-0.40], fov:40},
+  {n:"Window side",  eye:[2.20,1.60,1.80], tgt:[-1.20,1.40,-0.20],fov:42},
+  {n:"Slow push-in", eye:[0.15,1.45,4.75], tgt:[0, 0.98,-0.10], fov:38, dolly:[0.10,1.05,2.40]},
+];
+const FAMILIES = ["Classic","Cabin","Modern","Coastal"];
+const MOODS    = ["Deep night","Blue dusk","Warm lamplight"];
+const ARCHES   = ["Square","Arched"];
 const HUES    = ["warm","golden","blue-tip"];
 const settings = {
-  seed: 0,
+  seed: 0, ver: 1,
   fire: 1,        // 0 low, 1 medium, 2 high
   logs: 5,        // 4..7
   stone: 0,       // STONES idx
   decor: 0,       // DECORS idx
   wall: 0,        // WALLS idx
-  camera: 1,      // CAMS idx
+  camera: 1,      // motion overlay idx (0 still, 1 drift, 2 orbit)
+  angle: 1,       // ANGLES idx
+  family: 0,      // FAMILIES idx
+  mood: 0,        // MOODS idx
+  arch: 0,        // ARCHES idx
   sparks: 60,     // 0..100 ember rate
   hue: 0,         // HUES idx
   glow: 0,        // -50..50 exposure trim
@@ -191,6 +215,8 @@ uniform vec3 uTintA; uniform vec3 uTintB; uniform vec3 uTintC;
 uniform vec3 uEmis; uniform float uRough;
 uniform vec3 uFirePos; uniform float uFlick; uniform vec3 uFireCol;
 uniform vec3 uFillDir; uniform vec3 uFillCol; uniform vec3 uCamPos;
+uniform sampler2D uTexStone; uniform sampler2D uTexWood; uniform sampler2D uTexBark;
+uniform vec3 uAmbTint; uniform float uMood;
 out vec4 oCol;
 
 float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
@@ -208,52 +234,23 @@ void main(){
   float m = uMat;
 
   if (m < 0.5) {
-    /* ---- stone: ashlar courses, seeded per-block tone, mortar joints ---- */
+    /* ---- stone: baked texture (ashlar + AO + bevel + grain, 2m tile) ---- */
     vec3 an = abs(N);
     vec2 sp = (an.y > 0.7) ? vWP.xz : (an.x > an.z ? vWP.zy : vWP.xy);
-    float sd = uSeed;
-    float rowH = 0.30;
-    float row = floor(sp.y / rowH + sd*0.13);
-    float off = fract(row*0.5)*1.0;
-    float colI = floor(sp.x / 0.62 + off + sd*0.29);
-    float br = hash12(vec2(row*1.7+sd, colI*2.3-sd));
-    vec2 cell = vec2(fract(sp.x/0.62+off+sd*0.29), fract(sp.y/rowH+sd*0.13));
-    float jx = 0.035, jy = 0.05;
-    float mortar = step(cell.x, jx) + step(1.0-jx, cell.x) + step(cell.y, jy) + step(1.0-jy, cell.y);
-    vec3 base = mix(uTintA, uTintB, br);
-    base = mix(base, uTintC, smoothstep(0.6, 1.0, fbm(sp*6.0+sd)));
-    float grain = fbm(sp*34.0 + sd*3.0);
-    base *= 0.86 + 0.28*grain;
-    /* soft bevel light catch near joints */
-    float bevel = smoothstep(0.0, 0.09, min(min(cell.x,1.0-cell.x), min(cell.y,1.0-cell.y)));
-    base *= 0.82 + 0.18*bevel;
-    alb = mix(base, vec3(0.16,0.14,0.12), clamp(mortar,0.0,1.0)*0.7);
+    alb = texture(uTexStone, sp*0.5).rgb;
     rough = 0.93;
   } else if (m < 1.5) {
-    /* ---- wood: planks with stretched grain ---- */
+    /* ---- wood: baked planks (grain + knots + AO seams, 2m tile) ---- */
     vec3 an = abs(N);
     vec2 sp = (an.y > 0.7) ? vWP.xz : (an.x > an.z ? vWP.zy : vWP.xy);
-    float sd = uSeed;
-    float plank = floor(sp.y / 0.24 + sd*0.31);
-    float pr = hash12(vec2(plank*3.1, sd));
-    float g = fbm(vec2(sp.x*2.2 + pr*9.0, sp.y*26.0));
-    float g2 = fbm(vec2(sp.x*7.0 - pr*5.0, sp.y*90.0));
-    vec3 base = mix(uTintA, uTintB, pr);
-    base *= 0.78 + 0.30*g + 0.12*g2;
-    float seam = smoothstep(0.0,0.02,fract(sp.y/0.24+sd*0.31)) * smoothstep(1.0,0.98,fract(sp.y/0.24+sd*0.31));
-    base *= mix(0.55, 1.0, seam);
-    float butt = step(0.985, hash12(vec2(floor(sp.x/1.4)+pr*7.0, plank))) * step(abs(fract(sp.x/1.4)-0.5), 0.02);
-    base *= 1.0 - butt*0.35;
-    alb = base; rough = 0.72;
+    vec3 wtex = texture(uTexWood, sp*0.5).rgb;
+    /* the bake is neutral oak; retint through the draw's tint ratio */
+    alb = wtex * (uTintA / vec3(0.42,0.28,0.17));
+    rough = 0.72;
   } else if (m < 2.5) {
     /* ---- bark: dark ridged, ember glow near the fire-facing bottom ---- */
     float sd = uSeed;
-    float r1 = fbm(vec2(vUv.x*22.0, vUv.y*4.0 + sd));
-    float r2 = fbm(vec2(vUv.x*47.0 + 3.0, vUv.y*9.0));
-    vec3 base = mix(uTintA, uTintB, r1);
-    base *= 0.65 + 0.5*r2;
-    float crack = smoothstep(0.55, 0.9, fbm(vec2(vUv.x*30.0, vUv.y*6.0+sd*2.0)));
-    base *= 1.0 - crack*0.45;
+    vec3 base = texture(uTexBark, vec2(vUv.x, vUv.y)).rgb;
     alb = base; rough = 0.95;
     /* end grain on cylinder caps: growth rings + charred rim */
     float capM = smoothstep(0.75, 0.95, abs(vLN.y));
@@ -307,6 +304,11 @@ void main(){
     /* (wall quads map vUv.y=0 to the top edge, so flip y for sky layout) */
     vec2 p = vec2(vUv.x, 1.0 - vUv.y);
     vec3 sky = mix(vec3(0.015,0.03,0.07), vec3(0.05,0.09,0.16), p.y);
+    if (uMood > 0.5 && uMood < 1.5) { /* blue dusk: ember horizon */
+      sky = mix(vec3(0.10,0.10,0.22), vec3(0.52,0.24,0.28), pow(clamp(1.0-p.y,0.0,1.0), 2.2));
+    } else if (uMood > 1.5) { /* warm lamplight: later, softer night */
+      sky = mix(vec3(0.02,0.035,0.075), vec3(0.07,0.10,0.17), p.y);
+    }
     float md = length((p - vec2(0.68,0.72))*vec2(1.4,1.0));
     float moon = smoothstep(0.085,0.075,md);
     float halo = smoothstep(0.35,0.05,md)*0.5;
@@ -330,7 +332,7 @@ void main(){
   vec3 H = normalize(L + V);
   float spec = pow(max(dot(N,H),0.0), mix(10.0, 90.0, 1.0-rough)) * (1.0-rough*0.92);
   vec3 col = alb * (uFireCol * ndl * atten * dance * 2.4);
-  vec3 amb = mix(vec3(0.16,0.12,0.10), vec3(0.26,0.21,0.17), N.y*0.5+0.5);
+  vec3 amb = mix(vec3(0.16,0.12,0.10), vec3(0.26,0.21,0.17), N.y*0.5+0.5) * uAmbTint;
   col += alb * amb;
   float fill = max(dot(N, uFillDir), 0.0);
   col += alb * uFillCol * fill * 0.5;
@@ -608,6 +610,7 @@ const STONE_TINTS = [
   {a:[0.42,0.45,0.50], b:[0.28,0.30,0.34], c:[0.58,0.60,0.64]},  // slate
   {a:[0.55,0.50,0.44], b:[0.38,0.34,0.30], c:[0.70,0.62,0.52]},  // riverrock
   {a:[0.80,0.77,0.72], b:[0.66,0.63,0.58], c:[0.88,0.86,0.82]},  // plaster
+  {a:[0.60,0.60,0.62], b:[0.46,0.46,0.48], c:[0.72,0.72,0.74]},  // concrete
 ];
 const WALL_TINTS = [
   [0.16,0.24,0.19],  // forest
@@ -620,11 +623,186 @@ const WOOD_TINTS = [
   {a:[0.36,0.24,0.15], b:[0.20,0.12,0.07]},  // dark mantel
 ];
 
+/* ---------------- baked textures (procedural, seeded, real depth) ---------------- */
+function makeNoise2D(seed){
+  const r = mulberry32(seed>>>0);
+  const p = new Uint8Array(256);
+  for (let i=0;i<256;i++) p[i]=i;
+  for (let i=255;i>0;i--){ const j=(r()*(i+1))|0; const t=p[i]; p[i]=p[j]; p[j]=t; }
+  const perm = new Uint8Array(512);
+  for (let i=0;i<512;i++) perm[i]=p[i&255];
+  function g(h,dx,dy){ switch(h&3){ case 0: return dx+dy; case 1: return -dx+dy; case 2: return dx-dy; default: return -dx-dy; } }
+  function n2(x,y){
+    const X=Math.floor(x), Y=Math.floor(y);
+    const xf=x-X, yf=y-Y, xi=X&255, yi=Y&255;
+    const u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf);
+    const aa=perm[(perm[xi]+yi)&511], ab=perm[(perm[xi]+yi+1)&511];
+    const ba=perm[(perm[xi+1]+yi)&511], bb=perm[(perm[xi+1]+yi+1)&511];
+    return lerp(lerp(g(aa,xf,yf),g(ba,xf-1,yf),u), lerp(g(ab,xf,yf-1),g(bb,xf-1,yf-1),u), v);
+  }
+  function fbm(x,y,oct){ let s=0,a=0.5,n=0; for(let i=0;i<oct;i++){ s+=a*n2(x,y); n+=a; a*=0.5; x=x*2.03+11.7; y=y*2.03+11.7; } return s/n*0.5+0.5; }
+  return { n2, fbm };
+}
+function h2(a,b){ const s=Math.sin(a*127.1+b*311.7)*43758.5453; return s-Math.floor(s); }
+function bakeCanvas(w,h,fn){
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  const ctx=c.getContext("2d"); const img=ctx.createImageData(w,h); const d=img.data;
+  fn(d,w,h);
+  ctx.putImageData(img,0,0); return c;
+}
+const clamp01 = v => v<0?0:(v>1?1:v);
+function sstep(e0,e1,x){ const t=clamp01((x-e0)/(e1-e0)); return t*t*(3-2*t); }
+function mixc(a,b,t){ return [lerp(a[0],b[0],t), lerp(a[1],b[1],t), lerp(a[2],b[2],t)]; }
+
+/* stone: ashlar courses + baked AO falloff into joints, bevel light catch,
+   mortar depth, large mottling, speckle. Texture covers 2m. */
+function bakeStone(size, variant, sd){
+  const T = STONE_TINTS[variant] || STONE_TINTS[0];
+  const nz = makeNoise2D(((sd*977)|0) ^ 0x51ab ^ (variant*0x9e37));
+  const TW = 2;
+  return bakeCanvas(size,size,(d,w,h)=>{
+    for (let y=0;y<h;y++){
+      const spy=y/h*TW;
+      for (let x=0;x<w;x++){
+        const spx=x/w*TW;
+        const rowH=0.30;
+        const row=Math.floor(spy/rowH + sd*0.13);
+        const off=(row*0.5)-Math.floor(row*0.5);
+        const ux=spx/0.62+off+sd*0.29, uy=spy/rowH+sd*0.13;
+        const colI=Math.floor(ux);
+        const cx=ux-Math.floor(ux), cy=uy-Math.floor(uy);
+        const br=h2(row*1.7+sd, colI*2.3-sd);
+        let col=mixc(T.a,T.b,br);
+        col=mixc(col,T.c, sstep(0.6,1.0,nz.fbm(spx*6+sd,spy*6,3)));
+        const grain=nz.fbm(spx*34+sd*3,spy*34,3);
+        const gs=0.86+0.28*grain;
+        col=[col[0]*gs,col[1]*gs,col[2]*gs];
+        const ex=Math.min(cx,1-cx)*0.62, ey=Math.min(cy,1-cy)*rowH;
+        const ed=Math.min(ex,ey);
+        const ao=0.60+0.40*sstep(0.0,0.06,ed);
+        const bev=sstep(0.05,0.10,ed)*(1-sstep(0.10,0.17,ed));
+        col=[col[0]*ao+bev*0.045, col[1]*ao+bev*0.045, col[2]*ao+bev*0.04];
+        const jx=0.035, jy=0.05;
+        if (cx<jx||cx>1-jx||cy<jy||cy>1-jy){ col=mixc(col,[0.15,0.13,0.11],0.82); col=[col[0]*0.8,col[1]*0.8,col[2]*0.8]; }
+        const ms=0.93+0.14*nz.fbm(spx*1.7+9,spy*1.7,3);
+        const spk=0.95+0.10*h2(x*0.717+variant*13.1, y*1.313);
+        const i=(y*w+x)*4;
+        d[i]=clamp01(col[0]*ms*spk)*255; d[i+1]=clamp01(col[1]*ms*spk)*255;
+        d[i+2]=clamp01(col[2]*ms*spk)*255; d[i+3]=255;
+      }
+    }
+  });
+}
+
+/* wood: planks with stretched grain, knots, AO seams, butt joints, pores */
+function bakeWood(size, sd){
+  const nz = makeNoise2D(((sd*1313)|0) ^ 0x77aa);
+  const TW=2;
+  const oakA=[0.42,0.28,0.17], oakB=[0.24,0.15,0.09];
+  return bakeCanvas(size,size,(d,w,h)=>{
+    for (let y=0;y<h;y++){
+      const spy=y/h*TW;
+      for (let x=0;x<w;x++){
+        const spx=x/w*TW;
+        const plank=Math.floor(spy/0.24 + sd*0.31);
+        const pr=h2(plank*3.1, sd);
+        const g=nz.fbm(spx*2.2+pr*9.0, spy*26.0, 3);
+        const g2=nz.fbm(spx*7.0-pr*5.0, spy*90.0, 2);
+        let col=mixc(oakA,oakB,pr);
+        const gs=0.78+0.30*g+0.12*g2;
+        col=[col[0]*gs,col[1]*gs,col[2]*gs];
+        const kx=Math.floor(spx/1.7), kh=h2(kx*7.3+pr*3.0, plank*1.7+sd);
+        if (kh>0.90){
+          const kcx=(kx+0.5)*1.7, kcy=(plank+0.5)*0.24;
+          const dd=Math.hypot(spx-kcx,(spy-kcy)*2.4);
+          const ring=0.5+0.5*Math.sin(dd*46.0+nz.fbm(spx*8,spy*8,2)*6.0);
+          const km=1-sstep(0.0,0.15,dd);
+          col=[col[0]*(1-0.35*km*(0.4+0.6*ring)),col[1]*(1-0.4*km),col[2]*(1-0.42*km)];
+          col=mixc(col,[0.16,0.10,0.06],(1-sstep(0.0,0.045,dd))*0.75);
+        }
+        const f=(spy/0.24+sd*0.31)-Math.floor(spy/0.24+sd*0.31);
+        const seam=sstep(0.0,0.025,f)*(1-sstep(0.975,1.0,f));
+        const sm=0.42+0.58*seam;
+        col=[col[0]*sm,col[1]*sm,col[2]*sm];
+        const bjx=spx/1.4;
+        if (h2(Math.floor(bjx)+pr*7.0, plank)>0.985 && Math.abs(bjx-Math.floor(bjx)-0.5)<0.02)
+          col=[col[0]*0.6,col[1]*0.6,col[2]*0.6];
+        const pore=1-0.13*sstep(0.62,0.95,nz.fbm(spx*42,spy*140,2));
+        const tone=0.94+0.12*nz.fbm(spx*0.9+4,spy*0.9,2);
+        const i=(y*w+x)*4;
+        d[i]=clamp01(col[0]*pore*tone)*255; d[i+1]=clamp01(col[1]*pore*tone)*255;
+        d[i+2]=clamp01(col[2]*pore*tone)*255; d[i+3]=255;
+      }
+    }
+  });
+}
+
+/* bark: ridged fissures with AO cores, char mottling, lichen speckle */
+function bakeBark(wd,ht,sd){
+  const nz = makeNoise2D(((sd*1741)|0) ^ 0x3c5a);
+  return bakeCanvas(wd,ht,(d,w,h)=>{
+    for (let y=0;y<h;y++){
+      const v=y/h;
+      for (let x=0;x<w;x++){
+        const u=x/w;
+        const r1=nz.fbm(u*22.0, v*4.0+sd, 3);
+        const r2=nz.fbm(u*47.0+3.0, v*9.0, 2);
+        let col=mixc([0.16,0.10,0.06],[0.30,0.19,0.11], r1);
+        const gs=0.65+0.5*r2;
+        col=[col[0]*gs,col[1]*gs,col[2]*gs];
+        const crack=sstep(0.55,0.9,nz.fbm(u*30.0, v*6.0+sd*2.0, 3));
+        col=[col[0]*(1-crack*0.45),col[1]*(1-crack*0.45),col[2]*(1-crack*0.45)];
+        const fisN=nz.fbm(u*13.0+7.0, v*3.0+sd, 3);
+        const fis=sstep(0.70,0.95,fisN), fcore=sstep(0.82,0.98,fisN);
+        col=[col[0]*(1-fis*0.5),col[1]*(1-fis*0.5),col[2]*(1-fis*0.48)];
+        col=mixc(col,[0.05,0.035,0.025],fcore*0.7);
+        const ch=sstep(0.6,0.95,nz.fbm(u*5.0+sd,v*5.0,2));
+        col=mixc(col,[0.09,0.06,0.045],ch*0.5);
+        if (h2(x*1.7, y*2.3+sd)>0.994) col=[col[0]+0.10,col[1]+0.11,col[2]+0.06];
+        const i=(y*w+x)*4;
+        d[i]=clamp01(col[0])*255; d[i+1]=clamp01(col[1])*255;
+        d[i+2]=clamp01(col[2])*255; d[i+3]=255;
+      }
+    }
+  });
+}
+
+let TEX = { stone:null, wood:null, bark:null, key:"" };
+function glTex(c){
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,c.width,c.height,0,gl.RGBA,gl.UNSIGNED_BYTE,c);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.bindTexture(gl.TEXTURE_2D,null);
+  return t;
+}
+/* bake once per (seed, stone variant); cached across rebuilds & frames */
+function ensureBaked(st){
+  const key = st.seed+":"+st.stone+":"+st.ver;
+  if (TEX.key===key && TEX.stone) return;
+  for (const k of ["stone","wood","bark"]) if (TEX[k]){ gl.deleteTexture(TEX[k]); TEX[k]=null; }
+  const sd = S.texSeed;
+  TEX.stone = glTex(bakeStone(384, st.stone, sd));
+  TEX.wood  = glTex(bakeWood(384, sd));
+  TEX.bark  = glTex(bakeBark(256, 384, sd));
+  TEX.key = key;
+  gl.useProgram(litProg);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,TEX.stone); gl.uniform1i(LU("uTexStone"),1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,TEX.wood);  gl.uniform1i(LU("uTexWood"),2);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,TEX.bark);  gl.uniform1i(LU("uTexBark"),3);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
 function generateScene(st){
   S.draws.length = 0;
   const rng = mulberry32(st.seed);
   const r2 = mulberry32((st.seed ^ 0x9e3779b9) >>> 0);
   S.texSeed = r2()*100;
+  ensureBaked(st);
   S.flamePhase = [r2()*6.28, r2()*6.28, r2()*6.28];
   S.camPhase = r2()*6.28;
   const stone = STONE_TINTS[st.stone];
@@ -639,26 +817,53 @@ function generateScene(st){
       tA:o.tA||[1,1,1], tB:o.tB||[0.5,0.5,0.5], tC:o.tC||[0.8,0.8,0.8],
       emis:o.emis||[0,0,0], rough:o.rough!=null?o.rough:0.9});
   }
-  const WT = WOOD_TINTS[0];
-  drawPlane(0,0,2.6, 11,9, 1, {tA:WT.a, tB:WT.b, rough:0.7});                 // wood floor
-  wallQuad(0,2.5,-0.55, 11,5, 0, 5, {tA:wallC, tB:wallC, tC:wallC, rough:0.92});       // back wall
-  wallQuad(-2.6,2.5,2.4, 8.6,5, Math.PI/2, 5, {tA:wallC, tB:wallC, tC:wallC, rough:0.92});  // left wall
-  wallQuad(2.6,2.5,2.4, 8.6,5, -Math.PI/2, 5, {tA:wallC.map(v=>v*0.8), tB:wallC, tC:wallC, rough:0.92}); // right wall
+  /* ---- room family: walls / floor / window / beams (v1 = classic, unchanged) ---- */
+  const fam = st.family|0;
+  let wallMat = 5, wA = wallC, wB = wallC, ceilC = [0.10,0.09,0.08];
+  let flA = WOOD_TINTS[0].a, flB = WOOD_TINTS[0].b;
+  let winW = 1.5, winH = 1.9, winY = 2.1;
+  if (fam===1){ /* cabin: timber walls + beams + log pile */
+    wallMat = 1; wA=[0.30,0.20,0.12]; wB=[0.17,0.11,0.07]; ceilC=[0.13,0.09,0.06];
+    flA=[0.30,0.20,0.12]; flB=[0.17,0.11,0.07];
+  } else if (fam===2){ /* modern: pale gallery, tall window */
+    wA=[0.52,0.53,0.56]; wB=[0.52,0.53,0.56]; ceilC=[0.32,0.33,0.35];
+    flA=[0.55,0.47,0.36]; flB=[0.40,0.34,0.26];
+    winW=2.2; winH=2.9; winY=1.75;
+  } else if (fam===3){ /* coastal: airy pale walls, big window */
+    wA=[0.62,0.56,0.47]; wB=[0.62,0.56,0.47]; ceilC=[0.44,0.41,0.37];
+    flA=[0.58,0.47,0.33]; flB=[0.44,0.35,0.24];
+    winW=1.9; winH=2.3; winY=2.0;
+  }
+  drawPlane(0,0,2.6, 11,9, 1, {tA:flA, tB:flB, rough:0.7});                 // wood floor
+  wallQuad(0,2.5,-0.55, 11,5, 0, wallMat, {tA:wA, tB:wB, tC:wB, rough:0.92});       // back wall
+  wallQuad(-2.6,2.5,2.4, 8.6,5, Math.PI/2, wallMat, {tA:wA, tB:wB, tC:wB, rough:0.92});  // left wall
+  wallQuad(2.6,2.5,2.4, 8.6,5, -Math.PI/2, wallMat, {tA:wA.map(v=>v*0.8), tB:wB, tC:wB, rough:0.92}); // right wall
   // ceiling (faces down)
   S.draws.push({mesh:M_PLANE, model:mMul(mT(0,4.6,2.4), mMul(mRx(Math.PI), mS(11,1,8.6))), mat:5,
-    tA:[0.10,0.09,0.08], tB:[0.10,0.09,0.08], tC:[0.10,0.09,0.08], emis:[0,0,0], rough:0.95});
+    tA:ceilC, tB:ceilC, tC:ceilC, emis:[0,0,0], rough:0.95});
   // baseboards
   drawBox(0,0.07,-0.53, 11,0.14,0.05, 1, {tA:[0.16,0.11,0.07], tB:[0.10,0.07,0.05], rough:0.6});
+  if (fam===1){ /* cabin cross beams */
+    for (const bx of [-3.6,-1.2,1.2,3.6])
+      drawBox(bx,4.42,2.4, 0.30,0.34,8.6, 1, {tA:[0.20,0.13,0.08], tB:[0.12,0.08,0.05], rough:0.8});
+    /* log pile beside the hearth */
+    const pile=[[1.78,0.08,0.62,0.10],[1.78,0.08,0.42,-0.08],[1.78,0.08,0.82,0.05],
+                [1.78,0.19,0.52,0.12],[1.78,0.19,0.72,-0.10]];
+    for (const q of pile)
+      drawMesh(M_CYL, q[0],q[1],q[2], [0.11,0.62,0.11], 2,
+        {rz:Math.PI/2, ry:q[3], tA:[0.16,0.10,0.06], tB:[0.30,0.19,0.11], rough:0.95});
+  }
 
-  /* window on left wall: emissive night pane + frame */
-  wallQuad(-2.57,2.1,1.6, 1.5,1.9, Math.PI/2, 8, {rough:1});
+  /* window on left wall: emissive pane + frame */
+  wallQuad(-2.57,winY,1.6, winW,winH, Math.PI/2, 8, {rough:1});
   const fr = {tA:[0.23,0.15,0.09], tB:[0.14,0.09,0.05], rough:0.6};
-  drawBox(-2.54,2.1,0.78, 0.08,2.0,0.09, 1, fr);
-  drawBox(-2.54,2.1,2.42, 0.08,2.0,0.09, 1, fr);
-  drawBox(-2.54,3.08,1.6, 0.08,0.09,1.72, 1, fr);
-  drawBox(-2.54,1.12,1.6, 0.08,0.09,1.72, 1, fr);
-  drawBox(-2.55,2.1,1.6, 0.06,1.9,0.05, 1, fr);
-  drawBox(-2.55,2.1,1.6, 0.06,0.05,1.55, 1, fr);
+  const fz0=1.6-winW/2-0.04, fz1=1.6+winW/2+0.04, fyT=winY+winH/2+0.045, fyB=winY-winH/2-0.045;
+  drawBox(-2.54,winY,fz0, 0.08,winH+0.1,0.09, 1, fr);
+  drawBox(-2.54,winY,fz1, 0.08,winH+0.1,0.09, 1, fr);
+  drawBox(-2.54,fyT,1.6, 0.08,0.09,winW+0.17, 1, fr);
+  drawBox(-2.54,fyB,1.6, 0.08,0.09,winW+0.17, 1, fr);
+  drawBox(-2.55,winY,1.6, 0.06,winH-0.1,0.05, 1, fr);
+  drawBox(-2.55,winY,1.6, 0.06,0.05,winW-0.1, 1, fr);
 
   /* rug */
   const rugA = [[0.42,0.16,0.12],[0.30,0.22,0.16],[0.20,0.24,0.30],[0.36,0.20,0.24]][st.wall];
@@ -683,6 +888,16 @@ function generateScene(st){
   // andirons
   drawBox(-0.32,0.32,-0.10, 0.05,0.16,0.05, 6, {tA:[0.08,0.08,0.09], rough:0.4});
   drawBox( 0.32,0.32,-0.10, 0.05,0.16,0.05, 6, {tA:[0.08,0.08,0.09], rough:0.4});
+  /* arched firebox option: stone arch ring springing from the piers */
+  if (st.arch===1){
+    const AR=0.60, AY=1.07;
+    for (let i=0;i<=10;i++){
+      const a=Math.PI*i/10;
+      drawBox(Math.cos(a)*AR, AY+Math.sin(a)*AR, 0.03, 0.18,0.12,0.14, 0,
+        Object.assign({rz:Math.PI/2 - a}, stn));
+    }
+    drawBox(0, AY+AR+0.03, 0.03, 0.22,0.16,0.14, 0, stn); // keystone
+  }
 
   /* ---- logs: bark cylinders, teepee-ish stack ---- */
   const nLogs = st.logs;
@@ -741,6 +956,29 @@ function generateScene(st){
       drawBox(sx, 1.86, 0.10, 0.11,0.20,0.055, 4, {tA:cols[i], tB:cols[i].map(v=>v*0.7), rough:0.95, rz:(rng()-0.5)*0.15});
       drawBox(sx, 1.975, 0.10, 0.12,0.05,0.06, 4, {tA:[0.85,0.82,0.78], tB:[0.7,0.68,0.64], rough:0.95});
     }
+  }
+  if (decor===4){ /* garland: pine swag with berries + bow across the mantel */
+    for (let i=0;i<=14;i++){
+      const t=i/14, gx=lerp(-1.15,1.15,t), gy=2.00-Math.sin(t*Math.PI)*0.20;
+      drawMesh(M_SPH, gx,gy,0.06, 0.05, 4, {tA:[0.10,0.30,0.12], tB:[0.06,0.18,0.08], rough:0.95});
+      if (i%3===0)
+        drawMesh(M_SPH, gx,gy+0.045,0.09, 0.022, 4,
+          {tA:[0.60,0.10,0.10], tB:[0.40,0.06,0.06], rough:0.5, emis:[0.08,0.01,0.01]});
+    }
+    drawBox(0,1.76,0.08, 0.09,0.06,0.03, 4, {tA:[0.55,0.08,0.08], tB:[0.40,0.05,0.05], rough:0.8, rz:0.5});
+    drawBox(0,1.76,0.08, 0.09,0.06,0.03, 4, {tA:[0.55,0.08,0.08], tB:[0.40,0.05,0.05], rough:0.8, rz:-0.5});
+  }
+  if (decor===5){ /* books: stacked volumes + a glowing lantern */
+    const bc=[[0.35,0.12,0.10],[0.12,0.25,0.30],[0.25,0.30,0.15],[0.40,0.28,0.15]];
+    let by=2.10;
+    for (let i=0;i<4;i++){
+      drawBox(0.80+(rng()-0.5)*0.03, by, -0.16, 0.30-0.02*i,0.045,0.21, 4,
+        {tA:bc[i], tB:bc[i].map(v=>v*0.65), rough:0.85, ry:(rng()-0.5)*0.2});
+      by+=0.047;
+    }
+    drawBox(-0.85,2.16,-0.16, 0.09,0.16,0.09, 6, {tA:[0.08,0.08,0.09], rough:0.4});
+    drawMesh(M_SPH, -0.85,2.16,-0.16, 0.035, 4,
+      {tA:[1.0,0.8,0.5], tB:[1.0,0.6,0.3], emis:[0.9,0.45,0.15], rough:0.5});
   }
   // framed picture leaning on mantel (always, seeded art tint)
   const artC = [[0.55,0.35,0.20],[0.25,0.35,0.45],[0.45,0.25,0.30]][Math.floor(rng()*3)];
@@ -840,22 +1078,28 @@ function locCache(prog){
 }
 const LU = locCache(litProg), PU = locCache(partProg), OU = locCache(postProg);
 
-/* ---------------- camera ---------------- */
+/* ---------------- camera: 6 seeded angles x 3 motion overlays ---------------- */
 function cameraAt(te){
-  const cam = settings.camera;
-  const tgt = [0, 0.98, -0.10];
-  let ex,ey,ez;
-  if (cam===2){
-    const a0 = (S.camPhase/6.2831 - 0.5)*0.9;
-    const a = a0 + Math.sin(te*0.05)*0.28;
-    ex = Math.sin(a)*4.0; ez = Math.cos(a)*4.75; ey = 1.45 + Math.sin(te*0.09)*0.05;
-  } else {
-    ex = 0.15; ey = 1.45; ez = 4.75;
-    if (cam===1){ ex += Math.sin(te*0.10+S.camPhase)*0.12; ey += Math.sin(te*0.073+S.camPhase*1.7)*0.05; }
-    else { ex += Math.sin(te*0.05)*0.015; ey += Math.sin(te*0.043)*0.012; }
+  const A = ANGLES[clamp(settings.angle|0, 0, ANGLES.length-1)] || ANGLES[1];
+  let ex=A.eye[0], ey=A.eye[1], ez=A.eye[2];
+  let tx=A.tgt[0], ty=A.tgt[1], tz=A.tgt[2];
+  if (A.dolly){ /* slow push-in: 45s ping-pong dolly */
+    const k = 0.5 - 0.5*Math.cos(te*2*Math.PI/45 + S.camPhase);
+    ex=lerp(ex,A.dolly[0],k); ey=lerp(ey,A.dolly[1],k); ez=lerp(ez,A.dolly[2],k);
   }
-  const tx = tgt[0] + Math.sin(te*0.09+S.camPhase)*0.03;
-  return {eye:[ex,ey,ez], tgt:[tx,1.02,-0.1]};
+  const mo = settings.camera|0;
+  if (mo===2){ /* orbit: slow arc around the target at this angle's radius */
+    const a0=(S.camPhase/6.2831-0.5)*0.9;
+    const a=a0+Math.sin(te*0.05)*0.28;
+    const r=Math.hypot(ex-tx,ez-tz);
+    ex=tx+Math.sin(a)*r; ez=tz+Math.cos(a)*r; ey+=Math.sin(te*0.09)*0.05;
+  } else if (mo===1){ /* drift: gentle handheld sway */
+    ex+=Math.sin(te*0.10+S.camPhase)*0.12; ey+=Math.sin(te*0.073+S.camPhase*1.7)*0.05;
+  } else { /* still: barely-there breathing */
+    ex+=Math.sin(te*0.05)*0.015; ey+=Math.sin(te*0.043)*0.012;
+  }
+  tx += Math.sin(te*0.09+S.camPhase)*0.03;
+  return {eye:[ex,ey,ez], tgt:[tx,ty,tz], fov:A.fov};
 }
 
 /* ---------------- render ---------------- */
@@ -871,7 +1115,7 @@ function render(te, w, h, frameNo){
   const flick = Math.max(0.7, 0.90 + 0.10*Math.sin(te*9.7+fp[0])*Math.sin(te*5.3+fp[1]) + 0.06*Math.sin(te*23.7+fp[2]));
   const firePos = [0, 0.62, -0.15];
   const c = cameraAt(te);
-  const proj = mPersp(38*Math.PI/180, w/Math.max(h,1), 0.1, 60);
+  const proj = mPersp((c.fov||38)*Math.PI/180, w/Math.max(h,1), 0.1, 60);
   const view = mLookAt(c.eye, c.tgt, [0,1,0]);
 
   gl.useProgram(litProg);
@@ -882,8 +1126,16 @@ function render(te, w, h, frameNo){
   gl.uniform3fv(LU("uFirePos"),firePos);
   gl.uniform1f(LU("uFlick"),flick);
   gl.uniform3f(LU("uFireCol"),1.0,0.44,0.14);
-  gl.uniform3f(LU("uFillDir"),-0.88,0.38,0.28);
-  gl.uniform3f(LU("uFillCol"),0.30,0.44,0.66);
+  /* mood: key fill, ambient tint, exposure and post-grade offsets */
+  const MOODU = [
+    {fill:[-0.88,0.38,0.28], fillCol:[0.30,0.44,0.66], amb:[1.0,1.0,1.0],   expo:0.0,  warm:0.55, vig:0.42, mood:0},
+    {fill:[-0.88,0.45,0.30], fillCol:[0.55,0.62,0.85], amb:[0.9,0.95,1.12], expo:0.06, warm:0.35, vig:0.38, mood:1},
+    {fill:[0.85,0.50,0.35],  fillCol:[1.0,0.62,0.32],  amb:[1.12,1.0,0.88], expo:0.03, warm:0.75, vig:0.45, mood:2},
+  ][clamp(settings.mood|0,0,2)];
+  gl.uniform3f(LU("uFillDir"), MOODU.fill[0], MOODU.fill[1], MOODU.fill[2]);
+  gl.uniform3f(LU("uFillCol"), MOODU.fillCol[0], MOODU.fillCol[1], MOODU.fillCol[2]);
+  gl.uniform3fv(LU("uAmbTint"), MOODU.amb);
+  gl.uniform1f(LU("uMood"), MOODU.mood);
   gl.uniform3fv(LU("uCamPos"),c.eye);
   for (const d of S.draws){
     gl.uniformMatrix4fv(LU("uModel"),false,d.model);
@@ -933,10 +1185,10 @@ function render(te, w, h, frameNo){
   gl.uniform1i(OU("uTex"),0);
   gl.uniform1f(OU("uFrame"),frameNo);
   gl.uniform2f(OU("uRes"),w,h);
-  gl.uniform1f(OU("uExposure"),1.0 + settings.glow*0.006);
-  gl.uniform1f(OU("uVig"),0.42);
+  gl.uniform1f(OU("uExposure"),1.0 + settings.glow*0.006 + MOODU.expo);
+  gl.uniform1f(OU("uVig"),MOODU.vig);
   gl.uniform1f(OU("uGrain"),0.035);
-  gl.uniform1f(OU("uWarm"),0.55);
+  gl.uniform1f(OU("uWarm"),MOODU.warm);
   gl.bindVertexArray(postVAO);
   gl.drawArrays(gl.TRIANGLES,0,3);
   gl.bindVertexArray(null);
@@ -1534,17 +1786,25 @@ function refreshSeedUI(){
 "use strict";
 const LS_KEY = "fireplace-studio-v3-seed";
 
-function seedText(){ return "#" + (settings.seed>>>0).toString(16).toUpperCase().padStart(8,"0"); }
-function applySeedParams(n){
+function applySeedParams(n, ver){
+  n = n>>>0; ver = ver||1;
   settings.fire   = n % 3;
   settings.logs   = 4 + ((n>>>2) % 4);
-  settings.stone  = (n>>>4) % 4;
-  settings.decor  = (n>>>6) % 4;
+  settings.stone  = (n>>>4) % (ver===2 ? 5 : 4);
+  settings.decor  = (n>>>6) % (ver===2 ? 6 : 4);
   settings.wall   = (n>>>8) % 4;
   settings.camera = (n>>>10) % 3;
   settings.sparks = (n>>>12) % 101;
   settings.hue    = (n>>>19) % 3;
   settings.glow   = 0;
+  if (ver===2){
+    settings.angle  = (n>>>21) % 6;
+    settings.family = (n>>>24) % 4;
+    settings.mood   = (n>>>26) % 3;
+    settings.arch   = (n>>>28) & 1;
+  } else { /* v1: classic room, classic framing, deep-night light */
+    settings.angle = 1; settings.family = 0; settings.mood = 0; settings.arch = 0;
+  }
 }
 function rebuild(){
   generateScene(settings);
@@ -1559,11 +1819,11 @@ function queueRegen(){
 function enumParam(key, list, rebuildOn, label){
   return {
     key, label: label+" ("+list.join("/")+")", min:0, max:list.length-1, step:1,
-    get(){ const i=list.indexOf(settings[key]); return i<0?0:i; },
+    get(){ const v=settings[key]; return (typeof v==="number") ? clamp(Math.round(v),0,list.length-1) : 0; },
     set(v){
-      const i = clamp(Math.round(v), 0, list.length-1);
-      if (settings[key]===list[i]) return;
-      settings[key]=list[i];
+      v = clamp(Math.round(v), 0, list.length-1);
+      if (settings[key]===v) return;
+      settings[key]=v;
       if (rebuildOn) queueRegen();
     }
   };
@@ -1587,27 +1847,32 @@ window.SeedConsoleAdapter = {
   title: "Fireplace Studio",
   getSeed(){ return seedText(); },
   setSeed(s){
-    settings.seed = parseSeed(s);
-    applySeedParams(settings.seed);
+    const ps = parseSeed(s);
+    settings.seed = ps.n; settings.ver = ps.ver;
+    applySeedParams(settings.seed, settings.ver);
     try { localStorage.setItem(LS_KEY, seedText()); } catch(e){}
     rebuild();
     booted = true;
   },
-  randomSeed(){ return "#" + cryptoUint32().toString(16).toUpperCase().padStart(8,"0"); },
+  randomSeed(){ return "#2" + cryptoUint32().toString(16).toUpperCase().padStart(8,"0"); },
   remixSeed(s){
-    let n = parseSeed(s)>>>0;
+    let n = parseSeed(s).n>>>0;
     n = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b)>>>0;
     n ^= n>>>13; n = Math.imul(n, 0xc2b2ae35)>>>0;
     n = (n ^ cryptoUint32())>>>0;
-    return "#" + (n>>>0).toString(16).toUpperCase().padStart(8,"0");
+    return "#2" + (n>>>0).toString(16).toUpperCase().padStart(8,"0");
   },
   params: [
     enumParam("fire",  FIRE_LV, true,  "Fire"),
     numParam("logs", "Logs", 4, 7, true),
     enumParam("stone", STONES,  true,  "Stone"),
     enumParam("decor", DECORS,  true,  "Mantel decor"),
+    enumParam("family",FAMILIES,true,  "Room"),
+    enumParam("arch",  ARCHES,  true,  "Firebox"),
     enumParam("wall",  WALLS,   true,  "Wall tone"),
-    enumParam("camera",CAMS,    false, "Camera"),
+    enumParam("mood",  MOODS,   false, "Mood"),
+    enumParam("angle", ANGLES.map(a=>a.n), false, "Camera angle"),
+    enumParam("camera",MOTIONS, false, "Camera motion"),
     numParam("sparks", "Ember rate", 0, 100, true),
     enumParam("hue",   HUES,    false, "Flame hue"),
     numParam("glow", "Glow trim", -50, 50, false),
@@ -1619,8 +1884,8 @@ try {
   SeedConsole.init(window.SeedConsoleAdapter);
 } catch(e){
   console.error("[fireplace] SeedConsole init failed — direct build", e);
-  settings.seed = cryptoUint32();
-  applySeedParams(settings.seed);
+  settings.seed = cryptoUint32(); settings.ver = 2;
+  applySeedParams(settings.seed, 2);
   rebuild();
 }
 /* start the frame loop only after the first scene exists */
