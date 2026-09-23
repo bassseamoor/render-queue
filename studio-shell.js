@@ -2,6 +2,8 @@
 (()=>{'use strict';
 const ready=()=>{
  if(new URLSearchParams(location.search).has('render')||document.body.classList.contains('su-enabled'))return;
+ const _file0=location.pathname.split('/').pop();
+ if(_file0==='road-atlas-v2.html'&&!window.RoadAtlasPipeline)return; /* v2 boots async: wait for studio:ready */
  const body=document.body, $=s=>document.querySelector(s), all=s=>[...document.querySelectorAll(s)];
  if($('.inspector')&&$('.workspace')){body.classList.add('su-strata');return;}
  const sc=window.SeedConsole, A=window.SeedConsoleAdapter;
@@ -39,7 +41,7 @@ const ready=()=>{
  if(isRain){move('#panel-scene',pages.World);move('#panel-glass',pages.Camera);move('#panel-export',pages.Export);move('#dock',pages.Camera);const sound=$('#sound');if(sound)pages.Camera.prepend(sound);hide('#stage>header,#panel');}
  if(isForge){move('#modeswitch',pages.World);move('#viewroot',pages.World);const aspect=$('#aspectbtn');if(aspect)pages.Camera.append(aspect);pages.Export.append(button('Export PNG',()=>{if(window.forgeApp?.exportPNG)window.forgeApp.exportPNG();else{const b=document.getElementById('btnExport')||document.getElementById('eExport');if(b)b.click();}}));hide('#topbar');}
  if(file==='turtle-life-studio.html'){move('#panelL',pages.World);move('#panelR',pages.Camera);move('#reefDock',pages.Camera);hide('#topbar');}
- if(file==='road-atlas.html'||file==='road-atlas-v2.html'){move('#layersPanel',pages.World);move('#analysisPanel',pages.World);const share=$('#shareBtn');if(share)pages.World.append(share);hide('#topbar');}
+ if(file==='road-atlas.html'||file==='road-atlas-v2.html'){move('#layersPanel',pages.World);move('#analysisPanel',pages.World);const actions=node('div','su-actions');['#randomBtn','#remixBtn','#urbanDesignBtn','#dataBtn','#shareBtn'].forEach(s=>{const b=$(s);if(b){b.classList.add('su-native');actions.append(b);}});if(actions.children.length)pages.World.prepend(actions);hide('#topbar');}
  if(file==='aquarium.html')hide('#topbar');
  if(file==='molten.html')hide('.scene-meta');
  if(sc?.panel){
