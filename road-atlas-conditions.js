@@ -7,7 +7,7 @@
  */
 (function () {
 'use strict';
-var VERSION='2.3.0', HALF_DIAG=Math.SQRT2*2, stored={};
+var VERSION='2.3.2', HALF_DIAG=Math.SQRT2*2, stored={};
 try {stored=JSON.parse(localStorage.getItem('ra.conditions.v1')||'{}')||{};} catch(e) {}
 var qs=new URLSearchParams(location.search);
 function number(q,fallback,lo,hi){var n=Number(q);return q!=null&&q!==''&&Number.isFinite(n)?Math.max(lo,Math.min(hi,n)):fallback;}
@@ -275,7 +275,9 @@ var buildConditionalBlocks=Function("reservations","ringsFromCells","createParce
   "  return finalize(C,{blocks:blocks,buildings:buildings,parks:parks});\n"
  ]
 ])+');')(reservations,ringsFromCells,createParcel,fit,finalize,rect,at);
-var renderConditionalWorld=Function("view","drawTopo","pathRings","ruralAllowed","rect",'"use strict";return ('+adapt(originalRender,1849429006,[
+/* 99227851 fingerprints renderWorld AFTER RoadAtlasThemes widens its theme
+ * clamp 0,2 -> 0,9 (length-preserving, so all adapt() offsets below hold). */
+var renderConditionalWorld=Function("view","drawTopo","pathRings","ruralAllowed","rect",'"use strict";return ('+adapt(originalRender,99227851,[
  [
   0,
   29,
@@ -326,10 +328,10 @@ var renderConditionalWorld=Function("view","drawTopo","pathRings","ruralAllowed"
  ]
 ])+');')(view,drawTopo,pathRings,ruralAllowed,rect);
 function drawTopo(ctx,W){
- var C=W.conditions,T=THEMES[clamp(Math.round(P.theme),0,2)],all=contours(C.topography),labels=[];
+ var C=W.conditions,T=THEMES[clamp(Math.round(P.theme),0,THEMES.length-1)],all=contours(C.topography),labels=[];
  ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
  all.forEach(function(level){
-  ctx.strokeStyle=P.theme===0?'#796b48':P.theme===1?'#859d91':'#90bad0';
+  ctx.strokeStyle=T.night?'#859d91':T.blue?'#90bad0':'#796b48';
   ctx.globalAlpha=view.opacity*(level.major?.76:.35);ctx.lineWidth=level.major?1.6:.8;
   ctx.beginPath();level.lines.forEach(function(line){line.forEach(function(v,i){if(!i)ctx.moveTo(v.x,v.y);else ctx.lineTo(v.x,v.y);});});ctx.stroke();
   if(view.labels&&level.major)level.lines.forEach(function(line){
@@ -354,12 +356,13 @@ function rasterOverlay(ctx,C,kind){
 }
 function paintOverlays(ctx,W){
  var C=W.conditions;if(!C)return;
+ var T=THEMES[clamp(Math.round(P.theme),0,THEMES.length-1)];
  if(view.slope)rasterOverlay(ctx,C,'slope');if(view.districts)rasterOverlay(ctx,C,'districts');if(view.buildable)rasterOverlay(ctx,C,'buildable');
  ctx.save();ctx.lineJoin='round';
- if(view.blocks){ctx.strokeStyle=P.theme===0?'rgba(31,106,127,.65)':'rgba(105,204,229,.7)';ctx.lineWidth=1.5;C.blocks.forEach(function(b){pathRings(ctx,b.rings);ctx.stroke();});}
- if(view.parcels){ctx.lineWidth=.9;C.parcels.forEach(function(q){ctx.strokeStyle=q.buildingId==null?'rgba(116,156,136,.45)':P.theme===0?'rgba(42,123,91,.6)':'rgba(144,228,181,.75)';pathRings(ctx,q.rings);ctx.stroke();});}
+ if(view.blocks){ctx.strokeStyle=T.night||T.blue?'rgba(105,204,229,.7)':'rgba(31,106,127,.65)';ctx.lineWidth=1.5;C.blocks.forEach(function(b){pathRings(ctx,b.rings);ctx.stroke();});}
+ if(view.parcels){ctx.lineWidth=.9;C.parcels.forEach(function(q){ctx.strokeStyle=q.buildingId==null?'rgba(116,156,136,.45)':T.night||T.blue?'rgba(144,228,181,.75)':'rgba(42,123,91,.6)';pathRings(ctx,q.rings);ctx.stroke();});}
  if(view.directions){
-  ctx.lineWidth=1;ctx.strokeStyle=P.theme===0?'rgba(48,102,101,.45)':'rgba(122,213,204,.6)';
+  ctx.lineWidth=1;ctx.strokeStyle=T.night||T.blue?'rgba(122,213,204,.6)':'rgba(48,102,101,.45)';
   for(var y=40;y<WORLD_H;y+=60)for(var x=40;x<WORLD_W;x+=60){var k=at(C,x,y);if(k<0||C.flags[k]&2)continue;var a=W.F.tensorAngle(x,y),dx=Math.cos(a)*15,dy=Math.sin(a)*15;
    ctx.beginPath();ctx.moveTo(x-dx,y-dy);ctx.lineTo(x+dx,y+dy);ctx.moveTo(x+dx-Math.cos(a-.5)*5,y+dy-Math.sin(a-.5)*5);ctx.lineTo(x+dx,y+dy);ctx.lineTo(x+dx-Math.cos(a+.5)*5,y+dy-Math.sin(a+.5)*5);ctx.stroke();}
   W.F.centers.forEach(function(c){ctx.strokeStyle='rgba(208,154,58,.7)';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(c.x,c.y,24,0,TAU);ctx.stroke();ctx.fillStyle='#d99d39';ctx.beginPath();ctx.arc(c.x,c.y,4,0,TAU);ctx.fill();});
