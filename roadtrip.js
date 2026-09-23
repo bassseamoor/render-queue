@@ -72,7 +72,7 @@ function loop(now){
 }
 async function build(){
  try{
-  const canvas=$('scene'),gl=canvas.getContext('webgl2',{antialias:true,alpha:false,preserveDrawingBuffer:true,powerPreference:'high-performance'});
+  const canvas=$('scene'),gl=canvas.getContext('webgl2',{antialias:true,alpha:false,preserveDrawingBuffer:true,powerPreference:'high-performance'})||canvas.getContext('webgl2',{antialias:false,alpha:false,preserveDrawingBuffer:true,powerPreference:'default'});
   if(!gl)throw new Error('This scene needs WebGL 2. Open it in a current browser with graphics acceleration enabled.');
   renderer=new T.WebGLRenderer({canvas,context:gl,antialias:true,alpha:false,preserveDrawingBuffer:true});renderer.outputColorSpace=T.LinearSRGBColorSpace;renderer.toneMapping=T.NoToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
   scene=new T.Scene();camera=new T.PerspectiveCamera(48,16/9,.3,4600);post=createPost(renderer);post.uniforms.debugPass.value=qs.get('pass')==='depth'?1:qs.get('pass')==='ao'?2:0;
@@ -87,8 +87,7 @@ async function build(){
   if(qs.get('clean')==='1')setClean(true);
   if(qs.get('render')==='1'){
    const seconds=Number(qs.get('seconds'))||15;
-   if(seconds>300)status('For this studio, choose a preview or Short. Single browser exports are limited to 5 minutes.');
-   else await exportVideo({seconds,w:Number(qs.get('w'))||1280,h:Number(qs.get('h'))||720,fps:clamp(Number(qs.get('fps'))||30,12,60),start:Number(qs.get('t'))||0});
+   await exportVideo({seconds,w:Number(qs.get('w'))||1280,h:Number(qs.get('h'))||720,fps:clamp(Number(qs.get('fps'))||30,12,60),start:Number(qs.get('t'))||0});
   }
  }catch(error){$('loadText').textContent=error.message;$('status').textContent=error.message;console.error(error);}
 }
