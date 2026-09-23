@@ -27,7 +27,7 @@ function findWorld() {
 }
 function themeIdx() {
   try {
-    if (typeof P !== 'undefined' && Number.isFinite(P.theme)) return Math.max(0, Math.min(2, Math.round(P.theme)));
+    if (typeof P !== 'undefined' && Number.isFinite(P.theme)) return Math.max(0, Math.min(PALETTES.length - 1, Math.round(P.theme)));
   } catch (e) { /* ignore */ }
   return 0;
 }
@@ -67,6 +67,39 @@ const PALETTES = [
     sun: 0xe8f4ff, sunInt: 1.3, fogNear: 1900, fogFar: 5200, exposure: 1.05
   }
 ];
+/* Indices 3-9 are derived from the matching 2D theme of the same index, so
+ * every theme gets a coherent 3D twin. The first three stay hand-tuned.
+ * The derived objects MUST carry the full renderer schema (same fields as
+ * the hand-tuned palettes above); missing fields make THREE warn on
+ * undefined material parameters. */
+(function extendPalettes() {
+  try {
+    if (typeof window === 'undefined' || !window.THEMES || PALETTES.length >= 10) return;
+    var hx = function (c) { c = c.replace('#', ''); return [parseInt(c.slice(0, 2), 16), parseInt(c.slice(2, 4), 16), parseInt(c.slice(4, 6), 16)]; };
+    var css = function (r) { return '#' + r.map(function (v) { v = Math.max(0, Math.min(255, Math.round(v))); var s = v.toString(16); return s.length < 2 ? '0' + s : s; }).join(''); };
+    var shade = function (c, f) { return css(hx(c).map(function (v) { return v * f; })); };
+    for (var i = 3; i < 10 && i < window.THEMES.length; i++) {
+      var T = window.THEMES[i], night = !!T.night, glow = night && !!T.glow;
+      PALETTES.push({
+        sky: night ? shade(T.bg2, 1.35) : shade(T.bg2, 1.18),
+        ground: T.bg1, water: T.water, park: T.park,
+        asphalt: T.local, arterial: T.arterial,
+        arterialGlow: glow ? T.arterial : '#000000', glowInt: glow ? 1.6 : 0,
+        roadGlow: glow ? T.arterial : '#000000', roadGlowInt: glow ? 0.45 : 0,
+        wallA: shade(T.bTop, 1.3), wallB: shade(T.bTop, 0.55),
+        roofFlat: shade(T.bTop, 0.72), roofSlate: shade(T.bTop, 0.5),
+        roofTerra: shade(T.bTop, 1.1), roofGreen: shade(T.tree, 1.05),
+        glass: night ? '#9fd0e8' : '#bcd8e8',
+        bridge: T.bridge, trunk: '#6b4a2f', leaf: T.tree,
+        hemiSky: night ? shade(T.bg2, 1.6) : shade(T.bg1, 1.05),
+        hemiGround: T.bg1, hemiInt: night ? 0.9 : 0.8,
+        sun: night ? shade(T.bg2, 0.9) : '#fff2dd', sunInt: night ? 0.7 : 1.4,
+        fogNear: night ? 1500 : 1900, fogFar: night ? 4200 : 5200,
+        exposure: night ? 1.15 : 1.0
+      });
+    }
+  } catch (e) { /* keep the hand-tuned three */ }
+})();
 
 /* ------------------------------------------------------------------ */
 /* geometry batching                                                   */
