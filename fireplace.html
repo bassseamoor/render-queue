@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101311">
+<meta name="description" content="A quiet, procedural fireplace studio for cinematic, loopable winter rooms.">
+<title>Fireplace — Room Studio</title>
+<style>
+:root{color-scheme:dark;--ink:#e9e3d6;--muted:#9a9a8f;--line:#ffffff19;--panel:#151a17;--accent:#d6b77e;--bg:#0d100f;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);overflow:hidden}
+button,a,input{font:inherit}button{color:inherit;cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+a{color:inherit;text-decoration:none}.topbar{height:68px;display:flex;align-items:center;gap:18px;padding:0 24px;border-bottom:1px solid var(--line);background:#101311;position:relative;z-index:2}
+.back{font-size:25px;color:var(--muted);padding-right:18px;border-right:1px solid var(--line);white-space:nowrap}.back span{font-size:11px;margin-left:6px;vertical-align:3px}
+.brand{font-size:12px;letter-spacing:.22em;font-weight:700}.brand small{display:block;font-size:8px;letter-spacing:.2em;color:var(--muted);font-weight:500;margin-top:2px}.spacer{flex:1}
+.seed-chip{font:10px ui-monospace,monospace;color:#d9c79f;background:#fffefa08;border:1px solid var(--line);padding:7px 10px;border-radius:99px}
+.layout{height:calc(100dvh - 68px);display:grid;grid-template-columns:minmax(0,1fr) 348px;min-height:0}
+.stage{min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;padding:30px;background:radial-gradient(ellipse at 50% 45%,#29302a 0,#171c19 46%,#0d100f 100%);position:relative}
+.frame{width:min(100%,calc((100dvh - 130px)*1.7778));aspect-ratio:16/9;position:relative;background:#171c19;border:1px solid #bfa57028;box-shadow:0 28px 90px #0008,0 0 0 8px #ffffff04;overflow:hidden;transition:width .25s ease,aspect-ratio .25s ease}
+.frame[data-format=portrait]{width:min(100%,calc((100dvh - 130px)*.5625));aspect-ratio:9/16}
+.frame canvas{display:block;width:100%;height:100%;touch-action:manipulation}
+.stage-mark{position:absolute;left:clamp(16px,3vw,38px);top:clamp(14px,3vw,32px);pointer-events:none;color:#f3ead8;font:9px ui-monospace,monospace;letter-spacing:.18em;text-shadow:0 2px 16px #000}
+.stage-mark span{display:block;color:#dbbd83;font-size:8px;letter-spacing:.24em;margin-bottom:6px}
+.stage-caption{position:absolute;left:clamp(16px,3vw,38px);bottom:clamp(16px,3vw,30px);pointer-events:none;text-shadow:0 2px 16px #000}.stage-caption strong{font:italic clamp(15px,2vw,23px)/1.2 Georgia,serif;font-weight:400}.stage-caption small{display:block;color:#e5dcc6aa;font:8px ui-monospace,monospace;letter-spacing:.16em;margin-top:6px}
+.panel{min-width:0;min-height:0;overflow:auto;background:var(--panel);border-left:1px solid var(--line);padding:24px 23px calc(30px + env(safe-area-inset-bottom));scrollbar-width:thin;scrollbar-color:#786c5055 transparent}
+.eyebrow{font-size:8px;letter-spacing:.19em;color:#b6a581;font-weight:700}.panel h1{font:normal 28px/1.1 Georgia,serif;letter-spacing:-.03em;margin:8px 0 7px}.intro{color:#a8aaa0;font-size:12px;line-height:1.65;margin:0 0 21px}
+.section-label{display:flex;justify-content:space-between;align-items:center;color:#aaa899;font-size:9px;letter-spacing:.13em;font-weight:700;margin:21px 0 9px;text-transform:uppercase}
+.presets{display:grid;gap:7px}.preset{width:100%;min-height:58px;text-align:left;display:flex;align-items:center;gap:11px;border-radius:8px;padding:8px 10px;background:#ffffff04;border:1px solid #ffffff13;transition:background .15s,border-color .15s}.preset:hover{background:#ffffff09}.preset[aria-pressed=true]{background:#d6b77e12;border-color:#d6b77e75}
+.swatch{width:35px;height:38px;border-radius:5px;flex:none;position:relative;overflow:hidden;background:linear-gradient(150deg,#d8ccb4,#827a67 48%,#272522)}.swatch:after{content:"";position:absolute;left:6px;right:6px;bottom:4px;height:10px;background:linear-gradient(#ffe6a5,#d84c19 55%,#321b16);filter:blur(1px);border-radius:50% 50% 3px 3px}
+.swatch.alpine{background:linear-gradient(150deg,#6f4f37,#35291f 58%,#201e1b)}.swatch.modern{background:linear-gradient(150deg,#d3d1c7,#666a67 50%,#292d2b)}.swatch.gothic{background:linear-gradient(150deg,#70807b,#354441 55%,#202827)}
+.preset strong{display:block;font-size:12px;font-weight:600}.preset small{display:block;color:#a2a49a;font-size:9px;margin-top:2px}.preset em{font:9px ui-monospace,monospace;color:#b8a77f;margin-left:auto;font-style:normal}
+.control{margin:11px 0 15px}.control-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;margin-bottom:6px}.control-head output{font:10px ui-monospace,monospace;color:#c7b98f}
+input[type=range]{appearance:none;width:100%;height:24px;background:transparent;cursor:pointer}input[type=range]::-webkit-slider-runnable-track{height:3px;background:linear-gradient(90deg,#b99a62,#544a38);border-radius:99px}input[type=range]::-moz-range-track{height:3px;background:#766649;border-radius:99px}input[type=range]::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border-radius:50%;background:#e5d4ad;border:2px solid #1e211c;margin-top:-6px;box-shadow:0 0 0 3px #d6b77e22}input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#e5d4ad;border:2px solid #1e211c;box-shadow:0 0 0 3px #d6b77e22}
+.segments{display:grid;grid-template-columns:1fr 1fr;gap:7px}.segments button{min-height:39px;border-radius:7px;background:#ffffff04;border:1px solid #ffffff18;color:#b6b6aa;font-size:10px}.segments button[aria-pressed=true]{color:#f1dfb7;border-color:#d6b77e6e;background:#d6b77e10}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px}.action{min-height:43px;border-radius:8px;border:1px solid #ffffff1d;background:#ffffff08;color:#e4e0d5;font-size:11px;font-weight:600}.action:hover{background:#ffffff10}.action.primary{grid-column:1/-1;background:#d6b77e;color:#211e17;border-color:#d6b77e;font-size:12px}.action.primary:hover{background:#e4ca96}.action.export{grid-column:1/-1;border-color:#c89d6063;color:#e7d6b4}
+.seed-actions{display:flex;align-items:center;gap:9px;margin-top:12px}.seed-actions .action{flex:1}.hint{font-size:9px;color:#93968c;line-height:1.6;margin:12px 0 0}.hint a{color:#d6bd8c;text-decoration:underline;text-decoration-color:#d6bd8c66;text-underline-offset:3px}.status{min-height:18px;color:#d7c49a;font-size:10px;margin-top:9px}
+.pill{font:8px ui-monospace,monospace;letter-spacing:.12em;color:#d8c99f;border:1px solid #d6b77e3b;border-radius:99px;padding:4px 7px;white-space:nowrap}
+@media(max-width:850px){body{overflow:auto}.topbar{height:58px;padding:0 14px;gap:12px}.back{padding-right:11px}.back span{display:none}.brand{font-size:10px}.brand small{font-size:7px}.seed-chip{font-size:9px;padding:6px 8px}.layout{height:auto;min-height:calc(100dvh - 58px);display:flex;flex-direction:column}.stage{height:48dvh;min-height:260px;padding:14px}.frame{width:min(100%,calc((48dvh - 28px)*1.7778))}.stage-mark{top:23px;left:23px}.stage-caption{left:23px;bottom:20px}.panel{overflow:visible;border-left:0;border-top:1px solid var(--line);padding:19px 18px calc(28px + env(safe-area-inset-bottom))}.panel h1{font-size:25px}.intro{margin-bottom:15px}.section-label{margin-top:17px}}
+@media(max-width:430px){.stage{height:43dvh;min-height:235px}.frame{width:min(100%,calc((43dvh - 28px)*1.7778))}.stage-mark{font-size:8px}.actions{gap:7px}.action{font-size:10px}}
+@media(max-width:850px){.frame[data-format=portrait]{width:min(100%,calc((48dvh - 28px)*.5625))}}
+@media(max-width:430px){.frame[data-format=portrait]{width:min(100%,calc((43dvh - 28px)*.5625))}}
+@media(max-width:850px){.eyebrow{font-size:9px}.section-label{font-size:11px}.preset strong{font-size:14px}.preset small{font-size:11px}.control-head{font-size:14px}.control-head output{font-size:12px}input[type=range]{height:40px}.segments button{min-height:44px;font-size:12px}.action{min-height:48px;font-size:12px}.hint{font-size:11px}.status{font-size:12px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="back" href="./" aria-label="Back to the render queue">‹<span>QUEUE</span></a>
+  <div class="brand">MOOR <small>FIREPLACE STUDIO</small></div>
+  <div class="spacer"></div>
+  <span class="pill">LOOP READY</span>
+  <span class="seed-chip" id="seedChip">HEARTH1-…</span>
+</header>
+<main class="layout">
+  <section class="stage" aria-label="Fireplace scene preview">
+    <div class="frame" id="frame">
+      <canvas id="scene" aria-label="Procedural fireplace room preview"></canvas>
+      <div class="stage-mark"><span>MOOR · ROOM STUDY</span>STILL CAMERA / 15 SEC LOOP</div>
+      <div class="stage-caption"><strong id="sceneTitle">The Winter Manor</strong><small id="sceneNote">QUIET FIRE · COLD GLASS · WARM STONE</small></div>
+    </div>
+  </section>
+  <aside class="panel" aria-label="Fireplace controls">
+    <div class="eyebrow">A SMALL WORLD, BUILT AROUND THE HEARTH</div>
+    <h1>Fireplace</h1>
+    <p class="intro">Curated rooms with a steady frame, slow firelight and weather beyond the glass. Every seed rebuilds the same scene on any device.</p>
+
+    <div class="section-label">Room family <span>01 / 04</span></div>
+    <div class="presets" role="group" aria-label="Room family">
+      <button class="preset" data-style="MN" aria-pressed="true"><span class="swatch"></span><span><strong>Winter manor</strong><small>Honed limestone · walnut · snow</small></span><em>01</em></button>
+      <button class="preset" data-style="AL" aria-pressed="false"><span class="swatch alpine"></span><span><strong>Alpine lodge</strong><small>Hand-hewn oak · slate · deep winter</small></span><em>02</em></button>
+      <button class="preset" data-style="MD" aria-pressed="false"><span class="swatch modern"></span><span><strong>Quiet modern</strong><small>Smoked plaster · blackened steel</small></span><em>03</em></button>
+      <button class="preset" data-style="GT" aria-pressed="false"><span class="swatch gothic"></span><span><strong>Old stone</strong><small>Carved green-grey stone · candle glow</small></span><em>04</em></button>
+    </div>
+
+    <div class="section-label">Atmosphere <span>02 / 03</span></div>
+    <label class="control" for="fire">
+      <span class="control-head"><span>Fire presence</span><output id="fireOut">Steady</output></span>
+      <input id="fire" type="range" min="1" max="4" step="1" value="3" aria-label="Fire presence">
+    </label>
+    <label class="control" for="snow">
+      <span class="control-head"><span>Snow beyond the glass</span><output id="snowOut">Soft</output></span>
+      <input id="snow" type="range" min="0" max="3" step="1" value="2" aria-label="Snowfall amount">
+    </label>
+
+    <div class="section-label">Post format <span>03 / 03</span></div>
+    <div class="segments" role="group" aria-label="Post format">
+      <button id="landscape" aria-pressed="true">16:9 · YouTube</button>
+      <button id="portrait" aria-pressed="false">9:16 · Shorts</button>
+    </div>
+    <div class="actions">
+      <button class="action primary" id="renderLoop">Render 15-sec loop ↗</button>
+      <button class="action" id="newScene">New room</button>
+      <button class="action" id="remix">Remix details</button>
+      <button class="action" id="saveStill">Save still</button>
+      <button class="action" id="copySeed">Copy scene link</button>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <p class="hint">The video is a silent, seamless visual loop. Use <a href="./">the render queue</a> for long-form renders or to compare four seeds before committing.</p>
+  </aside>
+</main>
+<script src="fireplace.js"></script>
+<script src="fireplace-render.js"></script>
+</body>
+</html>
