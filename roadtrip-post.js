@@ -4,10 +4,10 @@ const vert=`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,
 const frag=`precision highp float;
 varying vec2 vUv;
 uniform sampler2D tColor,tDepth;
-uniform vec2 resolution;
+uniform vec2 resolution,sunUv;
 uniform mat4 inverseProjection,cameraWorld;
 uniform vec3 sunDirection,fogColor,sunColor;
-uniform float time,focus,grain,fogDensity,exposure,scattering;
+uniform float time,focus,grain,fogDensity,exposure,scattering,sunVisible;
 uniform int debugPass;
 float hash(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
 vec3 positionAt(vec2 uv){float d=texture2D(tDepth,uv).r;vec4 p=inverseProjection*vec4(uv*2.-1.,d*2.-1.,1.);return p.xyz/p.w;}
@@ -37,8 +37,7 @@ void main(){
  float alignment=max(0.,dot(ray,sunDirection));float haze=sky?0.:1.-exp(-distance*fogDensity*(.65+.65*exp(-max(world.y-12.,0.)*.009)));
  vec3 atmosphere=fogColor+sunColor*pow(alignment,12.)*.19*scattering;color=mix(color,atmosphere,min(haze,.91));
  // Depth-tested sun scattering: foreground silhouettes occlude samples.
- vec4 sunView=inverse(cameraWorld)*vec4(sunDirection*2000.+cameraWorld[3].xyz,1.);vec4 sunClip=inverse(inverseProjection)*sunView;vec2 sunUv=sunClip.xy/sunClip.w*.5+.5;
- float rays=0.;if(sunView.z<0.){for(int i=0;i<10;i++){vec2 q=mix(uv,sunUv,float(i)/10.*.65);float open=step(.99998,texture2D(tDepth,clamp(q,vec2(.001),vec2(.999))).r);rays+=open*(1.-float(i)/13.);}color+=sunColor*rays*.0028*pow(alignment,4.)*scattering;}
+ float rays=0.;if(sunVisible>.5){for(int i=0;i<10;i++){vec2 q=mix(uv,sunUv,float(i)/10.*.65);float open=step(.99998,texture2D(tDepth,clamp(q,vec2(.001),vec2(.999))).r);rays+=open*(1.-float(i)/13.);}color+=sunColor*rays*.0028*pow(alignment,4.)*scattering;}
  color=aces(color*exposure);color=pow(color,vec3(1./2.2));
  float vignette=smoothstep(.24,.86,length((uv-.5)*vec2(1.,.85)));color*=1.-vignette*.19;
  float g=(hash(uv*resolution+vec2(mod(floor(time*24.),1000.),17.))-.5)*grain;color+=g;
@@ -47,14 +46,15 @@ void main(){
 }`;
 
 export function createPost(renderer){
- const target=new T.WebGLRenderTarget(1,1,{type:T.HalfFloatType,format:T.RGBAFormat,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:true});
- target.samples=renderer.capabilities.isWebGL2?4:0;target.depthTexture=new T.DepthTexture(1,1,T.UnsignedIntType);target.depthTexture.format=T.DepthFormat;
- const uniforms={tColor:{value:target.texture},tDepth:{value:target.depthTexture},resolution:{value:new T.Vector2(1,1)},inverseProjection:{value:new T.Matrix4()},cameraWorld:{value:new T.Matrix4()},sunDirection:{value:new T.Vector3()},fogColor:{value:new T.Color()},sunColor:{value:new T.Color()},time:{value:0},focus:{value:20},grain:{value:.014},fogDensity:{value:.0013},exposure:{value:1.2},scattering:{value:1},debugPass:{value:0}};
+ const target=new T.WebGLRenderTarget(1,1,{type:renderer.extensions?.has('EXT_color_buffer_float')?T.HalfFloatType:T.UnsignedByteType,format:T.RGBAFormat,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:true});
+ target.samples=renderer.capabilities.isWebGL2?Math.min(4,renderer.capabilities.maxSamples??4):0;target.depthTexture=new T.DepthTexture(1,1,T.UnsignedIntType);target.depthTexture.format=T.DepthFormat;
+ const uniforms={tColor:{value:target.texture},tDepth:{value:target.depthTexture},resolution:{value:new T.Vector2(1,1)},sunUv:{value:new T.Vector2()},sunVisible:{value:1},inverseProjection:{value:new T.Matrix4()},cameraWorld:{value:new T.Matrix4()},sunDirection:{value:new T.Vector3()},fogColor:{value:new T.Color()},sunColor:{value:new T.Color()},time:{value:0},focus:{value:20},grain:{value:.014},fogDensity:{value:.0013},exposure:{value:1.2},scattering:{value:1},debugPass:{value:0}};
  const mat=new T.ShaderMaterial({uniforms,vertexShader:vert,fragmentShader:frag,depthTest:false,depthWrite:false});
- // WebGL2 GLSL supports inverse(); Three supplies the GLSL3 compatibility
- // prefix for ShaderMaterial while keeping the familiar shader interface.
+ // Project the sun once per frame, keeping matrix inversions out of the
+ // full-resolution fragment pass.
+ const sunPoint=new T.Vector3();
  const scene=new T.Scene(),camera=new T.Camera();scene.add(new T.Mesh(new T.PlaneGeometry(2,2),mat));
- return {target,uniforms,resize(w,h){target.setSize(w,h);uniforms.resolution.value.set(w,h);},draw(main,cam,time){uniforms.time.value=time;uniforms.inverseProjection.value.copy(cam.projectionMatrixInverse);uniforms.cameraWorld.value.copy(cam.matrixWorld);renderer.setRenderTarget(target);renderer.render(main,cam);renderer.setRenderTarget(null);renderer.render(scene,camera);}};
+ return {target,uniforms,resize(w,h){target.setSize(w,h);uniforms.resolution.value.set(w,h);},draw(main,cam,time){uniforms.time.value=time;uniforms.inverseProjection.value.copy(cam.projectionMatrixInverse);uniforms.cameraWorld.value.copy(cam.matrixWorld);sunPoint.copy(uniforms.sunDirection.value).multiplyScalar(2000).add(cam.position).applyMatrix4(cam.matrixWorldInverse);uniforms.sunVisible.value=sunPoint.z<0?1:0;sunPoint.applyMatrix4(cam.projectionMatrix);uniforms.sunUv.value.set(sunPoint.x*.5+.5,sunPoint.y*.5+.5);renderer.setRenderTarget(target);renderer.render(main,cam);renderer.setRenderTarget(null);renderer.render(scene,camera);}};
 }
 
 export const MOODS={

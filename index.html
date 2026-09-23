@@ -337,6 +337,7 @@ function raBreed(parentSeed, locks, saltStr) {
 /* ================= STUDIO REGISTRY ================= */
 const OWNER = "bassseamoor", REPO = "render-queue";
 const STUDIOS = {
+  "roadtrip": { name: "Grand Tour", url: "https://bassseamoor.github.io/render-queue/roadtrip.html", renders: true, kind: "video", thumb: "thumbs/roadtrip.jpg", desc: "A cinematic road trip through a flowering mountain valley. One touring coupe, five tracking cameras, three lighting moods, original seeded landscapes, and clean MP4 exports." },
   "turtle-life":  { name: "Turtle Life", url: "https://bassseamoor.github.io/turtle-life-studio/turtle-life-studio.html", renders: true, kind: "video", thumb: "thumbs/turtle-life.jpg", desc: "A sea turtle's life, from egg to ocean. Hatchlings crawl, predators hunt, the reef glows." },
   "rain-window":  { name: "Rain Window", url: "https://bassseamoor.github.io/rain-window-studio/rain-window-studio.html", renders: true, kind: "video", thumb: "thumbs/rain-window.jpg", desc: "A rainy city street seen through glass. Streaks, droplets, mist, and lamplight." },
   "molten":       { name: "Molten", url: "https://bassseamoor.github.io/render-queue/molten.html", renders: true, kind: "video", thumb: "thumbs/molten.jpg", desc: "A lava lamp studio. Sculpt light in liquid wax, drifting and glowing." },
@@ -350,11 +351,12 @@ const STUDIOS = {
   "strata-parallax": { name: "STRATA", url: "https://bassseamoor.github.io/render-queue/strata-parallax.html", renders: true, kind: "video", thumb: "thumbs/strata-parallax.jpg", desc: "A living canyon world. Baked cloud-cliff textures on real 3D depth planes, drifting camera, mist and dust." },
   "forge-2": { name: "FORGE 2.0", url: "https://bassseamoor.github.io/render-queue/forge-2.html", renders: false, kind: "image", thumb: "thumbs/forge-2.jpg", desc: "MOOR's procedural scene-construction runtime: plugin layers, canonical scene documents, world bus, CREATE / EDIT / BUILD modes. Makes stills, not video." },
 };
-const FSC = { "turtle-life": "turtle-life", "rainwindow": "rain-window", "molten": "molten", "fireplace": "fireplace", "aquarium": "aquarium", "alien-planet": "alien-planet", "rainforest": "rainforest", "parallax": "parallax", "canal-metropolis": "canal-metropolis", "roadatlas": "road-atlas", "strata-parallax": "strata-parallax" };
+const FSC = { "roadtrip": "roadtrip", "turtle-life": "turtle-life", "rainwindow": "rain-window", "molten": "molten", "fireplace": "fireplace", "aquarium": "aquarium", "alien-planet": "alien-planet", "rainforest": "rainforest", "parallax": "parallax", "canal-metropolis": "canal-metropolis", "roadatlas": "road-atlas", "strata-parallax": "strata-parallax" };
 
 // Curated hero seeds — hand-picked good-looking starting points (captured 2026-09-22).
 // The Studios tab "Generate" uses these so the first scene you see is a known-good one.
 const HERO_SEEDS = {
+  "roadtrip": "TRIP1-9A71C3-B-C-10",
   "turtle-life": "#0179B3BB",
   "rain-window": "728419",
   "molten": "MOLTEN-vw9fr4",
@@ -405,11 +407,12 @@ function renderUrl(job, tierId) {
   if (job.kind === "still" || !st.renders) return st.url + "?seed=" + encodeURIComponent(job.seed);
   const d = tierDims(job, tierId);
   return st.url + "?render=1&seed=" + encodeURIComponent(job.seed) +
-    "&fps=" + d.fps + "&seconds=" + d.seconds + "&w=" + d.w + "&h=" + d.h + "&qid=" + job.id;
+    "&fps=" + d.fps + "&seconds=" + d.seconds + "&w=" + d.w + "&h=" + d.h + "&qid=" + job.id + (job.studio === "roadtrip" ? "&tier=" + encodeURIComponent(tierId) : "");
 }
 
 /* ================= IDEA → STUDIO ROUTING ================= */
 const ROUTES = [
+  { re: /road.?trip|grand tour|car commercial|\bb.?roll\b|scenic drive|chase cam|touring car|cypress valley/, studio: "roadtrip", sys: ["Procedural Valley", "Tracking Camera"] },
   { re: /rain|drizzl|storm|puddle|window pane/, studio: "rain-window", sys: ["Rain System", "Glass & Droplets"] },
   { re: /aquarium|fish|reef|tank|jellyfish|coral|shark/, studio: "aquarium", sys: ["Reef System", "Water & Light"] },
   { re: /fireplace|hearth|mantel|mantle|firelight|woodstove|wood stove|wood fire|cabin|lodge|cozy|\bfire\b/, studio: "fireplace", sys: ["Hearth & Room", "Firelight & Snow"] },
@@ -432,6 +435,7 @@ function routeIdea(text) {
 /* ================= SEED GENERATORS (deterministic) ================= */
 function genSeed(studio, rng, realmHint) {
   switch (studio) {
+    case "roadtrip": return "TRIP1-" + hex(rng, 6) + "-B-C-10";
     case "turtle-life": return "#" + hex(rng, 8);
     case "rain-window": return "RW-" + b36(rng, 6);
     case "molten": return "MOLTEN-" + b36(rng, 6);
@@ -457,6 +461,12 @@ function childSeed(studio, parentSeed, index) {
   return genSeed(studio, rng);
 }
 const REPORTS = {
+  "roadtrip": {
+    blurb: "One original touring coupe follows a seeded road through a cypress and wildflower valley. Designed for cinematic B-roll, with continuous travel and direct silent MP4 clips.",
+    generators: ["Continuous terrain and road generation with matching surface normals at chunk boundaries", "Instanced cypresses, broadleaf trees, blue asters, rocks and roadside posts", "Detailed coupe with rotating wheels, clearcoat paint, glass, alloy rims and emissive lamps", "Five cameras: follow, road level, profile, aerial and a continuous director route", "Blue valley, golden hour and morning mist", "2048 × 512 height-baked surface maps with albedo, normals, roughness and cavity AO", "Up to 4× MSAA, FXAA, soft shadows, depth AO, atmospheric scattering, subtle DOF, bloom and film grain", "PNG stills and silent H.264 MP4 clips; portrait, landscape and cinema framing"],
+    seedFormat: "TRIP1-6HEX-MOOD-SHOT-SPEED; clip exports up to 5 minutes, not seamless loops",
+    seedExample: "TRIP1-9A71C3-B-C-10", params: [],
+  },
   "turtle-life": {
     blurb: "A full life cycle on a procedural beach: eggs hatch, hatchlings crawl to the surf, predators hunt, and the reef glows at night.",
     generators: ["1 hero turtle + 7 hatchlings (dotted sand-trails behind each)", "Predators that commit to hunts", "Caustic light flicker on the sand", "Drifting plankton particles", "Breathing rocks + shoreline surf", "Day/night sky and ocean"],

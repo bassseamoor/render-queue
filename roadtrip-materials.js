@@ -8,11 +8,11 @@ function ih(x,y,s=17){let h=Math.imul(x,374761393)+Math.imul(y,668265263)+s;h=Ma
 export function noise(x,y,s=0){const a=Math.floor(x),b=Math.floor(y),u=x-a,v=y-b,fx=u*u*(3-2*u),fy=v*v*(3-2*v);return T.MathUtils.lerp(T.MathUtils.lerp(ih(a,b,s),ih(a+1,b,s),fx),T.MathUtils.lerp(ih(a,b+1,s),ih(a+1,b+1,s),fx),fy);}
 export function fbm(x,z,s=0){return noise(x,z,s)*.55+noise(x*2.07,z*2.07,s+19)*.27+noise(x*4.31,z*4.31,s+53)*.13+noise(x*8.53,z*8.53,s+71)*.05;}
 
-// A 2048² height-field trim atlas: moss, asphalt, limestone, bark. Normals
+// Four 2048 × 512 height-baked surface bands: moss, asphalt, limestone, bark. Normals
 // and cavity AO are baked from that height field; no downloaded textures.
 export function bakeMaterials(renderer){
  const W=2048,H=512,N=W*H,colors=[[107,127,72],[59,67,62],[133,140,116],[83,76,55]],names=['ground','road','rock','bark'];
- const result={atlasSize:[W,H*4],textures:[]};
+ const result={mapSize:[W,H],textures:[]};
  for(let k=0;k<4;k++){
   const heights=new Float32Array(N),albedo=new Uint8Array(N*4),normal=new Uint8Array(N*4),orm=new Uint8Array(N*4);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
@@ -40,12 +40,9 @@ export function bakeMaterials(renderer){
  // Blend differently rotated/scaled samples continuously, avoiding obvious
  // repetitions without sharp per-tile boundaries or derivative seams.
  result.ground.onBeforeCompile=shader=>{
-  shader.vertexShader='varying vec3 vTerrainWorld;\n'+shader.vertexShader;
-  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvTerrainWorld=(modelMatrix*vec4(position,1.0)).xyz;');
-  shader.fragmentShader='varying vec3 vTerrainWorld;\n'+shader.fragmentShader;
-  shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec2 tuv=vMapUv; vec4 txa=texture2D(map,tuv); vec4 txb=texture2D(map,mat2(.71,-.71,.71,.71)*tuv*.637+vec2(.31,.73)); float tw=.43+.19*sin(vTerrainWorld.x*.023+vTerrainWorld.z*.017); diffuseColor*=mix(txa,txb,tw);`);
+  shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`vec2 tuv=vMapUv; vec4 txa=texture2D(map,tuv); vec4 txb=texture2D(map,mat2(.71,-.71,.71,.71)*tuv*.637+vec2(.31,.73)); float tw=.43+.19*sin(tuv.x*.153333+tuv.y*.113333); diffuseColor*=mix(txa,txb,tw);`);
  };
- result.ground.customProgramCacheKey=()=> 'roadtrip-ground-antitile-1';
+ result.ground.customProgramCacheKey=()=> 'roadtrip-ground-antitile-2';
  return result;
 }
 
@@ -60,23 +57,39 @@ export function mergeParts(parts){
 export function transform(x,y,z,sx=1,sy=1,sz=1,rx=0,ry=0,rz=0){return new T.Matrix4().compose(new T.Vector3(x,y,z),new T.Quaternion().setFromEuler(new T.Euler(rx,ry,rz)),new T.Vector3(sx,sy,sz));}
 
 export function plantGeometry(kind,detail){
- const r=rng(kind+detail),parts=[],sphere=new T.SphereGeometry(1,detail?7:5,detail?5:3);
+ const r=rng(kind+'v1'),parts=[],sphere=new T.SphereGeometry(1,detail?12:6,detail?8:4);
+ const sp=sphere.getAttribute('position');
+ for(let i=0;i<sp.count;i++){const x=sp.getX(i),y=sp.getY(i),z=sp.getZ(i),crinkle=.83+.24*noise(x*7+y*3,z*7,71)+.12*noise(x*19,z*17+y*11,72);sp.setXYZ(i,x*crinkle,y*crinkle,z*crinkle);}sphere.computeVertexNormals();
  const height=kind==='cypress'?14:8.5;
- const count=kind==='cypress'?(detail?52:19):(detail?24:10);
+ // LODs keep the same branch positions; only surface tessellation changes.
+ const count=kind==='cypress'?58:30;
  for(let i=0;i<count;i++){
   let x,y,z,sx,sy,sz;
   if(kind==='cypress'){
    const t=i/(count-1),angle=i*2.399963;
    const radius=(Math.sin(Math.PI*Math.pow(t,.7))*.92+.08)*(0.7+r()*.5);
-   y=1.2+t*height;x=Math.cos(angle)*radius*.66;z=Math.sin(angle)*radius*.66;sx=radius*(.6+r()*.35);sy=1.15+r()*.9;sz=sx*(.75+r()*.3);
+   y=1.2+t*height;x=Math.cos(angle)*radius*.66;z=Math.sin(angle)*radius*.66;sx=radius*(.6+r()*.35);sy=.68+r()*.7;sz=sx*(.75+r()*.3);
   }else{const a=i*2.4,rad=1.6*Math.sqrt(r());x=Math.cos(a)*rad;z=Math.sin(a)*rad;y=height*.55+r()*height*.4;sx=1.1+r();sy=.9+r()*1.5;sz=1+r()*1.2;}
-  const color=new T.Color().setHSL(.24+r()*.055,.28+r()*.24,.12+.095*r()+y/height*.042);
+  const color=new T.Color().setHSL(.24+r()*.055,.28+r()*.24,.08+.06*r()+y/height*.045);
   parts.push({g:sphere,m:transform(x,y,z,sx,sy,sz,0,r()*6,0),color});
  }
  const foliage=mergeParts(parts);sphere.dispose();
  const trunk=new T.CylinderGeometry(.065,.22,kind==='cypress'?12:5.5,detail?7:5,2);trunk.translate(0,(kind==='cypress'?12:5.5)/2,0);
  const bark=mergeParts([{g:trunk,color:new T.Color(.7,.6,.45)}]);trunk.dispose();
  return {foliage,bark};
+}
+
+export function foliageMaterial(){
+ const W=512,data=new Uint8Array(W*W*4),normal=new Uint8Array(W*W*4),heights=new Float32Array(W*W);
+ for(let y=0;y<W;y++)for(let x=0;x<W;x++){
+  const i=y*W+x,fine=noise(x*.45,y*.45,416),branch=Math.pow(Math.abs(Math.sin(x*.20+Math.sin(y*.045)*3+y*.14)),.6),h=.3*noise(x*.037,y*.037,420)+.35*branch+.35*fine;heights[i]=h;
+  const tone=.40+.90*h;data.set([Math.min(255,230*tone),Math.min(255,255*tone),Math.min(255,195*tone),255],i*4);
+ }
+ for(let y=0;y<W;y++)for(let x=0;x<W;x++){
+  const dx=(heights[y*W+(x+1)%W]-heights[y*W+(x+W-1)%W])*2.3,dy=(heights[((y+1)%W)*W+x]-heights[((y+W-1)%W)*W+x])*2.3,len=Math.hypot(dx,dy,1);normal.set([(1-dx/len)*127.5,(1-dy/len)*127.5,(1+1/len)*127.5,255],(y*W+x)*4);
+ }
+ function tex(d,srgb=false){const t=new T.DataTexture(d,W,W);t.wrapS=t.wrapT=T.RepeatWrapping;t.generateMipmaps=true;t.minFilter=T.LinearMipmapLinearFilter;t.magFilter=T.LinearFilter;t.anisotropy=4;t.repeat.set(3,5);if(srgb)t.colorSpace=T.SRGBColorSpace;t.needsUpdate=true;return t;}
+ return windMaterial(new T.MeshStandardMaterial({roughness:.96,vertexColors:true,map:tex(data,true),normalMap:tex(normal),normalScale:new T.Vector2(.45,.45)}));
 }
 
 export function flowerMaterial(){

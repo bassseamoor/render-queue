@@ -1,11 +1,11 @@
 import * as T from './three.module.js';
-import {hash,rng,noise,fbm,clamp,smooth,mergeParts,transform,plantGeometry,flowerGeometry,flowerMaterial,windMaterial} from './roadtrip-materials.js';
+import {hash,rng,noise,fbm,clamp,smooth,mergeParts,transform,plantGeometry,flowerGeometry,flowerMaterial,foliageMaterial,windMaterial} from './roadtrip-materials.js';
 
 const CHUNK=128;
 export class Valley {
  constructor(scene,materials,seed){
   this.scene=scene;this.mat=materials;this.seed=seed;this.n=hash(seed);this.phase=(this.n%10000)*.001;this.chunks=new Map();this.origin=0;
-  this.leaves=windMaterial(new T.MeshStandardMaterial({roughness:.94,vertexColors:true}));
+  this.leaves=foliageMaterial();
   this.flowers=windMaterial(flowerMaterial());this.flowerGeo=flowerGeometry();
   this.species={cypress:[plantGeometry('cypress',true),plantGeometry('cypress',false)],oak:[plantGeometry('oak',true),plantGeometry('oak',false)]};
   const rg=new T.IcosahedronGeometry(1,1),p=rg.getAttribute('position');
@@ -21,13 +21,13 @@ export class Valley {
   const fine=fbm(x*.015,z*.015,this.n)*2-1;
   const hills=Math.pow(fbm(x*.0035+11,z*.0035,this.n+90),1.35);
   const ridges=1-Math.abs(noise(x*.018,z*.008,this.n+2)*2-1);
-  const rise=Math.pow(Math.max(0,d-7)*.017,1.23)*(9+52*hills);
+  const rise=Math.pow(Math.max(0,d-7)*.017,1.23)*(9+52*hills)/(1+Math.pow(d/620,2.1));
   const geological=Math.pow(ridges,4)*smooth(25,200,d)*(7+Math.min(d,650)*.12);
   return this.roadY(z)-.07+smooth(4.1,14,d)*(rise+fine*1.4+geological);
  }
  buildTerrain(index){
   const z0=index*CHUNK,near=index-this.last<8,steps=near?32:12;
-  const xs=[-1500,-1150,-900,-700,-540,-400,-300,-220,-160,-115,-83,-62,-46,-34,-25,-18,-12,-8,-5,-4,0,4,5,8,12,18,25,34,46,62,83,115,160,220,300,400,540,700,900,1150,1500];
+  const side=[4,5,8,12,18,25,34,46,62,83,108,135,166,200,240,285,335,390,450,515,585,660,740,825,915,1010,1110,1215,1325,1440,1560];const xs=[...side.map(x=>-x).reverse(),0,...side];
   const p=[],c=[],uv=[],ix=[],normals=[],cols=xs.length;
   for(let j=0;j<=steps;j++){
    const z=z0+j*CHUNK/steps;
@@ -44,16 +44,17 @@ export class Valley {
    }
   }
   for(let j=0;j<steps;j++)for(let k=0;k<cols-1;k++){const a=j*cols+k,b=a+cols;ix.push(a,b,a+1,b,b+1,a+1);}
-  const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));g.setAttribute('normal',new T.Float32BufferAttribute(normals,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));g.setAttribute('uv1',g.getAttribute('uv').clone());g.setAttribute('color',new T.Float32BufferAttribute(c,3));g.setIndex(ix);g.computeBoundingSphere();return g;
+  const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));g.setAttribute('normal',new T.Float32BufferAttribute(normals,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));g.setAttribute('uv1',g.getAttribute('uv').clone());g.setAttribute('color',new T.Float32BufferAttribute(c,3));g.setIndex(ix);g.computeBoundingSphere();g.userData.detailed=near;return g;
  }
  ribbon(index,left,right,yOffset=.10){
-  const p=[],uv=[],c=[],ix=[],N=48,z0=index*CHUNK;
+  const p=[],uv=[],c=[],ix=[],normals=[],N=48,z0=index*CHUNK;
   for(let j=0;j<=N;j++){
    const z=z0+j*CHUNK/N;
-   for(const x of [left,right]){p.push(this.roadX(z)+x,this.roadY(z)+yOffset,z-z0);uv.push((x+4)/8,z*.06);const tone=.72+.05*noise(z*.2,x,52);c.push(tone,tone,tone);}
+   const normal=new T.Vector3(0,1,-(this.roadY(z+.2)-this.roadY(z-.2))/.4).normalize();
+   for(const x of [left,right]){normals.push(...normal.toArray());p.push(this.roadX(z)+x,this.roadY(z)+yOffset,z-z0);uv.push((x+4)/8,z*.06);const tone=.72+.05*noise(z*.2,x,52);c.push(tone,tone,tone);}
   }
   for(let j=0;j<N;j++){const a=j*2;ix.push(a,a+2,a+1,a+2,a+3,a+1);}
-  const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));g.setAttribute('uv1',g.getAttribute('uv').clone());g.setAttribute('color',new T.Float32BufferAttribute(c,3));g.setIndex(ix);g.computeVertexNormals();return g;
+  const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));g.setAttribute('uv',new T.Float32BufferAttribute(uv,2));g.setAttribute('uv1',g.getAttribute('uv').clone());g.setAttribute('color',new T.Float32BufferAttribute(c,3));g.setIndex(ix);g.setAttribute('normal',new T.Float32BufferAttribute(normals,3));return g;
  }
  marks(index){
   const p=[],ix=[],z0=index*CHUNK;
@@ -74,7 +75,7 @@ export class Valley {
  buildChunk(index,plants){
   const group=new T.Group();group.userData.index=index;const geometries=[];
   const add=(geo,mat)=>{const m=new T.Mesh(geo,mat);group.add(m);geometries.push(geo);return m;};
-  const terrain=add(this.buildTerrain(index),this.mat.ground);terrain.receiveShadow=true;
+  const terrain=add(this.buildTerrain(index),this.mat.ground);terrain.receiveShadow=true;group.userData.terrain=terrain;
   const shoulder=add(this.ribbon(index,-4.22,4.22,.005),this.mat.rock);shoulder.receiveShadow=true;
   const asphalt=add(this.ribbon(index,-3.75,3.75),this.mat.road);asphalt.receiveShadow=true;
   add(this.marks(index),this.lineMat);
@@ -83,10 +84,10 @@ export class Valley {
    const r=rng(this.seed+':chunk:'+index),z0=index*CHUNK;
    for(const kind of ['cypress','oak']){
     const matrices=[],colors=[];
-    const total=kind==='cypress'?42:64;
+    const total=kind==='cypress'?56:100;
     for(let i=0;i<total;i++){
      const z=z0+r()*CHUNK,side=r()<.5?-1:1;
-     const d=kind==='cypress'?8+Math.pow(r(),1.6)*115:9+Math.pow(r(),.75)*220;
+     const d=kind==='cypress'?9.5+Math.pow(r(),1.6)*115:13.5+Math.pow(r(),.75)*220;
      const x=this.roadX(z)+side*d,y=this.heightAt(x,z),s=.6+r()*.85;
      matrices.push(transform(x,y-.08,z-z0,s,s*(.85+r()*.38),s,0,r()*6.28,0));colors.push(new T.Color().setHSL(.24+r()*.07,.1+r()*.16,.57+r()*.23));
     }
@@ -94,8 +95,8 @@ export class Valley {
     leaves.castShadow=true;leaves.receiveShadow=true;trunks.castShadow=true;group.add(leaves,trunks);group.userData.lods.push({mesh:leaves,high:model[0].foliage,low:model[1].foliage},{mesh:trunks,high:model[0].bark,low:model[1].bark});
    }
    const fm=[],fc=[];
-   for(let i=0;i<1150;i++){
-    const z=z0+r()*CHUNK,d=4.7+Math.pow(r(),1.9)*64,x=this.roadX(z)+(r()<.5?-d:d),s=.4+r()*.85;
+   for(let i=0;i<2400;i++){
+    const z=z0+r()*CHUNK,d=4.9+Math.pow(r(),2.1)*48,x=this.roadX(z)+(r()<.5?-d:d),s=.58+r()*.95;
     if(noise(x*.05,z*.05,this.n+71)<.36&&d>9)continue;
     fm.push(transform(x,this.heightAt(x,z)-.08,z-z0,s,.7+r()*.6,s,0,r()*6.28,0));fc.push(new T.Color().setHSL(.62+r()*.04,.08+r()*.15,.67+r()*.24));
    }
@@ -118,15 +119,16 @@ export class Valley {
    this.last=index;
    for(const [i,g] of this.chunks)if(i<index-2||i>index+23){this.scene.remove(g);g.userData.geometries.forEach(x=>x.dispose());g.userData.postMat?.dispose();g.traverse(o=>{if(o.isInstancedMesh)o.dispose();});this.chunks.delete(i);}
    for(let i=index-2;i<=index+23;i++){
-    const plants=i<=index+6;
+    const plants=i<=index+10;
     if(this.chunks.has(i)&&plants&&!this.chunks.get(i).userData.hasPlants){const old=this.chunks.get(i);this.scene.remove(old);old.userData.geometries.forEach(x=>x.dispose());this.chunks.delete(i);}
     if(!this.chunks.has(i))this.buildChunk(i,plants);
+    const chunk=this.chunks.get(i);if(i-index<8&&!chunk.userData.terrain.geometry.userData.detailed){const old=chunk.userData.terrain.geometry,next=this.buildTerrain(i);chunk.userData.terrain.geometry=next;chunk.userData.geometries[0]=next;old.dispose();}
    }
   }
   for(const [i,g] of this.chunks){
    g.position.z=i*CHUNK-this.origin;
-   const distance=Math.abs(i*CHUNK+CHUNK/2-z),close=distance<(quality==='balanced'?160:270);
-   for(const m of g.userData.lods)m.mesh.geometry=close?m.high:m.low;
+   const distance=Math.abs(i*CHUNK+CHUNK/2-z),close=distance<(quality==='balanced'?120:190);
+   for(const m of g.userData.lods){const geo=close?m.high:m.low;if(m.mesh.geometry!==geo){m.mesh.geometry=geo;m.mesh.computeBoundingSphere();}}
    if(g.userData.flowers)g.userData.flowers.visible=distance<(quality==='balanced'?270:420);
    for(const m of g.userData.lods)m.mesh.castShadow=distance<130;
   }
@@ -136,7 +138,7 @@ export class Valley {
  dispose(){
   for(const g of this.chunks.values()){this.scene.remove(g);g.userData.geometries.forEach(x=>x.dispose());g.userData.postMat?.dispose();g.traverse(o=>{if(o.isInstancedMesh)o.dispose();});}
   for(const variants of Object.values(this.species))for(const v of variants){v.foliage.dispose();v.bark.dispose();}
-  this.flowerGeo.dispose();this.rockGeo.dispose();this.leaves.dispose();this.flowers.map.dispose();this.flowers.dispose();this.lineMat.dispose();this.chunks.clear();
+  this.flowerGeo.dispose();this.rockGeo.dispose();this.leaves.map.dispose();this.leaves.normalMap.dispose();this.leaves.dispose();this.flowers.map.dispose();this.flowers.dispose();this.lineMat.dispose();this.chunks.clear();
  }
 }
 
