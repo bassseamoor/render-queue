@@ -9,6 +9,7 @@
  * Never touches the 2D pipeline, roads, navigation, layers or exports.
  */
 import * as THREE from 'three';
+import { startMotion } from './road-atlas-3d-motion.js?v=1.0.0';
 
 let session = null;
 
@@ -505,7 +506,8 @@ function buildScene(W, pal) {
   }
 
   // lights
-  scene.add(new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt));
+  const hemi = new THREE.HemisphereLight(pal.hemiSky, pal.hemiGround, pal.hemiInt);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(pal.sun, pal.sunInt);
   sun.position.set(cx - 900, 1400, cz - 500);
   sun.target.position.set(cx, 0, cz);
@@ -517,7 +519,7 @@ function buildScene(W, pal) {
   sun.shadow.bias = -0.0006;
   scene.add(sun); scene.add(sun.target);
 
-  return { scene, bounds, volCount, treeCount: trees.length };
+  return { scene, bounds, volCount, treeCount: trees.length, sun, hemi };
 }
 
 /* ------------------------------------------------------------------ */
@@ -529,7 +531,7 @@ export async function enter3D(container) {
   if (!W) throw new Error('city is still generating — try again in a moment');
   const pal = PALETTES[themeIdx()];
   // Build the scene BEFORE touching the DOM, so a data error never leaves an orphan canvas.
-  const { scene, bounds } = buildScene(W, pal);
+  const { scene, bounds, sun, hemi } = buildScene(W, pal);
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
@@ -561,9 +563,15 @@ export async function enter3D(container) {
   window.addEventListener('resize', resize);
 
   let raf = 0, running = true;
+  // Living-city layer: traffic, boats, trains, clouds, window lights, day/night.
+  // Additive and guarded — a motion failure must never take down the 3D view.
+  let motion = null;
+  try { motion = startMotion({ scene, W, pal, sun, hemi, renderer, bounds }); }
+  catch (e) { console.warn('[3d-motion] disabled:', e); }
   const loop = () => {
     if (!running) return;
     raf = requestAnimationFrame(loop);
+    if (motion) { try { motion.update(performance.now()); } catch (e) { /* keep rendering */ } }
     controls.update();
     renderer.render(scene, cam);
   };
@@ -581,6 +589,7 @@ export async function enter3D(container) {
     exit() {
       running = false;
       cancelAnimationFrame(raf);
+      if (motion) { try { motion.dispose(); } catch (e) { /* ignore */ } motion = null; }
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('resize', resize);
       scene.traverse(o => {
@@ -593,7 +602,7 @@ export async function enter3D(container) {
     },
     resetView: () => controls.reset(),
     debug: {
-      triangles: () => renderer.info.render.triangles,
+      scene: () => scene,      triangles: () => renderer.info.render.triangles,
       calls: () => renderer.info.render.calls,
       camPos: () => [cam.position.x, cam.position.y, cam.position.z].map(v => Math.round(v)),
       state: () => ({ theta: +controls.targets.theta.toFixed(3), phi: +controls.targets.phi.toFixed(3), radius: Math.round(controls.targets.radius) }),
