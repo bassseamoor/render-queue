@@ -1,4 +1,4 @@
-/* Road Atlas 3D 2.0.0 — the living 3D twin, rebuilt in modules.
+/* Road Atlas 3D 2.0.1 — the living 3D twin, rebuilt in modules.
  *
  * Pure function of the live world object. The city is assembled from
  * specialist modules, each purely additive and each reading (never writing)
@@ -21,7 +21,7 @@ import { makeGround, rngFromSeed } from './road-atlas-3d-core.js?v=2.0.0';
 import { buildTerrain } from './road-atlas-3d-terrain.js?v=2.0.0';
 import { buildRoads } from './road-atlas-3d-roads.js?v=2.0.0';
 import { buildBuildings } from './road-atlas-3d-buildings.js?v=2.0.0';
-import { buildNature } from './road-atlas-3d-nature.js?v=2.0.0';
+import { buildNature } from './road-atlas-3d-nature.js?v=2.0.1';
 import { buildProps } from './road-atlas-3d-props.js?v=2.0.0';
 import { buildSky } from './road-atlas-3d-sky.js?v=2.0.0';
 import { startMotion } from './road-atlas-3d-motion.js?v=2.0.0';
