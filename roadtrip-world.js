@@ -156,39 +156,66 @@ export function makeCar(){
  const rubber=new T.MeshStandardMaterial({color:'#15191b',roughness:.88});
  const dark=new T.MeshStandardMaterial({color:'#152323',roughness:.34,metalness:.45});
  const glass=new T.MeshPhysicalMaterial({color:'#668b8b',metalness:.35,roughness:.12,clearcoat:1,transparent:true,opacity:.84});
- const add=(geo,mat,x=0,y=0,z=0)=>{const m=new T.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;group.add(m);return m;};
- const box=(x,y,z,w,h,d,mat)=>add(new T.BoxGeometry(w,h,d),mat,x,y,z);
- add(loft([[-2.25,.77,.46,.44],[-2.05,.96,.44,.65],[-1.45,1,.43,.68],[-.85,.95,.43,.63],[.45,.95,.43,.63],[1.38,1,.43,.64],[2.1,.91,.49,.5],[2.27,.80,.55,.31]]),paint);
- add(loft([[-1.66,.73,1.02,.1],[-.83,.79,1.04,.64],[.25,.76,1.04,.68],[1.02,.84,1.05,.12]]),glass);
- add(loft([[-.87,.73,1.65,.06],[-.63,.78,1.69,.07],[.12,.74,1.69,.07],[.3,.68,1.65,.05]]),paint);
- box(0,.39,0,1.55,.18,3.8,rubber);
- function bar(a,b,r=.025,mat=chrome){const av=new T.Vector3(...a),bv=new T.Vector3(...b),m=add(new T.CylinderGeometry(r,r,av.distanceTo(bv),7),mat);m.position.copy(av).add(bv).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),bv.sub(av).normalize());return m;}
+ const lampMat=new T.MeshStandardMaterial({color:'#ffedba',emissive:'#ffd695',emissiveIntensity:2.1,roughness:.25});
+ const tailMat=new T.MeshStandardMaterial({color:'#b63228',emissive:'#dc2516',emissiveIntensity:1.1,roughness:.25});
+ const seatMat=new T.MeshStandardMaterial({color:'#766650',roughness:.95});
+ const white=new T.Color('white');
+ // Parts are collected per material and merged into one geometry each, so the
+ // whole static body renders in a handful of draw calls instead of ~90.
+ const P={paint:[],chrome:[],rubber:[],dark:[],glass:[],lamp:[],tail:[],seat:[]};
+ const M4=(x,y,z,rx=0,ry=0,rz=0,sx=1,sy=1,sz=1)=>new T.Matrix4().compose(new T.Vector3(x,y,z),new T.Quaternion().setFromEuler(new T.Euler(rx,ry,rz)),new T.Vector3(sx,sy,sz));
+ const part=(mat,geo,m)=>P[mat].push({g:geo,m:m||new T.Matrix4(),color:white});
+ const box=(mat,x,y,z,w,h,d)=>part(mat,new T.BoxGeometry(w,h,d),M4(x,y,z));
+ function bar(mat,a,b,r=.025){
+  const av=new T.Vector3(...a),bv=new T.Vector3(...b),len=av.distanceTo(bv);
+  const m=new T.Matrix4().compose(av.clone().add(bv).multiplyScalar(.5),
+   new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),bv.sub(av).normalize()),new T.Vector3(1,1,1));
+  part(mat,new T.CylinderGeometry(r,r,len,7),m);
+ }
+ part('paint',loft([[-2.25,.77,.46,.44],[-2.05,.96,.44,.65],[-1.45,1,.43,.68],[-.85,.95,.43,.63],[.45,.95,.43,.63],[1.38,1,.43,.64],[2.1,.91,.49,.5],[2.27,.80,.55,.31]]));
+ part('glass',loft([[-1.66,.73,1.02,.1],[-.83,.79,1.04,.64],[.25,.76,1.04,.68],[1.02,.84,1.05,.12]]));
+ part('paint',loft([[-.87,.73,1.65,.06],[-.63,.78,1.69,.07],[.12,.74,1.69,.07],[.3,.68,1.65,.05]]));
+ box('rubber',0,.39,0,1.55,.18,3.8);
  for(const s of [-1,1]){
-  bar([s*.86,1.10,1.03],[s*.68,1.73,.24],.036,paint);bar([s*.76,1.73,-.81],[s*.76,1.07,-1.68],.045,paint);bar([s*.8,1.10,-.65],[s*.75,1.73,-.57],.023,chrome);bar([s*.91,1.065,-1.6],[s*.91,1.065,1.08],.018);
-  box(s*.964,.77,-.12,.026,.025,2.23,chrome);box(s*.97,1.02,-.4,.035,.035,.19,chrome);
-  bar([s*.84,1.1,.83],[s*1.18,1.25,.7],.025);const mirror=add(new T.SphereGeometry(1,12,6),paint,s*1.19,1.25,.68);mirror.scale.set(.16,.075,.11);
+  bar('paint',[s*.86,1.10,1.03],[s*.68,1.73,.24],.036);bar('paint',[s*.76,1.73,-.81],[s*.76,1.07,-1.68],.045);
+  bar('chrome',[s*.8,1.10,-.65],[s*.75,1.73,-.57],.023);bar('chrome',[s*.91,1.065,-1.6],[s*.91,1.065,1.08],.018);
+  box('chrome',s*.964,.77,-.12,.026,.025,2.23);box('chrome',s*.97,1.02,-.4,.035,.035,.19);
+  bar('chrome',[s*.84,1.1,.83],[s*1.18,1.25,.7],.025);
+  part('paint',new T.SphereGeometry(1,12,6),M4(s*1.19,1.25,.68,0,0,0,.16,.075,.11));
+  // Wheels stay separate (they spin), but each wheel merges to 3 meshes.
   for(const wz of [-1.43,1.42]){
    const wg=new T.Group();wg.position.set(s*1.015,.41,wz);group.add(wg);wheels.push(wg);
-   const tire=new T.Mesh(new T.CylinderGeometry(.4,.4,.245,32,1),rubber);tire.rotation.z=Math.PI/2;wg.add(tire);tire.castShadow=true;
-   const rim=new T.Mesh(new T.CylinderGeometry(.277,.277,.252,24,1),chrome);rim.rotation.z=Math.PI/2;wg.add(rim);
-   const hub=new T.Mesh(new T.CylinderGeometry(.22,.22,.256,24,1),dark);hub.rotation.z=Math.PI/2;wg.add(hub);
-   for(let k=0;k<10;k++){const a=k*Math.PI/5,sp=new T.Mesh(new T.BoxGeometry(.26,.025,.205),chrome);sp.position.set(0,Math.cos(a)*.12,Math.sin(a)*.12);sp.rotation.x=-a+Math.PI/2;wg.add(sp);}
-   const cap=new T.Mesh(new T.SphereGeometry(.078,12,6),chrome);cap.position.x=s*.14;cap.scale.x=.25;wg.add(cap);
-   const arch=add(new T.TorusGeometry(.442,.026,6,24,Math.PI),chrome,s*1.035,.4,wz);arch.rotation.y=Math.PI/2;
+   const wChrome=[],wRubber=[],wDark=[];
+   wRubber.push({g:new T.CylinderGeometry(.4,.4,.245,32,1),m:M4(0,0,0,0,0,Math.PI/2),color:white});
+   wChrome.push({g:new T.CylinderGeometry(.277,.277,.252,24,1),m:M4(0,0,0,0,0,Math.PI/2),color:white});
+   wDark.push({g:new T.CylinderGeometry(.22,.22,.256,24,1),m:M4(0,0,0,0,0,Math.PI/2),color:white});
+   for(let k=0;k<10;k++){const a=k*Math.PI/5;wChrome.push({g:new T.BoxGeometry(.26,.025,.205),m:M4(0,Math.cos(a)*.12,Math.sin(a)*.12,-a+Math.PI/2,0,0),color:white});}
+   wChrome.push({g:new T.SphereGeometry(.078,12,6),m:M4(s*.14,0,0,0,0,0,.25,1,1),color:white});
+   const wm=[[mergeParts(wRubber),rubber],[mergeParts(wChrome),chrome],[mergeParts(wDark),dark]];
+   for(const [g,m] of wm){const mesh=new T.Mesh(g,m);mesh.castShadow=true;wg.add(mesh);}
   }
+  part('chrome',new T.TorusGeometry(.442,.026,6,24,Math.PI),M4(s*1.035,.4,-1.43,0,Math.PI/2,0));
+  part('chrome',new T.TorusGeometry(.442,.026,6,24,Math.PI),M4(s*1.035,.4,1.42,0,Math.PI/2,0));
  }
- box(0,.57,2.24,1.75,.095,.13,chrome);box(0,.58,-2.21,1.8,.105,.13,chrome);box(0,.78,2.236,1.26,.2,.048,dark);
- for(let i=0;i<5;i++)box(0,.7+i*.033,2.269,1.20,.012,.012,chrome);
- const lamp=new T.MeshStandardMaterial({color:'#ffedba',emissive:'#ffd695',emissiveIntensity:2.1,roughness:.25});
+ box('chrome',0,.57,2.24,1.75,.095,.13);box('chrome',0,.58,-2.21,1.8,.105,.13);box('dark',0,.78,2.236,1.26,.2,.048);
+ for(let i=0;i<5;i++)box('chrome',0,.7+i*.033,2.269,1.20,.012,.012);
  for(const s of [-1,1]){
-  for(const x of [.59,.79]){const rim=add(new T.CylinderGeometry(.12,.12,.045,24),chrome,s*x,.81,2.20);rim.rotation.x=Math.PI/2;const light=add(new T.CircleGeometry(.10,24),lamp,s*x,.81,2.23);light.rotation.y=0;}
-  box(s*.69,.76,-2.236,.33,.13,.022,new T.MeshStandardMaterial({color:'#b63228',emissive:'#dc2516',emissiveIntensity:1.1,roughness:.25}));
+  for(const x of [.59,.79]){
+   part('chrome',new T.CylinderGeometry(.12,.12,.045,24),M4(s*x,.81,2.20,Math.PI/2,0,0));
+   part('lamp',new T.CircleGeometry(.10,24),M4(s*x,.81,2.23));
+  }
+  box('tail',s*.69,.76,-2.236,.33,.13,.022);
+ }
+ for(const s of [-1,1]){box('seat',s*.39,1.02,-.05,.49,.40,.52);part('seat',new T.BoxGeometry(.51,.57,.14),new T.Matrix4().multiplyMatrices(M4(s*.39,1.20,-.39),M4(0,0,0,-.13,0,0)));}
+ const mats={paint,chrome,rubber,dark,glass,lamp:lampMat,tail:tailMat,seat:seatMat};
+ for(const k of Object.keys(P)){
+  if(!P[k].length)continue;
+  const mesh=new T.Mesh(mergeParts(P[k]),mats[k]);mesh.castShadow=true;mesh.receiveShadow=true;group.add(mesh);
  }
  const plate=document.createElement('canvas');plate.width=256;plate.height=64;const pc=plate.getContext('2d');pc.fillStyle='#d7d7b9';pc.fillRect(0,0,256,64);pc.fillStyle='#283829';pc.font='bold 36px sans-serif';pc.textAlign='center';pc.fillText('MOOR',128,46);const pt=new T.CanvasTexture(plate);pt.colorSpace=T.SRGBColorSpace;
- const rear=add(new T.PlaneGeometry(.48,.12),new T.MeshStandardMaterial({map:pt,roughness:.7}),0,.70,-2.246);rear.rotation.y=Math.PI;
+ const rear=new T.Mesh(new T.PlaneGeometry(.48,.12),new T.MeshStandardMaterial({map:pt,roughness:.7}));rear.position.set(0,.70,-2.246);rear.rotation.y=Math.PI;group.add(rear);
  // Interior remains a coherent silhouette through the glazed cabin.
- const seat=new T.MeshStandardMaterial({color:'#766650',roughness:.95});for(const s of [-1,1]){box(s*.39,1.02,-.05,.49,.40,.52,seat);const back=box(s*.39,1.20,-.39,.51,.57,.14,seat);back.rotation.x=-.13;}
  const contact=document.createElement('canvas');contact.width=contact.height=128;const cx=contact.getContext('2d'),cg=cx.createRadialGradient(64,64,6,64,64,64);cg.addColorStop(0,'rgba(0,0,0,.7)');cg.addColorStop(1,'rgba(0,0,0,0)');cx.fillStyle=cg;cx.fillRect(0,0,128,128);
- const shadow=add(new T.PlaneGeometry(3.3,5.8),new T.MeshBasicMaterial({map:new T.CanvasTexture(contact),transparent:true,depthWrite:false,opacity:.75}),0,.014,0);shadow.rotation.x=-Math.PI/2;shadow.castShadow=false;shadow.receiveShadow=false;
+ const shadow=new T.Mesh(new T.PlaneGeometry(3.3,5.8),new T.MeshBasicMaterial({map:new T.CanvasTexture(contact),transparent:true,depthWrite:false,opacity:.75}));shadow.position.set(0,.014,0);shadow.rotation.x=-Math.PI/2;group.add(shadow);
  return {group,wheels,paint};
 }
