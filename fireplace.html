@@ -1483,19 +1483,19 @@ void main(){
   vec3 fill = uFillCol*fillF*0.22*(0.4+0.6*uCloud);
   vec3 col = alb*(direct+fire+ceilL+amb+fill)*bakedAO;
   col += spec*(direct*0.6+fire*0.8+ceilL*0.7+vec3(0.04))*bakedAO;
-  if(uMode>0.5){
+  if(uMode>0.5&&uMode<1.5){ /* polished concrete floor: soft environment wash */
     vec3 R=reflect(-V,N);
     vec3 env=skyColor(normalize(R),uTime);
     col=mix(col,env*(0.25+0.75*(1.0-rough)),0.35*(1.0-rough));
   }
-  if(uMode>1.5){ /* glossy black: fresnel + sharp fire/sun/sky reflections */
+  if(uMode>1.5){ /* glossy black: true fresnel-weighted reflections, stays black face-on */
     vec3 R=reflect(-V,N);
     float fres=0.04+0.96*pow(1.0-max(dot(N,V),0.0),5.0);
     vec3 skyRef=skyColor(normalize(R),uTime);
     float sunRef=pow(max(dot(R,-normalize(uSunDir)),0.0),600.0);
     vec3 fD2=uFirePos-vWP; float fd2=length(fD2); vec3 fL2=fD2/max(fd2,1e-3);
     float fireRef=pow(max(dot(R,fL2),0.0),90.0)*uFireI*uFlick/(1.0+fd2*fd2*0.25);
-    col+=(skyRef*0.5+uSunCol*sunRef*3.0+uFireCol*fireRef*2.0)*(0.35+0.65*fres);
+    col+=(skyRef*0.30+uSunCol*sunRef*2.0+uFireCol*fireRef*1.2)*fres;
   }
   if(uEmber>0.5){
     vec2 ecell = vWP.xz*vec2(9.0,7.0);
@@ -2395,21 +2395,21 @@ function buildParticles(st){
   const sd=st.seed>>>0;
   const fl=[14,26,40][st.fire|0];
   S.parts.push(makePartSystem({mode:0, count:fl, seed:sd^0xF1, origin:[4.50,0.52,-0.9],
-    rise:0.75, size:0.44, spread:0.30, rate:0.75, sway:0.09, grow:1.2, alpha:0.80}));
+    rise:0.90, size:0.55, spread:0.36, rate:0.75, sway:0.09, grow:1.2, alpha:0.80}));
   const tgR=[6,10,14][st.fire|0], tgM=[5,8,12][st.fire|0], tgF=[4,7,10][st.fire|0];
   S.parts.push(makePartSystem({mode:7, count:tgR, seed:sd^0x71, origin:[4.70,0.48,-0.9],
-    rise:0.95, size:0.34, spread:0.22, rate:1.15, sway:0.13, grow:1.25, alpha:0.75}));
+    rise:1.15, size:0.43, spread:0.27, rate:1.15, sway:0.13, grow:1.25, alpha:0.75}));
   S.parts.push(makePartSystem({mode:7, count:tgM, seed:sd^0x72, origin:[4.58,0.50,-0.9],
-    rise:0.85, size:0.30, spread:0.20, rate:1.35, sway:0.15, grow:1.2, alpha:0.72}));
+    rise:1.05, size:0.38, spread:0.25, rate:1.35, sway:0.15, grow:1.2, alpha:0.72}));
   S.parts.push(makePartSystem({mode:7, count:tgF, seed:sd^0x73, origin:[4.40,0.46,-0.9],
-    rise:0.70, size:0.26, spread:0.18, rate:1.50, sway:0.16, grow:1.15, alpha:0.70}));
+    rise:0.85, size:0.33, spread:0.22, rate:1.50, sway:0.16, grow:1.15, alpha:0.70}));
   const emN=Math.round((st.sparks|0)/100*46);
   if(emN>0) S.parts.push(makePartSystem({mode:1, count:emN, seed:sd^0xE2, origin:[4.55,0.70,-0.9],
     rise:1.7, size:0.022, spread:0.35, rate:0.5, sway:0.16, grow:0.6, alpha:0.9}));
   S.parts.push(makePartSystem({mode:2, count:9, seed:sd^0x5E, origin:[4.50,1.35,-0.9],
     rise:1.5, size:0.5, spread:0.2, rate:0.22, sway:0.25, grow:2.6, alpha:0.30}));
   S.parts.push(makePartSystem({mode:3, count:4, seed:sd^0x60, origin:[4.55,0.34,-0.9],
-    rise:0.02, size:0.60, spread:0.45, rate:0.25, sway:0, grow:1, alpha:0.45}));
+    rise:0.02, size:0.68, spread:0.45, rate:0.25, sway:0, grow:1, alpha:0.45}));
   const shN=[6,9,12][st.fire|0];
   S.parts.push(makePartSystem({mode:6, count:shN, seed:sd^0xF6, origin:[4.55,0.72,-0.9],
     rise:0.01, size:0.55, spread:0.16, rate:0.40, sway:0, grow:1, alpha:0.70}));
@@ -2452,16 +2452,16 @@ function buildShagNubs(st){
   detFreeVAO(shagVAO,shagBufs); detFreeVAO(nubVAO,nubBufs);
   shagVAO=null; nubVAO=null; shagBufs=[]; nubBufs=[];
   const rng=mulberry32((st.seed^0x51ab)>>>0);
-  /* shag rug strands: count by rug variant (index 2 = shag) */
-  const counts=[1500,1700,3400,1300];
-  const n=counts[st.rug|0]||1500;
+  /* shag rug strands: count by rug variant (index 2 = shag); dense, short, near-upright */
+  const counts=[2300,2600,5200,2000];
+  const n=counts[st.rug|0]||2300;
   const r=detBuild(n,(i,base,p0,p1)=>{
     const x=-0.3+(rng()-0.5)*4.3, z=1.1+(rng()-0.5)*3.0;
     base[i*3]=x; base[i*3+1]=0.065; base[i*3+2]=z;
-    const la=rng()*Math.PI*2, ll=0.15+rng()*0.85;
-    const lean=0.008+rng()*0.028;
-    p0[i*4]=Math.cos(la)*lean*ll; p0[i*4+1]=Math.sin(la)*lean*ll;
-    p0[i*4+2]=0.020+rng()*0.035; p0[i*4+3]=0.004+rng()*0.005;
+    const la=rng()*Math.PI*2;
+    const lean=0.002+rng()*0.008; /* near-upright: lean stays well below strand height */
+    p0[i*4]=Math.cos(la)*lean; p0[i*4+1]=Math.sin(la)*lean;
+    p0[i*4+2]=0.012+rng()*0.018; p0[i*4+3]=0.004+rng()*0.005;
     const tv=0.72+rng()*0.56, tw=0.90+rng()*0.20;
     p1[i*4]=rng()*Math.PI*2;
     p1[i*4+1]=0.55*tv*tw; p1[i*4+2]=0.50*tv*tw; p1[i*4+3]=0.44*tv;
