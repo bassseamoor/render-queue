@@ -1734,9 +1734,11 @@ void main(){
   float cr=cos(aP1.x), sr=sin(aP1.x);
   float t=aQuad.y+0.5;
   float bend=t*t; /* curl grows along the strand so the root stays planted */
-  vec2 curl=vec2(aP2.x,aP2.y)*(aP2.z*bend+0.30*aP2.z*sin(aP2.w+t*9.0)*t);
-  vec3 center=aBase+vec3(aP0.x,aP0.z,aP0.y)*t+vec3(curl.x,-aP2.z*bend*0.35,curl.y);
-  vec3 off=vec3(cr*aQuad.x*aP0.w, 0.0, -sr*aQuad.x*aP0.w)*(1.0-t*0.55);
+  vec2 curl=vec2(aP2.x,aP2.y)*(aP2.z*bend*1.4+0.45*aP2.z*sin(aP2.w+t*9.0)*t);
+  float rise=aP0.z*t;
+  float droop=min(aP2.z*bend*1.1, rise*0.92); /* flop over into wavy masses, never below the backing */
+  vec3 center=aBase+vec3(aP0.x*t,rise,aP0.z*t)+vec3(curl.x,-droop,curl.y);
+  vec3 off=vec3(cr*aQuad.x*aP0.w, 0.0, -sr*aQuad.x*aP0.w)*(1.0-t*0.75);
   vec3 pos=center+off;
   vWP=pos;
   gl_Position=uProj*uView*vec4(pos,1.0);
@@ -1760,7 +1762,7 @@ void main(){
   vec3 col=vTone*mix(0.30+0.70*t, 0.12+0.88*t*t, vFx.x); /* fake fiber AO: shadowed root, light tip */
   vec3 lit=col*(uSunCol*uSunI*ndl*0.35+uFireCol*fAtt*(0.4+0.6*max(dot(N,fL),0.0)));
   lit+=col*uAmbTint*0.35;
-  lit+=vTone*mix(sheen*0.06, aniso*0.16, vFx.y)*(0.4+0.6*fAtt);
+  lit+=vTone*mix(sheen*0.06, aniso*0.07, vFx.y)*(0.4+0.6*fAtt);
   oC=vec4(lit,1.0);
 }`;
 
@@ -2465,7 +2467,7 @@ function buildShagNubs(st){
      fibers radiate outward from each tuft center with curl, S-wiggle and
      tip droop; deep shadowed valleys between tufts; per-tuft wave lean so
      neighboring tufts don't look stamped; soft fringe edge */
-  const counts=[6500,7000,12000,6000];
+  const counts=[8000,8500,14000,7000];
   const n=counts[st.rug|0]||6500;
   const cw=0.45, cl=[];
   for(let gx=-2.45; gx<1.85; gx+=cw) for(let gz=-0.4; gz<2.6; gz+=cw)
@@ -2494,18 +2496,18 @@ function buildShagNubs(st){
       const ra=Math.atan2(rz,rx);
       const wave=Math.sin(c[0]*5.3+c[1]*3.7+c[3]); /* per-tuft wave lean */
       la=ra+(rng()-0.5)*0.55+wave*0.55; /* radial pom-pom + jitter + tuft wave */
-      lean=(0.008+vn*0.062)*(0.70+rng()*0.60); /* edge fibers lean outward */
+      lean=(0.015+vn*0.075)*(0.70+rng()*0.60); /* edge fibers lean outward */
       cdX=Math.cos(la); cdZ=Math.sin(la); /* curl follows the radial flow */
-      cAmp=0.30+rng()*0.70;
+      cAmp=0.50+rng()*0.50;
       cPh=c[3]+rng()*0.8; /* per-tuft phase coherence */
     }else{
       /* un-snapped: short dark underlayer so no backing shows through */
       hMul=0.30; wMul=1.0; toneMul=0.50;
       la=rng()*Math.PI*2; lean=0.004+rng()*0.008;
       cdX=Math.cos(la); cdZ=Math.sin(la);
-      cAmp=0.25+rng()*0.45; cPh=rng()*Math.PI*2;
+      cAmp=0.40+rng()*0.40; cPh=rng()*Math.PI*2;
     }
-    let hgt=(0.048+rng()*0.052)*hMul; /* long fluffy fibers */
+    let hgt=(0.030+rng()*0.032)*hMul; /* shorter fibers that flop instead of spike */
     if(fr>0){ /* fringe: longer strands leaning outward, soft wavy silhouette */
       const ox=dxe<dze?(x<-0.3?-1:1):0, oz=dxe<dze?0:(z<1.1?-1:1);
       la=Math.atan2(oz,ox)+(rng()-0.5)*0.9;
@@ -2513,7 +2515,7 @@ function buildShagNubs(st){
       hgt*=1.0+fr*0.7;
     }
     p0[i*4]=Math.cos(la)*lean; p0[i*4+1]=Math.sin(la)*lean;
-    p0[i*4+2]=hgt; p0[i*4+3]=(0.0035+rng()*0.0035)*wMul;
+    p0[i*4+2]=hgt; p0[i*4+3]=(0.008+rng()*0.007)*wMul; /* wider, softer ribbons: no needles */
     p2[i*4]=cdX; p2[i*4+1]=cdZ;
     p2[i*4+2]=cAmp*hgt*(1+fr*0.3); p2[i*4+3]=cPh;
     p3[i*4]=1.0; p3[i*4+1]=1.0; p3[i*4+2]=0; p3[i*4+3]=0; /* fur shading: AO + sheen */
