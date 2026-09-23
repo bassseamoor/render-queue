@@ -147,7 +147,15 @@ void main(){vec2 p=world();vec2 q=p;float phase=uSeed*.001;vec2 key=uKeyPos;floa
  vec3 col=mix(uSky*.43,uFog*.75,(1.-smoothstep(-.5,.5,p.y)));
  col+=uFog*.075*clouds;float halo=exp(-length((p-key)*vec2(1.,1.1))*5.);col+=uKey*halo*.085*uGlow;
  if(uRealm<.5){float d=length(p-key);col+=uKey*(.54+uDay*.9)*(1.-smoothstep(.0245,.026,d));col+=uKey*(.07+uDay*.12)*exp(-d*16.)*uGlow;col*=1.-.1*clouds;}
- else if(uRealm<1.5){col+=vec3(.21,.08,.24)*exp(-abs(p.y+.11)*7.);col+=uKey*.018*pow(clouds,2.);}
+ else if(uRealm<1.5){
+  // Canal sky: richer gradient stops, warm horizon glow, proper soft sun disc.
+  col=mix(uSky*.40,uFog*.80,1.-smoothstep(-.55,.55,p.y));
+  col+=uKey*vec3(1.,.62,.34)*exp(-abs(p.y+.10)*6.)*.12;
+  col+=uSky*exp(-max(p.y,0.)*3.2)*.28;
+  vec2 sd=p-key;float sdd=length(sd);
+  col+=uKey*((1.-smoothstep(.030,.036,sdd))*1.1+exp(-sdd*11.)*.22)*(.55+.45*uDay);
+  col+=uKey*.018*pow(clouds,2.);
+ }
  else if(uRealm<2.5){col+=vec3(.24,.045,.009)*exp(-abs(p.y+.13)*9.)*(.94+.06*clouds);col*=.9+clouds*.15;}
  else if(uRealm<3.5){col=mix(uSky,uFog,(1.-smoothstep(-.2,.44,p.y)));col+=uKey*(.09+uDay*.20)*halo;col+=uKey*(.6+uDay*1.4)*(1.-smoothstep(.039,.043,length(p-key)));col+=uKey*.10*pow(clouds,3.);}
  else if(uRealm<4.5){col*=.43;col+=uKey*exp(-length(p-vec2(-.2,-.05))*4.)*.025;}
@@ -235,6 +243,9 @@ vec3 fxaaTap(sampler2D tex,vec2 uv,vec2 px){
 }
 // Subtle barrel distortion, like a real camera lens: the center stays put,
 // the edges bend outward just slightly. Applied only to the canal finish.
+// Filmic tone mapping (Krzysztof Narkowicz ACES fit): exposure is applied by the
+// caller, this maps HDR -> display-referred sRGB-ready values. Deterministic.
+vec3 acesF(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
 vec2 bendUV(vec2 q){vec2 cc=q-.5;return q+cc*dot(cc,cc)*uBend;}
 vec3 photograph(vec2 uv){vec3 c=uAA>.5?fxaaTap(uTex,uv,1./uSize):texture2D(uTex,uv).rgb;if(uMix>.999)return c;return mix(texture2D(uOld,uv).rgb,c,uMix);}
 void main(){vec2 uv=vUV;vec2 p=world();float phase=uSeed*.001;
@@ -252,7 +263,15 @@ void main(){vec2 uv=vUV;vec2 p=world();float phase=uSeed*.001;
   float coc=opticalRadius(uv)+clamp(abs(linZ-linF)*.025,0.,1.)*.4;
   vec3 sharp=photograph(uv),color=mix(sharp,texture2D(uBlurred,uv).rgb,smoothstep(.25,1.25,coc));
  if(coc<1.&&uOptics.z>0.){vec2 px=1./uSize;vec3 neighbors=(photograph(uv+vec2(px.x,0.))+photograph(uv-vec2(px.x,0.))+photograph(uv+vec2(0.,px.y))+photograph(uv-vec2(0.,px.y)))*.25;color+=(1.-coc)*uOptics.z*(sharp-neighbors);}
- color=mix(vec3(dot(color,vec3(.2126,.7152,.0722))),color,1.12);color*=vec3(1.03+uPalette*.20,1.,.96-uPalette*.20)*.80;color=(color*(2.51*color+.03))/(color*(2.43*color+.59)+.14);color=pow(clamp(color,0.,1.),vec3(.4545));float aerial=smoothstep(26.,120.,linZ);color=mix(color,color*vec3(.93,.97,1.05)+vec3(.012,.028,.045),aerial*.5);color*=mix(1.,texture2D(uAO,uv).r,uAOOn);color*=1.-.13*pow(length(uv-.5),1.8);color+=(hash2(gl_FragCoord.xy+floor(uTime*8.))-.5)*.007*uGrain;gl_FragColor=vec4(clamp(color,0.,1.),1.);return;}
+ color=mix(vec3(dot(color,vec3(.2126,.7152,.0722))),color,1.12);color*=vec3(1.03+uPalette*.20,1.,.96-uPalette*.20)*1.35;
+ // Restrained bright-pass bloom: a 4-tap diamond of the HDR buffer, tonemapped
+ // on its own so only hot spots (lamps, window lights, sun glints) lift.
+ vec2 bpx=3.5/uSize;vec3 bsum=texture2D(uTex,uv+vec2(bpx.x,0.)).rgb+texture2D(uTex,uv-vec2(bpx.x,0.)).rgb+texture2D(uTex,uv+vec2(0.,bpx.y)).rgb+texture2D(uTex,uv-vec2(0.,bpx.y)).rgb;
+ float bmask=smoothstep(.78,1.2,max(max(bsum.r,bsum.g),bsum.b)*.25)*uMix;
+ color=acesF(color)+acesF(bsum*.25)*bmask*.10;
+ float aerial=smoothstep(26.,120.,linZ);color=mix(color,color*vec3(.93,.97,1.05)+vec3(.012,.028,.045),aerial*.5);color*=mix(1.,texture2D(uAO,uv).r,uAOOn);
+ float vd=length((uv-.5)*vec2(1.12,.94));color*=mix(.82,1.,1.-smoothstep(.32,1.02,vd));
+ color+=(hash2(gl_FragCoord.xy+floor(uTime*8.))-.5)*.007*uGrain;gl_FragColor=vec4(clamp(color,0.,1.),1.);return;}
 
  // True screen-space refraction: sample the already-composited scene at a distorted position.
  if(uRealm>1.5&&uRealm<2.5){float strength=(1.-smoothstep(-.42,.13,p.y));uv.x+=(sin(p.y*77.+uTime*.17)+.43*sin(p.y*123.7-uTime*.113+phase))*.00032*strength;uv.y+=sin(p.x*43.+uTime*.097)*sin(p.y*31.-uTime*.061)*.00012*strength;}
@@ -418,7 +437,7 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
  if(mat>.5&&mat<1.5&&abs(N.y)>=.5){float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(albedo,vec3(.32,.48,.52),.16+fres*.28);rough=.24;metal=.22;}
  if(mat>3.5&&mat<4.5){albedo*=.96+.04*noise(vPosition.xz*5.);rough=.92;}
  if(mat>4.5&&mat<5.5){albedo*=.96+.04*noise(vPosition.xz*3.);rough=.93;}
- if(mat>5.5&&mat<6.5){float ripple=sin(vPosition.x*4.+uTime*.21)+.43*sin(vPosition.z*6.7-uTime*.133);N=normalize(N+vec3(ripple*.025,0.,sin(vPosition.z*8.3+uTime*.091)*.014));float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(uWaterTint,vec3(.28,.48,.52),fres*.74);float glint=pow(max(dot(reflect(-V,N),uSun),0.),120.);albedo+=vec3(.65,.70,.55)*glint*.12;float foam=(1.-smoothstep(.02,.16,abs(landDistance(vPosition.xz))))*(.50+.16*sin(vPosition.z*6.+uTime*.31)+.10*sin(vPosition.x*8.7-uTime*.47));albedo=mix(albedo,vec3(.69,.85,.77),foam*.42);rough=.16;metal=.3;}
+ if(mat>5.5&&mat<6.5){float ripple=sin(vPosition.x*4.+uTime*.21)+.43*sin(vPosition.z*6.7-uTime*.133);N=normalize(N+vec3(ripple*.025,0.,sin(vPosition.z*8.3+uTime*.091)*.014));float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(uWaterTint,mix(vec3(.28,.48,.52),vec3(.19,.33,.42),.30),fres*.74);float glint=pow(max(dot(reflect(-V,N),uSun),0.),260.);albedo+=vec3(.72,.74,.58)*glint*.22;float foam=(1.-smoothstep(.02,.16,abs(landDistance(vPosition.xz))))*(.50+.16*sin(vPosition.z*6.+uTime*.31)+.10*sin(vPosition.x*8.7-uTime*.47));albedo=mix(albedo,vec3(.69,.85,.77),foam*.42);rough=.12;metal=.3;}
  if(mat>7.5&&mat<8.5){rough=.36;metal=.24;}
  if(mat>9.5&&mat<10.5){vec2 tile=fract(vec2(vTex.x*11.,vPosition.z*16.));float nearDetail=1.-smoothstep(.025,.095,footprint);albedo*=1.-.12*(1.-smoothstep(.03,.14,min(tile.x,tile.y)))*nearDetail;rough=.81;}
  // Low contrast, multiscale surface finishes inspired by Forge's baked detail layers.
@@ -450,8 +469,8 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
  if(vBuild.y>.5&&mat>.5&&mat<3.5){float finish=smoothstep(.07,.54,vBuild.x-vPosition.y);albedo=mix(vec3(.45,.47,.44),albedo,finish);emission*=finish;rough=mix(.92,rough,finish);metal*=finish;}
  float direct=max(dot(N,uSun),0.),visibility=shadow(normalize(vNormal));float sky=.58+.42*max(N.y,0.);
  // Plain lighting controls: sun strength, ambient strength, time of day (warms and lowers the sun).
- vec3 sunTint=mix(vec3(1.47,1.17,.80),vec3(1.72,.92,.52),1.-smoothstep(.05,.55,uTod));
- vec3 ambTint=vec3(.18,.27,.40)*mix(.42,1.,smoothstep(.0,.65,uTod));
+ vec3 sunTint=mix(vec3(1.50,1.14,.73),vec3(1.78,.90,.48),1.-smoothstep(.05,.55,uTod));
+ vec3 ambTint=vec3(.155,.255,.445)*mix(.42,1.,smoothstep(.0,.65,uTod));
  float ao=mix(.58,1.,smoothstep(0.,.8,vPosition.y));vec3 lighting=ambTint*sky*ao*uAmbI+sunTint*direct*visibility*(.32+.91*uRays)*uSunI;
  vec3 H=normalize(V+uSun);float spec=pow(max(dot(N,H),0.),mix(125.,12.,rough))*(.10+metal*.7)*visibility;vec3 col=albedo*lighting+vec3(1.0,.86,.63)*spec+emission;
  float distance=length(uEye-vPosition);float haze=1.-exp(-max(distance-16.,0.)*.010*uMist*uMist);col=mix(col,vec3(.45,.55,.60),haze);col*=1.+.022*uWeather;col*=.45+.65*uGlow;gl_FragColor=vec4(col,1.);
@@ -648,12 +667,20 @@ function cityRoad(m,a,b,width,y,c,mat=4){const dx=b[0]-a[0],dz=b[1]-a[1],len=Mat
 function cityTree(m,x,z,s,r){m.box(x-.025,.05,z-.025,.05,s*.65,.05,[.25,.18,.10],0);m.material=23;const g=.33+r()*.09,leaf=[.18+r()*.06,g,.10+r()*.045];m.sphere(x,s*.72,z,s*.35,s*.43,s*.34,leaf,9,5);m.sphere(x-s*.17,s*.77,z,s*.22,s*.28,s*.23,[leaf[0]*1.12,leaf[1]*1.08,leaf[2]*1.06],8,4);m.sphere(x+s*.18,s*.78,z+s*.03,s*.22,s*.28,s*.23,[leaf[0]*.91,leaf[1]*.96,leaf[2]*.91],8,4);m.material=0;}
 // Architectural grammar: parcels keep their schedule, district language and silhouette at every LOD.
 // A small seamless material field is baked once per world, never regenerated while tuning.
+// Guarded anisotropic filtering for baked canvas/material textures: sharpens
+// grazing-angle detail on ground and buildings when the driver allows it.
+// Purely additive — silently does nothing if the extension is missing.
+let anisoExt=null,anisoMax=1;
+function applyAniso(tex){try{
+ if(!anisoExt){anisoExt=gl.getExtension('EXT_texture_filter_anisotropic')||gl.getExtension('MOZ_EXT_texture_filter_anisotropic')||gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');if(anisoExt)anisoMax=Math.min(4,gl.getParameter(anisoExt.MAX_TEXTURE_MAX_ANISOTROPY));}
+ if(anisoExt&&anisoMax>1){gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameterf(gl.TEXTURE_2D,anisoExt.TEXTURE_MAX_ANISOTROPY_EXT,anisoMax);}
+}catch(_){}}
 function bakeCityMaterials(seed){
  const size=128,r=rng(hash(seed+':mineral-atlas')),grids=[2,4,8,16,32,64].map(n=>({n,v:Float32Array.from({length:n*n},()=>r())}));
  const sample=(g,u,v)=>{const xx=u*g.n,yy=v*g.n,x=Math.floor(xx),y=Math.floor(yy),fx=xx-x,fy=yy-y,tx=fx*fx*(3-2*fx),ty=fy*fy*(3-2*fy),at=(a,b)=>g.v[(b%g.n)*g.n+a%g.n];return mix(mix(at(x,y),at(x+1,y),tx),mix(at(x,y+1),at(x+1,y+1),tx),ty)};
  const bytes=new Uint8Array(size*size*4);
  for(let y=0;y<size;y++)for(let x=0;x<size;x++){const u=x/size,v=y/size,i=(y*size+x)*4,values=grids.map(g=>sample(g,u,v));bytes[i]=Math.round(255*(values[0]*.50+values[1]*.30+values[2]*.20));bytes[i+1]=Math.round(255*(values[2]*.50+values[3]*.32+values[4]*.18));bytes[i+2]=Math.round(255*(values[4]*.4+values[5]*.6));bytes[i+3]=255;}
- const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,size,size,0,gl.RGBA,gl.UNSIGNED_BYTE,bytes);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return tex;
+ const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,size,size,0,gl.RGBA,gl.UNSIGNED_BYTE,bytes);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);applyAniso(tex);return tex;
 }
 const architectureNames=['Lantern glass','Terracotta screen','Crown setback','Garden courtyard','Sawtooth works','Mansard house','Loggia residence','Hanging gardens','Bridge towers','Stepped garden tower','Grand courtyard','Wavy atelier','Canal warehouse','Needle spire','Dome pavilion','Green roof podium'];
 function architecturalType(c,l){return l.style*2+(hash(c.layout+':architecture:'+Math.floor(l.x/4)+':'+Math.floor(l.z/4))&1)}
