@@ -1184,6 +1184,20 @@ setTimeout(boot,60);
 
   /* ---- encoder ---- */
   var encoder = null, muxer = null, encodedFrames = 0, t0 = 0;
+  /* Counters that prove the iOS path actually produced media. A finished
+     render with zero muxed chunks is a 581-byte empty shell, not a video. */
+  var framesAttempted = 0, encodeErrors = 0, muxedChunks = 0;
+
+  /* If the device encoder rejects frames, say so fast and plainly instead of
+     spending the whole render on output that can only come out empty. */
+  function noteEncodeError() {
+    encodeErrors++;
+    if (encodeErrors >= 20 && muxedChunks === 0 && RM.phase === 'record') {
+      fail('This device\u2019s video encoder rejected ' + encodeErrors +
+        ' frames and recorded nothing, so the video can\u2019t be made here. ' +
+        'Try a lower resolution, or close and reopen Safari and try again.');
+    }
+  }
   var rcanvas = window.__renderCanvas || document.querySelector('canvas');
   var _avcDc = null;
   function withAvcDecoderConfig(chunk, meta) {
@@ -1281,7 +1295,7 @@ setTimeout(boot,60);
       });
       encoder = new VideoEncoder({
         output: function (chunk, meta) {
-          try { muxer.addVideoChunk(chunk, withAvcDecoderConfig(chunk, meta)); } catch (e) {}
+          try { muxer.addVideoChunk(chunk, withAvcDecoderConfig(chunk, meta)); muxedChunks++; } catch (e) {}
           if (RM._bp && encoder.encodeQueueSize < 20) RM._bp = false;
         },
         error: function (e) { fail('Encoder error: ' + (e && e.message)); }
@@ -1306,8 +1320,10 @@ setTimeout(boot,60);
     if (encoder.encodeQueueSize > 90) { RM._bp = true; return; }
     var vf = null;
     try { vf = new VideoFrame(rcanvas, { timestamp: Math.round(idx * 1e6 / fps) }); }
-    catch (e) { return; }
-    try { encoder.encode(vf, { keyFrame: idx % (fps * 5) === 0 }); } catch (e) {}
+    catch (e) { noteEncodeError(); return; }
+    framesAttempted++;
+    try { encoder.encode(vf, { keyFrame: idx % (fps * 5) === 0 }); }
+    catch (e) { noteEncodeError(); }
     try { vf.close(); } catch (e) {}
     encodedFrames = idx + 1;
     if ((idx & 15) === 0) updateProgress();
@@ -1335,6 +1351,7 @@ setTimeout(boot,60);
     } catch (e) { fail('Couldn\u2019t finish the video: ' + e.message); return; }
     var buf = muxer.target.buffer;
     if (!buf || !buf.byteLength) { fail('The video came out empty.'); return; }
+    if (muxedChunks === 0) { fail('The video came out empty \u2014 ' + framesAttempted + ' frames went in, but this device\u2019s encoder recorded 0 of them' + (encodeErrors ? ' (' + encodeErrors + ' were rejected).' : '.') + ' Please try again; if it keeps happening, use a lower resolution.'); return; }
     try { window.__renderResult = buf; } catch (e) {} /* lets automated tests grab the MP4 */
     var blob = new Blob([buf], { type: 'video/mp4' });
     var cleanSeed = seed.replace(/[^A-Za-z0-9]+/g, '').slice(0, 14) || 'seed';
