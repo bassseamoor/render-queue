@@ -28,6 +28,9 @@ function sync(){
  if(qs.get('render')!=='1')history.replaceState(null,'',sceneUrl());
 }
 function aspect(){return state.format==='portrait'?9/16:state.format==='cinema'?2.39:16/9;}
+// Shadow map resolution follows the quality tier. 2048 PCFSoft every frame
+// was a large fixed cost; 1024/1536 keep the look at a fraction of the fill.
+function applyShadowSize(){const s=state.quality==='balanced'?1024:state.quality==='ultra'?2048:1536;if(key&&key.shadow.mapSize.x!==s){key.shadow.mapSize.set(s,s);if(key.shadow.map){key.shadow.map.dispose();key.shadow.map=null;}}}
 function resize(w,h){
  if(!renderer)return;
  if(!w){const rect=$('viewport').getBoundingClientRect();const d=state.quality==='balanced'?1:state.quality==='ultra'?Math.min(devicePixelRatio||1,1.8):Math.min(devicePixelRatio||1,1.35);w=Math.max(2,Math.floor(rect.width*d/2)*2);h=Math.max(2,Math.floor(rect.height*d/2)*2);}
@@ -74,16 +77,18 @@ function loop(now){
 async function build(){
  const controls=document.querySelectorAll('aside button,aside input,aside select,#play,#restart');controls.forEach(c=>c.disabled=true);
  try{
-  const canvas=$('scene'),gl=canvas.getContext('webgl2',{antialias:true,alpha:false,preserveDrawingBuffer:true,powerPreference:'high-performance'})||canvas.getContext('webgl2',{antialias:false,alpha:false,preserveDrawingBuffer:true,powerPreference:'default'});
+  const canvas=$('scene'),gl=canvas.getContext('webgl2',{antialias:false,alpha:false,preserveDrawingBuffer:true,powerPreference:'high-performance'})||canvas.getContext('webgl2',{antialias:false,alpha:false,preserveDrawingBuffer:true,powerPreference:'default'});
   if(!gl)throw new Error('This scene needs WebGL 2. Open it in a current browser with graphics acceleration enabled.');
-  renderer=new T.WebGLRenderer({canvas,context:gl,antialias:true,alpha:false,preserveDrawingBuffer:true});renderer.debug.onShaderError=(gl,program)=>{console.error('Grand Tour shader:',gl.getProgramInfoLog(program));throw new Error('The scene’s lighting could not compile on this device. Try another browser or graphics driver.');};renderer.outputColorSpace=T.LinearSRGBColorSpace;renderer.toneMapping=T.NoToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
-  scene=new T.Scene();camera=new T.PerspectiveCamera(48,16/9,.3,4600);post=createPost(renderer);post.uniforms.debugPass.value=qs.get('pass')==='depth'?1:qs.get('pass')==='ao'?2:0;
+  renderer=new T.WebGLRenderer({canvas,context:gl,antialias:false,alpha:false,preserveDrawingBuffer:true});renderer.debug.onShaderError=(gl,program)=>{console.error('Grand Tour shader:',gl.getProgramInfoLog(program));throw new Error('The scene’s lighting could not compile on this device. Try another browser or graphics driver.');};renderer.outputColorSpace=T.LinearSRGBColorSpace;renderer.toneMapping=T.NoToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
+  scene=new T.Scene();camera=new T.PerspectiveCamera(48,16/9,.3,4600);post=createPost(renderer,state.quality);post.uniforms.debugPass.value=qs.get('pass')==='depth'?1:qs.get('pass')==='ao'?2:0;
   $('loadText').textContent='Baking the surfaces…';await new Promise(requestAnimationFrame);const materials=bakeMaterials(renderer);
-  sky=makeSky();scene.add(sky.mesh);key=new T.DirectionalLight('white',2);key.castShadow=true;key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-80,right:80,top:80,bottom:-80,near:1,far:420});key.shadow.normalBias=.10;key.shadow.bias=-.00015;key.shadow.radius=2;scene.add(key,key.target);
+  sky=makeSky();scene.add(sky.mesh);key=new T.DirectionalLight('white',2);key.castShadow=true;applyShadowSize();Object.assign(key.shadow.camera,{left:-80,right:80,top:80,bottom:-80,near:1,far:420});key.shadow.normalBias=.10;key.shadow.bias=-.00015;key.shadow.radius=2;scene.add(key,key.target);
   hemi=new T.HemisphereLight('#c0d4d1','#384e36',2);scene.add(hemi);pmrem=new T.PMREMGenerator(renderer);applyMood();
   $('loadText').textContent='Growing cypresses and wildflowers…';await new Promise(requestAnimationFrame);
   world=new Valley(scene,materials,state.seed);car=makeCar();scene.add(car.group);window.__renderCanvas=canvas;
   sync();resize();draw(state.time);state.ready=true;controls.forEach(c=>c.disabled=false);$('loading').hidden=true;
+  // Instrumentation hook (used by automated profiling; harmless in production).
+  window.__rt={renderer,post,world,car,draw,get quality(){return state.quality;}};
   $('scene').dataset.ready='true';$('scene').dataset.msaa=post.target.samples;$('scene').dataset.materialMap=materials.mapSize.join('x');
   requestAnimationFrame(loop);
   if(qs.get('clean')==='1')setClean(true);
@@ -155,7 +160,7 @@ document.querySelectorAll('[data-mood]').forEach(b=>b.onclick=()=>{if(state.expo
 document.querySelectorAll('[data-format]').forEach(b=>b.onclick=()=>{if(state.exporting)return;state.format=b.dataset.format;sync();requestAnimationFrame(()=>resize());});
 $('speed').oninput=()=>{if(state.exporting)return;const distance=state.time*state.speed;state.speed=+$('speed').value;state.time=distance/state.speed;sync();};
 $('grain').oninput=()=>{state.grain=+$('grain').value;sync();};
-$('quality').onchange=()=>{state.quality=$('quality').value;sync();resize();};
+$('quality').onchange=()=>{state.quality=$('quality').value;post.setQuality(state.quality);applyShadowSize();sync();resize();};
 $('play').onclick=()=>{state.playing=!state.playing;sync();};$('restart').onclick=()=>{state.time=0;lastNow=performance.now();};
 function regenerate(value){if(!state.ready||state.exporting)return;Object.assign(state,parseSeed(value));const materials=world.mat;world.dispose();world=new Valley(scene,materials,state.seed);state.time=0;applyMood();sync();status('A new route, grown from your seed.');}
 $('seed').onchange=()=>regenerate($('seed').value);$('seed').onkeydown=e=>{if(e.key==='Enter'){$('seed').blur();}};
