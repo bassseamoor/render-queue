@@ -426,13 +426,15 @@ function render(FH, view, proj, tint) {
 
 /* Room-light tint for the artwork: ambient plus a warm kiss from the fire.
    rig: the studio's computeRig() result ({amb:[r,g,b], fireI:number}),
-   fireCol: S.fireCol ([r,g,b]), flick: S.flick (0..~1.5). */
-function lightingFromRig(rig, fireCol, flick) {
+   fireCol: S.fireCol ([r,g,b]), flick: S.flick (0..~1.5).
+   ceilI (optional): ceiling-downlight brightness 0..1.5, adds a warm lift. */
+function lightingFromRig(rig, fireCol, flick, ceilI) {
   var amb = rig.amb, fi = rig.fireI * 2.0 * flick;
+  var cl = (typeof ceilI === 'number' && ceilI > 0) ? ceilI * 0.30 : 0;
   return [
-    amb[0] * 0.95 + fireCol[0] * fi * 0.22,
-    amb[1] * 0.95 + fireCol[1] * fi * 0.22,
-    amb[2] * 0.95 + fireCol[2] * fi * 0.22
+    amb[0] * 0.95 + fireCol[0] * fi * 0.22 + 0.34 * cl,
+    amb[1] * 0.95 + fireCol[1] * fi * 0.22 + 0.31 * cl,
+    amb[2] * 0.95 + fireCol[2] * fi * 0.22 + 0.26 * cl
   ];
 }
 
@@ -474,6 +476,111 @@ const gl = canvas.getContext("webgl2", { antialias:false, alpha:false, powerPref
 if (!gl) { document.getElementById("nogl").style.display = "flex"; throw new Error("WebGL2 unavailable"); }
 window.__FH = FPFrames.create(gl);
 FPFrames.loadAtlas(window.__FH, 'art/fireplace-frames.jpg');
+window.__mantleFH = FPFrames.create(gl);
+FPFrames.loadAtlas(window.__mantleFH, 'art/fireplace-frames.jpg');
+
+/* ============================================================================
+   ROOM DRESSING (set-dressing pass) — UI-only state, never part of the seed.
+   - window.__fpDress = { ceil: 0..1.5 (downlight brightness), mantle: bool }
+   - persisted in localStorage under "fireplace-studio-dress-v1" only.
+   ============================================================================ */
+window.__fpDress = { ceil: 1.0, mantle: true };
+try {
+  const _dd = JSON.parse(localStorage.getItem("fireplace-studio-dress-v1") || "{}");
+  if (typeof _dd.ceil === "number" && isFinite(_dd.ceil)) window.__fpDress.ceil = clamp(_dd.ceil, 0, 1.5);
+  if (typeof _dd.mantle === "boolean") window.__fpDress.mantle = _dd.mantle;
+} catch (e) {}
+function dressSave(){
+  try { localStorage.setItem("fireplace-studio-dress-v1", JSON.stringify(window.__fpDress)); } catch (e) {}
+}
+function dressCeil(){ return window.__fpDress ? window.__fpDress.ceil : 1.0; }
+function dressHash(str){
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+/* Four recessed downlights between the ceiling beams (world positions). */
+const CEIL_POS = [[3.76,3.16,1.0],[1.20,3.16,1.0],[-1.36,3.16,1.0],[-3.92,3.16,1.0]];
+const CEIL_FLAT = new Float32Array([3.76,3.16,1.0, 1.20,3.16,1.0, -1.36,3.16,1.0, -3.92,3.16,1.0]);
+const CEIL_COL = [1.0, 0.92, 0.78];
+/* Rebuild room geometry after a dressing toggle (mantle on/off). Seed untouched. */
+window.__fpRedress = function(){
+  generateScene(settings);
+  buildParticles(settings);
+};
+/* 2-4 small picture frames standing on the mantle shelf, seeded from the
+   scene seed with a dressing-only salt (never touches the packed params). */
+function buildMantleFrameList(){
+  const rng = mulberry32((dressHash(settingsSeedString()) ^ 0x4A47E1) >>> 0);
+  const n = 2 + ((rng() * 3) | 0);
+  const deck = [];
+  for (let i = 0; i < 30; i++) deck.push(i);
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = (rng() * (i + 1)) | 0, t = deck[i]; deck[i] = deck[j]; deck[j] = t;
+  }
+  const primStyle = (rng() * FPFrames.STYLES.length) | 0;
+  const widths = [];
+  for (let i = 0; i < n; i++) widths.push(0.30 + rng() * 0.18);
+  const gap = 0.10;
+  const total = widths.reduce((a, b) => a + b, 0) + gap * (n - 1);
+  let z = -0.9 - total / 2;
+  const frames = [];
+  for (let i = 0; i < n; i++) {
+    const w = widths[i], h = w * 1.25;
+    const zc = z + w / 2; z += w + gap;
+    const uv = FPFrames.artUV(deck[i]);
+    frames.push({
+      x: 4.385, y: 1.525 + h / 2, z: zc, w, h,
+      art: deck[i], style: primStyle,
+      u0: uv[0], v0: uv[1], u1: uv[2], v1: uv[3],
+    });
+  }
+  return frames;
+}
+/* Mantle host geometry: mat board/backing + 4 molding rails per frame,
+   oriented for the YZ plane (frames face -x, toward the room). */
+function buildMantleHost(frames, drawFn){
+  const MAT_MARGIN = 0.06, MX = 4.395;
+  for (const f of frames) {
+    const st = FPFrames.STYLES[f.style], mw = st.mold;
+    const iw = f.w + (st.matBoard ? MAT_MARGIN * 2 : 0.012);
+    const ih = f.h + (st.matBoard ? MAT_MARGIN * 2 : 0.012);
+    const ow = iw + mw * 2, oh = ih + mw * 2;
+    if (st.matBoard) drawFn(M_BOX, MX, f.y, f.z, 0.012, ih, iw, 5, { tintA: st.matTint, rough: 0.95 });
+    else drawFn(M_BOX, MX, f.y, f.z, 0.012, ih, iw, 3, { tintA: [0.10, 0.10, 0.10], rough: 0.9 });
+    drawFn(M_BOX, MX, f.y + oh / 2 - mw / 2, f.z, 0.03, mw, ow, st.mat, { tintA: st.tint, rough: 0.55 });
+    drawFn(M_BOX, MX, f.y - oh / 2 + mw / 2, f.z, 0.03, mw, ow, st.mat, { tintA: st.tint, rough: 0.55 });
+    drawFn(M_BOX, MX, f.y, f.z - ow / 2 + mw / 2, 0.03, oh - 2 * mw, mw, st.mat, { tintA: st.tint, rough: 0.55 });
+    drawFn(M_BOX, MX, f.y, f.z + ow / 2 - mw / 2, 0.03, oh - 2 * mw, mw, st.mat, { tintA: st.tint, rough: 0.55 });
+  }
+}
+/* Batched art quads for the mantle frames: YZ plane at x=f.x, facing -x. */
+function setMantleQuads(FH, frames){
+  const gl2 = FH.gl;
+  const verts = new Float32Array(frames.length * 4 * 5);
+  const idx = new Uint16Array(frames.length * 6);
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i], hw = f.w / 2, hh = f.h / 2, o = i * 20;
+    verts[o + 0] = f.x; verts[o + 1] = f.y - hh; verts[o + 2] = f.z - hw;
+    verts[o + 3] = f.u0; verts[o + 4] = f.v0;
+    verts[o + 5] = f.x; verts[o + 6] = f.y - hh; verts[o + 7] = f.z + hw;
+    verts[o + 8] = f.u1; verts[o + 9] = f.v0;
+    verts[o + 10] = f.x; verts[o + 11] = f.y + hh; verts[o + 12] = f.z + hw;
+    verts[o + 13] = f.u1; verts[o + 14] = f.v1;
+    verts[o + 15] = f.x; verts[o + 16] = f.y + hh; verts[o + 17] = f.z - hw;
+    verts[o + 18] = f.u0; verts[o + 19] = f.v1;
+    const q = i * 4, e = i * 6;
+    idx[e + 0] = q; idx[e + 1] = q + 1; idx[e + 2] = q + 2;
+    idx[e + 3] = q; idx[e + 4] = q + 2; idx[e + 5] = q + 3;
+  }
+  gl2.bindVertexArray(FH.vao);
+  gl2.bindBuffer(gl2.ARRAY_BUFFER, FH.vbo);
+  gl2.bufferData(gl2.ARRAY_BUFFER, verts, gl2.STATIC_DRAW);
+  gl2.bindBuffer(gl2.ELEMENT_ARRAY_BUFFER, FH.ibo);
+  gl2.bufferData(gl2.ELEMENT_ARRAY_BUFFER, idx, gl2.STATIC_DRAW);
+  gl2.bindVertexArray(null);
+  FH.nquads = frames.length;
+}
 
 /* ---------------- utils ---------------- */
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
@@ -541,7 +648,8 @@ const WOODS  = ["walnut","oak","charred black"];
 const RUGS   = ["wool weave","jute","high-pile shag","flat kilim"];
 const WEATHERS = ["clear","overcast","rain","snowfall","lake mist"];
 const TIMES  = ["day","golden dusk","night"];
-const CAMS   = ["reference","fireside","lakeside","daybed","deck","ember macro"];
+const CAMS   = ["reference","fireside","lakeside","daybed","deck","ember macro",
+               "hearth low","firebox detail","cozy wide"];
 const MOTIONS= ["still","drift","slow push"];
 const FIRES  = ["low","medium","roaring"];
 const WATERS = ["calm","rippled","choppy"];
@@ -633,43 +741,58 @@ function glTex3(data,size,srgb){
 function makeTexSet(name, alb, nrm, rgh, size){
   TEX[name]={ alb:glTex3(alb,size,true), nrm:glTex3(nrm,size,false), rgh:glTex3(rgh,size,false) };
 }
-/* ---- stone: coursed blocks, recessed mortar, per-block variation ---- */
+/* ---- stone: 512px, irregular courses, pillow faces, chipped edges, deep mortar ---- */
 function bakeStone(v){
-  const size=256, rng=bakeRng("stone"+v), nz=makeVNoise(rng), fbm=fbmFactory(nz);
+  const size=512, rng=bakeRng("stone"+v), nz=makeVNoise(rng), fbm=fbmFactory(nz);
   const cfg=[
     {base:[0.145,0.14,0.15], mort:[0.045,0.045,0.05], rows:7, var:0.10, relief:0.5},
     {base:[0.40,0.36,0.31],  mort:[0.15,0.14,0.12],  rows:6, var:0.16, relief:0.8},
     {base:[0.60,0.57,0.51],  mort:[0.33,0.31,0.27],  rows:8, var:0.08, relief:0.35},
     {base:[0.09,0.09,0.10],  mort:[0.028,0.028,0.032],rows:7, var:0.07, relief:0.4},
   ][v];
-  const rows=[]; let y0=0;
-  for(let r=0;r<cfg.rows;r++){
-    const rh=size/cfg.rows*(0.85+rng()*0.3); const off=(r%2)*0.5+rng()*0.3;
+  const rows=[]; let y0=0, rn=0;
+  while(y0<size-8){ /* irregular course heights */
+    const rh=size/cfg.rows*(0.72+rng()*0.56);
+    const off=rng()*0.95;
     const blocks=[]; let x=-off*size/cfg.rows;
-    while(x<size){ const w=size/cfg.rows*(0.9+rng()*0.9); blocks.push([x,x+w,rng()]); x+=w; }
-    rows.push({y0,y1:y0+rh,blocks}); y0+=rh;
+    while(x<size){ /* irregular widths; per-block tone/hue/rough/chip seeds */
+      const w=size/cfg.rows*(0.62+rng()*1.25);
+      blocks.push([x,x+w,rng(),rng(),rng(),rng()]); x+=w;
+    }
+    const y1=Math.min(size,y0+rh);
+    rows.push({y0,y1,blocks}); y0=y1; rn++;
+    if(rn>24) break;
   }
   const alb=new Uint8Array(size*size*4), hgt=new Float32Array(size*size), rgh=new Uint8Array(size*size*4);
-  const mPx=size/cfg.rows*0.055;
+  const mPx=size/cfg.rows*0.075;
   for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-    let row=rows[rows.length-1]; for(const r of rows){ if(y<r.y1){ row=r; break; } }
+    let row=rows[rows.length-1]; for(const rr of rows){ if(y<rr.y1){ row=rr; break; } }
     let blk=row.blocks[row.blocks.length-1];
     for(const b of row.blocks){ if(x>=b[0]&&x<b[1]){ blk=b; break; } }
+    const bw=blk[1]-blk[0], bh=row.y1-row.y0;
+    const fx=clamp((x-blk[0])/Math.max(bw,1),0,1), fy=clamp((y-row.y0)/Math.max(bh,1),0,1);
+    const pillow=Math.sin(Math.PI*fx)*Math.sin(Math.PI*fy); /* pillow-profiled face */
     const dEdge=Math.min(x-blk[0],blk[1]-x,y-row.y0,row.y1-y);
-    const mortar=sstep(mPx*1.6,mPx*0.4,dEdge);
-    const bv=blk[2];
-    const det=fbm(x*0.05,y*0.05,4);
-    const tone=1+(bv-0.5)*cfg.var*2+(det-0.5)*0.22;
+    const chipN=fbm(x*0.055+blk[5]*43.0, y*0.055, 3);
+    const chip=sstep(0.72,0.88,chipN)*sstep(mPx*3.2,mPx*0.8,dEdge); /* chipped edges */
+    const mortar=sstep(mPx*2.4,mPx*0.5,dEdge+chip*mPx*1.4); /* deeper mortar */
+    const mottle=fbm(x*0.008+9.1,y*0.008,3); /* large-scale mottling */
+    const det=fbm(x*0.045,y*0.045,4);
+    const tone=1+(blk[2]-0.5)*cfg.var*2+(det-0.5)*0.22+(mottle-0.5)*0.30;
     const i=(y*size+x)*4;
-    const col=mortar>0.5?cfg.mort:cfg.base;
-    const sh=mortar>0.5?1:(1-mortar*0.55);
-    alb[i]=clamp(col[0]*tone*sh,0,1)*255; alb[i+1]=clamp(col[1]*tone*sh,0,1)*255; alb[i+2]=clamp(col[2]*tone*sh,0,1)*255;
-    alb[i+3]=clamp(1-mortar*0.62,0,1)*255; /* baked AO in mortar */
-    hgt[y*size+x]=(1-mortar)*cfg.relief+det*0.25;
-    const r=clamp(0.85-mortar*0.1+(det-0.5)*0.2,0.05,1);
-    rgh[i]=r*255; rgh[i+1]=255; rgh[i+2]=255; rgh[i+3]=255;
+    const m=mortar>0.5;
+    const hue=1+(blk[3]-0.5)*0.14;
+    const cr=m?cfg.mort[0]:cfg.base[0]*tone*hue;
+    const cg=m?cfg.mort[1]:cfg.base[1]*tone;
+    const cb=m?cfg.mort[2]:cfg.base[2]*tone*(2-hue);
+    const shade=m?1:(0.55+0.45*pillow)*(1-mortar*0.35);
+    alb[i]=clamp(cr*shade,0,1)*255; alb[i+1]=clamp(cg*shade,0,1)*255; alb[i+2]=clamp(cb*shade,0,1)*255;
+    alb[i+3]=clamp(1-mortar*0.78,0,1)*255; /* stronger mortar AO */
+    hgt[y*size+x]=(1-mortar)*(pillow*cfg.relief+0.25)-mortar*0.55+det*0.22;
+    const rr2=clamp((m?0.95:0.80)+(blk[4]-0.5)*0.25+(det-0.5)*0.2-mortar*0.08,0.05,1);
+    rgh[i]=rr2*255; rgh[i+1]=255; rgh[i+2]=255; rgh[i+3]=255;
   }
-  return {alb, nrm:heightToNormal(hgt,size,2.2), rgh, size};
+  return {alb, nrm:heightToNormal(hgt,size,2.6), rgh, size};
 }
 /* ---- wood planks: grain, knots, seams (neutral oak; tinted per use) ---- */
 /* ---- wood planks: 512px, 8 planks, staggered butt joints, knots, per-plank tone ---- */
@@ -782,7 +905,7 @@ function bakeRug(v){
     const u=x/size, w=y/size, i=(y*size+x)*4;
     /* ---- weave base (per variant) ---- */
     let mix=0, h=0.5, rough=0.95;
-    if(v===0){ const wv=Math.sin(x*0.55+Math.sin(y*0.21)*1.2)*Math.sin(y*0.55+Math.sin(x*0.19)*1.2); mix=sstep(-0.3,0.3,wv); h=0.55+wv*0.2; }
+    if(v===0){ const wv=Math.sin(x*0.24+Math.sin(y*0.10)*1.2)*Math.sin(y*0.24+Math.sin(x*0.09)*1.2); mix=sstep(-0.45,0.45,wv); h=0.55+wv*0.15; }
     else if(v===1){ const row=Math.sin(y*0.42+fbm(x*0.03,y*0.03,2)*4); mix=sstep(-0.4,0.4,row); h=0.5+row*0.25; rough=0.9; }
     else if(v===2){ const c=fbm(x*0.045,y*0.045,4); mix=sstep(0.3,0.7,c); h=0.35+c*0.65; }
     else { const ws=Math.sin(y*0.09+fbm(x*0.02,y*0.02,2)*3.0)*0.5+0.5; /* fine weft stripes */
@@ -1260,9 +1383,10 @@ void main(){
 const LIT_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec2 aUv;
 uniform mat4 uModel; uniform mat4 uView; uniform mat4 uProj; uniform mat4 uShadowM;
-out vec3 vWP; out vec3 vN; out vec2 vUv; out vec4 vSh;
+out vec3 vWP; out vec3 vN; out vec2 vUv; out vec4 vSh; out vec3 vLocal;
 void main(){
   vec4 wp = uModel*vec4(aPos,1.0);
+  vLocal = aPos;
   vWP = wp.xyz;
   vN = mat3(uModel)*aNrm;
   vUv = aUv;
@@ -1271,13 +1395,15 @@ void main(){
 }`;
 const LIT_FS = `#version 300 es
 precision highp float;
-in vec3 vWP; in vec3 vN; in vec2 vUv; in vec4 vSh;
+in vec3 vWP; in vec3 vN; in vec2 vUv; in vec4 vSh; in vec3 vLocal;
 uniform sampler2D uTexAlb; uniform sampler2D uTexNrm; uniform sampler2D uTexRgh;
 uniform sampler2D uShadow;
 uniform vec3 uCamPos; uniform float uTime;
 uniform vec3 uTintA; uniform vec3 uEmis; uniform float uRoughMul; uniform float uUvScale; uniform float uMode;
+uniform float uDetail;
 uniform vec3 uFirePos; uniform float uFlick; uniform vec3 uFireCol; uniform float uFireI;
-uniform float uEmber;
+uniform float uEmber; uniform float uChar;
+uniform vec3 uCeilPos[4]; uniform vec3 uCeilCol; uniform float uCeilI;
 uniform vec3 uAmbTint; uniform vec3 uFillCol;
 ${SKY_U}
 ${GLSL_NOISE}
@@ -1290,6 +1416,20 @@ vec3 perturbN(vec3 Ng, vec3 V, vec2 tuv){
   vec3 B=normalize(-q0*st1.s+q1*st0.s+vec3(1e-5));
   vec3 mt=texture(uTexNrm,tuv).rgb*2.0-1.0;
   return normalize(mat3(T,B,Ng)*mt);
+}
+/* world-space (non-repeating) micro detail: dominant-axis planar projection */
+vec2 matWSCoord(vec3 wp, vec3 N){
+  vec3 an=abs(N);
+  return (an.y>=an.x&&an.y>=an.z)?wp.xz:((an.x>=an.z)?wp.zy:wp.xy);
+}
+vec3 matWSBump(vec3 wp, vec3 N, float amt){
+  vec3 an=abs(N);
+  vec2 wuv=(an.y>=an.x&&an.y>=an.z)?wp.xz:((an.x>=an.z)?wp.zy:wp.xy);
+  float e=0.05, fq=43.0;
+  float c0=vnoise(wuv*fq);
+  vec2 gg=vec2(vnoise((wuv+vec2(e,0.0))*fq)-c0, vnoise((wuv+vec2(0.0,e))*fq)-c0);
+  vec3 g=(an.y>=an.x&&an.y>=an.z)?vec3(gg.x,0.0,gg.y):((an.x>=an.z)?vec3(0.0,gg.x,gg.y):vec3(gg.x,gg.y,0.0));
+  return normalize(N-g*(amt*1.15));
 }
 float shadowAt(vec4 sp){
   vec3 pc = sp.xyz/max(sp.w,1e-5)*0.5+0.5;
@@ -1304,11 +1444,19 @@ void main(){
   vec2 tuv = vUv*uUvScale;
   vec4 alb4 = texture(uTexAlb,tuv);
   vec3 alb = alb4.rgb*uTintA;
+  if(uChar>0.5) alb = mix(alb, vec3(0.020,0.015,0.012), 0.93); /* charred bark */
   float bakedAO = alb4.a;
   float rough = clamp(texture(uTexRgh,tuv).r*uRoughMul,0.05,1.0);
   vec3 V = normalize(uCamPos-vWP);
   vec3 Ng = normalize(vN)*(gl_FrontFacing?1.0:-1.0);
   vec3 N = perturbN(Ng,V,tuv);
+  if(uDetail>0.001){
+    vec2 dwuv = matWSCoord(vWP,N);
+    float dm = vnoise(dwuv*5.0)*0.55+vnoise(dwuv*19.0+3.7)*0.30+vnoise(dwuv*61.0+9.1)*0.15;
+    alb *= 1.0+(dm-0.5)*0.30*uDetail;
+    rough = clamp(rough+(vnoise(dwuv*13.0+5.3)-0.5)*0.35*uDetail,0.05,1.0);
+    N = matWSBump(vWP,N,uDetail);
+  }
   float sh = shadowAt(vSh);
   vec3 L = -normalize(uSunDir);
   float ndl = max(dot(N,L),0.0);
@@ -1321,16 +1469,33 @@ void main(){
   float fAtt = uFireI*uFlick/(1.0+fDist*fDist*0.55);
   float fNdl = max(dot(N,fL),0.0);
   vec3 fire = uFireCol*fAtt*(0.35+0.65*fNdl);
+  vec3 ceilL = vec3(0.0);
+  for(int i=0;i<4;i++){
+    vec3 cD = uCeilPos[i]-vWP;
+    float cDist = length(cD);
+    vec3 cL = cD/max(cDist,1e-3);
+    float cAtt = uCeilI/(1.0+cDist*cDist*0.38);
+    ceilL += uCeilCol*cAtt*(0.30+0.70*max(dot(N,cL),0.0));
+  }
   vec3 skyAmb = skyColor(normalize(mix(N,vec3(0.0,1.0,0.0),0.65)),uTime);
   vec3 amb = mix(vec3(0.16,0.14,0.12),skyAmb,0.55)*uAmbTint*(0.35+0.65*clamp(N.y*0.5+0.5,0.0,1.0));
   float fillF = clamp(dot(N,normalize(vec3(0.2,0.35,1.0))),0.0,1.0);
   vec3 fill = uFillCol*fillF*0.22*(0.4+0.6*uCloud);
-  vec3 col = alb*(direct+fire+amb+fill)*bakedAO;
-  col += spec*(direct*0.6+fire*0.8+vec3(0.04))*bakedAO;
+  vec3 col = alb*(direct+fire+ceilL+amb+fill)*bakedAO;
+  col += spec*(direct*0.6+fire*0.8+ceilL*0.7+vec3(0.04))*bakedAO;
   if(uMode>0.5){
     vec3 R=reflect(-V,N);
     vec3 env=skyColor(normalize(R),uTime);
     col=mix(col,env*(0.25+0.75*(1.0-rough)),0.35*(1.0-rough));
+  }
+  if(uMode>1.5){ /* glossy black: fresnel + sharp fire/sun/sky reflections */
+    vec3 R=reflect(-V,N);
+    float fres=0.04+0.96*pow(1.0-max(dot(N,V),0.0),5.0);
+    vec3 skyRef=skyColor(normalize(R),uTime);
+    float sunRef=pow(max(dot(R,-normalize(uSunDir)),0.0),600.0);
+    vec3 fD2=uFirePos-vWP; float fd2=length(fD2); vec3 fL2=fD2/max(fd2,1e-3);
+    float fireRef=pow(max(dot(R,fL2),0.0),90.0)*uFireI*uFlick/(1.0+fd2*fd2*0.25);
+    col+=(skyRef*0.5+uSunCol*sunRef*3.0+uFireCol*fireRef*2.0)*(0.35+0.65*fres);
   }
   if(uEmber>0.5){
     vec2 ecell = vWP.xz*vec2(9.0,7.0);
@@ -1345,6 +1510,27 @@ void main(){
     float gap = smoothstep(0.06,0.22,length(fract(ecell)-0.5));
     col = mix(vec3(0.03,0.02,0.02), coal, gap);
     col += coal*heat*(0.35+0.65*uFlick)*gap;
+  }
+  if(uChar>0.5){
+    /* glowing cracks in the char: ridged fbm crevices along the log */
+    float sideM = 1.0-smoothstep(0.485,0.5,abs(vLocal.y));
+    vec2 cuv = vec2(vUv.x*4.0, vUv.y*6.0);
+    float w1 = fbm(cuv*vec2(3.0,1.5)+fbm(cuv*2.0)*0.8);
+    float ridge = 1.0-abs(2.0*w1-1.0);
+    float crack = smoothstep(0.86,0.97,ridge)*sideM;
+    float chc = hash12(floor(cuv*vec2(6.0,3.0))*1.3+7.7);
+    float pulse = 0.45+0.55*sin(uTime*(1.2+chc*1.6)+chc*61.0);
+    vec3 glowC = mix(vec3(1.0,0.14,0.01), vec3(1.0,0.52,0.10), clamp(pulse,0.0,1.0));
+    float flickC = clamp(uFlick,0.0,1.5);
+    col += glowC * crack * (0.35+0.65*flickC) * (0.5+0.5*pulse);
+    /* cut ends: ember glow fading out to a charred rim */
+    float capM = smoothstep(0.47,0.5,abs(vLocal.y));
+    vec2 cuv2 = vLocal.xz*2.0;
+    float rr = length(cuv2);
+    float rings = 0.5+0.5*sin(rr*44.0+fbm(cuv2*3.0)*4.0);
+    float endGlow = capM*smoothstep(1.0,0.15,rr);
+    vec3 endC = mix(vec3(0.90,0.10,0.01), vec3(1.0,0.45,0.08), rings*0.6+pulse*0.4);
+    col += endC*endGlow*(0.30+0.70*flickC)*(0.55+0.45*pulse);
   }
   col += uEmis*bakedAO;
   oC = vec4(col,1.0);
@@ -1405,7 +1591,7 @@ void main(){
   vec3 right = vec3(uView[0][0],uView[1][0],uView[2][0]);
   vec3 up = vec3(uView[0][1],uView[1][1],uView[2][1]);
   vec3 wp;
-  if(uMode>5.5){
+  if(uMode>5.5 && uMode<6.5){
     float ang = floor(aSeed.z*3.0)*1.0472+(fract(aSeed.z*7.0)-0.5)*0.55;
     vec3 sr = vec3(cos(ang),0.0,sin(ang));
     float h01 = aQuad.y+0.5;
@@ -1433,10 +1619,26 @@ vec4 flameShade(vec2 q, float ph, float te, float flick){
   float tip = 1.0 - smoothstep(0.50+0.38*(warp-0.5), 1.02, h01);
   float base = smoothstep(0.0, 0.10, h01);
   float heat = clamp(body*tip*base*1.25, 0.0, 1.0);
-  vec3 col = mix(vec3(0.82,0.15,0.02), vec3(1.0,0.45,0.08), clamp(heat*1.5,0.0,1.0));
-  col = mix(col, vec3(1.0,0.90,0.58), clamp((heat-0.55)*2.4,0.0,1.0));
-  float a = clamp(heat*1.2, 0.0, 1.0);
-  return vec4(col*(0.85+0.75*flick), a);
+  vec3 col = mix(vec3(0.80,0.13,0.015), vec3(1.0,0.42,0.07), clamp(heat*1.5,0.0,1.0));
+  col = mix(col, vec3(1.0,0.80,0.40), clamp((heat-0.55)*2.4,0.0,1.0));
+  float a = clamp(heat*1.05, 0.0, 0.90);
+  return vec4(col*(0.72+0.60*flick), a);
+}
+vec4 tongueShade(vec2 q, float ph, float te, float flick, vec4 seed){
+  float h01 = q.y+0.5;
+  vec2 wuv = vec2(q.x*4.0, h01*2.6 - te*(1.2+0.4*sin(ph)));
+  float warp = fbm(wuv*1.9 + vec2(ph*2.7, -te*0.8) + fbm(wuv*2.6+vec2(ph))*0.8);
+  float width = mix(0.38, 0.05, pow(h01,0.9));
+  float d = abs(q.x + (warp-0.5)*0.55*(0.25+h01));
+  float body = smoothstep(width, width*0.25, d);
+  float tip = 1.0 - smoothstep(0.42+0.34*(warp-0.5), 1.0, h01);
+  float base = smoothstep(0.0, 0.08, h01);
+  float heat = clamp(body*tip*base*1.3, 0.0, 1.0);
+  float tvar = seed.x;
+  vec3 col = mix(vec3(0.78,0.12,0.01), vec3(1.0,0.40,0.06), clamp(heat*1.6,0.0,1.0));
+  col = mix(col, mix(vec3(1.0,0.72,0.30), vec3(1.0,0.85,0.45), tvar), clamp((heat-0.5)*2.2,0.0,1.0));
+  float a = clamp(heat*1.05, 0.0, 0.9);
+  return vec4(col*(0.75+0.60*flick), a);
 }
 void main(){
   float r = length(vQ)*2.0;
@@ -1464,10 +1666,14 @@ void main(){
   } else if(uMode<5.5){
     float b=smoothstep(0.5,0.1,abs(vQ.x)*2.0)*smoothstep(0.5,0.32,abs(vQ.y)*2.0);
     oC=vec4(vec3(0.65,0.72,0.82),b*uAlpha*vFade);
-  } else {
+  } else if(uMode<6.5){
     vec4 fsh = flameShade(vec2(vQ.x*1.15, vQ.y), vSeed.y*6.2831+1.7, uTime*1.15, uFlick);
     float puls = 0.82+0.18*sin(uTime*2.2+vSeed.x*39.0);
     oC = vec4(fsh.rgb, fsh.a*uAlpha*puls);
+  } else {
+    vec4 tsh = tongueShade(vQ, vSeed.y*6.2831+0.6, uTime, uFlick, vSeed);
+    float puls = 0.78+0.22*sin(uTime*3.1+vSeed.x*57.0);
+    oC = vec4(tsh.rgb, tsh.a*uAlpha*puls*vFade);
   }
 }`;
 
@@ -1513,6 +1719,46 @@ void main(){
 /* ============================================================================
    PROGRAMS
    ============================================================================ */
+/* instanced surface-detail shaders (shag rug strands + couch micro-tufts) */
+const DET_VS = `#version 300 es
+layout(location=0) in vec2 aQuad;
+layout(location=1) in vec3 aBase;
+layout(location=2) in vec4 aP0; /* leanX, leanZ, height, width */
+layout(location=3) in vec4 aP1; /* rotY, toneR, toneG, toneB */
+uniform mat4 uView; uniform mat4 uProj;
+out vec2 vQ; out vec3 vWP; out vec3 vTone;
+void main(){
+  vQ=aQuad; vTone=aP1.yzw;
+  float cr=cos(aP1.x), sr=sin(aP1.x);
+  float t=aQuad.y+0.5;
+  vec3 center=aBase+vec3(aP0.x,aP0.z,aP0.y)*t;
+  vec3 off=vec3(cr*aQuad.x*aP0.w, 0.0, -sr*aQuad.x*aP0.w)*(1.0-t*0.55);
+  vec3 pos=center+off;
+  vWP=pos;
+  gl_Position=uProj*uView*vec4(pos,1.0);
+}`;
+const DET_FS = `#version 300 es
+precision highp float;
+in vec2 vQ; in vec3 vWP; in vec3 vTone;
+uniform vec3 uCamPos; uniform vec3 uFirePos; uniform float uFlick;
+uniform vec3 uFireCol; uniform float uFireI; uniform vec3 uAmbTint;
+uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uSunI;
+out vec4 oC;
+void main(){
+  float t=vQ.y+0.5;
+  vec3 V=normalize(uCamPos-vWP);
+  vec3 N=normalize(vec3(V.x*0.35,1.0,V.z*0.35)); /* fake fiber normal */
+  float ndl=max(dot(N,-normalize(uSunDir)),0.0);
+  vec3 fD=uFirePos-vWP; float fd=length(fD); vec3 fL=fD/max(fd,1e-3);
+  float fAtt=uFireI*uFlick/(1.0+fd*fd*0.55);
+  float sheen=pow(1.0-abs(dot(N,V)),2.0); /* fiber sheen */
+  vec3 col=vTone*(0.30+0.70*t); /* darker root */
+  vec3 lit=col*(uSunCol*uSunI*ndl*0.35+uFireCol*fAtt*(0.4+0.6*max(dot(N,fL),0.0)));
+  lit+=col*uAmbTint*0.35;
+  lit+=vTone*sheen*0.06*(0.4+0.6*fAtt);
+  oC=vec4(lit,1.0);
+}`;
+
 window.__fpShaderLogs=[];
 function compileProg(vsSrc, fsSrc, progName){
   function sh(type,src){
@@ -1550,6 +1796,7 @@ const litProg=compileProg(LIT_VS,LIT_FS,"lit");     const LU=locCache(litProg);
 const shadProg=compileProg(SHADOW_VS,SHADOW_FS,"shadow"); const HU=locCache(shadProg);
 const depthProg=compileProg(DEPTH_VS,DEPTH_FS,"depth"); const DU=locCache(depthProg);
 const partProg=compileProg(PART_VS,PART_FS,"particles");
+const detProg=compileProg(DET_VS,DET_FS,"instdet");   const IU=locCache(detProg);
 /* ================= LIFE SHADERS (insert after partProg compile) ================= */
 const LIFE_VS = `#version 300 es
 layout(location=0) in vec2 aQuad;
@@ -1873,9 +2120,9 @@ function draw(mesh, x,y,z, sx,sy,sz, mat, o){
   if (o.rz) m = mMul(m, mRz(o.rz));
   m = mMul(m, mS(sx,sy,sz));
   S.draws.push({ mesh, model:m, mat,
-    tintA:o.tintA||[1,1,1], emis:o.emis||[0,0,0], ember:o.ember?1:0,
+    tintA:o.tintA||[1,1,1], emis:o.emis||[0,0,0], ember:o.ember?1:0, char:o.char?1:0,
     rough:o.rough!=null?o.rough:1.0, uv:o.uv||1, mode:o.mode||0,
-    shadow:o.shadow!==false });
+    detail:o.detail||0, shadow:o.shadow!==false, dressLens:!!o.dressLens });
 }
 const WOOD_TINTS = [[0.62,0.55,0.50],[1.25,1.15,1.05],[0.22,0.20,0.19]];
 const CAMS_DEF = [
@@ -1885,6 +2132,9 @@ const CAMS_DEF = [
   { n:"daybed",     eye:[-3.5,1.20,2.75], tgt:[3.6,0.88,0.3],    fov:52, vig:0.32 },
   { n:"deck",       eye:[4.3,1.70,9.5],   tgt:[3.5,1.10,50.0],   fov:50, vig:0.26 },
   { n:"ember macro",eye:[2.75,0.85,0.45], tgt:[4.55,0.62,-0.9],  fov:35, vig:0.42 },
+  { n:"hearth low", eye:[2.55,0.40,0.05], tgt:[4.52,0.92,-0.92], fov:48, vig:0.40 },
+  { n:"firebox detail",eye:[3.15,1.32,0.42],tgt:[4.55,0.78,-0.90], fov:33, vig:0.42 },
+  { n:"cozy wide",  eye:[-0.7,1.30,2.55], tgt:[4.35,0.88,-0.75],  fov:58, vig:0.32 },
 ];
 function cameraAt(te){
   const A = CAMS_DEF[clamp(settings.camera|0,0,CAMS_DEF.length-1)];
@@ -1950,7 +2200,7 @@ function generateScene(st){
      firebox: z -1.75..-0.05, y 0.30..1.25 | log niche: z 0.05..1.00, y 0.30..1.55 */
   const WX=4.72, WD=0.6;
   function stoneSeg(z0,z1,y0,y1){
-    draw(M_BOX, WX,(y0+y1)/2,(z0+z1)/2, WD,y1-y0,z1-z0, 0, {uv:0.55});
+    draw(M_BOX, WX,(y0+y1)/2,(z0+z1)/2, WD,y1-y0,z1-z0, 0, {uv:0.55, detail:0.85});
   }
   stoneSeg(-4.02,-1.75, -0.02,3.2);
   stoneSeg(-0.05,0.05, -0.02,3.2);
@@ -1965,24 +2215,44 @@ function generateScene(st){
   draw(M_BOX, 4.7,0.775,-0.06, 0.6,0.95,0.06, 3, {tintA:soot, uv:2});
   draw(M_BOX, 4.95,0.925,0.525, 0.1,1.25,0.95, 3, {tintA:[0.10,0.085,0.07], uv:2});
   draw(M_BOX, 4.7,1.575,0.525, 0.6,0.07,0.95, 3, {tintA:[0.10,0.085,0.07], uv:2});
-  draw(M_RBOX, 4.05,0.24,-0.35, 0.75,0.14,3.4, 0, {uv:0.55}); /* hearth ledge */
+  draw(M_RBOX, 4.05,0.24,-0.35, 0.75,0.14,3.4, 0, {uv:0.55, detail:0.85}); /* hearth ledge */
   const logR=0.085;
   for(let row=0;row<4;row++){
     const n=4-(row%2);
     for(let i=0;i<n;i++)
       draw(M_CYL, 4.72, 0.40+row*0.155, 0.16+i*0.20+(row%2)*0.05, logR*2,0.5,logR*2, 2, {rz:Math.PI/2, uv:1.4});
   }
-  draw(M_CYL, 4.55,0.42,-0.9, 0.16,0.95,0.16, 2, {rz:Math.PI/2, ry:0.25});
-  draw(M_CYL, 4.55,0.40,-0.75, 0.15,0.85,0.15, 2, {rz:Math.PI/2, ry:-0.3});
-  draw(M_CYL, 4.55,0.58,-0.85, 0.13,0.8,0.13, 2, {rz:Math.PI/2, ry:0.9});
-  draw(M_BOX, 4.62,0.335,-0.9, 0.5,0.03,1.2, 3,
-    {tintA:[0.08,0.05,0.035], uv:2, ember:1}); /* ember bed */
+  /* ---- firebox interior rebuild: splayed fireback, grate, andirons, ash, embers, log stack ---- */
+  const iron=[0.055,0.055,0.06];
+  draw(M_BOX, 4.82,0.775,-1.60, 0.08,0.95,0.34, 3, {tintA:soot, uv:2, ry:0.38}); /* splayed fireback L */
+  draw(M_BOX, 4.82,0.775,-0.20, 0.08,0.95,0.34, 3, {tintA:soot, uv:2, ry:-0.38}); /* splayed fireback R */
+  for(const gz of [-1.30,-0.95,-0.60])
+    draw(M_BOX, 4.64,0.375,gz, 0.44,0.032,0.036, 7, {tintA:iron, rough:0.55}); /* grate bars */
+  for(const az of [-1.32,-0.48]){
+    draw(M_BOX, 4.80,0.50,az, 0.05,0.34,0.05, 7, {tintA:iron, rough:0.55}); /* andiron post */
+    draw(M_RBOX, 4.80,0.685,az, 0.075,0.075,0.075, 7, {tintA:iron, rough:0.5}); /* finial */
+    draw(M_BOX, 4.68,0.345,az, 0.30,0.035,0.045, 7, {tintA:iron, rough:0.55}); /* front foot */
+  }
+  draw(M_BOX, 4.63,0.315,-0.9, 0.56,0.055,1.32, 3, {tintA:[0.34,0.32,0.30], uv:2, rough:1}); /* ash bed */
+  draw(M_RBOX, 4.55,0.33,-1.52, 0.30,0.07,0.26, 3, {tintA:[0.40,0.38,0.35], uv:1.5, rough:1}); /* ash pile */
+  draw(M_RBOX, 4.72,0.33,-0.30, 0.34,0.08,0.30, 3, {tintA:[0.42,0.40,0.37], uv:1.5, rough:1}); /* ash pile */
+  draw(M_RBOX, 4.50,0.325,-0.62, 0.24,0.06,0.22, 3, {tintA:[0.38,0.36,0.33], uv:1.5, rough:1}); /* ash pile */
+  draw(M_RBOX, 4.60,0.35,-1.10, 0.34,0.10,0.30, 3, {tintA:[1,1,1], uv:2, ember:1}); /* ember mound */
+  draw(M_RBOX, 4.68,0.35,-0.72, 0.30,0.11,0.28, 3, {tintA:[1,1,1], uv:2, ember:1}); /* ember mound */
+  draw(M_RBOX, 4.58,0.345,-0.45, 0.26,0.09,0.24, 3, {tintA:[1,1,1], uv:2, ember:1}); /* ember mound */
+  draw(M_RBOX, 4.70,0.355,-1.30, 0.24,0.09,0.22, 3, {tintA:[1,1,1], uv:2, ember:1}); /* ember mound */
+  const charO={char:1, uv:1.6, rough:0.95};
+  draw(M_CYL, 4.60,0.475,-0.92, 0.15,0.88,0.15, 2, Object.assign({rx:Math.PI/2},charO)); /* log A along z */
+  draw(M_CYL, 4.73,0.465,-0.88, 0.14,0.80,0.14, 2, Object.assign({rx:Math.PI/2, ry:0.06},charO)); /* log B along z */
+  draw(M_CYL, 4.66,0.615,-0.90, 0.13,0.72,0.13, 2, Object.assign({rz:Math.PI/2, ry:0.12},charO)); /* log C crosswise */
+  draw(M_CYL, 4.62,0.575,-0.68, 0.115,0.62,0.115, 2, Object.assign({rz:Math.PI/2, ry:0.55},charO)); /* log D leaning */
+  draw(M_CYL, 4.70,0.60,-1.18, 0.11,0.55,0.11, 2, Object.assign({rx:Math.PI/2, ry:-0.10},charO)); /* log E chunk */
 
   /* ============ ROOM SHELL ============ */
   const floorMat=[3,1,1,4][st.floor|0];
   const floorTint=[[1,1,1],[0.45,0.38,0.32],[1.25,1.15,1.05],[1,1,1]][st.floor|0];
   draw(M_BOX, 0,-0.06,0, 10.4,0.12,8.4, floorMat,
-    {tintA:floorTint, uv:st.floor===3?0.5:0.35, rough:st.floor===0?0.42:0.7, mode:st.floor===0?1:0, shadow:false});
+    {tintA:floorTint, uv:st.floor===3?0.5:0.35, rough:st.floor===0?0.42:0.7, mode:st.floor===0?1:0, shadow:false, detail:0.5});
   const plaster=[0.78,0.74,0.68];
   draw(M_BOX, 0,1.61,-4.05, 10.4,3.26,0.1, 3, {tintA:plaster, uv:0.3});
   draw(M_BOX, 5.05,1.61,0, 0.1,3.26,8.4, 3, {tintA:plaster, uv:0.3});
@@ -2001,25 +2271,57 @@ function generateScene(st){
   draw(M_RBOX, 0,0.06,3.92, 10.2,0.05,0.22, 1, {tintA:woodT, uv:0.5}); /* sill nosing */
   for(const ex of [-5,5])
     draw(M_BOX, ex,1.60,4.0, 0.14,3.20,0.18, 1, {tintA:woodT, uv:0.5}); /* end casing posts */
-  draw(M_BOX, -3.725,1.60,4.0, 0.06,3.20,0.60, 0, {uv:0.55}); /* pier junction trim */
-  draw(M_BOX, -3.175,1.60,4.0, 0.06,3.20,0.60, 0, {uv:0.55}); /* pier junction trim */
-  draw(M_BOX, -3.45,1.59,4.0, 0.55,3.2,0.55, 0, {uv:0.55}); /* stone pier */
+  draw(M_BOX, -3.725,1.60,4.0, 0.06,3.20,0.60, 0, {uv:0.55, detail:0.85}); /* pier junction trim */
+  draw(M_BOX, -3.175,1.60,4.0, 0.06,3.20,0.60, 0, {uv:0.55, detail:0.85}); /* pier junction trim */
+  draw(M_BOX, -3.45,1.59,4.0, 0.55,3.2,0.55, 0, {uv:0.55, detail:0.85}); /* stone pier */
   S.glass={ y0:0.0, y1:3.20, x0:-5, x1:5, z:4.0 };
 
   /* ============ FURNISHINGS ============ */
-  draw(M_RBOX, -0.3,0.030,1.1, 4.4,0.07,3.1, 6, {uv:1, shadow:false}); /* rug */
-  draw(M_RBOX, -0.3,0.40,1.1, 1.95,0.10,1.0, 7, {tintA:[0.04,0.04,0.045], rough:0.32}); /* table slab */
-  draw(M_BOX, -0.3,0.20,1.1, 0.55,0.36,0.55, 7, {tintA:[0.05,0.05,0.055], rough:0.5});   /* plinth */
+  draw(M_RBOX, -0.3,0.030,1.1, 4.4,0.07,3.1, 6, {uv:1, shadow:false, detail:0.7}); /* rug */
+  draw(M_RBOX, -0.3,0.40,1.1, 1.95,0.10,1.0, 7, {tintA:[0.04,0.04,0.045], rough:0.32, mode:2, detail:0.45}); /* table slab */
+  draw(M_BOX, -0.3,0.20,1.1, 0.55,0.36,0.55, 7, {tintA:[0.05,0.05,0.055], rough:0.5, mode:2, detail:0.45});   /* plinth */
   draw(M_RBOXS, 0.15,0.465,1.05, 0.44,0.05,0.32, 8, {tintA:[0.16,0.18,0.24], ry:-0.12, uv:2});
   draw(M_RBOXS, 0.12,0.505,1.08, 0.38,0.045,0.28, 8, {tintA:[0.38,0.16,0.12], ry:0.18, uv:2});
   draw(M_CYL, -0.95,0.462,1.35, 0.20,0.035,0.20, 7, {tintA:[0.08,0.08,0.085], rough:0.5}); /* tray */
   draw(M_RBOX, -2.3,0.16,2.75, 2.7,0.34,1.2, 1, {tintA:woodT, uv:0.5});   /* daybed base */
-  draw(M_RBOX, -2.3,0.435,2.75, 2.55,0.20,1.08, 5, {tintA:[0.72,0.68,0.62], uv:1.2}); /* mattress */
-  draw(M_RBOXS, -1.45,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.80,0.77,0.72], ry:-0.25, uv:1.5});
-  draw(M_RBOXS, -2.30,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.62,0.58,0.53], ry:0.15, uv:1.5});
-  draw(M_RBOXS, -3.10,0.60,2.80, 0.58,0.18,0.58, 5, {tintA:[0.30,0.30,0.32], ry:-0.4, uv:1.5});
-  draw(M_RBOXS, 1.15,0.16,1.9, 0.66,0.22,0.66, 5, {tintA:[0.74,0.70,0.64], ry:-0.5, uv:1.5});
-  draw(M_RBOXS, 0.45,0.15,2.30, 0.60,0.20,0.60, 5, {tintA:[0.36,0.34,0.36], ry:0.3, uv:1.5});
+  draw(M_RBOX, -2.3,0.435,2.75, 2.55,0.20,1.08, 5, {tintA:[0.72,0.68,0.62], uv:1.2, detail:0.6}); /* mattress */
+  draw(M_RBOXS, -1.45,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.80,0.77,0.72], detail:0.6, ry:-0.25, uv:1.5});
+  draw(M_RBOXS, -2.30,0.60,2.75, 0.62,0.20,0.62, 5, {tintA:[0.62,0.58,0.53], detail:0.6, ry:0.15, uv:1.5});
+  draw(M_RBOXS, -3.10,0.60,2.80, 0.58,0.18,0.58, 5, {tintA:[0.30,0.30,0.32], detail:0.6, ry:-0.4, uv:1.5});
+  draw(M_RBOXS, 1.15,0.16,1.9, 0.66,0.22,0.66, 5, {tintA:[0.74,0.70,0.64], detail:0.6, ry:-0.5, uv:1.5});
+  draw(M_RBOXS, 0.45,0.15,2.30, 0.60,0.20,0.60, 5, {tintA:[0.36,0.34,0.36], detail:0.6, ry:0.3, uv:1.5});
+
+  /* ============ ROOM DRESSING (set-dressing pass; UI-only state) ============
+     Four recessed ceiling downlights between the wood beams, a toggleable
+     wood mantle shelf with seeded picture frames, a fireplace tool stand
+     with hanging poker, and baseboard/crown trim on the solid walls. */
+  const _le = 0.9 * dressCeil();
+  for (const _cp of CEIL_POS) {
+    draw(M_CYL, _cp[0],_cp[1]+0.018,_cp[2], 0.19,0.035,0.19, 7,
+      { tintA:[0.10,0.10,0.11], rough:0.45 }); /* dark metal trim ring */
+    draw(M_CYL, _cp[0],_cp[1]-0.004,_cp[2], 0.13,0.014,0.13, 7,
+      { tintA:[0.92,0.87,0.76], rough:0.6,
+        emis:[1.0*_le, 0.9*_le, 0.75*_le], dressLens:true }); /* emissive lens */
+  }
+  if (window.__fpDress.mantle) {
+    draw(M_RBOX, 4.30,1.47,-0.9, 0.26,0.10,2.0, 1, { tintA:woodT, uv:0.5 }); /* mantle shelf */
+    draw(M_BOX, 4.36,1.355,-1.70, 0.10,0.13,0.10, 1, { tintA:woodT });       /* corbel L */
+    draw(M_BOX, 4.36,1.355,-0.10, 0.10,0.13,0.10, 1, { tintA:woodT });       /* corbel R */
+  }
+  /* tool stand with hanging poker, on the hearth beside the firebox */
+  draw(M_CYL, 4.05,0.325,-1.95, 0.22,0.03,0.22, 7, { tintA:[0.08,0.08,0.09], rough:0.5 });
+  draw(M_CYL, 4.05,0.76,-1.95, 0.035,0.90,0.035, 7, { tintA:[0.08,0.08,0.09], rough:0.5 });
+  draw(M_CYL, 4.05,1.225,-1.95, 0.05,0.06,0.05, 7, { tintA:[0.55,0.40,0.22], rough:0.4 });
+  draw(M_CYL, 3.98,1.13,-1.95, 0.17,0.024,0.024, 7, { rz:Math.PI/2, tintA:[0.08,0.08,0.09], rough:0.5 });
+  draw(M_CYL, 3.905,1.10,-1.95, 0.02,0.07,0.02, 7, { tintA:[0.08,0.08,0.09], rough:0.5 });
+  draw(M_CYL, 3.905,0.72,-1.95, 0.018,0.68,0.018, 7, { tintA:[0.10,0.10,0.11], rough:0.45 });
+  draw(M_CYL, 3.905,1.03,-1.95, 0.032,0.13,0.032, 1, { tintA:woodT, rough:0.7 });
+  /* baseboards + crown molding on the solid back and east walls */
+  const _trim = [0.80,0.76,0.70];
+  draw(M_BOX, 0,0.06,-3.955, 10.4,0.12,0.07, 3, { tintA:_trim, rough:0.8, uv:0.3 });
+  draw(M_BOX, 0,3.09,-3.955, 10.4,0.14,0.07, 3, { tintA:_trim, rough:0.8, uv:0.3 });
+  draw(M_BOX, 4.955,0.06,0, 0.07,0.12,8.4, 3, { tintA:_trim, rough:0.8, uv:0.3 });
+  draw(M_BOX, 4.955,3.09,0, 0.07,0.14,8.4, 3, { tintA:_trim, rough:0.8, uv:0.3 });
 
   /* ============ DECK + EXTERIOR ============ */
   draw(M_BOX, 0,-0.03,7.0, 10.4,0.10,6.0, 1, {tintA:[0.55,0.48,0.40], uv:0.3, shadow:false});
@@ -2060,12 +2362,21 @@ function generateScene(st){
   ];
   draw(M_BOX, 0,-0.30,9.7, 140,0.25,1.2, 3, {tintA:[0.22,0.21,0.20], uv:0.4, shadow:false}); /* shore */
 
-  S.firePos=[4.25,0.85,-0.9];
+  S.firePos=[4.42,0.72,-0.9];
   S.fireCol=[1.0,0.42,0.12];
   S.flick=1.0;
   window.__frames = FPFrames.build(settingsSeedString());
   FPFrames.buildHost(window.__frames, draw, M_BOX);
   FPFrames.setQuads(window.__FH, window.__frames);
+  buildShagNubs(st);
+  if (window.__fpDress.mantle) {
+    window.__mantleFrames = buildMantleFrameList();
+    buildMantleHost(window.__mantleFrames, draw);
+    setMantleQuads(window.__mantleFH, window.__mantleFrames);
+  } else {
+    window.__mantleFrames = [];
+    setMantleQuads(window.__mantleFH, []);
+  }
 }
 
 /* ============================================================================
@@ -2083,18 +2394,25 @@ function buildParticles(st){
   S.parts.length=0;
   const sd=st.seed>>>0;
   const fl=[14,26,40][st.fire|0];
-  S.parts.push(makePartSystem({mode:0, count:fl, seed:sd^0xF1, origin:[4.45,0.55,-0.9],
-    rise:0.70, size:0.42, spread:0.30, rate:0.75, sway:0.08, grow:1.2, alpha:0.90}));
+  S.parts.push(makePartSystem({mode:0, count:fl, seed:sd^0xF1, origin:[4.50,0.52,-0.9],
+    rise:0.75, size:0.44, spread:0.30, rate:0.75, sway:0.09, grow:1.2, alpha:0.80}));
+  const tgR=[6,10,14][st.fire|0], tgM=[5,8,12][st.fire|0], tgF=[4,7,10][st.fire|0];
+  S.parts.push(makePartSystem({mode:7, count:tgR, seed:sd^0x71, origin:[4.70,0.48,-0.9],
+    rise:0.95, size:0.34, spread:0.22, rate:1.15, sway:0.13, grow:1.25, alpha:0.75}));
+  S.parts.push(makePartSystem({mode:7, count:tgM, seed:sd^0x72, origin:[4.58,0.50,-0.9],
+    rise:0.85, size:0.30, spread:0.20, rate:1.35, sway:0.15, grow:1.2, alpha:0.72}));
+  S.parts.push(makePartSystem({mode:7, count:tgF, seed:sd^0x73, origin:[4.40,0.46,-0.9],
+    rise:0.70, size:0.26, spread:0.18, rate:1.50, sway:0.16, grow:1.15, alpha:0.70}));
   const emN=Math.round((st.sparks|0)/100*46);
-  if(emN>0) S.parts.push(makePartSystem({mode:1, count:emN, seed:sd^0xE2, origin:[4.45,0.55,-0.9],
+  if(emN>0) S.parts.push(makePartSystem({mode:1, count:emN, seed:sd^0xE2, origin:[4.55,0.70,-0.9],
     rise:1.7, size:0.022, spread:0.35, rate:0.5, sway:0.16, grow:0.6, alpha:0.9}));
-  S.parts.push(makePartSystem({mode:2, count:9, seed:sd^0x5E, origin:[4.45,1.35,-0.9],
+  S.parts.push(makePartSystem({mode:2, count:9, seed:sd^0x5E, origin:[4.50,1.35,-0.9],
     rise:1.5, size:0.5, spread:0.2, rate:0.22, sway:0.25, grow:2.6, alpha:0.30}));
-  S.parts.push(makePartSystem({mode:3, count:4, seed:sd^0x60, origin:[4.45,0.32,-0.9],
-    rise:0.02, size:0.55, spread:0.45, rate:0.25, sway:0, grow:1, alpha:0.40}));
+  S.parts.push(makePartSystem({mode:3, count:4, seed:sd^0x60, origin:[4.55,0.34,-0.9],
+    rise:0.02, size:0.60, spread:0.45, rate:0.25, sway:0, grow:1, alpha:0.45}));
   const shN=[6,9,12][st.fire|0];
-  S.parts.push(makePartSystem({mode:6, count:shN, seed:sd^0xF6, origin:[4.45,0.72,-0.9],
-    rise:0.01, size:0.55, spread:0.16, rate:0.40, sway:0, grow:1, alpha:0.85}));
+  S.parts.push(makePartSystem({mode:6, count:shN, seed:sd^0xF6, origin:[4.55,0.72,-0.9],
+    rise:0.01, size:0.55, spread:0.16, rate:0.40, sway:0, grow:1, alpha:0.70}));
   const w=st.weather|0;
   if(w===3) S.parts.push(makePartSystem({mode:4, count:560, seed:sd^0x5F, origin:[0,8.5,6],
     rise:8.0, size:0.035, spread:17, rate:0.16, sway:0.35, grow:1, alpha:0.85}));
@@ -2104,6 +2422,92 @@ function buildParticles(st){
 /* ============================================================================
    DRAW PASSES
    ============================================================================ */
+/* ============================================================================
+   INSTANCED SURFACE DETAIL — shag rug strands + couch micro-tufts.
+   One instanced draw per set; deterministic per-seed buffers; raw WebGL2.
+   ============================================================================ */
+let shagVAO=null, shagCount=0, nubVAO=null, nubCount=0;
+let shagBufs=[], nubBufs=[];
+function detFreeVAO(vao, bufs){
+  if(vao) gl.deleteVertexArray(vao);
+  for(const b of bufs) gl.deleteBuffer(b);
+}
+function detBuild(n, fill){
+  const quad=new Float32Array([-0.5,-0.5, 0.5,-0.5, -0.5,0.5, -0.5,0.5, 0.5,-0.5, 0.5,0.5]);
+  const base=new Float32Array(n*3), p0=new Float32Array(n*4), p1=new Float32Array(n*4);
+  for(let i=0;i<n;i++) fill(i, base, p0, p1);
+  const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  const bufs=[];
+  function attr(loc, arr, size, divisor){
+    const b=gl.createBuffer(); bufs.push(b);
+    gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);
+    gl.vertexAttribDivisor(loc,divisor);
+  }
+  attr(0,quad,2,0); attr(1,base,3,1); attr(2,p0,4,1); attr(3,p1,4,1);
+  gl.bindVertexArray(null);
+  return {vao,bufs};
+}
+function buildShagNubs(st){
+  detFreeVAO(shagVAO,shagBufs); detFreeVAO(nubVAO,nubBufs);
+  shagVAO=null; nubVAO=null; shagBufs=[]; nubBufs=[];
+  const rng=mulberry32((st.seed^0x51ab)>>>0);
+  /* shag rug strands: count by rug variant (index 2 = shag) */
+  const counts=[1500,1700,3400,1300];
+  const n=counts[st.rug|0]||1500;
+  const r=detBuild(n,(i,base,p0,p1)=>{
+    const x=-0.3+(rng()-0.5)*4.3, z=1.1+(rng()-0.5)*3.0;
+    base[i*3]=x; base[i*3+1]=0.065; base[i*3+2]=z;
+    const la=rng()*Math.PI*2, ll=0.15+rng()*0.85;
+    const lean=0.008+rng()*0.028;
+    p0[i*4]=Math.cos(la)*lean*ll; p0[i*4+1]=Math.sin(la)*lean*ll;
+    p0[i*4+2]=0.020+rng()*0.035; p0[i*4+3]=0.004+rng()*0.005;
+    const tv=0.72+rng()*0.56, tw=0.90+rng()*0.20;
+    p1[i*4]=rng()*Math.PI*2;
+    p1[i*4+1]=0.55*tv*tw; p1[i*4+2]=0.50*tv*tw; p1[i*4+3]=0.44*tv;
+  });
+  shagVAO=r.vao; shagBufs=r.bufs; shagCount=n; S.shagN=n;
+  /* couch micro-tufts: mattress + two fabric seats, 8-14mm tall */
+  const spots=[
+    {x:-2.3,y:0.535,z:2.75,sx:2.5,sz:1.03,n:380},
+    {x:1.15,y:0.27,z:1.9,sx:0.62,sz:0.62,n:130},
+    {x:0.45,y:0.25,z:2.30,sx:0.56,sz:0.56,n:110},
+  ];
+  let total=0; for(const s of spots) total+=s.n;
+  const r2=detBuild(total,(i,base,p0,p1)=>{
+    let k=i, sp=spots[0];
+    for(const s of spots){ if(k<s.n){ sp=s; break; } k-=s.n; }
+    const x=sp.x+(rng()-0.5)*sp.sx, z=sp.z+(rng()-0.5)*sp.sz;
+    base[i*3]=x; base[i*3+1]=sp.y; base[i*3+2]=z;
+    const la=rng()*Math.PI*2, lean=0.002+rng()*0.006;
+    p0[i*4]=Math.cos(la)*lean; p0[i*4+1]=Math.sin(la)*lean;
+    p0[i*4+2]=0.008+rng()*0.006; p0[i*4+3]=0.004+rng()*0.004;
+    const tv=0.75+rng()*0.5;
+    p1[i*4]=rng()*Math.PI*2;
+    p1[i*4+1]=0.72*tv; p1[i*4+2]=0.68*tv; p1[i*4+3]=0.62*tv;
+  });
+  nubVAO=r2.vao; nubBufs=r2.bufs; nubCount=total; S.nubN=total;
+}
+function drawInstDetail(view, proj, te){
+  if(!shagVAO&&!nubVAO) return;
+  gl.useProgram(detProg);
+  gl.uniformMatrix4fv(IU("uView"),false,view);
+  gl.uniformMatrix4fv(IU("uProj"),false,proj);
+  gl.uniform3fv(IU("uCamPos"),S.cam.eye);
+  gl.uniform3fv(IU("uFirePos"),S.firePos);
+  gl.uniform1f(IU("uFlick"),S.flick);
+  gl.uniform3fv(IU("uFireCol"),S.fireCol);
+  gl.uniform1f(IU("uFireI"),S.rig.fireI*2.0);
+  gl.uniform3fv(IU("uAmbTint"),S.rig.amb);
+  gl.uniform3fv(IU("uSunDir"),S.rig.sunDir);
+  gl.uniform3fv(IU("uSunCol"),S.rig.sunCol);
+  gl.uniform1f(IU("uSunI"),S.rig.sunI);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+  if(shagVAO){ gl.bindVertexArray(shagVAO); gl.drawArraysInstanced(gl.TRIANGLES,0,6,shagCount); }
+  if(nubVAO){ gl.bindVertexArray(nubVAO); gl.drawArraysInstanced(gl.TRIANGLES,0,6,nubCount); }
+  gl.bindVertexArray(null);
+}
+
 function setSkyUniforms(LU2, te){
   const R=S.rig;
   gl.uniform1f(LU2("uTime"),te);
@@ -2129,6 +2533,9 @@ function drawLit(view, proj, te){
   gl.uniform1f(LU("uFlick"),S.flick);
   gl.uniform3fv(LU("uFireCol"),S.fireCol);
   gl.uniform1f(LU("uFireI"),S.rig.fireI*2.0);
+  gl.uniform3fv(LU("uCeilPos"),CEIL_FLAT);
+  gl.uniform3fv(LU("uCeilCol"),CEIL_COL);
+  gl.uniform1f(LU("uCeilI"),dressCeil()*1.35);
   gl.uniform3fv(LU("uAmbTint"),S.rig.amb);
   gl.uniform3fv(LU("uFillCol"),[0.5,0.56,0.62]);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D,shTex); gl.uniform1i(LU("uShadow"),3);
@@ -2139,9 +2546,11 @@ function drawLit(view, proj, te){
     gl.uniform3fv(LU("uTintA"),d.tintA);
     gl.uniform3fv(LU("uEmis"),d.emis);
     gl.uniform1f(LU("uEmber"),d.ember);
+    gl.uniform1f(LU("uChar"),d.char);
     gl.uniform1f(LU("uRoughMul"),d.rough);
     gl.uniform1f(LU("uUvScale"),d.uv);
     gl.uniform1f(LU("uMode"),d.mode);
+    gl.uniform1f(LU("uDetail"),d.detail);
     gl.bindVertexArray(d.mesh.vao);
     gl.drawElements(gl.TRIANGLES,d.mesh.count,gl.UNSIGNED_INT,0);
   }
@@ -2573,8 +2982,12 @@ function renderPasses(te, frame){
     drawSky(view,proj,te);
     drawMtns(view,proj,te);
     drawLit(view,proj,te);
+    drawInstDetail(view,proj,te);
     if (window.__FH && window.__frames && window.__FH.nquads) {
-      FPFrames.render(window.__FH, view, proj, FPFrames.lightingFromRig(S.rig, S.fireCol, S.flick));
+      FPFrames.render(window.__FH, view, proj, FPFrames.lightingFromRig(S.rig, S.fireCol, S.flick, dressCeil()));
+    }
+    if (window.__mantleFH && window.__mantleFH.nquads) {
+      FPFrames.render(window.__mantleFH, view, proj, FPFrames.lightingFromRig(S.rig, S.fireCol, S.flick, dressCeil()));
     }
   }
   /* 4. resolve opaque color+depth */
@@ -3386,6 +3799,46 @@ try {
   SeedConsole.init(window.SeedConsoleAdapter);
 } catch(e){
   console.error("[fireplace] SeedConsole init failed", e);
+}
+
+/* ---- Room dressing controls (not saved in seed) ----
+   Inserted after the packed scene parameters. Brightness takes effect
+   live; the mantle toggle rebuilds room geometry. Seed untouched. */
+try {
+  const _panel = document.querySelector('.sc-panel');
+  const _anchor = document.getElementById('sc-params');
+  if (_panel && _anchor && !document.getElementById('dress-ceil')) {
+    const _sec = document.createElement('div');
+    _sec.innerHTML =
+      '<div class="sc-sec">Room dressing (not saved in seed)</div>' +
+      '<div class="sc-param"><div class="top"><label>Ceiling lights</label>' +
+      '<span class="val" id="dress-ceilval"></span></div>' +
+      '<input type="range" id="dress-ceil" min="0" max="1.5" step="0.05"></div>' +
+      '<div class="sc-row"><button class="sc-btn" id="dress-mantle" style="font-size:13px"></button></div>';
+    _anchor.after(_sec);
+    const _slider = _sec.querySelector('#dress-ceil');
+    const _val = _sec.querySelector('#dress-ceilval');
+    const _mbtn = _sec.querySelector('#dress-mantle');
+    const _paint = () => {
+      _slider.value = window.__fpDress.ceil;
+      _val.textContent = Math.round(window.__fpDress.ceil * 100) + '%';
+      _mbtn.textContent = '🖼️ Mantle: ' + (window.__fpDress.mantle ? 'On' : 'Off');
+    };
+    _slider.addEventListener('input', () => {
+      window.__fpDress.ceil = parseFloat(_slider.value) || 0;
+      const _le2 = 0.9 * window.__fpDress.ceil;
+      for (const _d of S.draws)
+        if (_d.dressLens) _d.emis = [1.0 * _le2, 0.9 * _le2, 0.75 * _le2];
+      _paint(); dressSave();
+    });
+    _mbtn.addEventListener('click', () => {
+      window.__fpDress.mantle = !window.__fpDress.mantle;
+      _paint(); dressSave(); window.__fpRedress();
+    });
+    _paint();
+  }
+} catch(e){
+  console.error("[fireplace] dress UI failed", e);
 }
 })();
 </script>
