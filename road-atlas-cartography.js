@@ -1,4 +1,4 @@
-/* Road Atlas Cartography 1.0.0 — beauty pass for water, parks, buildings, plus canals.
+/* Road Atlas Cartography 1.0.1 — beauty pass for water, parks, buildings, plus canals.
  * Hooks into the conditions-adapted renderer via unique source anchors (no edits
  * to the immutable V1 baseline, no changes to hash-guarded first-party files).
  * All randomness comes from makeRng(W.seed,'cartography') / the existing named
@@ -7,7 +7,7 @@
  */
 (function(){
 'use strict';
-var VERSION='1.0.0';
+var VERSION='1.0.1';
 
 function clamp(x,a,b){return x<a?a:x>b?b:x;}
 
@@ -280,10 +280,12 @@ function drawParks(ctx,W,T){
   ctx.restore();
 }
 
-/* Refined building paint: same massing the city built, crisper finish. */
+/* Refined building paint: ONE painter for every building, so the geometry
+ * reads unified. (Previously, urban-mode buildings delegated to a different
+ * painter, which split the map into two visual treatments.) Same massing the
+ * city built, crisper finish: shadow → plinth → body → roof → highlight → edge. */
 function drawBuildings(ctx,W,T){
   W.blocks.buildings.forEach(function(b){
-    if(W.urban&&W.urban.enabled&&b.architecture&&window.RoadAtlasUrban){RoadAtlasUrban.drawBuilding(ctx,W,b);return;}
     var col=b.kind==='industrial'?T.ind:T.bCols[b.shade%T.bCols.length];
     var hb=clamp(b.hgt/38,0,1);
     var parts=b.sub||[{dx:0,dy:0,w:b.w,h:b.h}];
@@ -331,7 +333,11 @@ function rewritePaint(src){
   src=rep('\n  // 3. parks (batched rects — one fill per theme pass)\n','  if(window.RoadAtlasCarto){RoadAtlasCarto.drawParks(ctx,W,T);}else{');
   src=repBefore('\n  // 3b. rural fringe','  }\n');
   src=rep('\n  // 4. buildings: shadow → body → pseudo-3D top.\n','  if(window.RoadAtlasCarto){RoadAtlasCarto.drawBuildings(ctx,W,T);}else{');
-  src=repBefore('\n  // 5. roads','  }\n');
+  /* Close the buildings else-block BEFORE the street-hooks road wrapper
+   * (which starts with "var LS=..." + the streetKit if). Anchoring on
+   * "// 5. roads" would land inside the street wrapper's own else-block
+   * and swallow the roads. */
+  src=repBefore('\n  var LS=Math.sqrt(WEXT);\n  if(W.streetKit&&window.RoadAtlasStreets)','  }\n');
   return src;
 }
 
