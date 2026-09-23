@@ -58,19 +58,20 @@ const controls=[['density','Life density',.45,1.5,1],['mist','Mist',0,1.6,.35],[
 const cityControlNames={density:'Street activity',mist:'Atmosphere',glow:'Exposure',drift:'Camera travel',palette:'Color warmth',grain:'Film texture',focus:'Lens softness',rays:'Sun strength'};
 const lensLooks=[
  {name:'Velvet miniature',note:'Clean, soft buildings',description:'Closest to your reference: a gentle softness everywhere, with creamy depth and clear color.',shape:0,floor:1.55,radius:11,width:.17,edge:0},
- {name:'Tilt-shift',note:'Sharp slice, soft distance',description:'A crisp band through the city, falling smoothly into soft foreground and distance.',shape:0,floor:0,radius:13,width:.14,edge:.12},
+ {name:'Tilt-shift',note:'Sharp slice, soft distance',description:'A crisp band through the city, falling smoothly into soft foreground and distance.',shape:0,floor:0,radius:13,width:.19,edge:.12},
  {name:'Portrait',note:'An island of focus',description:'A soft oval of focus around the central district, with the edges gently falling away.',shape:1,floor:.25,radius:15,width:.19,edge:.04},
  {name:'Dream glass',note:'Creamy, luminous softness',description:'A richer blanket of softness. Building silhouettes and lighting remain clear while fine details melt together.',shape:0,floor:3.4,radius:15,width:.23,edge:0},
  {name:'Architectural',note:'Calm, detailed clarity',description:'A broad field of detail with restrained edge softness, for watching the entire city grow.',shape:0,floor:0,radius:3.5,width:.32,edge:.08}
 ];
-function cleanLens(l){l=l||{};return{mode:clamp(Math.round(Number(l.mode)||0),0,lensLooks.length-1),position:Math.round(clamp(Number.isFinite(l.position)?l.position:.56,.15,.85)*1000)/1000,width:Math.round(clamp(Number.isFinite(l.width)?l.width:.17,.04,.36)*1000)/1000};}
+function cleanLens(l){l=l||{};const mode=Number(l.mode);return{mode:clamp(Math.round(Number.isFinite(mode)?mode:1),0,lensLooks.length-1),position:Math.round(clamp(Number.isFinite(l.position)?l.position:.54,.15,.85)*1000)/1000,width:Math.round(clamp(Number.isFinite(l.width)?l.width:.19,.04,.36)*1000)/1000};}
 function lensCode(c){const l=cleanLens(c.lens);return '-L'+[l.mode,Math.round(l.position*1000),Math.round(l.width*1000)].map(n=>n.toString(36)).join('.');}
 const defaults=Object.fromEntries(controls.map(c=>[c[0],c[4]]));
 let history=[],storageOK=true,favoritesOnly=false;
 try{const saved=JSON.parse(localStorage.getItem('canal-metropolis-seeds-v1')||'[]');if(Array.isArray(saved))history=saved.filter(v=>v&&typeof v.code==='string'&&Number.isFinite(v.realm)).map(v=>({...v,realm:clamp(v.realm|0,0,5)}))}catch(e){storageOK=false}
-let config={realm:1,layout:fresh(),detail:fresh(),params:{...defaults},locks:{},lens:cleanLens()};
+const canalDefaultParams={...defaults,density:1.04,mist:.12,glow:1.02,drift:.24,palette:-.03,grain:.08,focus:.92,rays:.82};
+let config={realm:1,layout:0,detail:hash('canal-metropolis-reference-detail'),params:canalDefaultParams,locks:{},lens:cleanLens({mode:1,position:.54,width:.19})};
 function codeOf(c){return 'PX1-'+c.realm+'-'+(c.layout>>>0).toString(36)+'-'+(c.detail>>>0).toString(36)+'-'+controls.map(k=>Math.round((c.params[k[0]]-k[2])/(k[3]-k[2])*1000).toString(36)).join('.')+lensCode(c)}
-function parseCode(code){const m=/^PX1-([0-5])-([a-z0-9]+)-([a-z0-9]+)-([a-z0-9.]+)(?:-L([a-z0-9.]+))?$/i.exec(code.trim());if(!m)return null;const values=m[4].split('.');if(values.length!==controls.length)return null;const layout=parseInt(m[2],36),detail=parseInt(m[3],36);if(layout>4294967295||detail>4294967295)return null;const params={};for(let i=0;i<controls.length;i++){const v=parseInt(values[i],36);if(!Number.isFinite(v)||v<0||v>1000)return null;params[controls[i][0]]=mix(controls[i][2],controls[i][3],v/1000)}let lens={mode:1,position:.56,width:.14};if(m[5]){const v=m[5].split('.').map(n=>parseInt(n,36));if(v.length!==3||v.some(n=>!Number.isFinite(n))||v[0]<0||v[0]>=lensLooks.length||v[1]<150||v[1]>850||v[2]<40||v[2]>360)return null;lens=cleanLens({mode:v[0],position:v[1]/1000,width:v[2]/1000});}return{realm:1,layout,detail,params,lens,locks:{...config.locks}}}
+function parseCode(code){const m=/^PX1-([0-5])-([a-z0-9]+)-([a-z0-9]+)-([a-z0-9.]+)(?:-L([a-z0-9.]+))?$/i.exec(code.trim());if(!m)return null;const values=m[4].split('.');if(values.length!==controls.length)return null;const layout=parseInt(m[2],36),detail=parseInt(m[3],36);if(layout>4294967295||detail>4294967295)return null;const params={};for(let i=0;i<controls.length;i++){const v=parseInt(values[i],36);if(!Number.isFinite(v)||v<0||v>1000)return null;params[controls[i][0]]=mix(controls[i][2],controls[i][3],v/1000)}let lens={mode:1,position:.54,width:.19};if(m[5]){const v=m[5].split('.').map(n=>parseInt(n,36));if(v.length!==3||v.some(n=>!Number.isFinite(n))||v[0]<0||v[0]>=lensLooks.length||v[1]<150||v[1]>850||v[2]<40||v[2]>360)return null;lens=cleanLens({mode:v[0],position:v[1]/1000,width:v[2]/1000});}return{realm:1,layout,detail,params,lens,locks:{...config.locks}}}
 function canonical(c){const n=parseCode(codeOf(c));n.locks={...c.locks};return n}
 function persist(){try{localStorage.setItem('canal-metropolis-seeds-v1',JSON.stringify(history));storageOK=true}catch(e){storageOK=false;toast('Browser storage is full or unavailable. Export seeds to keep them.')} $('historyNote').textContent=storageOK?'Every new world is remembered on this browser. Seed storage is local to this browser and file.':'These seeds are in memory only. Export seeds to keep a copy.'}
 function remember(c){const code=codeOf(c);const existing=history.find(v=>v.code===code);if(existing){existing.locks={...c.locks};existing.visited=Date.now()}else history.unshift({code,realm:c.realm,star:false,created:Date.now(),locks:{...c.locks}});persist();if($('library').classList.contains('open'))showHistory()}
@@ -281,7 +282,7 @@ uniform mat4 uLightMatrix;uniform highp sampler2D uShadow;uniform sampler2D uMat
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}
 float landDistance(vec2 p){float type=uGeo.x,phase=uGeo.y,offset=uGeo.z,water=uGeo.w;float river=offset+sin(p.y*uMap.x+phase)*uMap.y+p.y*uMap.z;
- if(type<.5)return abs(p.x-river)-water;if(type<1.5)return offset+sin(p.y*.09+phase)*4.-p.x;if(type<2.5)return length((p-uCenter)/vec2(1.45,2.4))-1.35;if(type<3.5)return 20.;if(type<4.5)return min(abs(p.x-river)-water,abs(p.y-offset*.7-sin(p.x*.12+phase)*2.)-water*.72);return p.y-offset-sin(p.x*.095+phase)*3.8;}
+ if(type<.5)return abs(p.x-river)-water;if(type<1.5)return offset+sin(p.y*.09+phase)*4.-p.x;if(type<2.5)return length((p-uCenter)/vec2(1.50,2.4))-1.52;if(type<3.5)return 20.;if(type<4.5)return min(abs(p.x-river)-water,abs(p.y-offset*.7-sin(p.x*.12+phase)*2.)-water*.72);return p.y-offset-sin(p.x*.095+phase)*3.8;}
 float unpack(vec4 c){return dot(c,vec4(1.,1./255.,1./65025.,1./16581375.));}
 float shadow(vec3 N){
  float reach=length(vPosition.xz);if(reach>36.||dot(N,uSun)<.025)return 1.;
@@ -297,7 +298,7 @@ float shadow(vec3 N){
  float lit=mix(mix(s00,s10,f.x),mix(s01,s11,f.x),f.y);return mix(lit,1.,smoothstep(26.,36.,reach));
 }
 
-void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=normalize(vNormal),V=normalize(uEye-vPosition);float footprint=length(uEye-vPosition)*uPixelScale/max(.22,abs(dot(N,V)));float mat=vInfo.x,seed=floor(vInfo.y+.5);vec3 albedo=vTint;if(mat>10.5&&mat<11.5){float shore=landDistance(vPosition.xz);mat=shore<0.?6.:5.;vec2 p=vPosition.xz;float park=uGeo.x>1.5&&uGeo.x<2.5?1.-smoothstep(3.75,4.1,length((p-uCenter)/vec2(1.15,2.2))):uGeo.x>2.5&&uGeo.x<3.5?1.-smoothstep(3.0,3.5,length(p)):1.-smoothstep(uPark.z-.25,uPark.z+.25,length(p-uPark.xy));float town=1.-smoothstep(.96,1.10,max(abs(p.x)/uBounds.x,abs(p.y)/uBounds.y));vec3 land=mix(uLandTint,mix(vec3(.30,.33,.30),uLandTint,park),town);albedo=shore<0.?uWaterTint:mix(vec3(.48,.44,.30),land,smoothstep(0.,.23,shore));}float rough=.7,metal=0.;vec3 emission=vec3(0.);float grain=texture2D(uMaterial,fract(vPosition.xz*.17)).b;albedo*=.992+.016*grain;
+void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=normalize(vNormal),V=normalize(uEye-vPosition);float footprint=length(uEye-vPosition)*uPixelScale/max(.22,abs(dot(N,V)));float mat=vInfo.x,seed=floor(vInfo.y+.5);vec3 albedo=vTint;if(mat>10.5&&mat<11.5){float shore=landDistance(vPosition.xz);mat=shore<0.?6.:5.;vec2 p=vPosition.xz;float park=uGeo.x>1.5&&uGeo.x<2.5?1.-smoothstep(4.10,4.45,length((p-uCenter)/vec2(1.15,2.2))):uGeo.x>2.5&&uGeo.x<3.5?1.-smoothstep(3.0,3.5,length(p)):1.-smoothstep(uPark.z-.25,uPark.z+.25,length(p-uPark.xy));float town=1.-smoothstep(.96,1.10,max(abs(p.x)/uBounds.x,abs(p.y)/uBounds.y));vec3 land=mix(uLandTint,mix(vec3(.30,.33,.30),uLandTint,park),town);albedo=shore<0.?uWaterTint:mix(vec3(.48,.44,.30),land,smoothstep(0.,.23,shore));}float rough=.7,metal=0.;vec3 emission=vec3(0.);float grain=texture2D(uMaterial,fract(vPosition.xz*.17)).b;albedo*=.992+.016*grain;
  // Facade detail follows floor courses; broad mineral variation precedes fine joints.
  if(mat>.5&&mat<3.5&&abs(N.y)<.5){
   float floorHeight=max(.32,vInfo.w),bay=mat<1.5?.29:.38;
@@ -421,22 +422,22 @@ class CityMesh{
 }
 // A seed defines geography first, then streets, parcels, districts and architecture.
 const cityPlanCache=new Map();
-const cityFamilies=['River Quarter','Harbor City','Park Metropolis','Garden Rings','Delta Islands','Sun Coast'];
+const cityFamilies=['River Quarter','Harbor City','Canal Metropolis','Garden Rings','Delta Islands','Sun Coast'];
 function cityFamily(seed){return hash(seed+':urban-family')%cityFamilies.length}
 function cityLand(s,x,z){const [type,phase,offset,water]=s.geo,[bend,amp,slope]=s.map;const river=offset+Math.sin(z*bend+phase)*amp+z*slope;
  if(type===0)return Math.abs(x-river)-water;
  if(type===1)return offset+Math.sin(z*.09+phase)*4-x;
- if(type===2)return (Math.hypot((x-s.cx)/1.45,(z-s.cz)/2.4)-1.35);
+ if(type===2)return (Math.hypot((x-s.cx)/1.50,(z-s.cz)/2.4)-1.52);
  if(type===3)return 20;
  if(type===4)return Math.min(Math.abs(x-river)-water,Math.abs(z-offset*.7-Math.sin(x*.12+phase)*2)-water*.72);
  return z-offset-Math.sin(x*.095+phase)*3.8;
 }
-function cityPark(s,x,z){if(s.family===2)return Math.hypot((x-s.cx)/1.15,(z-s.cz)/2.2)<4.0;if(s.family===3)return Math.hypot(x,z)<3.25;return Math.hypot(x-s.park[0],z-s.park[1])<s.park[2]}
+function cityPark(s,x,z){if(s.family===2)return Math.hypot((x-s.cx)/1.15,(z-s.cz)/2.2)<4.35;if(s.family===3)return Math.hypot(x,z)<3.25;return Math.hypot(x-s.park[0],z-s.park[1])<s.park[2]}
 function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.layout);const r=rng(hash(c.layout+':urban-plan-v4')),family=cityFamily(c.layout);
- const s={family,name:cityFamilies[family],geo:[family,r()*6.28,(r()-.5)*6, .8+r()*1.25],map:[.06+r()*.10,1.4+r()*2.4,(r()-.5)*.16,0],cx:(r()-.5)*6,cz:(r()-.5)*6,park:[(r()-.5)*15,(r()-.5)*15,1.8+r()*2],sx:1.85+r()*.75,sz:1.9+r()*.65,angle:(r()>.5?1:-1)*(.30+r()*.65),elevation:22+r()*7,distance:29+r()*5,roads:[],lots:[],green:[],boats:[],traffic:[],phase:r()*100};
+ const s={family,name:cityFamilies[family],geo:[family,r()*6.28,(r()-.5)*6, .8+r()*1.25],map:[.06+r()*.10,1.4+r()*2.4,(r()-.5)*.16,0],cx:family===2?0:(r()-.5)*6,cz:family===2?0:(r()-.5)*6,park:[(r()-.5)*15,(r()-.5)*15,1.8+r()*2],sx:1.85+r()*.75,sz:1.9+r()*.65,angle:family===2?.52:(r()>.5?1:-1)*(.30+r()*.65),elevation:family===2?26:22+r()*7,distance:family===2?28:29+r()*5,roads:[],lots:[],green:[],boats:[],traffic:[],phase:r()*100};
  if(family===1)s.geo[2]=3+r()*4;if(family===5)s.geo[2]=-4+r()*5;
- s.palette=family===5?[[.76,.71,.57],[.69,.39,.20],[.14,.29,.34]]:family===2?[[.43,.48,.48],[.29,.32,.31],[.10,.24,.31]]:family===3?[[.58,.56,.44],[.39,.25,.16],[.18,.32,.28]]:family===4?[[.73,.67,.49],[.37,.23,.14],[.12,.32,.39]]:[[.62,.61,.53],[.42,.22,.13],[.20,.34,.38]];
- s.landTint=family===5?[.32,.34,.20]:[.13,.22,.14];s.waterTint=family===5?[.045,.25,.32]:family===4?[.065,.23,.20]:[.055,.19,.21];
+ s.palette=family===5?[[.76,.71,.57],[.69,.39,.20],[.14,.29,.34]]:family===2?[[.66,.65,.56],[.45,.28,.19],[.15,.34,.42]]:family===3?[[.58,.56,.44],[.39,.25,.16],[.18,.32,.28]]:family===4?[[.73,.67,.49],[.37,.23,.14],[.12,.32,.39]]:[[.62,.61,.53],[.42,.22,.13],[.20,.34,.38]];
+ s.landTint=family===2?[.24,.42,.18]:family===5?[.32,.34,.20]:[.13,.22,.14];s.waterTint=family===2?[.045,.34,.43]:family===5?[.045,.25,.32]:family===4?[.065,.23,.20]:[.055,.19,.21];
  function roadPath(pts,width,opts){opts=opts||{};const seq=[pts[0].slice()];
   for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/.8));
    for(let k=1;k<=n;k++)seq.push([mix(a[0],b[0],k/n),mix(a[1],b[1],k/n)]);}
@@ -452,7 +453,7 @@ function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.l
  }
  function road(a,b,width,opts){roadPath([a,b],width,opts);}
  function lot(x,z,w,d,angle,id){const reach=Math.hypot(w,d)*.53;if(cityLand(s,x,z)<reach||cityPark(s,x,z))return;const cluster=Math.exp(-((x-s.cx)**2+(z-s.cz)**2)/(family===2?85:50));const district=hash(c.layout+':district:'+Math.floor(x/5)+':'+Math.floor(z/5))%5;let style=family===5?(r()<.74?2:1):family===2?(r()<.65?0:4):family===3?(r()<.55?1:3):district;
- let h=(.5+r()*1.5+cluster*(1+r()*4));if(family===2)h*=1.75;if(family===5)h*=.55;if(family===4)h*=1.15;if(style===2)h*=.70;const existing=r()<(family===5?.50:.28);let birth=existing?-35000:r()*19800; if(!existing&&r()>.91)birth=29000+r()*28000;const duration=1500+h*630+r()*800;s.lots.push({id,x:x-w/2,z:z-d/2,y:0,width:w,depth:d,height:h,birth,duration,phase:r()*100,style,landmark:0,row:Math.floor((z+20)/s.sz),col:Math.floor((x+20)/s.sx),angle,existing,lod:Math.hypot(x,z)>22?1:0});}
+ let h=(.5+r()*1.5+cluster*(1+r()*4));if(family===2)h*=1.75;if(family===5)h*=.55;if(family===4)h*=1.15;if(style===2)h*=.70;const existing=r()<(family===5?.50:family===2?1:.28);let birth=existing?-35000:r()*19800; if(!existing&&r()>.91)birth=29000+r()*28000;const duration=1500+h*630+r()*800;s.lots.push({id,x:x-w/2,z:z-d/2,y:0,width:w,depth:d,height:h,birth,duration,phase:r()*100,style,landmark:0,row:Math.floor((z+20)/s.sz),col:Math.floor((x+20)/s.sx),angle,existing,lod:Math.hypot(x,z)>22?1:0});}
  if(family===3){const rings=13+Math.floor(r()*2),spacing=2.0+r()*.4;for(let ring=0;ring<rings;ring++){const radius=4.8+ring*spacing,count=Math.floor(TAU*radius/(2.0+r()*.45)),offset=r()*TAU;
  for(let k=0;k<count;k++){const a=k/count*TAU+offset,px=Math.cos(a)*radius,pz=Math.sin(a)*radius;const spoke=Math.abs(Math.sin(a*3));if(spoke>.16)lot(px,pz,1.25+r()*.38,1.18+r()*.35,-a+Math.PI/2,'r'+ring+':'+k);const b=(k+1)/count*TAU+offset;road([Math.cos(a)*(radius+spacing*.48),Math.sin(a)*(radius+spacing*.48)],[Math.cos(b)*(radius+spacing*.48),Math.sin(b)*(radius+spacing*.48)],.30);}
  }for(let k=0;k<6;k++){const a=k/6*TAU;road([Math.cos(a)*3.4,Math.sin(a)*3.4],[Math.cos(a)*37,Math.sin(a)*37],.46);}}
@@ -480,9 +481,10 @@ function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.l
  }
  // Landmark positions are selected from each city's actual land parcels.
  const candidates=s.lots.filter(l=>Math.hypot(l.x-s.cx,l.z-s.cz)<8).sort((a,b)=>hash(c.layout+a.id)-hash(c.layout+b.id));
- if(candidates[0]){const l=candidates[0];l.landmark=family===5?3:family===2?4:1;l.height=family===5?4.3:family===2?10.5+r()*2:6+r()*3;l.birth=250;l.duration=5600;l.existing=false;}
+ if(candidates[0]){const l=candidates[0];l.landmark=family===5?3:family===2?4:1;l.height=family===5?4.3:family===2?10.5+r()*2:6+r()*3;l.birth=family===2?-35000:250;l.duration=5600;l.existing=family===2;}
  if(candidates[3]){candidates[3].landmark=2;candidates[3].height=1.7+r()*.9;}
- for(let k=0;k<250;k++){const x=(r()-.5)*39,z=(r()-.5)*39;if(cityLand(s,x,z)>.6&&cityPark(s,x,z))s.green.push([x,z,.55+r()*.55]);}
+ if(family===2){for(let ring=0;ring<2;ring++){const count=ring?28:18,radius=ring?3.82:2.40;for(let i=0;i<count;i++){const a=i/count*TAU+ring*.10,rr=radius+.12*Math.sin(i*2.17+ring);const x=s.cx+Math.cos(a)*rr*1.15,z=s.cz+Math.sin(a)*rr*2.2;if(cityLand(s,x,z)>.12&&cityPark(s,x,z))s.green.push([x,z,.64+r()*.32]);}}}
+ else for(let k=0;k<250;k++){const x=(r()-.5)*39,z=(r()-.5)*39;if(cityLand(s,x,z)>.6&&cityPark(s,x,z))s.green.push([x,z,.55+r()*.55]);}
  // Straight, land-tested navigation reaches prevent vehicles from crossing water.
  s.traffic.sort((a,b)=>hash(c.layout+':traffic:'+a.a)-hash(c.layout+':traffic:'+b.a));s.traffic=s.traffic.slice(0,100);
  if(family!==3){for(let k=0;k<18;k++){const x=(r()-.5)*37,z=(r()-.5)*35,angle=r()*TAU,dx=Math.cos(angle)*2.5,dz=Math.sin(angle)*2.5;if([0,.25,.5,.75,1].every(t=>cityLand(s,x+dx*t,z+dz*t)<-.45))s.boats.push({a:[x,z],b:[x+dx,z+dz]});}}
@@ -490,7 +492,7 @@ function cityPlan(c){if(cityPlanCache.has(c.layout))return cityPlanCache.get(c.l
  if(cityPlanCache.size>10)cityPlanCache.delete(cityPlanCache.keys().next().value);cityPlanCache.set(c.layout,s);return s;}
 function cityLots(c,index){return cityPlan(c).lots.filter(l=>l.plane===index)}
 function cityRoad(m,a,b,width,y,c,mat=4){const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz)||1,nx=-dz/len*width*.5,nz=dx/len*width*.5;m.material=mat;m.face([a[0]+nx,y,a[1]+nz],[b[0]+nx,y,b[1]+nz],[b[0]-nx,y,b[1]-nz],[a[0]-nx,y,a[1]-nz],c,[0,1,0]);m.material=0;}
-function cityTree(m,x,z,s,r){m.box(x-.025,.05,z-.025,.05,s*.65,.05,[.21,.17,.105],0);m.material=5;const leaf=[.10+r()*.035,.22+r()*.08,.09+r()*.025];m.sphere(x,s*.69,z,s*.33,s*.43,s*.32,leaf,6,3);m.material=0;}
+function cityTree(m,x,z,s,r){m.box(x-.025,.05,z-.025,.05,s*.65,.05,[.25,.18,.10],0);m.material=5;const g=.33+r()*.09,leaf=[.18+r()*.06,g,.10+r()*.045];m.sphere(x,s*.72,z,s*.35,s*.43,s*.34,leaf,9,5);m.sphere(x-s*.17,s*.77,z,s*.22,s*.28,s*.23,[leaf[0]*1.12,leaf[1]*1.08,leaf[2]*1.06],8,4);m.sphere(x+s*.18,s*.78,z+s*.03,s*.22,s*.28,s*.23,[leaf[0]*.91,leaf[1]*.96,leaf[2]*.91],8,4);m.material=0;}
 // Architectural grammar: parcels keep their schedule, district language and silhouette at every LOD.
 // A small seamless material field is baked once per world, never regenerated while tuning.
 function bakeCityMaterials(seed){
@@ -608,7 +610,7 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
  if(index===1){m.material=11;m.face([-65,-.055,-65],[65,-.055,-65],[65,-.055,65],[-65,-.055,65],s.landTint,[0,1,0]);m.material=0;
 
  for(const p of s.roads){
-  const col=p.cls==='quay'?[.13,.135,.12]:p.cls==='blvd'?[.105,.115,.125]:p.cls==='bridge'?[.16,.15,.13]:[.095,.11,.125];
+  const col=s.family===2?(p.cls==='blvd'?[.16,.18,.18]:p.cls==='bridge'?[.30,.25,.18]:[.13,.15,.16]):p.cls==='quay'?[.13,.135,.12]:p.cls==='blvd'?[.105,.115,.125]:p.cls==='bridge'?[.16,.15,.13]:[.095,.11,.125];
   cityRoad(m,p.a,p.b,p.width,p.y,col);
   if(p.bridge){
    const dx=p.b[0]-p.a[0],dz=p.b[1]-p.a[1],len=Math.hypot(dx,dz)||1,nx=-dz/len,nz=dx/len;
@@ -622,6 +624,15 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
     cityRoad(m,[mix(p.a[0],p.b[0],t0),mix(p.a[1],p.b[1],t0)],[mix(p.a[0],p.b[0],t1),mix(p.a[1],p.b[1],t1)],.05,p.y+.002,[.55,.55,.48],0);}}
   }
  }
+ if(s.family===2){
+  // A clean promenade and timber crossing give the central water a readable scale.
+  const walk=[];for(let i=0;i<=96;i++){const a=i/96*TAU;walk.push([s.cx+Math.cos(a)*3.18*1.15,s.cz+Math.sin(a)*3.18*2.2]);}
+  for(let i=0;i<walk.length-1;i++)cityRoad(m,walk[i],walk[i+1],.105,.018,[.64,.58,.44],0);
+  const x0=s.cx-2.38,x1=s.cx+2.38,z=s.cz-.62;
+  cityRoad(m,[x0,z],[x1,z],.30,.055,[.43,.30,.18],0);
+  for(let i=1;i<14;i++){const x=mix(x0,x1,i/14);cityRoad(m,[x,z-.14],[x,z+.14],.022,.061,[.66,.48,.27],0);}
+  for(const side of[-1,1]){m.box(x0,.17,z+side*.145,x1-x0,.035,.035,[.33,.24,.14],0);for(let i=0;i<=7;i++)m.box(mix(x0,x1,i/7)-.022,.075,z+side*.145,.044,.18,.044,[.36,.26,.15],0);}
+ }
  for(let i=0;i<s.green.length;i++)cityTree(m,...s.green[i],r);
  // Waterfront crossings vary with each plan, and are separate from the streets.
  if(s.family===1||s.family===5){for(let j=0;j<5;j++){const z=-12+j*5,x=s.geo[2]+Math.sin(z*.09+s.geo[1])*4;if(s.family===1){cityRoad(m,[x-.6,z],[x+2.5,z],.32,.07,[.42,.32,.20],0);for(let k=0;k<4;k++)m.box(x+k*.6,.06,z-.19,.035,.18,.035,[.29,.25,.17],0);}}}
@@ -629,7 +640,7 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
  const lots=cityLots(c,index);m.lots=lots;
  for(const l of lots){const{x,z,width:w,depth:d,height:h,style,phase}=l;m.phase=phase;m.turn=l.angle||0;m.pivot=[x+w/2,z+d/2];
   // Permanent low urban fabric and construction plots share the same seeded plan.
-  m.material=0;m.face([x-.035,.025,z-.035],[x+w+.035,.025,z-.035],[x+w+.035,.025,z+d+.035],[x-.035,.025,z+d+.035],[.39,.39,.35],[0,1,0]);m.construction=[l.birth,l.duration,0,h];beginBuilding(m);
+  m.material=0;m.face([x-.035,.025,z-.035],[x+w+.035,.025,z-.035],[x+w+.035,.025,z+d+.035],[x-.035,.025,z+d+.035],s.family===2?[.47,.46,.40]:[.39,.39,.35],[0,1,0]);m.construction=[l.birth,l.duration,0,h];beginBuilding(m);
   const glass=color(s.palette[2],.85+r()*.3),stone=color(s.palette[0],.88+r()*.24),brick=color(s.palette[1],.85+r()*.3);
   if(l.landmark===1){m.material=1;m.cylinder(x+w*.5,0,z+d*.5,w*.58,d*.48,h,glass,20,.76);m.kind=1;m.material=8;m.cylinder(x+w*.5,h,z+d*.5,w*.44,d*.37,.10,[.67,.72,.69],20);m.box(x+w*.47,h,z+d*.47,.035,.65,.035,[.70,.71,.64],8);m.kind=0;}
   else if(l.landmark===2){const dh=Math.min(h*.45,w*.47,d*.47),base=h-dh;m.box(x,0,z,w,base,d,[.68,.66,.56],2);m.material=8;m.dome(x+w*.5,base,z+d*.5,w*.49,dh,d*.49,[.44,.55,.53],16,5);}
@@ -658,7 +669,7 @@ function renderPhotoCity(w,t,params,dest){if(!photoPrograms)photoPrograms={surfa
  const eye=[Math.sin(angle)*s.distance,s.elevation,Math.cos(angle)*s.distance],focus=[organic(elapsed*.20,phase)*1.5*drift,1.05,organic(elapsed*.13,phase+2)*1.5*drift],fov=(37+.25*organic(elapsed*.34,phase+4))*Math.PI/180;const view=matMul(perspective(fov,width/height),lookAt(eye,focus));
  gl.disable(gl.BLEND);gl.disable(gl.DITHER);gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);
  if(elapsed-w.shadowAt>.12||Math.abs(t-w.shadowStory)>120){w.sun=norm3([-.68+.08*Math.sin(t*.000025+s.phase)+.035*Math.sin(t*.000041+1.7),1,.39+.025*Math.sin(t*.000031)+.01*Math.sin(t*.000053+2.1)]);w.light=matMul(ortho(34),lookAt(w.sun.map(v=>v*57),[0,0,0]));gl.bindFramebuffer(gl.FRAMEBUFFER,w.shadow.fb);gl.viewport(0,0,1024,1024);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);for(let i=1;i<8;i++)cityDraw(w.planes[i],photoPrograms.shadow,w.light,w.light,t,eye,w.sun,params,w);w.shadowAt=elapsed;w.shadowStory=t;}
- gl.bindFramebuffer(gl.FRAMEBUFFER,dest.fb);gl.viewport(0,0,width,height);gl.clearColor(.39,.49,.54,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);for(let i=1;i<8;i++)cityDraw(w.planes[i],photoPrograms.surface,view,w.light,t,eye,w.sun,params,w);gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
+ gl.bindFramebuffer(gl.FRAMEBUFFER,dest.fb);gl.viewport(0,0,width,height);gl.clearColor(.67,.78,.82,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);for(let i=1;i<8;i++)cityDraw(w.planes[i],photoPrograms.surface,view,w.light,t,eye,w.sun,params,w);gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
 }
 
 function cityProgress(lot,time){const raw=(time-lot.birth)/lot.duration;return {height:ease(raw),complete:raw>=1.2,active:raw>=0&&raw<1.2}}
@@ -1354,6 +1365,7 @@ config=canonical(config);smoothed={...config.params};resize();current=build(conf
 /* ============ Seed Console adapter: Canal Metropolis ============ */
 (function () {
   'use strict';
+  var initialRandomPending = !(new URLSearchParams(location.search).get('seed') || '').trim();
   // Mirror of the native Random button: new layout/detail/params, keep realm + lens.
   function randomConfig() {
     var r = rng(fresh()), params = Object.assign({}, defaults), i, c, layout;
@@ -1400,10 +1412,11 @@ config=canonical(config);smoothed={...config.params};resize();current=build(conf
     setSeed: function (s) {
       var text = String(s).trim();
       var parsed = parseCode(text);
+      if (parsed && codeOf(parsed) === codeOf(config)) return;
       changeWorld(parsed || { realm: config.realm, layout: hash(text), detail: hash(text + ':details'),
         params: Object.assign({}, defaults), lens: config.lens, locks: Object.assign({}, config.locks) });
     },
-    randomSeed: function () { return codeOf(randomConfig()); },
+    randomSeed: function () { if (initialRandomPending) { initialRandomPending = false; return codeOf(config); } return codeOf(randomConfig()); },
     remixSeed: function (s) {
       var base = parseCode(String(s).trim()) || config;
       return codeOf(remixConfig(base));
