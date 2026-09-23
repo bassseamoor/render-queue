@@ -1,4 +1,4 @@
-/* Road Atlas Cartography 1.0.1 — beauty pass for water, parks, buildings, plus canals.
+/* Road Atlas Cartography 1.0.2 — beauty pass for water, parks, buildings, plus canals.
  * Hooks into the conditions-adapted renderer via unique source anchors (no edits
  * to the immutable V1 baseline, no changes to hash-guarded first-party files).
  * All randomness comes from makeRng(W.seed,'cartography') / the existing named
@@ -7,7 +7,7 @@
  */
 (function(){
 'use strict';
-var VERSION='1.0.1';
+var VERSION='1.0.2';
 
 function clamp(x,a,b){return x<a?a:x>b?b:x;}
 
@@ -280,12 +280,14 @@ function drawParks(ctx,W,T){
   ctx.restore();
 }
 
-/* Refined building paint: ONE painter for every building, so the geometry
- * reads unified. (Previously, urban-mode buildings delegated to a different
- * painter, which split the map into two visual treatments.) Same massing the
- * city built, crisper finish: shadow → plinth → body → roof → highlight → edge. */
+/* Building paint: the urban architecture painter is the primary — it draws the
+ * detailed 3D massing, gardens, and trees the city generated. Every building
+ * gets architecture data when the building grammar is on (the default), so
+ * this keeps all buildings unified through the one good painter. The simpler
+ * cartographic finish below is only a fallback for when the grammar is off. */
 function drawBuildings(ctx,W,T){
   W.blocks.buildings.forEach(function(b){
+    if(W.urban&&W.urban.enabled&&b.architecture&&window.RoadAtlasUrban){RoadAtlasUrban.drawBuilding(ctx,W,b);return;}
     var col=b.kind==='industrial'?T.ind:T.bCols[b.shade%T.bCols.length];
     var hb=clamp(b.hgt/38,0,1);
     var parts=b.sub||[{dx:0,dy:0,w:b.w,h:b.h}];
