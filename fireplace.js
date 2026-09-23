@@ -681,6 +681,32 @@
   $("copySeed").addEventListener("click", copySeed);
   window.__renderCanvas = canvas;
   window.__renderReset = function () { manualStart = performance.now(); bgCache = null; bgKey = ""; };
+  /* ---- Seed Console v2 bridge (the adapter in fireplace.html reads through this) ---- */
+  window.__fireplaceBridge = {
+    getSeed: function () { return seedFor(config); },
+    setSeed: function (s) { applyConfig(configFromSeed(s), true); },
+    randomSeed: function () { return seedFor(newConfig()); },
+    remixSeed: function (s) {
+      var c = configFromSeed(s);
+      c.variant = randomHex4();
+      return seedFor(c);
+    },
+    styleIndex: function () { return STYLE_CODES.indexOf(config.style) + 1; },
+    setStyleIndex: function (i) {
+      i = Math.max(1, Math.min(4, Math.round(i)));
+      applyConfig(Object.assign({}, config, { style: STYLE_CODES[i - 1] }), true);
+    },
+    variantNum: function () { return parseInt(config.variant, 16); },
+    setVariantNum: function (v) {
+      v = Math.max(0, Math.min(65535, Math.round(v)));
+      applyConfig(Object.assign({}, config, { variant: v.toString(16).toUpperCase().padStart(4, "0") }), true);
+    },
+    getFire: function () { return config.fire; },
+    setFire: function (v) { applyConfig(Object.assign({}, config, { fire: v }), true); },
+    getSnow: function () { return config.snow; },
+    setSnow: function (v) { applyConfig(Object.assign({}, config, { snow: v }), true); },
+    canvas: function () { return canvas; }
+  };
   if (window.ResizeObserver) new ResizeObserver(resizePreview).observe(frame);
   window.addEventListener("resize", resizePreview, { passive: true });
   requestAnimationFrame(() => { resizePreview(); requestAnimationFrame(tick); });
