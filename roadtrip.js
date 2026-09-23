@@ -36,7 +36,7 @@ function resize(w,h){
 function applyMood(){
  const m=MOODS[state.mood];sky.set(m);key.color.set(m.sun);key.intensity=m.key;hemi.intensity=m.hemi;hemi.color.set(m.horizon);hemi.groundColor.set('#35412c');
  post.uniforms.fogColor.value.set(m.horizon);post.uniforms.sunColor.value.set(m.sun);post.uniforms.sunDirection.value.fromArray(m.sunDir).normalize();post.uniforms.fogDensity.value=m.fog;post.uniforms.exposure.value=m.exposure;
- const envScene=new T.Scene(),envSky=sky.mesh.clone();envScene.add(envSky);const ground=new T.Mesh(new T.PlaneGeometry(10000,10000),new T.MeshBasicMaterial({color:'#536340'}));ground.rotation.x=-Math.PI/2;ground.position.y=-4;envScene.add(ground);
+ const envScene=new T.Scene(),envSky=sky.mesh.clone();envSky.position.set(0,0,0);envScene.add(envSky);const ground=new T.Mesh(new T.PlaneGeometry(10000,10000),new T.MeshBasicMaterial({color:'#536340'}));ground.rotation.x=-Math.PI/2;ground.position.y=-4;envScene.add(ground);
  const old=envTarget;envTarget=pmrem.fromScene(envScene,.06,.1,10000);scene.environment=envTarget.texture;old?.dispose();ground.geometry.dispose();ground.material.dispose();
 }
 function positionAt(z,offset=1.65){return new T.Vector3(world.roadX(z)+offset,world.roadY(z)+.09,z-world.origin);}

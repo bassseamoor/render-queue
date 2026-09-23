@@ -6,7 +6,7 @@ Updated 2026-09-23. Canonical project: `bassseamoor/render-queue`. Initial workt
 
 A new `roadtrip.html` entry in the existing studio, using the existing vendored Three.js r160. One original burgundy touring coupe travels through a seeded cypress, broadleaf and blue-aster mountain valley. Follow, low, profile, aerial and smoothly blended director cameras; three lighting moods; landscape, portrait and cinema compositions. PNG stills and silent H.264 MP4 clips are implemented. Preview is continuous; exported clips are **not seamless loops**. Direct UI exports run 5–60 seconds; queue requests support up to 300 seconds and reject longer requests visibly.
 
-Owned files: `roadtrip.html`, `roadtrip.css`, `roadtrip.js`, `roadtrip-world.js`, `roadtrip-materials.js`, `roadtrip-post.js`, `roadtrip-muxer.js`, `thumbs/roadtrip.jpg`, the two `tests/roadtrip-*` checks, this handoff, and narrow registry/routing/render-URL additions in `index.html`. Existing studios and queue data are preserved.
+Owned files: `roadtrip.html`, `roadtrip.css`, `roadtrip.js`, `roadtrip-world.js`, `roadtrip-materials.js`, `roadtrip-post.js`, `roadtrip-muxer.js`, `thumbs/roadtrip.jpg`, the two `tests/roadtrip-*` checks, this handoff, the deployed-entry screenshot, and narrow registry/routing/render-URL additions in `index.html`. Existing studios and queue data are preserved.
 
 ## Implementation decisions
 
@@ -23,7 +23,8 @@ Owned files: `roadtrip.html`, `roadtrip.css`, `roadtrip.js`, `roadtrip-world.js`
 - `node tests/roadtrip-muxer-check.cjs` (requires FFmpeg): actual bundled muxer, real H.264 packets, explicit duration fallback. FFprobe decoded 15 frames at 320 × 180 over 0.5 seconds.
 - Actual sky and post GLSL compiled under standalone EGL/OpenGL after syntax adaptation. Offline source-geometry inspections covered follow, portrait, profile and aerial views. These are not browser/WebGL conformance checks.
 - Thumbnail is an offline render of the actual procedural meshes and textures with the actual sky/post shaders and approximate standalone material lighting. It is **not a browser screenshot**.
-- Hosted HTML/controls were reachable. The available cloud browser returned no WebGL 2 context, including the default-power fallback. Browser animation, physical-material appearance, performance, on-device anti-aliasing, PNG capture and WebCodecs MP4 export remain **unverified**. No physical-device test was performed.
+- Pages deployment `ea56c5d4929e522308bd2b141c0edc60bb0ac534` completed successfully. In the live studio, entering “cinematic road trip through a cypress valley” selected Grand Tour; the Studios tab displayed its card and loaded thumbnail, and Open launched `roadtrip.html`. Evidence: `docs/roadtrip-studio-entry-ea56c5d.jpg`. No test jobs were created.
+- The live renderer displayed the explicit graphics-unavailable state with rendering controls disabled. The available cloud browser returned no WebGL 2 context, including the default-power fallback. Browser animation, physical-material appearance, performance, on-device anti-aliasing, PNG capture and WebCodecs MP4 export remain **unverified**. No physical-device test was performed.
 
 ## Resume
 
