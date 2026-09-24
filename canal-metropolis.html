@@ -461,7 +461,7 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
   panes=mix(panes,(right-left)*(.86-low),smoothstep(.23,.42,footprint/bay));
   float rnd=hash(cell+seed),column=hash(vec2(cell.x,seed));
   float windowLight=smoothstep(1.,1.20,vProgress)*step(mix(.82,.40,nightF),rnd);
-  vec3 reflection=mix(vec3(.065,.14,.17),vec3(.36,.53,.56),clamp(V.y*.65+.30,0.,1.));
+  vec3 reflection=mix(vec3(.115,.205,.245),vec3(.36,.53,.56),clamp(V.y*.65+.30,0.,1.));
   reflection*=.80+.16*column+.045*sin(vPosition.y*.61+seed);
   reflection+=vec3(.19,.16,.10)*pow(max(0.,dot(reflect(-V,N),uSun)),16.);
   // Curtains and recessed upper edges give glazing depth without noisy black grids.
@@ -511,7 +511,7 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
  // Billboards: seeded canvas ads drifting in and out on their own schedule.
  if(mat>20.5&&mat<21.5){vec3 ad=texture2D(uBillboard,vTex).rgb;if(hash(gl_FragCoord.xy)>vFade+.001)discard;albedo=ad;emission=ad*.38*uGlow;rough=.55;}
  // Drifting clouds: soft white, shaded by normal.
- if(mat>21.5&&mat<22.5){albedo=vec3(.94,.955,.975)*(.80+.20*max(N.y,0.));rough=1.;}
+ if(mat>21.5&&mat<22.5){float clUp=max(N.y,0.),clDn=max(-N.y,0.);albedo=vec3(.94,.955,.975)*(.80+.20*clUp+.16*clDn);rough=1.;}
  // Instanced foliage: leafy variation with a darker underside.
  if(mat>22.5&&mat<23.5){albedo*=.86+.28*noise(vPosition.xz*7.+vPosition.y*2.3);albedo*=.55+.45*max(N.y,0.);rough=1.;}
  if(mat>23.5&&mat<24.5){vec4 ftx=texture2D(uFoliage,vTex);if(ftx.a<.42)discard;albedo=ftx.rgb*(.72+.38*max(N.y,0.));rough=1.;}
@@ -576,7 +576,7 @@ void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=no
  vec3 H=normalize(V+uSun);float spec=pow(max(dot(N,H),0.),mix(125.,12.,rough))*(.10+metal*.7)*visibility;vec3 col=albedo*lighting+vec3(1.0,.86,.63)*spec+emission;
  float distance=length(uEye-vPosition);float haze=1.-exp(-max(distance-16.,0.)*.010*uMist*uMist);col=mix(col,vec3(.45,.55,.60),haze);col*=1.+.022*uWeather;col*=.45+.65*uGlow;gl_FragColor=vec4(col,1.);
 }`;
-const cityShadowFragment=`precision highp float;varying float vFade;varying highp vec4 vShadow;varying vec4 vInfo;varying vec2 vBuild;varying vec3 vPosition;void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x)||(vInfo.z>7.5&&vInfo.z<8.5)||(vInfo.x>10.5&&vInfo.x<11.5)||(vInfo.x>20.5&&vInfo.x<22.5)||(vInfo.x>23.5&&vInfo.x<24.5)||(vInfo.x>24.5&&vInfo.x<26.5)||(vInfo.x>27.5&&vInfo.x<28.5))discard;highp float depth=clamp(vShadow.z/vShadow.w*.5+.5,0.,.999999);vec4 enc=fract(depth*vec4(1.,255.,65025.,16581375.));enc-=enc.yzww*vec4(1./255.,1./255.,1./255.,0.);gl_FragColor=enc;}`;
+const cityShadowFragment=`precision highp float;varying float vFade;varying highp vec4 vShadow;varying vec4 vInfo;varying vec2 vBuild;varying vec3 vPosition;void main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x)||(vInfo.z>7.5&&vInfo.z<8.5)||(vInfo.z>16.5&&vInfo.z<17.5)||(vInfo.x>10.5&&vInfo.x<11.5)||(vInfo.x>20.5&&vInfo.x<22.5)||(vInfo.x>23.5&&vInfo.x<24.5)||(vInfo.x>24.5&&vInfo.x<26.5)||(vInfo.x>27.5&&vInfo.x<28.5))discard;highp float depth=clamp(vShadow.z/vShadow.w*.5+.5,0.,.999999);vec4 enc=fract(depth*vec4(1.,255.,65025.,16581375.));enc-=enc.yzww*vec4(1./255.,1./255.,1./255.,0.);gl_FragColor=enc;}`;
 let photoPrograms=null;
 function matMul(a,b){const o=new Array(16).fill(0);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o}
 const dot3=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -1214,9 +1214,10 @@ function architectureBuilding(m,l,s,c,stone,brick,glass){
 }
 // Cheap far-field massing: the city continues toward the horizon and dissolves into haze.
 function farFieldBlock(m,l,s,c,stone,brick,glass){
- const{x,z,width:w,depth:d,height:h}=l;
+ const{x,z,width:w,depth:d,height:h0}=l;
  m.anchor=0;
  const rr=rng(hash(c.detail+':far:'+l.id));
+ const h=h0*(2.0+rr()*3.2);
  const tiers=2+Math.floor(rr()*2);
  let xx=x,yy=0,zz=z,ww=w,dd=d;
  for(let j=0;j<tiers;j++){
@@ -1536,14 +1537,14 @@ function bakeCityDetails(m,s,c,r){
  // Drifting low-poly cloud clusters (kind 14 / mat 22).
  for(let ci=0;ci<10;ci++){
   const cr2=rng(hash(c.layout+':cloud:'+ci));
-  const cx0=-34+cr2()*68,cz0=-34+cr2()*68,cy=17+cr2()*9;
+  const cx0=-34+cr2()*68,cz0=-34+cr2()*68,cy=30+cr2()*12;
   m.material=22;m.kind=14;m.phase=cr2()*100;
   m.route=[1,0,70+cr2()*20,.5+cr2()*.3];
-  const npuff=6+Math.floor(cr2()*4);
+  const npuff=9+Math.floor(cr2()*5);
   for(let pi=0;pi<npuff;pi++){
-   const px=cx0+(cr2()-.5)*16,py=cy+(cr2()-.5)*1.1,pz=cz0+(cr2()-.5)*5;
-   const pr=1.6+cr2()*2.2;
-   m.sphere(px,py,pz,pr,pr*.30,pr*.55,[1,1,1],10,6);
+   const px=cx0+(cr2()-.5)*13,py=cy+(cr2()-.5)*3.0,pz=cz0+(cr2()-.5)*5;
+   const pr=.9+cr2()*1.1;
+   m.sphere(px,py,pz,pr,pr*.55,pr*.65,[1,1,1],10,6);
   }
   m.material=0;m.kind=0;
  }
@@ -1737,6 +1738,11 @@ function bakeCityLife(m,s,c,r){
   const base=m.data.length/23;m.material=mat;
   m.vertex(a,n,col,[0,0]);m.vertex(b2,n,col,[1,0]);m.vertex(c2,n,col,[1,1]);m.vertex(d2,n,col,[0,1]);
   m.indices.push(base,base+1,base+2,base,base+2,base+3,base,base+3,base+2,base,base+2,base+1);
+  m.material=0;};
+ const vtri=(a,b2,c2,col,n,mat)=>{
+  const base=m.data.length/23;m.material=mat;
+  m.vertex(a,n,col,[0,0]);m.vertex(b2,n,col,[1,0]);m.vertex(c2,n,col,[.5,1]);
+  m.indices.push(base,base+1,base+2,base,base+2,base+1);
   m.material=0;};
  const lampAt=(x,z,h=.85)=>{
   m.box(x-.025,0,z-.025,.05,h,.05,[.16,.17,.18],8);
@@ -2010,12 +2016,15 @@ function bakeCityLife(m,s,c,r){
  for(let ri=0;ri<3;ri++){
   const Rr=70+ri*9,mr=rng(hash(c.layout+':ridge:'+ri)),mph=mr()*TAU2;
   const base=4.5+ri*2.6,amp=2.6+ri*1.9,SEG=56,hazeMix=.34+ri*.20;
-  const mtc=[mix(.34,.58,hazeMix),mix(.37,.63,hazeMix),mix(.44,.68,hazeMix)];
   for(let k=0;k<SEG;k++){
-   const a0=k/SEG*TAU2,a1=(k+1)/SEG*TAU2;
+   const a0=k/SEG*TAU2,a1=(k+1)/SEG*TAU2,am=(a0+a1)/2;
    const x0=s.cx+Math.cos(a0)*Rr,z0=s.cz+Math.sin(a0)*Rr,x1=s.cx+Math.cos(a1)*Rr,z1=s.cz+Math.sin(a1)*Rr;
-   const h0=base+amp*(.5+.5*Math.sin(a0*3+ri*2.1+mph))+mr()*1.2,h1=base+amp*(.5+.5*Math.sin(a1*3+ri*2.1+mph))+mr()*1.2;
-   vquad([x0,-4,z0],[x1,-4,z1],[x1,h1,z1],[x0,h0,z0],mtc,[0,0,1],2);
+   const xm=s.cx+Math.cos(am)*Rr,zm=s.cz+Math.sin(am)*Rr;
+   const hgt=a=>base+amp*(.5+.5*Math.sin(a*3+ri*2.1+mph))*(.55+.45*Math.sin(a*7+ri*1.3+mph*2.7))+mr()*1.6;
+   const hm=Math.max(hgt(a0),hgt(a1))*(1.12+mr()*.25);
+   const shade=.82+mr()*.36;
+   const mtc=[mix(.34,.58,hazeMix)*shade,mix(.37,.63,hazeMix)*shade,mix(.44,.68,hazeMix)*shade];
+   vtri([x0,-4,z0],[x1,-4,z1],[xm,hm,zm],mtc,[0,0,1],2);
   }
  }
  reset();
@@ -2062,7 +2071,7 @@ function bakeSkyLife(m,s,c){
     const sb=m.data.length/23,sn=[0,0,ssd];
     // P0 fix: each side needs u increasing toward ITS viewer's right. Sharing one UV
     // direction mirrors the text on the -z side (seen from -z, +x points screen-left).
-    const ua=ssd>0?sqi/SEGN:1-sqi/SEGN,ub=ssd>0?(sqi+1)/SEGN:1-(sqi+1)/SEGN;
+    const ua=ssd>0?1-sqi/SEGN:1-(sqi+1)/SEGN,ub=ssd>0?1-(sqi+1)/SEGN:1-sqi/SEGN;
     m.vertex([sxa,SY0,sza],sn,[1,1,1],[ua,0]);m.vertex([sxb,SY0,szb],sn,[1,1,1],[ub,0]);
     m.vertex([sxb,SY1,szb],sn,[1,1,1],[ub,1]);m.vertex([sxa,SY1,sza],sn,[1,1,1],[ua,1]);
     m.indices.push(sb,sb+1,sb+2,sb,sb+2,sb+3,sb,sb+3,sb+2,sb,sb+2,sb+1);
@@ -2184,7 +2193,7 @@ function makeCityPlane(c,index){const m=new CityMesh(),s=cityPlan(c),r=rng(hash(
  for(const l of lots){const{x,z,width:w,depth:d,height:h,style,phase}=l;m.phase=phase;m.turn=l.angle||0;m.pivot=[x+w/2,z+d/2];
   // Permanent low urban fabric and construction plots share the same seeded plan.
   m.material=0;m.face([x-.035,.025,z-.035],[x+w+.035,.025,z-.035],[x+w+.035,.025,z+d+.035],[x-.035,.025,z+d+.035],s.family===2?[.47,.46,.40]:[.39,.39,.35],[0,1,0]);m.construction=[l.birth,l.duration,0,h];beginBuilding(m);
-  const glass=color(s.palette[2],.85+r()*.3),stone=color(s.palette[0],.88+r()*.24),brick=color(s.palette[1],.85+r()*.3);
+  const glass=color(s.palette[2],.85+r()*.3),stone=color(s.palette[0],.88+r()*.24),brick=color(s.palette[1],.72+r()*.25);
   // District color variety: seeded per-block shifts so quarters of the city feel different.
   {const district=hash(c.layout+':district:'+Math.floor((x+w/2)/5)+':'+Math.floor((z+d/2)/5))%5;
    const dsh=[[1,.99,1.01],[1.07,.96,.88],[.90,.99,1.09],[1.0,1.05,.93],[1.03,.93,1.02]][district];
