@@ -435,7 +435,7 @@ const rockU = { mvp:U(rockP,"uMvp"), t:U(rockP,"uTime"), cam:U(rockP,"uCamPos"),
   amb:U(rockP,"uAmb"), ambCol:U(rockP,"uAmbCol"),
   sunDir:U(rockP,"uSunDir"), sunCol:U(rockP,"uSunCol"), sunI:U(rockP,"uSunI"),
   caustic:U(rockP,"uCausticCol"), trim:U(rockP,"uTrim") };
-const plantU = { mvp:U(plantP,"uMvp"), t:U(plantP,"uTime"),
+const plantU = { mvp:U(plantP,"uMvp"), t:U(plantP,"uTime"), grow:U(plantP,"uGrow"), vigor:U(plantP,"uVigor"),
   cam:U(plantP,"uCamPos"), fog:U(plantP,"uFogColor"), fr:U(plantP,"uFogRange"),
   amb:U(plantP,"uAmb"), ambCol:U(plantP,"uAmbCol"),
   sunDir:U(plantP,"uSunDir"), sunCol:U(plantP,"uSunCol"), sunI:U(plantP,"uSunI"),
@@ -1317,6 +1317,17 @@ function generateScene(st) {
   S.food = [];
   S.foodSys = makePts(48, sbuf);
   S.foodT = 22 + R()*22;
+  /* water chemistry: the tank as a living system, not a backdrop.
+     pH, temperature, turbidity, dissolved oxygen, and the nitrogen cycle
+     (ammonia -> nitrite -> nitrate -> plants) all integrate here with
+     negative-feedback equilibria, so multi-hour renders stay stable.
+     Stepped with fixed dt like the ecology: deterministic per seed. */
+  S.chem = {
+    ph: 7.2, temp: 24.5, turb: 0.06,
+    o2: 0.88, nh3: 0.02, no2: 0.01, no3: 0.06,
+    filtEff: 1.0, filter: true, heater: true, heaterSet: 24.5, skimmer: true,
+    growth: 0.55, vigor: 0.85, wcT: 0,
+  };
   const nDust = (CLARITY[st.clarity] || CLARITY.natural).dust;
   S.dust = makePts(nDust, sbuf);
   S.dust.a0 = new Float32Array(nDust);
@@ -1572,7 +1583,7 @@ function simWarmup(tEnd) {
     f.beh = (i % 9 === 8) ? 2 : (d2 > 22 ? 1 : 0);
     S.behLOD[i] = f.beh;
   }
-  for (let t = 0; t < tEnd; t += dt) { updateFish(t, dt); updateBubbles(t, dt); updateFood(t, dt); updateDust(t); }
+  for (let t = 0; t < tEnd; t += dt) { updateFish(t, dt); updateBubbles(t, dt); updateFood(t, dt); updateChem(t, dt); updateDust(t); }
 }
 function jellyPose(j, t) {
   const cyc = (t*0.032*j.speed + j.phase*0.159) % 1;
@@ -1627,6 +1638,7 @@ function spawnFeeding() {
       v: [(R()-0.5)*0.12, -(0.20+R()*0.20), (R()-0.5)*0.12],
       life: 15+R()*8, wob: R()*6.28, sz: 0.045+R()*0.05, dead: false });
   }
+  if (S.chem) S.chem.turb = Math.min(1, S.chem.turb + 0.04); /* feeding clouds the water */
 }
 function updateFood(t, dt) {
   if (settings.ecology === "off") S.food.length = 0;
@@ -1673,6 +1685,71 @@ function updateDust(t) {
   gl.bindBuffer(gl.ARRAY_BUFFER, dust.sz); gl.bufferData(gl.ARRAY_BUFFER, dust.s, gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, dust.al); gl.bufferData(gl.ARRAY_BUFFER, dust.a, gl.DYNAMIC_DRAW);
 }
+/* water chemistry: pH, temperature, turbidity, oxygen, nitrogen cycle, filter.
+   Rates are per sim-second with equilibria (nothing runs away over an 8-hour
+   render). Maintenance objects are functional: the filter drives the biofilter
+   and clears turbidity but clogs over time; the heater holds temperature; the
+   skimmer boosts oxygen exchange. Bad water stresses fish; nitrate feeds plants. */
+const CHEM_LIGHT = { day: 1.0, golden: 0.9, blue: 0.6, moon: 0.15 };
+function updateChem(t, dt) {
+  const c = S.chem; if (!c || dt <= 0) return;
+  if (settings.water === "off") return;
+  const nF = S.fishes ? S.fishes.length : 0;
+  const lightF = CHEM_LIGHT[settings.light] || 0.8;
+  /* nitrogen cycle: fish waste -> ammonia -> nitrite -> nitrate -> plants */
+  let hungerAvg = 0;
+  for (const f of S.fishes) hungerAvg += f.hunger || 0;
+  hungerAvg /= Math.max(1, nF);
+  c.nh3 += nF * 1.2e-6 * (0.6 + hungerAvg) * dt;
+  const kBio = c.filter ? 4e-4 * Math.max(0.15, c.filtEff) : 3e-6;
+  let d = Math.min(c.nh3, kBio * c.nh3 * dt); c.nh3 -= d; c.no2 += d;
+  d = Math.min(c.no2, kBio * 1.25 * c.no2 * dt); c.no2 -= d; c.no3 += d;
+  c.no3 = Math.max(0, c.no3 - c.no3 * (0.5 + c.growth) * 8e-5 * dt); /* plants drink nitrate */
+  /* pH: nitrate acidifies slowly, carbonate buffer pulls back toward 7.2 */
+  c.ph += ((7.2 - c.ph) * 2e-5 - c.no3 * 8e-6) * dt;
+  c.ph = Math.min(8.6, Math.max(5.8, c.ph));
+  /* temperature: heater holds the setpoint, otherwise drifts to room (22C) */
+  c.temp += ((c.heater ? c.heaterSet : 22.0) - c.temp) * 3e-4 * dt;
+  /* turbidity: fish + feeding cloud the water, the filter clears it */
+  c.turb = Math.min(1, c.turb + nF * 3e-7 * dt);
+  if (c.filter) c.turb = Math.max(0, c.turb - c.turb * 3e-4 * Math.max(0.15, c.filtEff) * dt);
+  /* oxygen: fish breathe it, plants make it in the light, surface restores it */
+  c.o2 += (c.growth * c.vigor * 6e-5 * lightF - nF * 2e-6) * dt;
+  c.o2 += (0.88 - c.o2) * 3e-4 * (c.skimmer ? 1.7 : 1.0) * dt;
+  c.o2 = Math.min(1, Math.max(0.05, c.o2));
+  /* filter clogs over ~days of sim time; cleaning restores it */
+  c.filtEff = Math.max(0.15, c.filtEff - dt * 8e-6);
+  /* plants: nitrate + light grow them, toxins and starvation weaken them */
+  const gT = Math.min(1, c.no3 * 2.5) * (0.35 + 0.65 * lightF);
+  c.growth += (gT - c.growth) * Math.min(1, 2e-5 * dt);
+  c.growth = Math.min(1, Math.max(0.1, c.growth));
+  const vT = Math.max(0.15, Math.min(1, 1 - c.nh3 * 1.8 - c.no2 * 1.8 - (c.no3 < 0.015 ? 0.45 : 0)));
+  c.vigor += (vT - c.vigor) * Math.min(1, 1e-4 * dt);
+  c.wcT += dt;
+  /* chemistry stress: bad water is a slow burn, not an instant kill */
+  let cs = 0;
+  if (c.o2 < 0.55) cs += (0.55 - c.o2) * 1.4;
+  if (c.nh3 > 0.25) cs += (c.nh3 - 0.25) * 1.6;
+  if (c.no2 > 0.25) cs += (c.no2 - 0.25) * 1.6;
+  const dph = Math.abs(c.ph - 7.2);
+  if (dph > 0.9) cs += (dph - 0.9) * 0.9;
+  if (c.temp < 21 || c.temp > 29) cs += 0.6;
+  if (cs > 0 && S.fishes) for (const f of S.fishes) f.stress = Math.min(1, f.stress + cs * dt * 0.06);
+}
+/* maintenance: the objects are functional. clean the filter, change water,
+   toggle heater / skimmer. Returns what happened, for UI and tests. */
+window.__aqMaintain = function (what) {
+  const c = S.chem; if (!c) return "no-chem";
+  if (what === "filter") { c.filter = true; c.filtEff = 1; c.turb = Math.max(0, c.turb - 0.15); return "filter-cleaned"; }
+  if (what === "water") {
+    c.nh3 *= 0.25; c.no2 *= 0.25; c.no3 *= 0.25; c.turb *= 0.25;
+    c.ph += (7.2 - c.ph) * 0.7; c.wcT = 0; return "water-changed";
+  }
+  if (what === "heater") { c.heater = !c.heater; return c.heater ? "heater-on" : "heater-off"; }
+  if (what === "skimmer") { c.skimmer = !c.skimmer; return c.skimmer ? "skimmer-on" : "skimmer-off"; }
+  return "unknown";
+};
+window.__aqChem = function () { return S.chem ? { ...S.chem } : null; };
 function drawPts(sys, vp, view, w, tint) {
   gl.useProgram(ptsP);
   gl.uniform3fv(ptsU.uTint, tint || [0.78,0.93,1.0]);
@@ -1724,7 +1801,7 @@ const DEFAULTS = {
   seed: 0, locked: false, /* console-owned: Seed Console sets ?seed= or a fresh random seed on load */
   biome: "tropical", fish: "med", plants: "med", corals: "med",
   clarity: "natural", light: "day", camera: "drift",
-  bright: 0, warm: 0, sunH: 0, ecology: "on",
+  bright: 0, warm: 0, sunH: 0, ecology: "on", water: "on",
 };
 let settings = { ...DEFAULTS };
 function loadSettings() {
@@ -1952,7 +2029,7 @@ loop = startLoop(canvas, {
       let guard = 0;
       while (S.simT < target - 1e-9 && guard++ < 4) {
         const h = Math.min(1/30, target - S.simT);
-        S.simT += h; updateFish(S.simT, h); updateFood(S.simT, h);
+        S.simT += h; updateFish(S.simT, h); updateFood(S.simT, h); updateChem(S.simT, h);
       }
     }
     /* palette cache: only recompute when biome/lighting/clarity change */
@@ -1960,6 +2037,9 @@ loop = startLoop(canvas, {
         (settings.bright || 0) + "," + (settings.warm || 0) + "," + (settings.sunH || 0);
     if (!S._pal || S._palKey !== palKey) { S._pal = computePalette(); S._palKey = palKey; }
     const pal = S._pal;
+    /* turbidity closes in the fog: dirty water looks dirty */
+    const _c = S.chem, _fm = (settings.water === "off" || !_c) ? 1 : Math.max(0.35, 1 - _c.turb*0.65);
+    S._fogR = [pal.fogRange[0]*_fm, pal.fogRange[1]*_fm];
 
     /* background */
     gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.BLEND);
@@ -1974,14 +2054,14 @@ loop = startLoop(canvas, {
     gl.useProgram(silP);
     let ls = [bindAttr(silP,"aPos",sil.pb,3), bindAttr(silP,"aDark",sil.db,1)];
     gl.uniformMatrix4fv(silU.uMvp,false,vp);
-    gl.uniform3fv(silU.uCamPos,eye); gl.uniform3fv(silU.uFogColor,pal.fog); gl.uniform2fv(silU.uFogRange,pal.fogRange);
+    gl.uniform3fv(silU.uCamPos,eye); gl.uniform3fv(silU.uFogColor,pal.fog); gl.uniform2fv(silU.uFogRange,S._fogR);
     gl.drawArrays(gl.TRIANGLES,0,sil.count); disableAttrs(ls);
 
     gl.useProgram(sandP);
     ls = [bindAttr(sandP,"aPos",sand.pb,3), bindAttr(sandP,"aNor",sand.nb,3), bindAttr(sandP,"aUv",sand.ub,2)];
     gl.uniformMatrix4fv(sandU.mvp,false,vp);
     gl.uniform1f(sandU.t,t); gl.uniform3fv(sandU.cam,eye);
-    gl.uniform3fv(sandU.fog,pal.fog); gl.uniform2fv(sandU.fr,pal.fogRange);
+    gl.uniform3fv(sandU.fog,pal.fog); gl.uniform2fv(sandU.fr,S._fogR);
     gl.uniform3fv(sandU.sand,pal.sand); gl.uniform1f(sandU.sandN, window.__sandNorm || 1.0);
     gl.uniform1f(sandU.amb,pal.amb); gl.uniform3fv(sandU.ambCol,pal.ambCol);
     gl.uniform3fv(sandU.sunDir,pal.sunDir); gl.uniform3fv(sandU.sunCol,pal.sunCol);
@@ -1995,7 +2075,7 @@ loop = startLoop(canvas, {
           bindAttr(rockP,"aCol",S.rockMesh.cb,3), bindAttr(rockP,"aUv",S.rockMesh.ub,2)];
     gl.uniformMatrix4fv(rockU.mvp,false,vp);
     gl.uniform1f(rockU.t,t); gl.uniform3fv(rockU.cam,eye);
-    gl.uniform3fv(rockU.fog,pal.fog); gl.uniform2fv(rockU.fr,pal.fogRange);
+    gl.uniform3fv(rockU.fog,pal.fog); gl.uniform2fv(rockU.fr,S._fogR);
     gl.uniform1f(rockU.amb,pal.amb); gl.uniform3fv(rockU.ambCol,pal.ambCol);
     gl.uniform3fv(rockU.sunDir,pal.sunDir); gl.uniform3fv(rockU.sunCol,pal.sunCol);
     gl.uniform1f(rockU.sunI,pal.sunI); gl.uniform3fv(rockU.caustic,pal.causticCol);
@@ -2008,8 +2088,10 @@ loop = startLoop(canvas, {
           bindAttr(plantP,"aUv",S.plants.ub,2)];
     gl.uniformMatrix4fv(plantU.mvp,false,vp);
     gl.uniform1f(plantU.t,t);
+    gl.uniform1f(plantU.grow, 0.55 + 0.75*(S.chem ? S.chem.growth : 0.55));
+    gl.uniform1f(plantU.vigor, S.chem ? S.chem.vigor : 0.85);
     gl.uniform3fv(plantU.cam,eye);
-    gl.uniform3fv(plantU.fog,pal.fog); gl.uniform2fv(plantU.fr,pal.fogRange);
+    gl.uniform3fv(plantU.fog,pal.fog); gl.uniform2fv(plantU.fr,S._fogR);
     gl.uniform1f(plantU.amb,pal.amb); gl.uniform3fv(plantU.ambCol,pal.ambCol);
     gl.uniform3fv(plantU.sunDir,pal.sunDir); gl.uniform3fv(plantU.sunCol,pal.sunCol);
     gl.uniform1f(plantU.sunI,pal.sunI);
@@ -2023,7 +2105,7 @@ loop = startLoop(canvas, {
           bindAttr(coralP,"aUv",S.coral.ub,2)];
     gl.uniformMatrix4fv(coralU.uMvp,false,vp);
     gl.uniform1f(coralU.uTime,t); gl.uniform3fv(coralU.uCamPos,eye);
-    gl.uniform3fv(coralU.uFogColor,pal.fog); gl.uniform2fv(coralU.uFogRange,pal.fogRange);
+    gl.uniform3fv(coralU.uFogColor,pal.fog); gl.uniform2fv(coralU.uFogRange,S._fogR);
     gl.uniform1f(coralU.uAmb,pal.amb); gl.uniform3fv(coralU.uAmbCol,pal.ambCol);
     gl.uniform3fv(coralU.uSunDir,pal.sunDir); gl.uniform3fv(coralU.uSunCol,pal.sunCol);
     gl.uniform1f(coralU.uSunI,pal.sunI);
@@ -2054,7 +2136,7 @@ loop = startLoop(canvas, {
     gl.uniformMatrix4fv(fishU.uVp,false,vp);
     gl.uniform1f(fishU.uTime,t);
     gl.uniform3fv(fishU.uCamPos,eye);
-    gl.uniform3fv(fishU.uFogColor,pal.fog); gl.uniform2fv(fishU.uFogRange,pal.fogRange);
+    gl.uniform3fv(fishU.uFogColor,pal.fog); gl.uniform2fv(fishU.uFogRange,S._fogR);
     gl.uniform3fv(fishU.uSunDir,pal.sunDir); gl.uniform3fv(fishU.uSunCol,pal.sunCol);
     gl.uniform1f(fishU.uSunI,pal.sunI);
     gl.uniform3fv(fishU.uAmbCol,pal.ambCol); gl.uniform1f(fishU.uAmb,pal.amb);
@@ -2121,13 +2203,13 @@ loop = startLoop(canvas, {
     gl.uniformMatrix4fv(jellyU.uVp,false,vp);
     gl.uniform1f(jellyU.uTime,t);
     gl.uniform3fv(jellyU.uCamPos,eye);
-    gl.uniform3fv(jellyU.uFogColor,pal.fog); gl.uniform2fv(jellyU.uFogRange,pal.fogRange);
+    gl.uniform3fv(jellyU.uFogColor,pal.fog); gl.uniform2fv(jellyU.uFogRange,S._fogR);
     gl.blendFunc(gl.ONE, gl.ONE);
     drawInstanced(jellyM.count, nJelly);
     disableAttrs(ls.slice(0,6)); unbindInstAttrs(ls.slice(6));
 
-    if (window.__tfix != null) { updateBubbles(window.__tfix, 0); updateFood(window.__tfix, 0); updateDust(window.__tfix); }
-    else { updateBubbles(t, dt); updateFood(t, 0); updateDust(t); }
+    if (window.__tfix != null) { updateBubbles(window.__tfix, 0); updateFood(window.__tfix, 0); updateChem(window.__tfix, 0); updateDust(window.__tfix); }
+    else { updateBubbles(t, dt); updateFood(t, 0); updateChem(t, 0); updateDust(t); }
     drawPts(S.bubbles, vp, view, w);
     drawPts(S.dust, vp, view, w);
     if (S.foodSys && S.food.length) drawPts(S.foodSys, vp, view, w, [1.0, 0.74, 0.42]);
