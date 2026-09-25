@@ -131,13 +131,15 @@ void main(){
 }`;
 export const PLANT_VS = `precision highp float;
 attribute vec3 aPos; attribute vec3 aNor; attribute float aBend; attribute float aPhase; attribute vec2 aUv;
-uniform mat4 uMvp; uniform float uTime;
+uniform mat4 uMvp; uniform float uTime; uniform float uGrow; uniform float uVigor;
 varying float vBend; varying float vPh; varying vec3 vN; varying vec3 vW; varying vec2 vUv;
 void main(){
   vec3 p = aPos;
+  p.y *= uGrow;   /* growth: plants get taller over sim-days */
   float b = aBend*aBend;
   float sway = sin(uTime*0.90 + aPhase - aBend*2.4)*0.17 + sin(uTime*1.75 + aPhase*1.7 - aBend*3.5)*0.05;
   sway += sin(uTime*0.37 + aPhase*0.7 + aBend*1.9)*0.09;   /* slow low-frequency drift layer */
+  sway *= 0.35 + 0.65*uVigor;   /* vigor: healthy plants sway, sick ones go limp */
   p.x += sway*b; p.z += sway*0.6*b;
   p.y += sin(uTime*0.52 + aPhase*1.3)*0.018*b;            /* faint vertical breathing */
   vBend = aBend; vPh = aPhase; vN = aNor; vW = aPos; vUv = aUv;
