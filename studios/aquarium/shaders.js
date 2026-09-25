@@ -325,6 +325,7 @@ void main(){
   vA = aAlpha;
 }`;
 export const PTS_FS = `precision highp float;
+uniform vec3 uTint;
 varying float vA;
 void main(){
   vec2 p = gl_PointCoord*2.0-1.0;
@@ -332,7 +333,7 @@ void main(){
   if(d>1.0) discard;
   float rim = smoothstep(0.45,0.92,d);
   float body = 1.0-smoothstep(0.0,0.85,d);
-  vec3 col = vec3(0.78,0.93,1.0);
+  vec3 col = uTint;
   float a = (body*0.22 + rim*0.8)*vA;
   gl_FragColor = vec4(col*a, a);
 }`;
