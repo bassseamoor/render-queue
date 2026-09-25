@@ -106,6 +106,7 @@ window.SeedConsoleAdapter = {
     numParam("sunH", "Sun height", -50, 50),
     enumParam("camera", CAMS, false, "Camera")
     ,enumParam("ecology", ["on", "off"], false, "Ecology")
+    ,enumParam("water", ["on", "off"], false, "Water chemistry")
   ],
   canvas: function () { return document.getElementById("scene"); },
   fileBase: function (seedStr) { return "aquarium-studio-" + String(seedStr).replace(/^#/, "").toLowerCase(); }
