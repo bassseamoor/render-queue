@@ -444,7 +444,7 @@ const fishU = {};
 for (const k of ["uVp","uTime","uCamPos","uFogColor","uFogRange",
   "uSunDir","uSunCol","uSunI","uAmbCol","uAmb","uRimCol","uCaustic","uFishTex"]) fishU[k]=U(fishP,k);
 const ptsU = {};
-for (const k of ["uMvp","uMv","uPx"]) ptsU[k]=U(ptsP,k);
+for (const k of ["uMvp","uMv","uPx","uTint"]) ptsU[k]=U(ptsP,k);
 const silU = {};
 for (const k of ["uMvp","uCamPos","uFogColor","uFogRange"]) silU[k]=U(silP,k);
 const coralU = {};
@@ -1245,6 +1245,23 @@ function generateScene(st) {
     f.bob = 0;
     f.beh = 0;
     f.social = f.solitary ? 0.05 : 0.5+R()*0.5;
+    /* ---- ecology: deterministic per-fish life traits (all seeded) ---- */
+    f.ecoR = mulberry32((((f.noise*1e6)|0) ^ 0x51ed270b) >>> 0);
+    const _dr = f.ecoR();
+    f.diet = _dr < 0.16 ? 2 : (_dr < 0.52 ? 1 : 0);   /* 2 predator, 1 omnivore, 0 grazer */
+    f.socMode = f.solitary ? 0 : (f.ecoR() < 0.45 ? 2 : 1); /* 2 school, 1 shoal, 0 solitary */
+    f.alignW = f.socMode === 2 ? 0.95 : (f.socMode === 1 ? 0.15 : 0);
+    f.cohW   = f.socMode === 2 ? 0.38 : (f.socMode === 1 ? 0.30 : 0);
+    f.hunger = f.ecoR()*0.5; f.stress = 0;
+    f.chaseT = 0; f.prey = -1; f.fleeT = 0; f.dispT = 0;
+    f._fx = 0; f._fz = 0; f._burst = 0;
+    f.terr = false; f.terrC = null; f.terrR = 1.7;
+    let _bc = ROCK_SPOTS[0], _bd = 1e9;                 /* nearest rock = cover when stressed */
+    for (const rs of rockSpots) {
+      const ddx = rs[0]-f.p[0], ddz = rs[1]-f.p[2], dd = ddx*ddx+ddz*ddz;
+      if (dd < _bd) { _bd = dd; _bc = rs; }
+    }
+    f.cover = [_bc[0], 0.75, _bc[1]];
     f._cA = hexRgb(f.top); f._cB = hexRgb(f.belly); f._cC = hexRgb(f.scol);
     /* locomotion state: speed-driven swim cycle (all deterministic, seeded per fish) */
     f.locoR = mulberry32(((f.noise*1e6)|0) ^ 0x9e3779b9);
@@ -1264,6 +1281,16 @@ function generateScene(st) {
 
   /* jellyfish */
   S.rng = R; /* behavior waypoint stream */
+  /* territorial holders: the two largest non-predators claim a zone near a rock */
+  {
+    const cands = S.fishes.filter(f => f.diet !== 2).sort((a,b) => b.size - a.size).slice(0, 2);
+    for (const h of cands) {
+      const rs = ROCK_SPOTS[(S.rng()*ROCK_SPOTS.length)|0];
+      h.terr = true;
+      h.terrC = [rs[0]+(S.rng()-0.5)*0.6, 1.25, rs[1]+(S.rng()-0.5)*0.6];
+      h.wp = [h.terrC[0], h.terrC[1], h.terrC[2]]; h.wpT = 8+S.rng()*6;
+    }
+  }
   S.jellies = [];
   for (let i = 0; i < biome.jellies; i++) {
     S.jellies.push({
@@ -1286,6 +1313,10 @@ function generateScene(st) {
     else               { b.sp = 0.10+R()*0.09; b.sz = 1.40+R()*0.60; }
     S.bDat.push(b);
   }
+  /* food flakes for the hunger/feeding cycle (seeded schedule + manual __aqFeed) */
+  S.food = [];
+  S.foodSys = makePts(48, sbuf);
+  S.foodT = 22 + R()*22;
   const nDust = (CLARITY[st.clarity] || CLARITY.natural).dust;
   S.dust = makePts(nDust, sbuf);
   S.dust.a0 = new Float32Array(nDust);
@@ -1326,9 +1357,106 @@ function fishStep(f, t, dt, tier, fishes, c, sa, sc0, ss0) {
     fx = sx*2.4; fy = sy*2.4; fz = sz*2.4;
     if (n > 0) {
       const soc = f.social;
-      fx += ((ax/n - f.v[0])*0.7 + (cx/n - f.p[0])*0.25)*soc;
-      fy += ((ay/n - f.v[1])*0.7 + (cy/n - f.p[1])*0.25)*soc;
-      fz += ((az/n - f.v[2])*0.7 + (cz/n - f.p[2])*0.25)*soc;
+      /* schooling = polarized (strong alignment), shoaling = loose aggregation */
+      fx += ((ax/n - f.v[0])*f.alignW + (cx/n - f.p[0])*f.cohW)*soc;
+      fy += ((ay/n - f.v[1])*f.alignW + (cy/n - f.p[1])*f.cohW)*soc;
+      fz += ((az/n - f.v[2])*f.alignW + (cz/n - f.p[2])*f.cohW)*soc;
+    }
+  }
+  /* ---- ecology: hunger, stress, predator/prey, territory, feeding ----
+     All state lives on the fish / S and is stepped here with fixed dt, so the
+     seeded sim (live + warmup + fixed-step render) stays deterministic. */
+  f._burst = 0;
+  const ECO = settings.ecology !== "off";
+  if (ECO) {
+    /* cheap per-fish state: always runs so hunger/stress stay consistent at every LOD */
+    f.hunger = Math.min(1, f.hunger + dt/240);
+    if (f.stress > 0) f.stress = Math.max(0, f.stress - dt*0.045);
+    if (f.chaseT > 0) f.chaseT -= dt;
+    if (f.fleeT > 0) f.fleeT -= dt;
+    if (f.dispT > 0) f.dispT -= dt;
+  }
+  if (ECO && tier < 2) {
+    let nPred = -1, dPred = 5.29, nPrey = -1, dPrey = 30.25, crowd = 0;
+    for (let i = 0; i < fishes.length; i++) {
+      const o = fishes[i]; if (o === f) continue;
+      const dx = f.p[0]-o.p[0], dy = f.p[1]-o.p[1], dz = f.p[2]-o.p[2];
+      const d2 = dx*dx+dy*dy+dz*dz;
+      if (d2 < 2.1025) crowd++;
+      if (f.diet === 2 && f.hunger > 0.5 && o.size < f.size*0.72 && d2 < dPrey) { nPrey = i; dPrey = d2; }
+      if (o.diet === 2 && (o.chaseT > 0 || o.hunger > 0.55) && d2 < dPred) { nPred = i; dPred = d2; }
+    }
+    if (crowd > 6) f.stress = Math.min(1, f.stress + dt*0.12);
+    /* predator: acquire a smaller fish, chase with a speed burst */
+    if (f.diet === 2 && f.hunger > 0.5 && f.prey < 0 && nPrey >= 0 && f.chaseT <= 0) {
+      f.prey = nPrey; f.chaseT = 4 + f.ecoR()*3;
+      fishes[nPrey].fleeT = Math.max(fishes[nPrey].fleeT, 1.5);
+      fishes[nPrey]._fx = f.p[0]; fishes[nPrey]._fz = f.p[2];
+    }
+    if (f.prey >= 0) {
+      const o = fishes[f.prey];
+      if (!o || o === f || f.chaseT <= 0 || f.hunger <= 0.3) { f.prey = -1; }
+      else {
+        const px = o.p[0]+o.v[0]*0.35, py = o.p[1]+o.v[1]*0.35, pz = o.p[2]+o.v[2]*0.35;
+        fx += (px-f.p[0])*7; fy += (py-f.p[1])*7; fz += (pz-f.p[2])*7;
+        f._burst = 1.75;
+        o.fleeT = Math.max(o.fleeT, 0.6); o._fx = f.p[0]; o._fz = f.p[2];
+        const cdx = f.p[0]-o.p[0], cdy = f.p[1]-o.p[1], cdz = f.p[2]-o.p[2];
+        if (cdx*cdx+cdy*cdy+cdz*cdz < 0.16) { /* near-catch: the prey darts off, no gore */
+          o.stress = Math.min(1, o.stress + 0.8); o.fleeT = 2.5;
+          f.hunger = Math.max(0, f.hunger - 0.45); f.prey = -1; f.chaseT = 0;
+        }
+      }
+    }
+    /* prey: flee from the threat, stress spikes */
+    if (f.fleeT > 0) {
+      fx += (f.p[0]-f._fx)*9; fz += (f.p[2]-f._fz)*9; fy += 1.2;
+      f.stress = Math.min(1, f.stress + dt*0.5);
+      f._burst = Math.max(f._burst, 1.6);
+    } else if (nPred >= 0) {
+      const o = fishes[nPred];
+      fx += (f.p[0]-o.p[0])*7; fy += (f.p[1]-o.p[1])*4 + 1.0; fz += (f.p[2]-o.p[2])*7;
+      f.stress = Math.min(1, f.stress + dt*0.4);
+      f._burst = Math.max(f._burst, 1.45);
+    }
+    /* territory: the holder flares and charges intruders */
+    if (f.terr && f.terrC) {
+      let intr = null;
+      const id2 = f.terrR*f.terrR;
+      for (const o of fishes) {
+        if (o === f || o.terr) continue;
+        const dx = o.p[0]-f.terrC[0], dz = o.p[2]-f.terrC[2];
+        if (dx*dx+dz*dz < id2) { intr = o; break; }
+      }
+      if (intr) {
+        f.dispT = 1.4;
+        fx += (intr.p[0]-f.p[0])*5.5; fy += (intr.p[1]-f.p[1])*3; fz += (intr.p[2]-f.p[2])*5.5;
+        f._burst = Math.max(f._burst, 1.5);
+        intr.stress = Math.min(1, intr.stress + dt*0.7);
+        intr.fleeT = Math.max(intr.fleeT, 1.2); intr._fx = f.p[0]; intr._fz = f.p[2];
+      }
+    }
+    /* feeding: hungry fish home in on drifting flakes */
+    if (S.food.length && f.hunger > 0.18 && f.prey < 0) {
+      let bi = -1, bd = 14;
+      for (let i = 0; i < S.food.length; i++) {
+        const fd = S.food[i]; if (fd.dead) continue;
+        const dx = fd.p[0]-f.p[0], dy = fd.p[1]-f.p[1], dz = fd.p[2]-f.p[2];
+        const d2 = dx*dx+dy*dy+dz*dz;
+        if (d2 < bd) { bd = d2; bi = i; }
+      }
+      if (bi >= 0) {
+        const fd = S.food[bi];
+        const pull = bd < 1.44 ? 7 : 3.4;   /* lunge when close, cruise when far */
+        fx += (fd.p[0]-f.p[0])*pull; fy += (fd.p[1]-f.p[1])*pull*0.9; fz += (fd.p[2]-f.p[2])*pull;
+        f._burst = Math.max(f._burst, 1.3);
+        if (bd < 0.25) { fd.dead = true; f.hunger = Math.max(0, f.hunger - 0.5); }
+      }
+    }
+    /* stress: pale, dart for cover */
+    if (f.stress > 0.45) {
+      fx += (f.cover[0]-f.p[0])*1.6; fy += (0.85-f.p[1])*1.2; fz += (f.cover[2]-f.p[2])*1.6;
+      f._burst = Math.max(f._burst, 1.35);
     }
   }
   /* loose school cohesion (no rigid formation slots): a weak pull toward the
@@ -1343,7 +1471,8 @@ function fishStep(f, t, dt, tier, fishes, c, sa, sc0, ss0) {
     f.wpT -= dt;
     if (f.wpT <= 0) {
       f.wpT = 6+S.rng()*10;
-      f.wp = [(S.rng()-0.5)*11.0, 0.55+S.rng()*2.1, (S.rng()-0.5)*7.0];
+      if (f.terr && f.terrC) f.wp = [f.terrC[0]+(S.rng()-0.5)*2.6, 0.7+S.rng()*1.4, f.terrC[2]+(S.rng()-0.5)*2.6];
+      else f.wp = [(S.rng()-0.5)*11.0, 0.55+S.rng()*2.1, (S.rng()-0.5)*7.0];
     }
     const tg = fishTarget(f, t);
     const k = (f.solitary ? 0.55 : 0.22)*f.turn;
@@ -1357,7 +1486,7 @@ function fishStep(f, t, dt, tier, fishes, c, sa, sc0, ss0) {
   if (f.p[2] >  BZ) fz -= (f.p[2]-BZ)*6; if (f.p[2] < -BZ) fz += (-BZ-f.p[2])*6;
   f.v[0]+=fx*dt; f.v[1]+=fy*dt; f.v[2]+=fz*dt;
   const sp = Math.hypot(f.v[0],f.v[1],f.v[2]) || 1e-4;
-  const cs = Math.min(0.72, Math.max(0.20, f.curise));
+  const cs = Math.min(1.15, Math.max(0.20, f.curise)*(f._burst > 0 ? f._burst : 1));
   f.v[0]*=cs/sp; f.v[1]*=cs/sp; f.v[2]*=cs/sp;
   /* ---- locomotion: speed-driven swim cycle (nothing advances at a fixed rate) ---- */
   const spNow = Math.hypot(f.v[0],f.v[1],f.v[2]) || 1e-4;
@@ -1412,7 +1541,7 @@ function fishStep(f, t, dt, tier, fishes, c, sa, sc0, ss0) {
   /* pectoral fins: braking flares both; turning beats the outside fin harder, folds the inside */
   const wdx = f.wp[0]-f.p[0], wdy = f.wp[1]-f.p[1], wdz = f.wp[2]-f.p[2];
   const wpD = Math.sqrt(wdx*wdx + wdy*wdy + wdz*wdz);
-  const braking = (wpD < 0.7 && spNow > 0.45) ? 1 : 0;
+  const braking = (wpD < 0.7 && spNow > 0.45) || f.dispT > 0 ? 1 : 0;
   f.flare += (braking - f.flare)*Math.min(1, dt*5);
   const trn = Math.max(-1, Math.min(1, turnRate/2.0));
   let pL = 0.45, pR = 0.45;
@@ -1443,7 +1572,7 @@ function simWarmup(tEnd) {
     f.beh = (i % 9 === 8) ? 2 : (d2 > 22 ? 1 : 0);
     S.behLOD[i] = f.beh;
   }
-  for (let t = 0; t < tEnd; t += dt) { updateFish(t, dt); updateBubbles(t, dt); updateDust(t); }
+  for (let t = 0; t < tEnd; t += dt) { updateFish(t, dt); updateBubbles(t, dt); updateFood(t, dt); updateDust(t); }
 }
 function jellyPose(j, t) {
   const cyc = (t*0.032*j.speed + j.phase*0.159) % 1;
@@ -1490,8 +1619,63 @@ function updateDust(t) {
   gl.bindBuffer(gl.ARRAY_BUFFER, dust.sz); gl.bufferData(gl.ARRAY_BUFFER, dust.s, gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, dust.al); gl.bufferData(gl.ARRAY_BUFFER, dust.a, gl.DYNAMIC_DRAW);
 }
-function drawPts(sys, vp, view, w) {
+/* feeding cycle: seeded food drops on a timer; fish eat to lower hunger */
+function spawnFeeding() {
+  const R = S.rng, cx = (R()-0.5)*6.0, cz = (R()-0.5)*4.0, n = 26 + ((R()*14)|0);
+  for (let i = 0; i < n && S.food.length < 48; i++) {
+    S.food.push({ p: [cx+(R()-0.5)*1.8, 2.72+R()*0.25, cz+(R()-0.5)*1.8],
+      v: [(R()-0.5)*0.12, -(0.20+R()*0.20), (R()-0.5)*0.12],
+      life: 15+R()*8, wob: R()*6.28, sz: 0.045+R()*0.05, dead: false });
+  }
+}
+function updateFood(t, dt) {
+  if (settings.ecology === "off") S.food.length = 0;
+  else {
+    S.foodT -= dt;
+    if (S.foodT <= 0) { spawnFeeding(); S.foodT = 80 + S.rng()*80; }
+  }
+  for (const fd of S.food) {
+    if (fd.dead) continue;
+    fd.life -= dt;
+    fd.p[0] += (fd.v[0] + Math.sin(t*2.1+fd.wob)*0.05)*dt;
+    fd.p[1] += fd.v[1]*dt;
+    fd.p[2] += (fd.v[2] + Math.cos(t*1.7+fd.wob)*0.05)*dt;
+    if (fd.life <= 0 || fd.p[1] < 0.32) fd.dead = true;
+  }
+  if (S.food.some(fd => fd.dead)) S.food = S.food.filter(fd => !fd.dead);
+  const sys = S.foodSys;
+  for (let i = 0; i < sys.n; i++) {
+    const fd = S.food[i], o = i*3;
+    if (fd && !fd.dead) {
+      sys.p[o] = fd.p[0]; sys.p[o+1] = fd.p[1]; sys.p[o+2] = fd.p[2];
+      sys.s[i] = fd.sz; sys.a[i] = Math.min(1, fd.life*0.5);
+    } else sys.a[i] = 0;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, sys.b); gl.bufferData(gl.ARRAY_BUFFER, sys.p, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, sys.sz); gl.bufferData(gl.ARRAY_BUFFER, sys.s, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, sys.al); gl.bufferData(gl.ARRAY_BUFFER, sys.a, gl.DYNAMIC_DRAW);
+}
+window.__aqFeed = function () { if (!S.foodSys) return; spawnFeeding(); S.foodT = 80 + S.rng()*80; };
+function updateDust(t) {
+  const dust = S.dust;
+  for (let i = 0; i < dust.n; i++) {
+    const o=i*3;
+    dust.p[o]   += Math.sin(t*0.3+i)*0.0009 + 0.0006;
+    dust.p[o+1] += Math.cos(t*0.22+i*1.7)*0.0007 - 0.0004;
+    if (dust.p[o] > 3.3) dust.p[o] = -3.3;
+    if (dust.p[o+1] < 0) dust.p[o+1] = 3.1;
+    if (dust.p[o+1] > 3.2) dust.p[o+1] = 0.05;
+    const df = Math.min(1, Math.max(0, (dust.p[o+2]+2.6)/4.4));
+    dust.a[i] = dust.a0[i]*(0.30+0.70*(df*df*(3-2*df)));
+    dust.a[i] *= (0.78+0.22*Math.sin(t*1.9+i*2.39));  /* faint drifting shimmer */
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, dust.b); gl.bufferData(gl.ARRAY_BUFFER, dust.p, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, dust.sz); gl.bufferData(gl.ARRAY_BUFFER, dust.s, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, dust.al); gl.bufferData(gl.ARRAY_BUFFER, dust.a, gl.DYNAMIC_DRAW);
+}
+function drawPts(sys, vp, view, w, tint) {
   gl.useProgram(ptsP);
+  gl.uniform3fv(ptsU.uTint, tint || [0.78,0.93,1.0]);
   const ls=[bindAttr(ptsP,"aPos",sys.b,3),bindAttr(ptsP,"aSize",sys.sz,1),bindAttr(ptsP,"aAlpha",sys.al,1)];
   gl.uniformMatrix4fv(ptsU.uMvp,false,vp);
   gl.uniformMatrix4fv(ptsU.uMv,false,view);
@@ -1540,7 +1724,7 @@ const DEFAULTS = {
   seed: 0, locked: false, /* console-owned: Seed Console sets ?seed= or a fresh random seed on load */
   biome: "tropical", fish: "med", plants: "med", corals: "med",
   clarity: "natural", light: "day", camera: "drift",
-  bright: 0, warm: 0, sunH: 0,
+  bright: 0, warm: 0, sunH: 0, ecology: "on",
 };
 let settings = { ...DEFAULTS };
 function loadSettings() {
@@ -1608,12 +1792,14 @@ function toggleFullscreen() {
 
 loadSettings();
 $("fullBtn").onclick = () => toggleFullscreen();
+$("feedBtn").onclick = () => { try { window.__aqFeed(); } catch (e) {} };
 
 let paused = false, loop = null;
 window.addEventListener("keydown", (e) => {
   if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
   if (e.code === "KeyG") regenerate(true);
   else if (e.code === "KeyF") toggleFullscreen();
+  else if (e.code === "KeyE") { try { window.__aqFeed(); } catch (err) {} }
   else if (e.code === "Space") {
     e.preventDefault();
     paused = !paused;
@@ -1766,7 +1952,7 @@ loop = startLoop(canvas, {
       let guard = 0;
       while (S.simT < target - 1e-9 && guard++ < 4) {
         const h = Math.min(1/30, target - S.simT);
-        S.simT += h; updateFish(S.simT, h);
+        S.simT += h; updateFish(S.simT, h); updateFood(S.simT, h);
       }
     }
     /* palette cache: only recompute when biome/lighting/clarity change */
@@ -1856,9 +2042,11 @@ loop = startLoop(canvas, {
       arr[o]   = f.p[0]; arr[o+1] = f.p[1]+f.bob; arr[o+2] = f.p[2];
       arr[o+3] = f.sYaw; arr[o+4] = pitch;        arr[o+5] = f.size; arr[o+6] = f.swimPhase;
       arr[o+7] = f.freqNow; arr[o+8] = f.wamp;    arr[o+9] = f.fam;  arr[o+10] = f.stripe;
-      arr[o+11] = f._cA[0]; arr[o+12] = f._cA[1]; arr[o+13] = f._cA[2];
-      arr[o+14] = f._cB[0]; arr[o+15] = f._cB[1]; arr[o+16] = f._cB[2];
-      arr[o+17] = f._cC[0]; arr[o+18] = f._cC[1]; arr[o+19] = f._cC[2]; arr[o+20] = f.stripe;
+      /* stress paling: stressed fish wash out toward pale grey (ecology on) */
+      const stP = settings.ecology !== "off" ? Math.min(1, f.stress || 0)*0.55 : 0;
+      arr[o+11] = f._cA[0]+(0.80-f._cA[0])*stP; arr[o+12] = f._cA[1]+(0.84-f._cA[1])*stP; arr[o+13] = f._cA[2]+(0.88-f._cA[2])*stP;
+      arr[o+14] = f._cB[0]+(0.82-f._cB[0])*stP; arr[o+15] = f._cB[1]+(0.86-f._cB[1])*stP; arr[o+16] = f._cB[2]+(0.90-f._cB[2])*stP;
+      arr[o+17] = f._cC[0]+(0.80-f._cC[0])*stP; arr[o+18] = f._cC[1]+(0.84-f._cC[1])*stP; arr[o+19] = f._cC[2]+(0.88-f._cC[2])*stP;  arr[o+20] = f.stripe;
       arr[o+21] = f.pecL; arr[o+22] = f.pecR; arr[o+23] = f.dorsalTilt; arr[o+24] = f.bank;
       arr[o+25] = f.glideEnv; arr[o+26] = f.headLead || 0; arr[o+27] = f.flare; arr[o+28] = f.finBoost;
     }
@@ -1938,10 +2126,11 @@ loop = startLoop(canvas, {
     drawInstanced(jellyM.count, nJelly);
     disableAttrs(ls.slice(0,6)); unbindInstAttrs(ls.slice(6));
 
-    if (window.__tfix != null) { updateBubbles(window.__tfix, 0); updateDust(window.__tfix); }
-    else { updateBubbles(t, dt); updateDust(t); }
+    if (window.__tfix != null) { updateBubbles(window.__tfix, 0); updateFood(window.__tfix, 0); updateDust(window.__tfix); }
+    else { updateBubbles(t, dt); updateFood(t, 0); updateDust(t); }
     drawPts(S.bubbles, vp, view, w);
     drawPts(S.dust, vp, view, w);
+    if (S.foodSys && S.food.length) drawPts(S.foodSys, vp, view, w, [1.0, 0.74, 0.42]);
 
     /* final grade */
     gl.disable(gl.DEPTH_TEST);
