@@ -582,6 +582,7 @@ function buildRock(r, seed, mk, jag) {
 function buildPlants(R, nClusters, mk) {
   const pos = [], nor = [], bend = [], ph = [], uv = [];
   const spots = FG_PLANTS.concat(shuffle(PLANT_SPOTS.map(s => s.slice()), R).slice(0, nClusters));
+  S.plantSpots = spots;
   const SEGS = 5;
   /* ribbon blade: tapered, leaning, random yaw; u across blade, v along height */
   function ribbon(bx, bz, hh, w0, lean, lean2, yaw, phase) {
@@ -1178,6 +1179,7 @@ function generateScene(st) {
 
   /* rocks */
   const rockSpots = shuffle(ROCK_SPOTS.map(s => s.slice()), R).slice(0, biome.rockN);
+  S.rockSpots = rockSpots;
   /* rocks merged into ONE static buffer (baked transform + per-vertex color) */
   {
     const rp = [], rn = [], rc = [], ru = [];
@@ -1211,8 +1213,16 @@ function generateScene(st) {
   }
   /* (midground rocks only — foreground framing is handled by plants) */
 
+  /* observation state (before plants: coverage is computed at build) */
+  S.obs = { n: 0, tick: 0, cohesionSum: 0, cohesionN: 0, wallEvents: 0, maxOver: 0, nearStruct: 0, fishSamples: 0, depth: [0,0,0,0] };
+  S.obsStatic = { plantCover: 0 };
   /* plants */
   S.plants = buildPlants(R, PLANT_N[st.plants] || 7, sbuf);
+  { /* plant coverage: share of floor area under plant clusters (static per seed) */
+    let a = 0;
+    for (const sp of (S.plantSpots || [])) { const r = sp[4] || 0.28; a += Math.PI*r*r; }
+    S.obsStatic.plantCover = Math.min(100, a / (2*5.8*2*3.6) * 100);
+  }
 
   /* corals */
   S.coral = buildCorals(R, CORAL_N[st.corals] || 3, ANEM_N[st.corals] || 5, biome.coralHues, sbuf);
@@ -1493,7 +1503,7 @@ function fishStep(f, t, dt, tier, fishes, c, sa, sc0, ss0) {
   }
   const BX=5.8, BY0=0.55, BY1=2.85, BZ=3.6;
   if (f.p[0] >  BX) fx -= (f.p[0]-BX)*6; if (f.p[0] < -BX) fx += (-BX-f.p[0])*6;
-  if (f.p[1] > BY1) fy -= (f.p[1]-BY1)*6; if (f.p[1] < -BY0) fy += (BY0-f.p[1])*6;
+  if (f.p[1] > BY1) fy -= (f.p[1]-BY1)*6; if (f.p[1] < BY0) fy += (BY0-f.p[1])*6;
   if (f.p[2] >  BZ) fz -= (f.p[2]-BZ)*6; if (f.p[2] < -BZ) fz += (-BZ-f.p[2])*6;
   f.v[0]+=fx*dt; f.v[1]+=fy*dt; f.v[2]+=fz*dt;
   const sp = Math.hypot(f.v[0],f.v[1],f.v[2]) || 1e-4;
@@ -1564,6 +1574,12 @@ function fishStep(f, t, dt, tier, fishes, c, sa, sc0, ss0) {
   pR = pR*(1 - f.flare*0.5) + 0.25*f.flare;
   f.pecL += (pL - f.pecL)*Math.min(1, dt*6);
   f.pecR += (pR - f.pecR)*Math.min(1, dt*6);
+  /* glass is a hard constraint: kill any velocity still pushing through it.
+     The spring above turns the fish; this just makes escape impossible no
+     matter how strong the chase/flee forces get. Sliding along the glass is kept. */
+  if (f.p[0] >  BX && f.v[0] > 0) f.v[0] = 0; else if (f.p[0] < -BX && f.v[0] < 0) f.v[0] = 0;
+  if (f.p[1] > BY1 && f.v[1] > 0) f.v[1] = 0; else if (f.p[1] < BY0 && f.v[1] < 0) f.v[1] = 0;
+  if (f.p[2] >  BZ && f.v[2] > 0) f.v[2] = 0; else if (f.p[2] < -BZ && f.v[2] < 0) f.v[2] = 0;
   f.p[0]+=f.v[0]*dt; f.p[1]+=f.v[1]*dt; f.p[2]+=f.v[2]*dt;
   f.bob = Math.sin(t*1.3+f.phase)*0.040;
 }
@@ -1583,7 +1599,7 @@ function simWarmup(tEnd) {
     f.beh = (i % 9 === 8) ? 2 : (d2 > 22 ? 1 : 0);
     S.behLOD[i] = f.beh;
   }
-  for (let t = 0; t < tEnd; t += dt) { updateFish(t, dt); updateBubbles(t, dt); updateFood(t, dt); updateChem(t, dt); updateDust(t); }
+  for (let t = 0; t < tEnd; t += dt) { updateFish(t, dt); updateBubbles(t, dt); updateFood(t, dt); updateChem(t, dt); updateObserve(t, dt); updateDust(t); }
 }
 function jellyPose(j, t) {
   const cyc = (t*0.032*j.speed + j.phase*0.159) % 1;
@@ -1750,6 +1766,75 @@ window.__aqMaintain = function (what) {
   return "unknown";
 };
 window.__aqChem = function () { return S.chem ? { ...S.chem } : null; };
+/* observation layer: behavior + composition analytics, not performance.
+   Read-only: it samples the sim but never steers it, so determinism is
+   untouched. Sampled once per sim-second (every 30 fixed steps) to stay cheap. */
+function updateObserve(t, dt) {
+  const o = S.obs; if (!o || dt <= 0 || !S.fishes) return;
+  o.tick = (o.tick + 1) % 30;
+  if (o.tick !== 0) return;
+  o.n++;
+  const BX = 5.8, BY0 = 0.55, BY1 = 2.85, BZ = 3.6;
+  const fishes = S.fishes, rocks = S.rockSpots || [];
+  for (let i = 0; i < fishes.length; i++) {
+    const f = fishes[i], p = f.p;
+    /* wall contact: fish pushed past the soft bounds = the glass turned it away */
+    const over = Math.max(Math.abs(p[0])-BX, Math.abs(p[2])-BZ, p[1]-BY1, BY0-p[1]);
+    if (over > 0) {
+      if (!f._wz) o.wallEvents++;
+      if (over > o.maxOver) o.maxOver = over;
+    }
+    f._wz = over > 0;
+    /* near structures: within 1.5 of any rock (cover / territory use) */
+    let near = false;
+    for (const rs of rocks) {
+      const dx = p[0]-rs[0], dz = p[2]-rs[1];
+      if (dx*dx + dz*dz < 2.25) { near = true; break; }
+    }
+    if (near) o.nearStruct++;
+    /* depth band: 0 bottom .. 3 top */
+    const band = Math.max(0, Math.min(3, ((p[1]-BY0)/(BY1-BY0)*4)|0));
+    o.depth[band]++;
+    o.fishSamples++;
+    /* schooling cohesion: nearest social neighbor distance, social fish only */
+    if (f.socMode > 0) {
+      let best = 1e9;
+      for (let j = 0; j < fishes.length; j++) {
+        if (j === i) continue;
+        const q = fishes[j];
+        if (q.socMode <= 0) continue;
+        const dx = p[0]-q.p[0], dy = p[1]-q.p[1], dz = p[2]-q.p[2];
+        const d2 = dx*dx + dy*dy + dz*dz;
+        if (d2 < best) best = d2;
+      }
+      if (best < 1e8) { o.cohesionSum += Math.sqrt(best); o.cohesionN++; }
+    }
+  }
+}
+/* plain-language behavior report: is the tank alive, balanced, varied? */
+window.__aqObserve = function () {
+  const o = S.obs;
+  if (!o || o.n < 5) return { status: "collecting samples…" };
+  const hours = (o.n / 3600);
+  const coh = o.cohesionN ? o.cohesionSum / o.cohesionN : 0;
+  const depth = o.depth.map(d => +(d / Math.max(1, o.fishSamples) * 100).toFixed(1));
+  const verdict = (v, bands) => v < bands[0] ? "tight" : v < bands[1] ? "healthy" : "loose";
+  return {
+    watchedSimHours: +hours.toFixed(2),
+    samples: o.n,
+    schoolingCohesion: +coh.toFixed(2),
+    schoolingVerdict: o.cohesionN ? verdict(coh, [0.8, 1.6]) : "no schooling fish",
+    wallAvoids: o.wallEvents,
+    wallAvoidsPerHour: Math.round(o.wallEvents / Math.max(1/3600, hours)),
+    maxOvershoot: +o.maxOver.toFixed(2),
+    wallVerdict: o.maxOver < 0.5 ? "glass holding" : "fish pushing through — investigate",
+    nearStructuresPct: +(o.nearStruct / Math.max(1, o.fishSamples) * 100).toFixed(1),
+    depthSpreadPct: { bottom: depth[0], lowMid: depth[1], highMid: depth[2], top: depth[3] },
+    plantCoveragePct: S.obsStatic ? +S.obsStatic.plantCover.toFixed(1) : 0,
+    note: "cohesion = avg distance to nearest schoolmate (lower = tighter school). " +
+          "wallAvoids = glass contacts turned away by the tank bounds.",
+  };
+};
 function drawPts(sys, vp, view, w, tint) {
   gl.useProgram(ptsP);
   gl.uniform3fv(ptsU.uTint, tint || [0.78,0.93,1.0]);
@@ -2029,7 +2114,7 @@ loop = startLoop(canvas, {
       let guard = 0;
       while (S.simT < target - 1e-9 && guard++ < 4) {
         const h = Math.min(1/30, target - S.simT);
-        S.simT += h; updateFish(S.simT, h); updateFood(S.simT, h); updateChem(S.simT, h);
+        S.simT += h; updateFish(S.simT, h); updateFood(S.simT, h); updateChem(S.simT, h); updateObserve(S.simT, h);
       }
     }
     /* palette cache: only recompute when biome/lighting/clarity change */
@@ -2208,8 +2293,8 @@ loop = startLoop(canvas, {
     drawInstanced(jellyM.count, nJelly);
     disableAttrs(ls.slice(0,6)); unbindInstAttrs(ls.slice(6));
 
-    if (window.__tfix != null) { updateBubbles(window.__tfix, 0); updateFood(window.__tfix, 0); updateChem(window.__tfix, 0); updateDust(window.__tfix); }
-    else { updateBubbles(t, dt); updateFood(t, 0); updateChem(t, 0); updateDust(t); }
+    if (window.__tfix != null) { updateBubbles(window.__tfix, 0); updateFood(window.__tfix, 0); updateChem(window.__tfix, 0); updateObserve(window.__tfix, 0); updateDust(window.__tfix); }
+    else { updateBubbles(t, dt); updateFood(t, 0); updateChem(t, 0); updateObserve(t, 0); updateDust(t); }
     drawPts(S.bubbles, vp, view, w);
     drawPts(S.dust, vp, view, w);
     if (S.foodSys && S.food.length) drawPts(S.foodSys, vp, view, w, [1.0, 0.74, 0.42]);
