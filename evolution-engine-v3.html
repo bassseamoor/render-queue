@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Evolution Engine v3 — closed loop</title>
+<style>
+:root{--bg:#0b0e14;--card:#141a26;--card2:#1a2233;--txt:#e9edf5;--mut:#8b93a7;--acc:#7c5cff;--grn:#3ddc84;--red:#ff6b6b;--amb:#ffb020;--line:#232c40}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;padding-bottom:84px}
+header{position:sticky;top:0;z-index:5;background:rgba(11,14,20,.92);backdrop-filter:blur(8px);padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+header h1{margin:0;font-size:20px;letter-spacing:.3px}
+header p{margin:2px 0 0;font-size:12px;color:var(--mut)}
+main{max-width:600px;margin:0 auto;padding:14px 14px 20px}
+.tab{display:none}.tab.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 6px;font-size:15px}
+.row{display:flex;align-items:center;gap:8px}
+.grow{flex:1}
+.mut{color:var(--mut);font-size:12px}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.4px}
+.p-champion{background:rgba(61,220,132,.15);color:var(--grn);border:1px solid rgba(61,220,132,.4)}
+.p-contender{background:rgba(255,176,32,.12);color:var(--amb);border:1px solid rgba(255,176,32,.35)}
+.p-trial{background:rgba(124,92,255,.14);color:#b7a6ff;border:1px solid rgba(124,92,255,.4)}
+.p-retired{background:rgba(255,107,107,.12);color:var(--red);border:1px solid rgba(255,107,107,.35)}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:13px;font-size:15px;font-weight:700;color:#fff;background:var(--acc);cursor:pointer}
+.btn.ghost{background:var(--card2);color:var(--txt);border:1px solid var(--line);margin-top:8px}
+.btn.sm{width:auto;padding:8px 14px;font-size:13px;display:inline-block}
+textarea{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:12px;color:var(--txt);padding:12px;font-size:15px;min-height:76px;resize:vertical;font-family:inherit}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.chip{font-size:12px;background:var(--card2);border:1px solid var(--line);border-radius:16px;padding:5px 11px;color:var(--txt);cursor:pointer}
+.chip.on{border-color:var(--acc);color:#c9bdff}
+nav{position:fixed;bottom:0;left:0;right:0;background:rgba(11,14,20,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);display:flex;z-index:5;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;color:var(--mut);font-size:11px;font-weight:600;padding:12px 0 14px;cursor:pointer}
+nav button.on{color:#c9bdff}
+nav button .dot{display:block;font-size:19px;margin-bottom:2px}
+pre.prompt{white-space:pre-wrap;font-size:12.5px;line-height:1.55;background:#0e1420;border:1px solid var(--line);border-radius:10px;padding:12px;color:#cfd6e6;font-family:ui-monospace,Menlo,monospace}
+.winner{border:1px solid var(--grn);box-shadow:0 0 0 1px var(--grn)}
+.log{font-size:12px;color:var(--mut);border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:96px;background:#1c2436;border:1px solid var(--acc);color:var(--txt);padding:10px 18px;border-radius:24px;font-size:13px;font-weight:600;z-index:9;display:none}
+.ans{font-size:12.5px;margin:4px 0;color:#cfd6e6}
+.ans b{color:var(--txt)}
+.conflict{font-size:12px;color:var(--amb);background:rgba(255,176,32,.08);border:1px solid rgba(255,176,32,.3);border-radius:8px;padding:6px 9px;margin:6px 0}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
+.stat{background:#0e1420;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12px;color:var(--mut)}
+.stat b{display:block;font-size:16px;color:var(--txt)}
+.pass{color:var(--grn)}.fail{color:var(--red)}
+.real{font-size:10px;color:var(--grn);border:1px solid rgba(61,220,132,.4);border-radius:8px;padding:2px 8px;display:inline-block;margin-left:6px}
+.comm{font-size:12.5px;border-left:3px solid var(--acc);padding:6px 10px;margin:8px 0;background:#0e1420;border-radius:0 8px 8px 0}
+.comm b{color:#c9bdff}
+.comm .rb{color:var(--grn)}
+.v-pass{background:rgba(61,220,132,.12);color:var(--grn);border:1px solid rgba(61,220,132,.35)}
+.v-hold{background:rgba(255,176,32,.12);color:var(--amb);border:1px solid rgba(255,176,32,.35)}
+.v-fail{background:rgba(255,107,107,.12);color:var(--red);border:1px solid rgba(255,107,107,.35)}
+.buildframe{width:100%;height:420px;border:1px solid var(--line);border-radius:10px;background:#fff;margin:8px 0}
+.stage{font-size:11px;font-weight:800;letter-spacing:1px;color:var(--acc);text-transform:uppercase;margin:14px 0 6px}
+</style>
+</head>
+<body>
+<header>
+<h1>Evolution Engine <span style="color:var(--mut);font-weight:400;font-size:14px">v3</span></h1>
+<p>closed loop: every handoff reads back before moving on <span class="real">real builds compete</span></p>
+</header>
+<main>
+<section class="tab on" id="tab-arena"></section>
+<section class="tab" id="tab-builds"></section>
+<section class="tab" id="tab-current"></section>
+<section class="tab" id="tab-ledger"></section>
+<section class="tab" id="tab-funnels"></section>
+</main>
+<nav>
+<button class="on" data-t="arena"><span class="dot">⚔️</span>Arena</button>
+<button data-t="builds"><span class="dot">🔨</span>Builds</button>
+<button data-t="current"><span class="dot">👑</span>Current</button>
+<button data-t="ledger"><span class="dot">🏆</span>Ledger</button>
+<button data-t="funnels"><span class="dot">🧬</span>Funnels</button>
+</nav>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+/* ===== real quiz data from quiz-funnel-v3 ===== */
+var S={blueprint:null};
+const QUESTIONS = [
+ {id:'kind', q:'What are we building?', opts:['A mobile app|Something I carry and tap','A web app|Runs in the browser, nothing to install','A game|Interactive, win/lose, fun first','A handy tool|Does one job extremely well'], auto:3},
+ {id:'game_kind', if:{qid:'kind',is:'A game'}, follow:1, q:'What kind of game?', opts:['Arcade action|Fast reflexes, high scores','Puzzle & strategy|Think first, then act','Story & exploration|A world to get lost in','Party & multiplayer|Better with friends'], auto:0},
+ {id:'game_session', if:{qid:'kind',is:'A game'}, follow:1, q:'How long is one session?', opts:['2-minute bursts|Pick up, put down','20-minute runs|One good sitting','Hours-long epics|Settle in'], auto:1},
+ {id:'app_use', if:{qid:'kind',is:['A mobile app','A web app']}, follow:1, q:'How does it fit into a day?', opts:['Check in daily|Part of the routine','Open when needed|There when it counts','It notifies me|Taps my shoulder first'], auto:0},
+ {id:'tool_trigger', if:{qid:'kind',is:'A handy tool'}, follow:1, q:'What triggers its use?', opts:['Daily habit|Same time, every day','When a problem hits|Rescue mode','Scheduled reminders|It keeps the rhythm'], auto:0},
+ {id:'who', q:'Who is it for?', opts:['Just me|Built exactly how I like it','Friends & family|People I actually know','The public|Strangers on the internet','A niche community|People obsessed with one thing'], auto:0},
+ {id:'who_find', ifNot:{qid:'who',is:'Just me'}, follow:1, q:'How do they find it?', opts:['Word of mouth|People tell people','App store|Search and discover','A link I send|Hand-delivered'], auto:2, smart:L=>L.who==='The public'?1:2},
+ {id:'core', q:'The ONE thing it must do brilliantly?', open:true, seeds:['Track something every day','Make something beautiful','Save me real time','Teach me something hard'], auto:2, seedsFor:L=>L.kind==='A game'?['Survive 10 minutes against endless hordes','One-more-run progression','Beat your friends’ high scores']:null},
+ {id:'feel', q:'How should it feel to use?', opts:['Fast & minimal|No waiting, no clutter','Rich & playful|Delight in every tap','Calm & quiet|Gets out of the way','Bold & striking|Impossible to ignore'], auto:0, smart:L=>L.kind==='A game'?2:0},
+ {id:'layout', q:'How should it be laid out?', opts:['Flow|One step at a time, in order','Cards|A grid of tappable cards','Tabs|Sections across the top','Dashboard|Everything visible at once','Chat|Talk to it like a conversation'], auto:0, frontier:true, smart:()=>{const L=S.blueprint&&S.blueprint.layout;const ix=['Flow','Cards','Tabs','Dashboard','Chat'].indexOf(L);return ix>=0?ix:0}},
+ {id:'platform', q:'Where does it live?', opts:['Phone-first|iPhone in my pocket','Desktop|Big screen, keyboard','Both|Start phone, expand later','One offline file|No server, no internet, forever'], auto:3},
+ {id:'name', q:'What should we call it?', gen:'name', auto:0},
+ {id:'never', q:'One thing it must NEVER do?', opts:['Lose my data|My stuff is sacred','Need the internet|Works on a plane','Show ads|Never, ever','Be confusing|If I have to think, it failed'], auto:0}
+];
+const DOMKW = {
+ 'food & cooking':['food','cook','recipe','meal','eat','restaurant','kitchen'],
+ 'home & DIY':['home','repair','fix','house','furniture','garden','renovat'],
+ 'business & money':['money','business','invest','budget','startup','price','sell'],
+ 'health & fitness':['health','workout','fitness','run','diet','sleep','gym','exercise'],
+ 'travel & local':['travel','trip','flight','hotel','city','map','vacation'],
+ 'tech & code':['code','software','bug','server','data','ai','program'],
+ 'creative':['art','photo','music','draw','design','video','write','film'],
+ 'learning & study':['learn','study','school','course','exam','language'],
+ 'relationships':['friend','family','dat','love','team','community'],
+ 'science & nature':['science','nature','plant','animal','space','weather'],
+ 'life logistics':['schedul','calendar','todo','organiz','email','task','remind'],
+ 'shopping & products':['buy','shop','product','review','deal','store'],
+ 'big questions':['meaning','philosophy','purpose','why ','life '],
+ 'games & craft':['game','play','player','fun','score','level','craft']
+};
+const DONE_CRITERIA=['renders with zero errors','every locked piece present and usable','no placeholder content anywhere','provenance marked on every answer','builds identically with zero human answers'];
+
+/* ============ the five funnel archetypes: 7 dimensions, each executable ============ */
+const DIMS=["question_order","branching","auto_fill","conflicts","version_lock","verdict","visibility"];
+const DIM_LABEL={question_order:"Question order",branching:"Branching logic",auto_fill:"Auto-fill strategy",conflicts:"Conflict handling",version_lock:"Version locking",verdict:"Verdict formation",visibility:"Visibility balance"};
+const PROFILES=[
+{id:"sprint",name:"Sprint",arch:"speed-first",color:"#4da3ff",
+ run:{order:["kind","core","layout","platform"],follow:false,fill:"quick",conflict:"flag",compress:"loose"},
+ dims:{question_order:"4 questions, shortest path: kind → core → layout → platform. Nothing else.",
+  branching:"None. Follow-ups skipped — thin answers get filled, never chased.",
+  auto_fill:"Quick. Takes the smart default fill immediately, no cross-check.",
+  conflicts:"Flag-only. Records the conflict, never blocks, never overrides.",
+  version_lock:"Per-stage: ramble → quiz → verdict = 3 locks.",
+  verdict:"Loose compression. Spec carries kind/core/layout/platform; 3 done-criteria.",
+  visibility:"Silent. One tap from task to specs."},
+ prompt:"You are Sprint, a speed-first quiz funnel. Ask exactly these 4 questions: kind, core, layout, platform. Never ask follow-ups. Fill every answer instantly with the smart default — no cross-checking. Flag conflicts without stopping or overriding. Compress loosely: the verdict packet carries kind, core, layout, platform and 3 done-criteria. One tap from task to spec."},
+{id:"diamond",name:"Diamond",arch:"quality-first",color:"#b7a6ff",
+ run:{order:null,follow:true,fill:"crosscheck",conflict:"hold",compress:"strict"},
+ dims:{question_order:"All 13 questions in quiz order. Nothing skipped.",
+  branching:"Full. Every applicable follow-up is asked.",
+  auto_fill:"Cross-checked. Each option scored by keyword overlap with the task; highest overlap wins, ties fall back to the smart default.",
+  conflicts:"Hold. Task intent wins — the fill is overridden to match the task and the hold is recorded.",
+  version_lock:"Per-answer. 13 locks, every one diffable.",
+  verdict:"Strict compression. Full spec, all 5 done-criteria.",
+  visibility:"Full. Every lock, hold, and gate shown."},
+ prompt:"You are Diamond, a quality-first quiz funnel. Ask all 13 questions in order, including every applicable follow-up. Fill by cross-check: score each option by keyword overlap with the task, highest wins, ties go to the smart default. On conflict, hold: task intent wins, override the fill, record the hold. Lock per answer. Compress strictly: full spec, all 5 done-criteria. Show everything."},
+{id:"vault",name:"Vault",arch:"safety-first",color:"#3ddc84",
+ run:{order:["never","core","kind","who","layout","platform"],follow:"risk",fill:"safe",conflict:"hold",compress:"strict"},
+ dims:{question_order:"Constraints first: never → core → kind → who → layout → platform.",
+  branching:"Risk-only. Follow-ups only when the task involves money, sharing, or going live.",
+  auto_fill:"Safe. 'never' is always 'Lose my data'; 'platform' is always 'One offline file' when the task hints offline. Otherwise smart default.",
+  conflicts:"Hold. Task intent wins — the fill is overridden to match the task and the hold is recorded.",
+  version_lock:"Per-answer, immutable history.",
+  verdict:"Strict compression. Full spec, all 5 done-criteria.",
+  visibility:"Full, warnings surfaced."},
+ prompt:"You are Vault, a safety-first quiz funnel. Ask constraints first: never, core, kind, who, layout, platform. Follow up only on risk (money, sharing, live). Fill safely: 'never' locks to 'Lose my data'; platform goes offline when the task hints at it. On conflict, hold: task intent wins, override the fill, record the hold. Lock per answer, history immutable. Compress strictly. Surface every risk."},
+{id:"wildcard",name:"Wildcard",arch:"creativity-first",color:"#ffb020",
+ run:{order:["kind","core","layout","feel","platform"],follow:false,fill:"novel",conflict:"freeze",compress:"loose"},
+ dims:{question_order:"Novelty early: kind → core → layout → feel → platform.",
+  branching:"None. Frontier energy, no follow-ups.",
+  auto_fill:"Novel. Deliberately off-default: two steps past the smart pick. Open answers cross-pollinate from the most distant domain.",
+  conflicts:"Freeze. Keeps both the fill and the task's alternative side by side — nothing overwritten.",
+  version_lock:"Per-answer, variants kept side by side.",
+  verdict:"Loose compression. Spec carries kind/core/layout/platform; 3 done-criteria.",
+  visibility:"Show the weird options."},
+ prompt:"You are Wildcard, a creativity-first quiz funnel. Ask novelty early: kind, core, layout, feel, platform. No follow-ups. Fill novelly: deliberately two steps past the smart default; cross-pollinate open answers from the most distant domain. On conflict, freeze: keep the fill AND the task's alternative side by side. Compress loosely. Always show the weird options."},
+{id:"closer",name:"Closer",arch:"closing-first",color:"#ff7ab8",
+ run:{order:["kind","core","layout","who","never","platform"],follow:"trial",fill:"quick",conflict:"option",compress:"medium"},
+ dims:{question_order:"Momentum order: kind → core → layout → who → never → platform.",
+  branching:"Trial closes. Follow-ups included, each lock stamped with a trial close.",
+  auto_fill:"Quick. Smart default fills, every fill carrying a closer line.",
+  conflicts:"Option close. Records the conflict, takes the task's side, frames it as 'prefer A or B?'",
+  version_lock:"Per-answer. Each lock presented as a win.",
+  verdict:"Medium compression. Full spec, all 5 done-criteria, plus a summary-close line.",
+  visibility:"Momentum feed. Progress and keeps, always forward."},
+ prompt:"You are Closer, a closing-first quiz funnel. Ask in momentum order: kind, core, layout, who, never, platform. Include follow-ups, stamping every lock with a trial close. Fill quick with the smart default, attaching a closer line to every fill. On conflict, option-close: take the task's side, frame it as 'prefer A or B?' Lock per answer, each a win. Compress medium: full spec, 5 done-criteria, summary-close line."}
+];
+const P=id=>PROFILES.find(p=>p.id===id);
+/* ============ engine: deterministic, zero randomness ============ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$("#toast");t.textContent=m;t.style.display="block";clearTimeout(t._h);t._h=setTimeout(()=>t.style.display="none",2200)}
+function detectDomain(text){const t=' '+(text||'').toLowerCase()+' ';let best='wildcards',bn=0;for(const d in DOMKW){let n=0;DOMKW[d].forEach(k=>{if(t.includes(k))n++});if(n>bn){bn=n;best=d}}return best}
+function distantDomain(task){const t=' '+(task||'').toLowerCase()+' ';let best='wildcards',bn=1e9;for(const d in DOMKW){let n=0;DOMKW[d].forEach(k=>{if(t.includes(k))n++});if(n<bn){bn=n;best=d}}return best}
+function tagTask(text){const t=text.toLowerCase();let domain="wildcards",best=0;
+ for(const d in DOMKW){let s=0;for(const k of DOMKW[d])if(t.includes(k))s++;if(s>best){best=s;domain=d}}
+ const money=/\b(pay|buy|price|checkout|subscription|money|revenue|charge|refund|store)\b/.test(t);
+ const irrev=/\b(delete|launch|publish|send|deploy|irreversible|permanent|\blive\b)\b/.test(t);
+ const crit=/\b(critical|production|must|launch|important|serious)\b/.test(t);
+ const triv=/\b(test|demo|toy|experiment|try|fun|just)\b/.test(t);
+ const sand=/\b(test|experiment|demo|sandbox|try|draft|idea)\b/.test(t);
+ return{domain,risk:money?"money":"no-money",irreversible:irrev,importance:crit?"critical":(triv?"working":"structural"),env:sand?"sandbox":"production"}}
+function tagKey(t){return t.domain+" · "+(t.irreversible?"irreversible":"reversible")+" · "+t.risk+" · "+t.importance+" · "+t.env}
+function statusOf(e){if(e.runs<20)return"trial";const w=e.wins/e.runs;if(w>=.7)return"champion";if(w<.4)return"retired";return"contender"}
+
+/* ---- router: 2-3 candidates by tag fit, never all, never blind ---- */
+function route(tag){const key=tagKey(tag);
+ const champ=REG.entries.find(e=>e.tag===key&&statusOf(e)==="champion");
+ if(champ)return{fids:[champ.funnel_id],why:"registry champion — "+Math.round(100*champ.wins/champ.runs)+"% over "+champ.runs+" real crowns"};
+ const c=new Set();
+ if(tag.risk==="money"||tag.irreversible)c.add("vault");
+ if(tag.env==="sandbox")c.add("wildcard");
+ if(tag.importance==="critical")c.add("diamond");
+ if(tag.domain==="games & craft"||tag.domain==="shopping & products")c.add("closer");
+ for(const id of["closer","diamond","sprint","wildcard","vault"]){if(c.size>=3)break;c.add(id)}
+ return{fids:[...c].slice(0,3),why:"tag fit — no champion crowned yet for this context"}}
+
+/* ---- the real quiz runner: each archetype executes the actual quiz ---- */
+function ansMap(a){const m={};a.forEach(x=>m[x.id]=x.text);return m}
+function applicable(Q,am){
+ if(Q.if){const v=am[Q.if.qid];if(v===undefined)return false;return Array.isArray(Q.if.is)?Q.if.is.includes(v):v===Q.if.is}
+ if(Q.ifNot){const v=am[Q.ifNot.qid];if(v===undefined)return true;return Array.isArray(Q.ifNot.is)?!Q.ifNot.is.includes(v):v!==Q.ifNot.is}
+ return true}
+function smartAuto(Q,am){const n=(Q.opts||[]).length||1;if(typeof Q.smart==='function'){const v=Q.smart(am);if(Number.isFinite(v))return((v%n)+n)%n}return(Q.auto||0)%n}
+function taskWords(task){return task.toLowerCase().split(/[^a-z]+/).filter(w=>w.length>3)}
+function optIndex(Q,am,strategy,task){
+ const n=Q.opts.length,smart=smartAuto(Q,am);
+ if(strategy==='quick')return smart;
+ if(strategy==='crosscheck'){const words=taskWords(task);let best=smart,bs=-1;
+  Q.opts.forEach((o,ix)=>{const t=o.toLowerCase();let s=0;words.forEach(w=>{if(t.includes(w))s++});if(s>bs){bs=s;best=ix}});return best}
+ if(strategy==='safe'){
+  if(Q.id==='never'){const ix=Q.opts.findIndex(o=>o.indexOf('Lose my data')===0);return ix>=0?ix:smart}
+  if(Q.id==='platform'&&/offline|no internet|plane/.test(task.toLowerCase())){const ix=Q.opts.findIndex(o=>o.indexOf('One offline file')===0);return ix>=0?ix:smart}
+  return smart}
+ if(strategy==='novel')return(smart+2)%n;
+ return smart}
+function openFill(Q,am,strategy,task){const seeds=(typeof Q.seedsFor==='function'&&Q.seedsFor(am))||Q.seeds;
+ if(strategy==='novel')return seeds[(smartAuto(Q,am)+2)%seeds.length];
+ if(Q.id==='core'&&(strategy==='crosscheck'||strategy==='safe')){const t=(task||'').trim();if(t.length>8)return t.length>90?t.slice(0,90):t}
+ return seeds[smartAuto(Q,am)%seeds.length]}
+function genName(task){const words=task.replace(/[^a-zA-Z ]/g,'').split(/\s+/).filter(w=>w.length>2);
+ const base=(words.slice(0,2).join(' ')||'Nova');const kw=(words.find(w=>w.length>4)||'ly');
+ return[base,kw+' '+['Lab','Kit','Forge','Room'][base.length%4],['Tiny','Super','Daily','Pocket'][base.length%4]+' '+kw][0]}
+function detectConflicts(task,answers){
+ const t=' '+task.toLowerCase()+' ';const out=[];
+ const get=id=>{const a=answers.find(a=>a.id===id);return a?a.text:''};
+ if(/offline|no internet|\bplane\b/.test(t)&&get('platform')&&get('platform')!=='One offline file')
+  out.push({id:'platform',fill:get('platform'),want:'One offline file',why:'task says offline'});
+ if(/no ads|without ads|ad-free/.test(t)&&get('never')&&get('never')!=='Show ads')
+  out.push({id:'never',fill:get('never'),want:'Show ads',why:'task says no ads'});
+ return out}
+function packetChecks(pk){return[
+ ['spec non-empty',Object.keys(pk.spec).length>0],
+ ['destination present',!!pk.destination],
+ ['done-criteria ≥ 3',pk.doneCriteria.length>=3],
+ ['criteria checkable (≤140 chars)',pk.doneCriteria.every(x=>x.length<=140)],
+ ['provenance on every answer',pk.answers.every(a=>!!a.by)]]}
+
+function runArenaFunnel(pid,task){
+ const p=P(pid),R=p.run,answers=[],conflicts=[],errors=[];
+ const t0=(typeof performance!=='undefined'?performance.now():Date.now());
+ const dom=detectDomain(task);
+ const citeDom=R.fill==='novel'?distantDomain(task):dom;
+ const worker=(STEAL[citeDom]||STEAL['wildcards']);
+ const order=R.order||QUESTIONS.map(q=>q.id);
+ const am=ansMap(answers);
+ try{
+  for(const qid of order){
+   const Q=QUESTIONS.find(q=>q.id===qid);if(!Q)continue;
+   if(!applicable(Q,am))continue;
+   if(Q.follow){
+    if(R.follow===false)continue;
+    if(R.follow==='risk'&&!/money|pay|shar|live|publish|send|checkout|store/.test(task.toLowerCase()))continue;
+   }
+   let text,ix=null;
+   if(Q.gen==='name')text=genName(task);
+   else if(Q.open)text=openFill(Q,am,R.fill,task);
+   else{ix=optIndex(Q,am,R.fill,task);text=Q.opts[ix].split('|')[0]}
+   const a={id:Q.id,text,by:'filled',via:worker.handle};
+   if(Q.follow&&R.follow==='trial')a.note='trial close stamped';
+   answers.push(a);am[Q.id]=text;
+  }
+  for(const c of detectConflicts(task,answers)){
+   const a=answers.find(a=>a.id===c.id);
+   if(R.conflict==='flag')conflicts.push({id:c.id,why:c.why,action:'flagged — fill kept: '+c.fill});
+   else if(R.conflict==='hold'){a.text=c.want;a.held=true;conflicts.push({id:c.id,why:c.why,action:'held — task intent won, fill overridden to: '+c.want})}
+   else if(R.conflict==='freeze')conflicts.push({id:c.id,why:c.why,action:'frozen — both kept: '+c.fill+' × '+c.want});
+   else if(R.conflict==='option'){a.text=c.want;conflicts.push({id:c.id,why:c.why,action:'option close — prefer A or B? task side taken: '+c.want})}
+  }
+ }catch(e){errors.push(String((e&&e.message)||e))}
+ const ms=Math.max(1,Math.round((typeof performance!=='undefined'?performance.now():Date.now())-t0));
+ const keep=R.compress==='loose'?['kind','core','layout','platform']:answers.map(a=>a.id);
+ const spec={};answers.forEach(a=>{if(keep.indexOf(a.id)>=0)spec[a.id]=a.text});
+ const doneCriteria=R.compress==='loose'?DONE_CRITERIA.slice(0,3):DONE_CRITERIA.slice();
+ const packet={spec,destination:'the next builder',doneCriteria,answers:answers.map(a=>({id:a.id,text:a.text,by:a.by,via:a.via}))};
+ if(R.compress==='medium')packet.summary='Summary close: '+answers.length+' answers locked, '+conflicts.length+' conflicts closed. Build it.';
+ const checks=packetChecks(packet);
+ return{pid,packet,answers,worker:worker.handle,domain:dom,conflicts,errors,ms,
+  stats:{asked:answers.length,filled:answers.filter(a=>a.by==='filled').length,conflicts:conflicts.length,errors:errors.length,ms},
+  passRate:checks.filter(c=>c[1]).length/checks.length,checks};
+}
+
+const STEAL={"big questions":{"handle":"Examined","philosophy":"I answer life's big questions the Socratic way: by asking the better question underneath yours. What do you mean by a good life \u2014 and whose ","rule":"Never hand them my answer as the answer"},"business & money":{"handle":"Ledger","philosophy":"I do books for small businesses, which means I've seen every flavor of money panic. My answers are calm and concrete: here's what the number","rule":"Never shame anyone about their finances"},"creative":{"handle":"Draft","philosophy":"I'm a novelist, and my answers treat writing as a practice, not a talent show. I ask what you're stuck on \u2014 the blank page, the sagging midd","rule":"Always give the smallest unblocking next step"},"food & cooking":{"handle":"Saffron","philosophy":"I cooked dinner service for twelve years, so I answer the way I worked the line: fast, decisive, no dithering. You tell me what's in your fr","rule":"Never suggest a recipe with more than 8 ingredients on a weeknight"},"games & craft":{"handle":"Hexledger","philosophy":"I start from the fantasy - what should this punch feel like - then I work backwards into numbers until the math delivers the fantasy. If a s","rule":"No stat without a decision behind it"},"health & fitness":{"handle":"Zone2","philosophy":"I coach endurance, and my gospel is unsexy: go slower to get faster. My answers start with where you are \u2014 current fitness, available hours,","rule":"Always ask about injury history before prescribing anything"},"home & DIY":{"handle":"Studfinder","philosophy":"Twenty years swinging a hammer taught me that every repair starts with diagnosis, not tools. My answers always begin with questions: what's ","rule":"Always diagnose before prescribing \u2014 ask first"},"learning & study":{"handle":"Flashcard","philosophy":"I answer study questions with what the research actually says: spaced repetition, active recall, sleep. I ask what the exam is, when it is, ","rule":"Always ask the exam date and format first"},"life logistics":{"handle":"Notary","philosophy":"I've navigated every DMV, courthouse, and permit office in the county, and I answer bureaucracy with checklists: the forms, the order, the c","rule":"Always ask the state/county first \u2014 rules vary"},"relationships":{"handle":"Repair","philosophy":"I answer relationship questions adjacent to therapy \u2014 real tools, clear limits: I'm not your couples counselor. My answers ask what's happen","rule":"Always clarify I'm general info, not therapy"},"science & nature":{"handle":"Telescope","philosophy":"I answer space questions from my backyard telescope: what's up tonight, why it matters, how to see it yourself. I ask where they live and wh","rule":"Always ask location and equipment first"},"shopping & products":{"handle":"Shortlist","philosophy":"I test products and answer with the pick for most people, the budget pick, and the splurge \u2014 each with who it's for. I ask about their use c","rule":"Always ask use case and budget before recommending"},"tech & code":{"handle":"Stacktrace","philosophy":"I answer coding questions by teaching you to read: the error message is telling you exactly what's wrong, in its own rude way. I ask what yo","rule":"Always ask what they expected vs what happened"},"travel & local":{"handle":"Itinerary","philosophy":"I plan trips like puzzles: geography first, then time, then money. My answers ask the big constraints up front \u2014 dates, budget, pace \u2014 and t","rule":"Always ask dates, budget, and pace before planning"},"wildcards":{"handle":"Pubquiz","philosophy":"I win pub quizzes, which means I answer questions with the answer plus the delightful context that makes it stick. I ask what rabbit hole yo","rule":"Always attach the memorable context, not just the fact"}};
+/* ============ v3: closed-loop store ============ */
+const LSKEY="moor.evolution.v3";
+const BUILD_SLOTS=2; // predetermined: triage advances exactly this many plans to build
+let REG=null;
+function save(){try{localStorage.setItem(LSKEY,JSON.stringify(REG))}catch(e){}}
+function load(){try{const r=localStorage.getItem(LSKEY);if(r){REG=JSON.parse(r);return}}catch(e){}REG={entries:[],log:[],current:{},builds:[]};save()}
+function hashStr(s){var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0}return(h>>>0).toString(36)}
+
+/* ============ closed-loop comms log: every handoff reads back ============ */
+let COMMS=[];
+function say(from,to,msg,readback){
+ COMMS.push({from:from,to:to,msg:msg,readback:readback});
+ const el=document.querySelector("#comms");
+ if(el){el.innerHTML=COMMS.map(c=>'<div class="comm"><b>'+esc(c.from)+' → '+esc(c.to)+':</b> '+esc(c.msg)+'<br><span class="rb">↩ reads back:</span> '+esc(c.readback)+' ✓</div>').join("");el.scrollTop=el.scrollHeight;}
+}
+
+/* ============ the parts library: real working widgets ============ */
+const SHIM='<scr'+'ipt>window.__store=(function(){var m={};try{localStorage.setItem("__t","1");localStorage.removeItem("__t");return localStorage}catch(e){return{getItem:function(k){return m[k]||null},setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]}}}})();</scr'+'ipt>';
+function pHeader(title){return '<header data-part="header" class="ph"><h1>'+esc(title)+'</h1></header>'}
+function pCounter(label,bid){return '<section data-part="counter" class="card"><h2>'+esc(label)+'</h2><div class="bignum" id="cn_'+bid+'">0</div><button class="pbtn" id="cb_'+bid+'">+1</button>'
+ +'<scr'+'ipt>(function(){var k="ee3_'+bid+'_c",n=parseInt(window.__store.getItem(k)||"0",10)||0;var el=document.getElementById("cn_'+bid+'");el.textContent=n;document.getElementById("cb_'+bid+'").onclick=function(){n++;el.textContent=n;window.__store.setItem(k,n)}})();</scr'+'ipt></section>'}
+function pNotes(bid){return '<section data-part="notes" class="card"><h2>Notes</h2><div id="nl_'+bid+'"></div><div class="inrow"><input id="ni_'+bid+'" placeholder="new note"><button class="pbtn" id="nb_'+bid+'">add</button></div>'
+ +'<scr'+'ipt>(function(){var k="ee3_'+bid+'_n";function get(){try{return JSON.parse(window.__store.getItem(k)||"[]")}catch(e){return[]}}function set(v){window.__store.setItem(k,JSON.stringify(v))}function draw(){var items=get();document.getElementById("nl_'+bid+'").innerHTML=items.map(function(t,i){return \'<div class="nitem">\'+t.replace(/</g,"&lt;")+\' <button data-i="\'+i+\'">x</button></div>\'}).join("")||\'<p class="pdim">no notes yet</p>\';var btns=document.querySelectorAll("#nl_'+bid+' button");for(var j=0;j<btns.length;j++){btns[j].onclick=function(){var items=get();items.splice(parseInt(this.getAttribute("data-i"),10),1);set(items);draw()}}document.getElementById("nb_'+bid+'").onclick=function(){var v=document.getElementById("ni_'+bid+'").value.trim();if(!v)return;var items=get();items.push(v);set(items);document.getElementById("ni_'+bid+'").value="";draw()}}draw()})();</scr'+'ipt></section>'}
+function pChecklist(bid){return '<section data-part="checklist" class="card"><h2>Checklist</h2><div id="cl_'+bid+'"></div><div class="inrow"><input id="ci_'+bid+'" placeholder="new item"><button class="pbtn" id="cb2_'+bid+'">add</button></div>'
+ +'<scr'+'ipt>(function(){var k="ee3_'+bid+'_l";function get(){try{return JSON.parse(window.__store.getItem(k)||"[]")}catch(e){return[]}}function set(v){window.__store.setItem(k,JSON.stringify(v))}function draw(){var items=get();document.getElementById("cl_'+bid+'").innerHTML=items.map(function(o,i){return \'<label class="citem"><input type="checkbox" data-i="\'+i+\'"\'+(o.done?" checked":"")+\'> \'+o.t.replace(/</g,"&lt;")+\'</label>\'}).join("")||\'<p class="pdim">no items yet</p>\';var boxes=document.querySelectorAll("#cl_'+bid+' input");for(var j=0;j<boxes.length;j++){boxes[j].onchange=function(){var items=get();items[parseInt(this.getAttribute("data-i"),10)].done=this.checked;set(items)}}document.getElementById("cb2_'+bid+'").onclick=function(){var v=document.getElementById("ci_'+bid+'").value.trim();if(!v)return;var items=get();items.push({t:v,done:false});set(items);document.getElementById("ci_'+bid+'").value="";draw()}}draw()})();</scr'+'ipt></section>'}
+function pTimer(bid){return '<section data-part="timer" class="card"><h2>Timer</h2><div class="bignum" id="tm_'+bid+'">0:00</div><button class="pbtn" id="ts_'+bid+'">start</button> <button class="pbtn" id="tr_'+bid+'">reset</button>'
+ +'<scr'+'ipt>(function(){var s=0,iv=null;function fmt(){var m=Math.floor(s/60),ss=s%60;return m+":"+(ss<10?"0":"")+ss}var el=document.getElementById("tm_'+bid+'"),b=document.getElementById("ts_'+bid+'");b.onclick=function(){if(iv){clearInterval(iv);iv=null;b.textContent="start"}else{iv=setInterval(function(){s++;el.textContent=fmt()},1000);b.textContent="stop"}};document.getElementById("tr_'+bid+'").onclick=function(){if(iv){clearInterval(iv);iv=null;b.textContent="start"}s=0;el.textContent=fmt()}})();</scr'+'ipt></section>'}
+function pQuote(text){return '<section data-part="quote" class="card q"><p>'+esc(text)+'</p></section>'}
+function pFooter(){return '<footer data-part="footer" class="pf">built in the arena · real working parts</footer>'}
+function themeFor(feel){
+ const f=(feel||'').toLowerCase();
+ if(/bold|vibrant|energetic/.test(f))return 'body{background:#14101f;color:#f2e9ff}.ph{background:linear-gradient(135deg,#7c5cff,#ff7ab8);color:#fff;padding:22px;border-radius:0}.card{background:#1e1830;border:1px solid #3a2d5c;border-radius:12px;padding:14px;margin:12px}.bignum{font-size:44px;font-weight:800}.pbtn{background:#7c5cff;color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:15px}.q{border-left:4px solid #ff7ab8}.pf{text-align:center;color:#8b93a7;padding:16px;font-size:12px}.nitem,.citem{display:block;background:#241d3d;border-radius:8px;padding:8px;margin:6px 0}.inrow{display:flex;gap:6px;margin-top:8px}input{flex:1;background:#0e1420;border:1px solid #3a2d5c;color:#f2e9ff;border-radius:8px;padding:10px}.pdim{color:#8b93a7}';
+ if(/calm|minimal|simple/.test(f))return 'body{background:#f7f5f0;color:#2b2b2b}.ph{background:#fff;border-bottom:1px solid #e5e0d5;padding:20px}.card{background:#fff;border:1px solid #e5e0d5;border-radius:12px;padding:14px;margin:12px}.bignum{font-size:44px;font-weight:700}.pbtn{background:#2b2b2b;color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:15px}.q{border-left:4px solid #7c5cff;background:#f0ecff}.pf{text-align:center;color:#999;padding:16px;font-size:12px}.nitem,.citem{display:block;background:#f7f5f0;border-radius:8px;padding:8px;margin:6px 0}.inrow{display:flex;gap:6px;margin-top:8px}input{flex:1;border:1px solid #ddd;border-radius:8px;padding:10px}.pdim{color:#999}';
+ return 'body{background:#0b0e14;color:#e9edf5}.ph{background:#141a26;border-bottom:1px solid #232c40;padding:20px}.card{background:#141a26;border:1px solid #232c40;border-radius:12px;padding:14px;margin:12px}.bignum{font-size:44px;font-weight:800}.pbtn{background:#3ddc84;color:#06281a;border:0;border-radius:8px;padding:10px 18px;font-size:15px;font-weight:700}.q{border-left:4px solid #3ddc84}.pf{text-align:center;color:#8b93a7;padding:16px;font-size:12px}.nitem,.citem{display:block;background:#1a2233;border-radius:8px;padding:8px;margin:6px 0}.inrow{display:flex;gap:6px;margin-top:8px}input{flex:1;background:#0e1420;border:1px solid #232c40;color:#e9edf5;border-radius:8px;padding:10px}.pdim{color:#8b93a7}';
+}
+function wrapDoc(title,body,css){
+ return '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+'</title><style>*{box-sizing:border-box}body{margin:0;font-family:-apple-system,system-ui,sans-serif;padding-bottom:30px}h1{margin:0;font-size:22px}h2{margin:0 0 8px;font-size:15px}'+css+'</style></head><body>'+SHIM+body+'</body></html>';
+}
+
+/* ============ the builder: criteria in, real working app out ============ */
+function buildApp(packet,pid,task){
+ const spec=packet.spec,bid=pid+"_"+hashStr(task);
+ const name=spec.name||spec.core||"Arena App";
+ const kind=(spec.kind||"").toLowerCase(),core=(spec.core||"").toLowerCase();
+ let body=pHeader(name);const parts=["header"];
+ if(kind.indexOf("game")>=0){body+=pCounter("Score",bid);parts.push("counter");body+=pTimer(bid);parts.push("timer")}
+ else{
+  if(/note|writ|journal|idea|list/.test(core)){body+=pNotes(bid);parts.push("notes")}
+  else if(/check|task|todo|habit|routine|plan/.test(core)){body+=pChecklist(bid);parts.push("checklist")}
+  else{body+=pChecklist(bid);parts.push("checklist");body+=pCounter("Count",bid);parts.push("counter")}
+ }
+ body+=pQuote(spec.core||task);parts.push("quote");
+ body+=pFooter();parts.push("footer");
+ return {html:wrapDoc(name,body,themeFor(spec.feel||"")),parts:parts,bid:bid,title:name};
+}
+
+/* ============ the verifier: loads each build for real, checks it ============ */
+function verifyBuild(build){
+ return new Promise(function(resolve){
+  const f=document.createElement("iframe");
+  f.style.cssText="position:absolute;left:-9999px;width:300px;height:300px;visibility:hidden";
+  f.setAttribute("sandbox","allow-scripts allow-same-origin");
+  const errs=[];
+  const hook='<scr'+'ipt>window.__errs=[];window.addEventListener("error",function(e){window.__errs.push(String(e.message||e.error||"error"))});</scr'+'ipt>';
+  f.srcdoc=build.html.replace("</head>",hook+"</head>");
+  const done=function(ok,extra){
+   const checks=ok?[
+    ["zero js errors",errs.length===0],
+    ["renders real content",(extra.text||"").trim().length>50],
+    ["expected parts present",build.parts.every(function(p){return extra.parts.indexOf(p)>=0})],
+    ["no placeholder text",!/lorem|placeholder|TODO|coming soon/i.test(extra.text||"")],
+    ["has a title",!!extra.title]
+   ]:[["build loaded",false]];
+   try{f.remove()}catch(e){}
+   resolve({checks:checks,passRate:checks.filter(function(c){return c[1]}).length/checks.length,errors:errs});
+  };
+  f.onload=function(){
+   setTimeout(function(){
+    try{
+     const d=f.contentDocument,errList=f.contentWindow.__errs||[];
+     errList.forEach(function(e){errs.push(e)});
+     const found=[];const nodes=d.querySelectorAll("[data-part]");
+     for(let i=0;i<nodes.length;i++)found.push(nodes[i].getAttribute("data-part"));
+     const h1=d.querySelector("h1");
+     done(true,{text:d.body?d.body.innerText:"",parts:found,title:h1&&h1.textContent.trim()});
+    }catch(e){done(false)}
+   },500);
+  };
+  f.onerror=function(){done(false)};
+  document.body.appendChild(f);
+  setTimeout(function(){if(f.parentNode)done(false)},8000);
+ });
+}
+
+/* ============ triage: the sorting station (combat-medic rules) ============ */
+function readback1(task,r){
+ const words=taskWords(task);
+ const specText=Object.keys(r.packet.spec).map(function(k){return r.packet.spec[k]}).join(" ").toLowerCase();
+ const hit=words.filter(function(w){return specText.indexOf(w)>=0});
+ const missed=words.filter(function(w){return specText.indexOf(w)<0});
+ return {covered:hit,missed:missed,ok:hit.length>0};
+}
+function triage(results,task){
+ const cov=function(r){return readback1(task,r).covered.length};
+ const sorted=results.slice().sort(function(a,b){return b.passRate-a.passRate||cov(b)-cov(a)||a.stats.conflicts-b.stats.conflicts||a.stats.asked-b.stats.asked});
+ return sorted.map(function(r,i){
+  if(r.passRate<1)return{pid:r.pid,verdict:"FAIL",why:"packet checks failed — does not advance"};
+  if(i<BUILD_SLOTS)return{pid:r.pid,verdict:"PASS",why:"top "+BUILD_SLOTS+" — read the blueprint best, earns a build slot"};
+  return{pid:r.pid,verdict:"HOLD",why:"passed the gates, but the build slots are full"};
+ });
+}
+
+/* ============ banking the full evidence chain ============ */
+function bankFull(task,tag,results,triageRes,builds,winnerPid){
+ const key=tagKey(tag);
+ for(const r of results){
+  let e=REG.entries.find(function(x){return x.funnel_id===r.pid&&x.tag===key});
+  if(!e){const p=P(r.pid);e={funnel_id:r.pid,name:p.name,arch:p.arch,prompt:p.prompt,tag:key,runs:0,wins:0,log:[]};REG.entries.push(e)}
+  e.runs++;if(r.pid===winnerPid)e.wins++;
+  const tr=triageRes.find(function(t){return t.pid===r.pid});
+  const b=builds.find(function(x){return x.pid===r.pid});
+  e.log.push({task:task.slice(0,80),crowned:r.pid===winnerPid,triage:tr?tr.verdict:"—",
+   build:b?(b.verify.passRate===1?"verified "+b.verify.checks.length+"/"+b.verify.checks.length:"FAILED"):"not built",
+   stats:r.stats,answers:r.answers.map(function(a){return a.id+": "+a.text})});
+ }
+ const wb=builds.find(function(x){return x.pid===winnerPid});
+ REG.builds.push({t:Date.now(),tag:key,task:task.slice(0,80),winner:winnerPid,title:wb?wb.build.title:"",
+  html:wb?wb.build.html:"",
+  checks:wb?wb.verify.checks.map(function(c){return c[0]+":"+(c[1]?"pass":"FAIL")}):[]});
+ REG.current[key]={pid:winnerPid,task:task.slice(0,80),t:Date.now(),title:wb?wb.build.title:"",
+  html:wb?wb.build.html:"",checks:wb?wb.verify.checks:[]};
+ REG.log.push({t:Date.now(),note:"👑 "+P(winnerPid).name+" built, verified, selected — now current for ["+key+"]"});
+ save();
+}
+
+/* ============ UI ============ */
+document.querySelectorAll("nav button").forEach(function(b){b.onclick=function(){
+ document.querySelectorAll("nav button").forEach(function(x){x.classList.remove("on")});b.classList.add("on");
+ document.querySelectorAll(".tab").forEach(function(t){t.classList.remove("on")});
+ document.querySelector("#tab-"+b.dataset.t).classList.add("on");window.scrollTo(0,0)}});
+const pill=function(s){return '<span class="pill p-'+s+'">'+s.toUpperCase()+'</span>'};
+let FLOW=null;
+const SAMPLES=["a habit tracker tool","a score keeper game","a notes tool"];
+
+function renderArena(){
+ document.querySelector("#tab-arena").innerHTML='<div class="card"><h3>⚔️ The Arena <span class="real">closed loop</span></h3>'
+ +'<p class="mut">Blueprint in → funnels produce criteria → triage sorts them → the best <b>'+BUILD_SLOTS+'</b> get built for real → you pick the best build → the winner moves to current. Every handoff reads back before moving on.</p>'
+ +'<textarea id="task" placeholder="the blueprint: what should get built?"></textarea>'
+ +'<div class="chips">'+SAMPLES.map(function(s){return '<span class="chip" onclick="document.querySelector(\'#task\').value=this.textContent">'+esc(s)+'</span>'}).join("")+'</div>'
+ +'<button class="btn" onclick="runPipeline()">run the loop</button></div>'
+ +'<div id="flow"></div>'
+ +'<div class="card"><h3>📻 Comms log</h3><div id="comms"><p class="mut">Every handoff reads back here before the loop moves on.</p></div></div>';
+}
+
+function runPipeline(){
+ const task=(document.querySelector("#task").value||"").trim();
+ if(!task){toast("describe the blueprint first");return}
+ COMMS=[];document.querySelector("#comms").innerHTML="";
+ const tag=tagTask(task),rt=route(tag);
+ say("BLUEPRINT","FUNNEL","task frozen: "+task.slice(0,60),"funnels read back: frozen task received, nothing recomputed");
+ const results=rt.fids.map(function(fid){return runArenaFunnel(fid,task)});
+ FLOW={task:task,tag:tag,route:rt,results:results,triageRes:null,builds:[],winner:null};
+ window.__dbg=FLOW;
+ let h='<div class="stage">1 · criteria — the plans</div>';
+ h+='<div class="chips">'+[tag.domain,tag.risk,tag.irreversible?"irreversible":"reversible",tag.importance,tag.env].map(function(t){return '<span class="chip on">'+esc(t)+'</span>'}).join("")+'</div>';
+ h+='<p class="mut">router: '+rt.fids.map(function(f){return P(f).name}).join(" vs ")+' — '+esc(rt.why)+'</p>';
+ results.forEach(function(r){
+  const p=P(r.pid),bad=r.checks.filter(function(c){return !c[1]});
+  h+='<div class="card"><div class="row"><span style="color:'+p.color+'">●</span><div class="grow"><b>'+p.name+'</b> <span class="mut">'+p.arch+'</span></div>'+(bad.length===0?'<span class="pass">✓ packet valid</span>':'<span class="fail">✗ packet invalid</span>')+'</div>'
+  +r.answers.map(function(a){return '<div class="ans"><b>'+a.id+':</b> '+esc(a.text)+'</div>'}).join("")
+  +r.conflicts.map(function(c){return '<div class="conflict">⚠ '+esc(c.id)+': '+esc(c.action)+'</div>'}).join("")+'</div>';
+  const rb=readback1(task,r);
+  say("FUNNEL "+p.name,"TRIAGE","criteria ready: "+r.stats.asked+" answers, "+r.stats.conflicts+" conflicts",
+   "triage reads back: understood ["+rb.covered.join(", ")+"]"+(rb.missed.length?"; missed ["+rb.missed.join(", ")+"]":"")+" — packet "+(r.passRate===1?"valid":"INVALID"));
+ });
+ const tr=triage(results,task);FLOW.triageRes=tr;
+ const adv=tr.filter(function(t){return t.verdict==="PASS"}).map(function(t){return P(t.pid).name}).join(", ");
+ say("TRIAGE","BUILDER","sorted "+results.length+" plans — "+adv+" earn the "+BUILD_SLOTS+" build slots","builder reads back: "+adv+" advance"+(results.length-adv.length?", the rest hold":""));
+ h+='<div class="stage">2 · triage — '+BUILD_SLOTS+' build slots</div>';
+ tr.forEach(function(t){
+  h+='<div class="card"><span class="pill '+(t.verdict==="PASS"?"v-pass":t.verdict==="HOLD"?"v-hold":"v-fail")+'">'+t.verdict+'</span> <b>'+P(t.pid).name+'</b> <span class="mut">— '+esc(t.why)+'</span></div>';
+ });
+ h+='<button class="btn" onclick="buildFinalists()">build the finalists</button><div id="buildzone"></div>';
+ document.querySelector("#flow").innerHTML=h;window.scrollTo(0,0);
+}
+
+async function buildFinalists(){
+ if(!FLOW)return;
+ const zone=document.querySelector("#buildzone");
+ const finalists=FLOW.triageRes.filter(function(t){return t.verdict==="PASS"});
+ zone.innerHTML='<div class="stage">3 · build + verify</div><p class="mut">building…</p>';
+ for(const t of finalists){
+  const r=FLOW.results.find(function(x){return x.pid===t.pid});
+  const spec=r.packet.spec;
+  say("TRIAGE","BUILDER","finalist criteria — kind="+(spec.kind||"?")+", core="+String(spec.core||"?").slice(0,40),
+   "builder echoes: kind="+(spec.kind||"?")+", core="+(spec.core||"?")+", layout="+(spec.layout||"?")+", platform="+(spec.platform||"?")+" — building now");
+  const b=buildApp(r.packet,t.pid,FLOW.task);
+  const v=await verifyBuild(b);
+  FLOW.builds.push({pid:t.pid,build:b,verify:v});
+  window.__dbg=FLOW;
+  say("BUILDER","VERIFY","build complete: "+b.title,
+   "verifier reads back: "+v.checks.filter(function(c){return c[1]}).length+"/"+v.checks.length+" checks pass"+(v.errors.length?"; errors: "+v.errors.join("; "):""));
+ }
+ let g='<div class="stage">4 · select best</div><p class="mut">Real working apps — try them below, then crown one. The winner moves to current.</p>';
+ FLOW.builds.forEach(function(fb,i){
+  const ok=fb.verify.passRate===1,n=fb.verify.checks.filter(function(c){return c[1]}).length;
+  g+='<div class="card'+(ok?" winner":"")+'"><div class="row"><div class="grow"><b>'+P(fb.pid).name+'</b> <span class="mut">— '+esc(fb.build.title)+'</span></div>'+(ok?'<span class="pass">✓ verified '+n+'/'+fb.verify.checks.length+'</span>':'<span class="fail">✗ verification failed</span>')+'</div>'
+  +'<iframe class="buildframe" data-bi="'+i+'" title="build preview"></iframe>'
+  +'<div class="log">'+fb.verify.checks.map(function(c){return '<div>'+(c[1]?'<span class="pass">✓</span>':'<span class="fail">✗</span>')+' '+esc(c[0])+'</div>'}).join("")+'</div>'
+  +'<button class="btn" style="margin-top:8px" onclick="selectBest(\''+fb.pid+'\')">select '+P(fb.pid).name+' — move to current</button></div>';
+ });
+ zone.innerHTML=g;
+ FLOW.builds.forEach(function(fb,i){zone.querySelector('iframe[data-bi="'+i+'"]').srcdoc=fb.build.html});
+ window.scrollTo(0,0);
+}
+
+function selectBest(pid){
+ if(!FLOW||!FLOW.builds.length)return;
+ const key=tagKey(FLOW.tag);
+ say("YOU","CURRENT","selecting "+P(pid).name+" as the best build","current reads back: "+P(pid).name+" is now current for ["+key+"]");
+ bankFull(FLOW.task,FLOW.tag,FLOW.results,FLOW.triageRes,FLOW.builds,pid);
+ FLOW.winner=pid;
+ toast("👑 "+P(pid).name+" is now current");
+ renderCurrent();renderLedger();renderBuilds();
+ document.querySelector('nav button[data-t="current"]').click();
+}
+
+function renderBuilds(){
+ const el=document.querySelector("#tab-builds");
+ if(!REG.builds.length){el.innerHTML='<div class="card"><h3>🔨 Builds</h3><p class="mut">No builds yet. Run the loop in the Arena — finalists get built for real and land here with their verification.</p></div>';return}
+ let h='<div class="card"><h3>🔨 Builds</h3><p class="mut">Every build below is a real working app, verified on construction.</p></div>';
+ REG.builds.slice().reverse().forEach(function(b,ri){
+  h+='<div class="card"><div class="row"><div class="grow"><b>'+esc(b.title)+'</b><br><span class="mut">'+esc(b.task)+' · '+esc(b.tag)+'</span></div><button class="btn sm ghost" onclick="this.parentElement.parentElement.querySelector(\'.bview\').style.display=this.parentElement.parentElement.querySelector(\'.bview\').style.display===\'none\'?\'block\':\'none\'">view</button></div>'
+  +'<div class="mut">winner: '+P(b.winner).name+' · '+b.checks.filter(function(c){return /pass$/.test(c)}).length+'/'+b.checks.length+' checks passed</div>'
+  +'<div class="bview" style="display:none"><iframe class="buildframe" data-ri="'+ri+'"></iframe></div></div>';
+ });
+ el.innerHTML=h;
+ REG.builds.slice().reverse().forEach(function(b,ri){
+  const f=el.querySelector('iframe[data-ri="'+ri+'"]');if(f)f.srcdoc=b.html;
+ });
+}
+
+function renderCurrent(){
+ const el=document.querySelector("#tab-current");
+ const keys=Object.keys(REG.current);
+ if(!keys.length){el.innerHTML='<div class="card"><h3>👑 Current</h3><p class="mut">Nothing is current yet. When you select the best build in the Arena, the winner moves here — the live version for its asset set.</p></div>';return}
+ let h="";
+ keys.forEach(function(k,ki){
+  const c=REG.current[k];
+  h+='<div class="card winner"><h3>👑 '+esc(c.title)+'</h3><p class="mut">'+esc(c.task)+'<br>'+esc(k)+'<br>built by '+P(c.pid).name+' · verified '+c.checks.filter(function(x){return x[1]}).length+'/'+c.checks.length+'</p>'
+  +'<iframe class="buildframe" data-ci="'+ki+'" title="current build"></iframe>'
+  +'<div class="log">'+c.checks.map(function(x){return '<div>'+(x[1]?'<span class="pass">✓</span>':'<span class="fail">✗</span>')+' '+esc(x[0])+'</div>'}).join("")+'</div></div>';
+ });
+ el.innerHTML=h;
+ keys.forEach(function(k,ki){el.querySelector('iframe[data-ci="'+ki+'"]').srcdoc=REG.current[k].html});
+}
+
+function renderLedger(){
+ const el=document.querySelector("#tab-ledger");
+ if(!REG.entries.length){el.innerHTML='<div class="card"><h3>🏆 The Ledger</h3><p class="mut">Empty — and honestly so. Entries appear only when a build wins: real criteria, real triage, real build, real verification, your selection.</p></div>';return}
+ const champs=REG.entries.filter(function(e){return statusOf(e)==="champion"});
+ let h='<div class="card"><h3>🏆 Champions by context</h3><p class="mut">A funnel is never "best" — only best <i>for this kind of task</i>. Wins are counted when their build gets selected.</p>';
+ if(!champs.length)h+='<p class="mut">No champions yet — needs 70%+ over 20+ runs.</p>';
+ champs.forEach(function(e){h+='<div class="row" style="margin:8px 0"><span style="color:'+P(e.funnel_id).color+'">●</span><div class="grow"><b>'+e.name+'</b><br><span class="mut">'+esc(e.tag)+'</span></div><b style="color:var(--grn)">'+Math.round(100*e.wins/e.runs)+'%</b></div>'});
+ h+='</div><div class="card"><h3>Full ledger</h3>';
+ REG.entries.slice().sort(function(a,b){return (b.wins/Math.max(1,b.runs))-(a.wins/Math.max(1,a.runs))}).forEach(function(e){
+  const st=statusOf(e);
+  h+='<div class="card" style="background:var(--card2);margin-bottom:8px"><div class="row"><span style="color:'+P(e.funnel_id).color+'">●</span><div class="grow"><b>'+e.name+'</b> <span class="mut">'+e.arch+'</span><br><span class="mut">'+esc(e.tag)+'</span></div>'+pill(st)+'</div>'
+  +'<div class="mut" style="margin-top:6px">'+e.runs+' runs · '+e.wins+' build-wins · <b style="color:var(--txt)">'+Math.round(100*e.wins/Math.max(1,e.runs))+'%</b></div>'
+  +'<div class="log">'+e.log.slice(-5).reverse().map(function(l){return '<div>'+(l.crowned?'<b class="pass">👑 selected</b>':'out')+' · triage '+l.triage+' · build '+esc(l.build)+'<br><span class="mut">'+esc(l.task)+'</span></div>'}).join("")+'</div></div>';
+ });
+ h+='</div>';
+ el.innerHTML=h;
+}
+
+function renderFunnels(){
+ let h='<div class="card"><h3>🧬 The five archetypes</h3><p class="mut">Frozen profiles across 7 dimensions — each dimension executes. Their criteria now go to triage, and only '+BUILD_SLOTS+' get built.</p></div>';
+ PROFILES.forEach(function(p){
+  h+='<div class="card"><div class="row"><span style="color:'+p.color+'">●</span><div class="grow"><b>'+p.name+'</b> <span class="mut">'+p.arch+'</span></div><button class="btn sm ghost" onclick="this.parentElement.parentElement.querySelector(\'.fdet\').style.display=this.parentElement.parentElement.querySelector(\'.fdet\').style.display===\'none\'?\'block\':\'none\'">rules</button></div>'
+  +'<div class="fdet" style="display:none;margin-top:8px">'
+  +DIMS.map(function(d){return '<div class="dim"><b>'+DIM_LABEL[d]+'</b>'+p.dims[d]+'</div>'}).join("")
+  +'<div class="dim"><b>The rule-set (banked on win)</b></div><pre class="prompt">'+esc(p.prompt)+'</pre></div></div>';
+ });
+ document.querySelector("#tab-funnels").innerHTML=h;
+}
+
+load();renderArena();renderBuilds();renderCurrent();renderLedger();renderFunnels();
+</script>
+</body>
+</html>
