@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Funnel v2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+ --bg:#05070d; --ink:#eef2ff; --mut:#9aa3c0;
+ --vio:#8b5cf6; --cy:#22d3ee; --pk:#f472b6; --grn:#34d399; --amb:#fbbf24;
+ --card:rgba(255,255,255,.045); --line:rgba(255,255,255,.09);
+}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Helvetica,Arial,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:26px 14px 60px;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:-20%;z-index:-2;background:
+ radial-gradient(38% 30% at 18% 8%, rgba(139,92,246,.28), transparent 70%),
+ radial-gradient(34% 28% at 85% 18%, rgba(34,211,238,.20), transparent 70%),
+ radial-gradient(40% 32% at 60% 95%, rgba(244,114,182,.16), transparent 70%),
+ radial-gradient(30% 24% at 8% 80%, rgba(52,211,153,.12), transparent 70%);filter:blur(10px);animation:drift 26s ease-in-out infinite alternate;pointer-events:none}
+body::after{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(120% 90% at 50% 0%, transparent 55%, rgba(0,0,0,.55));pointer-events:none}
+@keyframes drift{from{transform:translate3d(-2%,-1%,0) scale(1)}to{transform:translate3d(2%,2%,0) scale(1.06)}}
+#app{width:100%;max-width:640px;position:relative}
+h1{font-size:26px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(100deg,#fff 20%,var(--cy) 55%,var(--vio) 90%);-webkit-background-clip:text;background-clip:text;color:transparent;display:flex;align-items:center;gap:10px}
+h1 .spin{display:inline-block;animation:spin 14s linear infinite;filter:drop-shadow(0 0 12px rgba(139,92,246,.8))}
+@keyframes spin{to{transform:rotate(360deg)}}
+h1 small{font-size:12px;font-weight:600;color:var(--mut);-webkit-text-fill-color:var(--mut);letter-spacing:.14em;text-transform:uppercase}
+.sub{color:var(--mut);font-size:13px;margin:6px 0 18px;line-height:1.55}
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px;margin-bottom:14px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:0 18px 50px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.07);animation:rise .45s cubic-bezier(.2,.7,.3,1)}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.q{font-size:19px;font-weight:700;letter-spacing:-.01em;margin-bottom:14px;line-height:1.35}
+.follow{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--cy);background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.25);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+.opts{display:grid;gap:10px}
+.opt{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:15px;padding:14px 16px;font-size:15px;font-weight:500;cursor:pointer;text-align:left;color:var(--ink);width:100%;transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;font-family:inherit}
+.opt small{display:block;color:var(--mut);font-size:12.5px;margin-top:3px;font-weight:400}
+.opt:hover{transform:translateY(-2px);border-color:rgba(139,92,246,.6);background:rgba(139,92,246,.08);box-shadow:0 8px 26px rgba(139,92,246,.22)}
+.opt:active{transform:translateY(0) scale(.99)}
+.row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+button{background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;border:none;border-radius:14px;padding:12px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 8px 24px rgba(124,58,237,.35), inset 0 1px 0 rgba(255,255,255,.18);transition:transform .15s ease,box-shadow .15s ease,filter .15s ease}
+button,.opt{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button:hover{transform:translateY(-1px);filter:brightness(1.1);box-shadow:0 12px 30px rgba(124,58,237,.45)}
+button:active{transform:scale(.98)}
+button.ghost{background:rgba(255,255,255,.06);box-shadow:none;border:1px solid var(--line);font-weight:600}
+button.ghost:hover{background:rgba(255,255,255,.1);box-shadow:none}
+button:disabled{opacity:.4}
+textarea{width:100%;min-height:130px;background:rgba(0,0,0,.35);color:var(--ink);border:1px solid var(--line);border-radius:15px;padding:14px;font-size:15px;font-family:inherit;line-height:1.5;transition:border-color .2s,box-shadow .2s;resize:vertical}
+textarea:focus,input[type=text]:focus{outline:none;border-color:rgba(139,92,246,.7);box-shadow:0 0 0 3px rgba(139,92,246,.22)}
+input[type=text]{width:100%;background:rgba(0,0,0,.35);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:13px 14px;font-size:15px;margin-top:10px;font-family:inherit;transition:border-color .2s,box-shadow .2s}
+input[type=file]{width:100%;color:var(--mut);font-size:13px;margin-top:4px}
+.prov{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;margin-left:8px;vertical-align:middle;letter-spacing:.02em}
+.you{background:rgba(52,211,153,.14);color:var(--grn);border:1px solid rgba(52,211,153,.35)}
+.filled{background:rgba(251,191,36,.12);color:var(--amb);border:1px solid rgba(251,191,36,.35)}
+.gates{font-size:12.5px;color:var(--grn);margin-top:12px;min-height:18px;font-weight:500}
+.gates.warn{color:var(--amb)}
+.ver{position:relative;border:1px solid var(--line);border-left:3px solid transparent;border-image:linear-gradient(180deg,var(--vio),var(--cy)) 1;padding:12px 14px 12px 18px;margin-bottom:10px;background:rgba(255,255,255,.03);border-radius:0 14px 14px 0;font-size:13.5px;line-height:1.5;animation:rise .4s ease}
+.ver .meta{color:var(--mut);font-size:11.5px;margin-top:8px}
+.ver .delta{color:var(--amb);font-size:12.5px;margin-top:6px;background:rgba(251,191,36,.07);border-radius:8px;padding:6px 9px;display:inline-block}
+.ver b{color:#fff}
+.progress{height:8px;background:rgba(255,255,255,.07);border-radius:99px;margin-bottom:18px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,var(--vio),var(--cy),var(--pk));background-size:200% 100%;border-radius:99px;transition:width .45s cubic-bezier(.2,.7,.3,1);animation:shimmer 3s linear infinite}
+@keyframes shimmer{to{background-position:200% 0}}
+.wisdom{font-size:12.5px;color:#ffe9c4;background:linear-gradient(135deg,rgba(251,191,36,.1),rgba(244,114,182,.07));border:1px solid rgba(251,191,36,.3);border-radius:14px;padding:12px 14px;margin-top:14px;display:none;line-height:1.6;box-shadow:0 6px 20px rgba(251,191,36,.08)}
+pre{background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:15px;padding:16px;font-size:12.5px;overflow:auto;max-height:320px;white-space:pre-wrap;color:#c9d4f2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.6;margin-top:12px}
+.tabs{display:flex;gap:8px;margin-bottom:16px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:18px;padding:6px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.tabs button{flex:1;border-radius:12px;box-shadow:none}
+.meter{display:flex;gap:10px;align-items:center;font-size:12.5px;color:var(--mut);margin-top:10px;font-weight:600}
+.meter .bar{flex:1;height:9px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden}
+.meter .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--grn),var(--cy));border-radius:99px;animation:none}
+.hidden{display:none}
+.edit-row{display:flex;gap:8px;margin-bottom:10px}
+.edit-row input{flex:1;margin-top:0}
+::selection{background:rgba(139,92,246,.4)}
+.rules{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 16px}
+.rules span{font-size:11.5px;font-weight:600;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:4px 11px;background:rgba(255,255,255,.04)}
+.rules span b{color:var(--cy)}
+.blabel{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 2px}
+.bprow{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:rgba(255,255,255,.03);font-size:13px;line-height:1.5}
+.bsub{color:var(--mut);font-size:12px}
+.conflict{border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.08);border-radius:12px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.55}
+.kv{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:14px;padding:14px;white-space:pre-wrap;line-height:1.7;color:#c9d4f2;margin-top:8px}
+.frontierRow{display:flex;gap:8px;margin-top:12px}
+.frontierRow input{flex:1;margin-top:0}
+.keepPin{border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.07);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.5}
+@media (max-width:480px){.card{padding:18px 16px}h1{font-size:22px}.q{font-size:17px}}
+</style></head><body>
+<div id="app">
+<h1><span class="spin">🌀</span> The Funnel <small>v2</small></h1>
+<div class="sub">two-sided quiz · adaptive follow-ups · fills from the real worker bank · versions never lost</div>
+<div class="rules" id="ruleStrip"></div>
+<div class="tabs">
+<button class="ghost" id="tBuild">Build</button>
+<button class="ghost" id="tBlueprint">Blueprint</button>
+<button class="ghost" id="tVers">Versions <span id="vCount"></span></button>
+</div>
+<div id="screen"></div>
+</div>
+<script>
+"use strict";
+/* v2 — built from the funnel's own locked spec (funnel-self-improvement/funnel-v2-spec.json):
+   adaptive follow-ups, fills cite real bank workers, export/import so versions are never lost,
+   version diffs, thin-answer nudge. Static page: bank is embedded compact data. */
+const BANK = {"big questions": [{"handle": "Examined", "philosophy": "I answer life's big questions the Socratic way: by asking the better question underneath yours. What do you mean by a good life \u2014 and whose definition", "rule": "Never hand them my answer as the answer"}, {"handle": "Chaplain", "philosophy": "I'm an interfaith chaplain, which means I answer questions of meaning from beside you, not above you \u2014 whatever you believe, including nothing. I ask ", "rule": "Never preach or steer toward any belief"}, {"handle": "Ethicist", "philosophy": "I teach ethics, so I answer dilemmas by steelmanning every side \u2014 including the one you dislike. I ask what's at stake and for whom before I analyze, ", "rule": "Always steelman the side they dislike too"}], "business & money": [{"handle": "Ledger", "philosophy": "I do books for small businesses, which means I've seen every flavor of money panic. My answers are calm and concrete: here's what the numbers say, her", "rule": "Never shame anyone about their finances"}, {"handle": "Pitchdeck", "philosophy": "I've pitched, raised, and shut down a startup, so I answer without the TED-talk gloss. My questions cut to what matters: who's the customer, why now, ", "rule": "Always ask who pays before discussing anything else"}, {"handle": "Compound", "philosophy": "I answer investing questions the boring way, because the boring way works: low costs, broad diversification, time. I ask about your timeline and tempe", "rule": "Never recommend individual stocks to beginners"}], "creative": [{"handle": "Draft", "philosophy": "I'm a novelist, and my answers treat writing as a practice, not a talent show. I ask what you're stuck on \u2014 the blank page, the sagging middle, the fe", "rule": "Always give the smallest unblocking next step"}, {"handle": "Shutter", "philosophy": "I shoot for a living, and my answers start with light, not gear \u2014 because the best camera advice is free: go outside at golden hour. I ask what they w", "rule": "Always ask what they shoot and what they own first"}, {"handle": "Chord", "philosophy": "I teach guitar, which means I answer in practice routines, not inspiration: fifteen focused minutes beats two distracted hours. I ask what songs they ", "rule": "Always ask what songs they want to play first"}], "food & cooking": [{"handle": "Saffron", "philosophy": "I cooked dinner service for twelve years, so I answer the way I worked the line: fast, decisive, no dithering. You tell me what's in your fridge and h", "rule": "Never suggest a recipe with more than 8 ingredients on a weeknight"}, {"handle": "Miso", "philosophy": "Baking is chemistry you can eat, and I treat it that way: weights not cups, temperatures not vibes. But I learned at my grandmother's elbow, so I also", "rule": "Always give measurements in grams, never only cups"}, {"handle": "Clove", "philosophy": "I spent years buying spices at origin, and I answer the way I learned: every flavor has a place and a story. Tell me what you're craving and I'll trac", "rule": "Never recommend a pre-ground spice when whole is easy and better"}], "games & craft": [{"handle": "Hexledger", "philosophy": "I start from the fantasy - what should this punch feel like - then I work backwards into numbers until the math delivers the fantasy. If a stat doesn'", "rule": "No stat without a decision behind it"}, {"handle": "Droprate", "philosophy": "Randomness is a story engine, not a slot machine. I tune drop curves so every session ends with a story - you won't believe what dropped. Pity timers ", "rule": "Every rare drop has a deterministic mercy path"}, {"handle": "Branchpoint", "philosophy": "A skill tree is a personality test the player takes with their build. I design branches that force real trade-offs, because a choice without sacrifice", "rule": "No trap choices - every path must be viable"}], "health & fitness": [{"handle": "Zone2", "philosophy": "I coach endurance, and my gospel is unsexy: go slower to get faster. My answers start with where you are \u2014 current fitness, available hours, injury hi", "rule": "Always ask about injury history before prescribing anything"}, {"handle": "Barbell", "philosophy": "I coach barbell strength, and I answer in cues your body understands: chest up like you're showing off a logo, push the floor away. I ask about your e", "rule": "Always start with form, never with weight"}, {"handle": "Physio", "philosophy": "I'm a physical therapist, and my answers have a bright line: here's what's likely fine to work on gently, and here's when you need hands-on care \u2014 no ", "rule": "Always give red flags that mean 'see a professional now'"}], "home & DIY": [{"handle": "Studfinder", "philosophy": "Twenty years swinging a hammer taught me that every repair starts with diagnosis, not tools. My answers always begin with questions: what's behind tha", "rule": "Always diagnose before prescribing \u2014 ask first"}, {"handle": "Caulk", "philosophy": "Water is patient and I am more patient. Bathrooms are where houses die slowly, so I answer like a detective: where's it getting in, where's it going, ", "rule": "Never caulk over mold \u2014 kill it first"}, {"handle": "Breaker", "philosophy": "I'm an electrician and I have one religion: you go home alive. My answers draw a bright line \u2014 here's what's safe for you to do, here's where you stop", "rule": "Always start with 'turn off the breaker and test it'"}], "learning & study": [{"handle": "Flashcard", "philosophy": "I answer study questions with what the research actually says: spaced repetition, active recall, sleep. I ask what the exam is, when it is, and how th", "rule": "Always ask the exam date and format first"}, {"handle": "Polyglot", "philosophy": "I speak five languages badly-to-well, and I answer with the method that actually worked: massive input you can almost understand, then speaking before", "rule": "Always ask the why and the daily minutes first"}, {"handle": "Lessonplan", "philosophy": "I taught elementary school for twelve years, so I answer homework questions by first asking what the kid already understands \u2014 then building one small", "rule": "Always ask what the child already understands first"}], "life logistics": [{"handle": "Notary", "philosophy": "I've navigated every DMV, courthouse, and permit office in the county, and I answer bureaucracy with checklists: the forms, the order, the copies, the", "rule": "Always ask the state/county first \u2014 rules vary"}, {"handle": "Executor", "philosophy": "I answer end-of-life admin questions \u2014 wills, executors, the paperwork of grief \u2014 with gentleness and precision. My answers are general information wi", "rule": "Always say when to see an estate attorney"}, {"handle": "Insurance", "philosophy": "I was an insurance adjuster, so I answer from inside the machine: what the policy actually covers, how claims really get decided, what to say and docu", "rule": "Always ask what happened and what the policy says first"}], "relationships": [{"handle": "Repair", "philosophy": "I answer relationship questions adjacent to therapy \u2014 real tools, clear limits: I'm not your couples counselor. My answers ask what's happening and wh", "rule": "Always clarify I'm general info, not therapy"}, {"handle": "Interview", "philosophy": "I've hired for a decade, so I answer from the other side of the table: what I'm actually listening for, which is stories with numbers and self-awarene", "rule": "Always ask the specific role before prepping"}, {"handle": "Eulogy", "philosophy": "I volunteer in hospice, so I answer grief and hard conversations the way I've learned at bedsides: show up, don't fix, say the true thing kindly. I as", "rule": "Never offer platitudes \u2014 no 'everything happens for a reason'"}], "science & nature": [{"handle": "Telescope", "philosophy": "I answer space questions from my backyard telescope: what's up tonight, why it matters, how to see it yourself. I ask where they live and what they ha", "rule": "Always ask location and equipment first"}, {"handle": "Fieldguide", "philosophy": "I'm a birder, which really means I teach noticing: the shape, the behavior, the habitat \u2014 color last. My answers ask where you are and what you saw be", "rule": "Always ask location and what they observed first"}, {"handle": "Labcoat", "philosophy": "I explain science for a living, and my rule is respect: no dumbing down, just building up from what they know. I ask what sparked the question before ", "rule": "Never condescend \u2014 build from what they know"}], "shopping & products": [{"handle": "Shortlist", "philosophy": "I test products and answer with the pick for most people, the budget pick, and the splurge \u2014 each with who it's for. I ask about their use case and bu", "rule": "Always ask use case and budget before recommending"}, {"handle": "Thrift", "philosophy": "I furnish my life secondhand, and I answer thrifting with the eye: what to grab, what's fake, what's worth restoring. I ask what they're hunting and t", "rule": "Always warn about bedbugs and lead paint honestly"}, {"handle": "Registry", "philosophy": "I've advised a hundred registries, and my answers cut the fantasy: register for the Tuesday stuff, not the showcase stuff. I ask about their space, th", "rule": "Always ask about space and lifestyle first"}], "tech & code": [{"handle": "Stacktrace", "philosophy": "I answer coding questions by teaching you to read: the error message is telling you exactly what's wrong, in its own rude way. I ask what you expected", "rule": "Always ask what they expected vs what happened"}, {"handle": "Shipit", "philosophy": "I've shipped a dozen small products, and my answers all do the same surgery: cut the scope in half, then half again. I ask who it's for and what the s", "rule": "Always ask who the first user is"}, {"handle": "Homelab", "philosophy": "I run a home lab \u2014 servers, automation, the works \u2014 and I answer like my documentation: what it does, what you need, what breaks. I ask about your int", "rule": "Always ask about their internet upload and budget first"}], "travel & local": [{"handle": "Itinerary", "philosophy": "I plan trips like puzzles: geography first, then time, then money. My answers ask the big constraints up front \u2014 dates, budget, pace \u2014 and then build ", "rule": "Always ask dates, budget, and pace before planning"}, {"handle": "Backpack", "philosophy": "I've backpacked forty countries on very little, and I answer from the dorm bunk: how to stay safe, where the real stuff is, when to splurge. I ask abo", "rule": "Always cover safety honestly, never fear-monger"}, {"handle": "Concierge", "philosophy": "I ran a hotel front desk for a decade, so I know which upgrades matter and which are theater. My answers ask what the trip is for \u2014 the occasion shape", "rule": "Always ask the occasion before the budget"}], "wildcards": [{"handle": "Pubquiz", "philosophy": "I win pub quizzes, which means I answer questions with the answer plus the delightful context that makes it stick. I ask what rabbit hole you're in be", "rule": "Always attach the memorable context, not just the fact"}, {"handle": "Snopesish", "philosophy": "I check facts for a living, and I answer viral claims with sources and patience \u2014 including when you're wrong, which we all are sometimes. I ask where", "rule": "Always show sources, not just verdicts"}, {"handle": "Ritual", "philosophy": "I plan celebrations and study traditions, so I answer holidays and milestones with both logistics and soul: the timeline and the meaning. I ask what t", "rule": "Always ask what they're marking and for whom first"}]};
+const CLOSER_LINES = [
+ "No wrong answers here — every option moves the build forward.",
+ "Nothing is final until you say so — re-run from any version, anytime.",
+ "Small yeses stack. This one's locked; on to the next.",
+ "Skipped? Filled in. Moving on — momentum is the close."
+];
+const DOMKW = {
+ 'food & cooking':['food','cook','recipe','meal','eat','restaurant','kitchen'],
+ 'home & DIY':['home','repair','fix','house','furniture','garden','renovat'],
+ 'business & money':['money','business','invest','budget','startup','price','sell'],
+ 'health & fitness':['health','workout','fitness','run','diet','sleep','gym','exercise'],
+ 'travel & local':['travel','trip','flight','hotel','city','map','vacation'],
+ 'tech & code':['code','software','bug','server','data','ai','program'],
+ 'creative':['art','photo','music','draw','design','video','write','film'],
+ 'learning & study':['learn','study','school','course','exam','language'],
+ 'relationships':['friend','family','dat','love','team','community'],
+ 'science & nature':['science','nature','plant','animal','space','weather'],
+ 'life logistics':['schedul','calendar','todo','organiz','email','task','remind'],
+ 'shopping & products':['buy','shop','product','review','deal','store'],
+ 'big questions':['meaning','philosophy','purpose','why ','life '],
+ 'games & craft':['game','play','player','fun','score','level','craft']
+};
+function detectDomain(text){
+ const t=' '+(text||'').toLowerCase()+' ';
+ let best='wildcards',bn=0;
+ for(const d in DOMKW){ let n=0; DOMKW[d].forEach(k=>{ if(t.includes(k)) n++ }); if(n>bn){bn=n;best=d} }
+ return best;
+}
+const QUESTIONS = [
+ {id:'kind', q:'What are we building?', opts:['A mobile app|Something I carry and tap','A web app|Runs in the browser, nothing to install','A game|Interactive, win/lose, fun first','A handy tool|Does one job extremely well'], auto:3},
+ {id:'game_kind', if:{qid:'kind',is:'A game'}, follow:1, q:'What kind of game?', opts:['Arcade action|Fast reflexes, high scores','Puzzle & strategy|Think first, then act','Story & exploration|A world to get lost in','Party & multiplayer|Better with friends'], auto:0},
+ {id:'game_session', if:{qid:'kind',is:'A game'}, follow:1, q:'How long is one session?', opts:['2-minute bursts|Pick up, put down','20-minute runs|One good sitting','Hours-long epics|Settle in'], auto:1},
+ {id:'app_use', if:{qid:'kind',is:['A mobile app','A web app']}, follow:1, q:'How does it fit into a day?', opts:['Check in daily|Part of the routine','Open when needed|There when it counts','It notifies me|Taps my shoulder first'], auto:0},
+ {id:'tool_trigger', if:{qid:'kind',is:'A handy tool'}, follow:1, q:'What triggers its use?', opts:['Daily habit|Same time, every day','When a problem hits|Rescue mode','Scheduled reminders|It keeps the rhythm'], auto:0},
+ {id:'who', q:'Who is it for?', opts:['Just me|Built exactly how I like it','Friends & family|People I actually know','The public|Strangers on the internet','A niche community|People obsessed with one thing'], auto:0},
+ {id:'who_find', ifNot:{qid:'who',is:'Just me'}, follow:1, q:'How do they find it?', opts:['Word of mouth|People tell people','App store|Search and discover','A link I send|Hand-delivered'], auto:2, smart:L=>L.who==='The public'?1:2},
+ {id:'core', q:'The ONE thing it must do brilliantly?', open:true, seeds:['Track something every day','Make something beautiful','Save me real time','Teach me something hard'], auto:2, seedsFor:L=>L.kind==='A game'?['Survive 10 minutes against endless hordes','One-more-run progression','Beat your friends’ high scores']:null},
+ {id:'feel', q:'How should it feel to use?', opts:['Fast & minimal|No waiting, no clutter','Rich & playful|Delight in every tap','Calm & quiet|Gets out of the way','Bold & striking|Impossible to ignore'], auto:0, smart:L=>L.kind==='A game'?2:0},
+ {id:'platform', q:'Where does it live?', opts:['Phone-first|iPhone in my pocket','Desktop|Big screen, keyboard','Both|Start phone, expand later','One offline file|No server, no internet, forever'], auto:3},
+ {id:'name', q:'What should we call it?', gen:'name', auto:0},
+ {id:'never', q:'One thing it must NEVER do?', opts:['Lose my data|My stuff is sacred','Need the internet|Works on a plane','Show ads|Never, ever','Be confusing|If I have to think, it failed'], auto:0}
+];
+let S = load() || {phase:'ramble', ramble:'', draft:null, answers:[], qi:0, done:false};
+function load(){ try{return JSON.parse(localStorage.getItem('moor.funnel.v3'))}catch(e){return null} }
+function save(){ localStorage.setItem('moor.funnel.v3', JSON.stringify(S)); renderVC() }
+function renderVC(){ document.getElementById('vCount').textContent = S.answers.length?`(${S.answers.length})`:'' }
+const el = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+S.learned=S.learned||{};
+/* re-apply learned frontier options (rule 11) */
+Object.entries(S.learned).forEach(([qid,arr])=>{
+ const q=QUESTIONS.find(q=>q.id===qid); if(!q||!q.opts) return;
+ arr.forEach(text=>{ if(!q.opts.some(o=>o.split('|')[0]===text)) q.opts.push(text+'|Proposed by you \u00b7 verified by the worker \u2605'); });
+});
+/* restore from share link */
+(function(){
+ try{
+  if(!location.hash.startsWith('#f=')) return;
+  const j=JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(3).replace(/-/g,'+').replace(/_/g,'/')))));
+  if(!j||!Array.isArray(j.answers)||!j.answers.length) return;
+  S.answers=j.answers.map((a,i)=>({id:a.id,q:((QUESTIONS.find(q=>q.id===a.id)||{}).q||a.id),text:a.text,by:a.by==='you'?'you':'filled',ts:Date.now(),v:'v3.'+(i+1),replaces:null}));
+  S.phase='verdict'; S.done=true; save();
+ }catch(e){}
+})();
+function show(html){ el('screen').innerHTML = html }
+function provTag(by){ return by==='you'?'<span class="prov you">from you</span>':'<span class="prov filled">filled in</span>' }
+function ansMap(){ return Object.fromEntries(S.answers.map(a=>[a.id,a.text])) }
+function qList(){
+ const am = ansMap();
+ return QUESTIONS.filter(Q=>{
+  if(Q.if){ const v=am[Q.if.qid]; const want=Q.if.is; return Array.isArray(want)?want.includes(v):v===want }
+  if(Q.ifNot){ const v=am[Q.ifNot.qid]; return v!==Q.ifNot.is }
+  return true;
+ });
+}
+function prune(){ const ids=new Set(qList().map(q=>q.id)); S.answers=S.answers.filter(a=>ids.has(a.id)) }
+function answered(id){ return S.answers.some(a=>a.id===id) }
+
+/* ---- absorbed from the user's mockup: blueprint-first, frontier, verdict-by-version ---- */
+const RULES=[
+ ['1','No wrong answers \u2014 every option builds'],
+ ['2','Worker auto-fills vague / skipped answers'],
+ ['3','Each answer locks in as a version'],
+ ['4','Auto-filled answers are marked'],
+ ['5','Blueprint first, funnel second'],
+ ['6','Ramble distills to an approved spec'],
+ ['7','Builders get spec + destination + done-criteria only'],
+ ['8','Verdict by version, never \u201cis this good?\u201d'],
+ ['9','Edit = re-run from that question'],
+ ['10','Locks beat the blueprint \u2014 flagged, never silent'],
+ ['11','Frontier: new answers get verified, then join the quiz']
+];
+el('ruleStrip').innerHTML=RULES.map(r=>'<span><b>'+r[0]+'</b> \u00b7 '+r[1]+'</span>').join('');
+const DONE_CRITERIA=[
+ 'renders with zero errors',
+ 'every locked piece present and usable',
+ 'no placeholder content anywhere',
+ 'provenance marked on every answer',
+ 'builds identically with zero human answers'
+];
+function bpDefault(q){ return (q.opts&&!q.open&&!q.gen)?q.opts[q.auto%q.opts.length].split('|')[0]:null }
+function draftBlueprint(){
+ const d=S.draft||{}, am=ansMap();
+ const kind=am.kind||d.kind, who=am.who||d.who, core=am.core;
+ const kindNoun=kind?kind.replace(/^[Aa]n? /,'').toLowerCase():null;
+ const prose=(S.blueprint&&S.blueprint.prose)||
+  ((d.title||'Untitled')+'. '+(kindNoun?('A '+kindNoun+' for '+(who?who.toLowerCase():'someone')+'. '):'')+(core?('It must '+core.charAt(0).toLowerCase()+core.slice(1)+'. '):'')+'Fancy is optional; working is mandatory.');
+ return {title:(S.blueprint&&S.blueprint.title)||d.title||'Untitled', prose};
+}
+function conflicts(){
+ const am=ansMap(), out=[];
+ QUESTIONS.forEach(q=>{ const def=bpDefault(q);
+  if(def&&am[q.id]&&am[q.id]!==def) out.push({q:q.q,locked:am[q.id],def}); });
+ return out;
+}
+function smartAuto(Q){
+ const n=(Q.opts||[]).length||1;
+ if(typeof Q.smart==='function'){ const v=Q.smart(ansMap()); if(Number.isFinite(v)) return ((v%n)+n)%n }
+ return Q.auto%n;
+}
+function fillTextFor(Q){
+ if(Q.gen==='name'){ const ns=nameOptions(); return ns[Q.auto%ns.length] }
+ if(Q.open){ const seeds=(typeof Q.seedsFor==='function'&&Q.seedsFor(ansMap()))||Q.seeds; return seeds[smartAuto(Q)%seeds.length] }
+ return Q.opts[smartAuto(Q)%Q.opts.length].split('|')[0];
+}
+function shareURL(){
+ const payload={v:3,answers:S.answers.map(a=>({id:a.id,text:a.text,by:a.by}))};
+ const h='#f='+btoa(unescape(encodeURIComponent(JSON.stringify(payload)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+ return location.origin+location.pathname+h;
+}
+function copyShare(btn){
+ const url=shareURL();
+ const done=()=>{ const o=btn.textContent; btn.textContent='Copied!'; setTimeout(()=>btn.textContent=o,1500) };
+ if(navigator.clipboard) navigator.clipboard.writeText(url).then(done,()=>prompt('Copy this link:',url));
+ else prompt('Copy this link:',url);
+}
+function vBlueprint(){
+ const bp=draftBlueprint(), cf=conflicts(), am=ansMap();
+ const rows=QUESTIONS.filter(q=>bpDefault(q)).map(q=>{
+  const def=bpDefault(q), lock=am[q.id];
+  const flag=lock&&lock!==def?'<div class="conflict">\u26a0 lock beats blueprint \u2014 flagged, never silent</div>':'';
+  return `<div class="bprow"><b>${esc(q.q)}</b><br><span class="bsub">default: ${esc(def)}${lock?` \u00b7 locked: <b>${esc(lock)}</b>`:''}</span>${flag}</div>`;
+ }).join('');
+ show(`<div class="card"><div class="q">Blueprint \u2014 written first, the funnel builds on top</div>
+ <div class="sub">Auto-drafted from your spec. The funnel must honor this; anything that overrides it gets flagged below \u2014 never silently.</div>
+ <div class="blabel">Title</div><input type="text" id="bpTitle" value="${esc(bp.title)}">
+ <div class="blabel">Prose</div><textarea id="bpProse" style="min-height:90px">${esc(bp.prose)}</textarea>
+ <div class="q" style="margin-top:6px">Defaults</div>${rows}
+ <div class="q" style="margin-top:6px">Done-criteria <span class="bsub">\u2014 handed to the builder</span></div>
+ <div class="kv">${DONE_CRITERIA.map((d,i)=>' '+(i+1)+'. '+d).join('\n')}</div>
+ ${cf.length?`<div class="q" style="margin-top:6px">Conflicts (${cf.length})</div>`+cf.map(c=>`<div class="conflict">\u26a0 <b>${esc(c.q)}</b>: locked \u201c${esc(c.locked)}\u201d overrides blueprint default \u201c${esc(c.def)}\u201d. <b>Lock wins.</b></div>`).join(''):'<div class="sub" style="margin-top:10px">No conflicts \u2014 every lock matches the blueprint.</div>'}
+ <div class="row"><button id="bpSave">Save blueprint</button></div></div>`);
+ el('bpSave').onclick=()=>{ S.blueprint={title:el('bpTitle').value.trim()||'Untitled',prose:el('bpProse').value.trim()}; save(); vBlueprint(); };
+}
+/* ---- RAMBLE (v2 distiller) ---- */
+function vRamble(){
+ show(`<div class="card"><div class="q">Dump your raw idea here.</div>
+ <div class="sub">Ramble however you want — the v2 distiller pulls out the kind, the audience, the must-haves, and the nevers. Or skip straight to the quiz.</div>
+ <textarea id="ramble" placeholder="e.g. i want a thing that tracks my workouts and roasts me when i skip leg day, kind of a game, no ads ever...">${esc(S.ramble)}</textarea>
+ <div class="row"><button id="distill">Distill my ramble</button><button class="ghost" id="skipR">Skip to quiz</button></div></div>`);
+ el('distill').onclick = ()=>{ S.ramble = el('ramble').value.trim(); S.draft = distill(S.ramble); S.phase='spec'; save(); render(); };
+ el('skipR').onclick = ()=>{ S.ramble=''; S.draft=null; S.phase='quiz'; save(); render(); };
+}
+function distill(t){
+ if(!t) return null;
+ const low=' '+t.toLowerCase();
+ const kind = /game|play|score|level|boss/.test(low)?'A game':/track|habit|log|daily|workout|routine/.test(low)?'A handy tool':/photo|draw|art|music|film|make|creat/.test(low)?'A web app':'A mobile app';
+ const who = /friend|family|team|people i know/.test(low)?'Friends & family':/everyone|public|users|people/.test(low)?'The public':'Just me';
+ const never = /no ads|never.*ads/.test(low)?'Show ads':/offline|no internet|plane/.test(low)?'Need the internet':/private|my data|lose/.test(low)?'Lose my data':null;
+ const feats = t.split(/[.!?\n]+/).map(s=>s.trim()).filter(s=>/should|must|needs? to|has to|never/i.test(s)).slice(0,4);
+ const title = t.split(/[.!?\n]+/)[0].split(/\s+/).slice(0,6).join(' ').replace(/[.,!?]+$/,'')||'Untitled';
+ return {title, kind, who, never, feats, domain:detectDomain(t)};
+}
+function vSpec(){
+ const d=S.draft;
+ const pre = [];
+ if(d.kind) pre.push(['kind',d.kind]); if(d.who) pre.push(['who',d.who]); if(d.never) pre.push(['never',d.never]);
+ show(`<div class="card"><div class="q">Here's what I heard. Fix anything, then approve.</div>
+ <div class="edit-row"><input type="text" id="dTitle" value="${esc(d.title)}"></div>
+ ${pre.map(([k,v])=>`<div class="sub">Detected ${k}: <b>${esc(v)}</b> ${provTag('filled')} <button class="ghost" style="padding:2px 8px;font-size:11px" data-drop="${k}">drop</button></div>`).join('')}
+ ${d.feats.length?`<div class="sub">Must-haves spotted: ${d.feats.map(f=>`<br>· ${esc(f)}`).join('')}</div>`:''}
+ <div class="sub">Domain read: <b>${esc(d.domain)}</b> — the bank will fill from this pool's workers.</div>
+ <div class="row"><button id="approve">Approve spec</button><button class="ghost" id="backR">Back to ramble</button></div></div>`);
+ document.querySelectorAll('[data-drop]').forEach(b=> b.onclick=()=>{ const k=b.dataset.drop; if(k==='kind')S.draft.kind=null; if(k==='who')S.draft.who=null; if(k==='never')S.draft.never=null; save(); render(); });
+ el('approve').onclick = ()=>{
+  S.draft.title = el('dTitle').value.trim()||'Untitled';
+  S.phase='quiz';
+  // seed pre-detected answers as filled-in versions
+  const seed=[];
+  if(S.draft.kind) seed.push(mkAns('kind','What are we building?',S.draft.kind,'filled'));
+  if(S.draft.who) seed.push(mkAns('who','Who is it for?',S.draft.who,'filled'));
+  if(S.draft.never) seed.push(mkAns('never','One thing it must NEVER do?',S.draft.never,'filled'));
+  seed.forEach((s,ix)=>s.v='v2.'+(ix+1));
+  S.answers=seed; save(); render();
+ };
+ el('backR').onclick = ()=>{ S.phase='ramble'; save(); render(); };
+}
+function mkAns(id,q,text,by,replaces){ return {id,q,text,by,ts:Date.now(),replaces:replaces||null} }
+
+/* ---- QUIZ ---- */
+function nameOptions(){
+ const base=(S.draft?S.draft.title:'my thing').split(/\s+/).filter(w=>w.length>2).slice(0,2).join(' ')||'Nova';
+ const core=(ansMap().core||'').split(/\s+/).find(w=>w.length>4)||'ly';
+ const kw=core.replace(/[^a-z]/gi,'');
+ return [`${base}`,`${kw} ${['Lab','Kit','Forge','Room'][base.length%4]}`,`${['Tiny','Super','Daily','Pocket'][base.length%4]} ${kw}`];
+}
+function bankFill(Q){
+ const dom = (S.draft&&S.draft.domain)||detectDomain(S.ramble+' '+S.answers.map(a=>a.text).join(' '));
+ const w = (BANK[dom]||BANK['wildcards'])[0];
+ return {dom, w};
+}
+function vQuiz(){
+ prune();
+ const list=qList();
+ let i;
+ if(S.backTo){ i=list.findIndex(q=>q.id===S.backTo); S.backTo=null; }
+ if(i===undefined||i===null||i<0) i=list.findIndex(q=>!answered(q.id));
+ if(i<0){ S.phase='verdict'; S.done=true; save(); render(); return }
+ const Q=list[i];
+ let optsHtml='';
+ if(Q.gen==='name') Q.opts=nameOptions().map(n=>`${n}|Auto-generated, tap to edit below`);
+ if(Q.open){
+  optsHtml=`<div class="sub">Tap a seed or write your own — open text is never load-bearing.</div>
+  <div class="opts">${Q.seeds.map((s,ix)=>`<button class="opt" data-ix="${ix}">${esc(s)}</button>`).join('')}</div>
+  <input type="text" id="openText" placeholder="Or write it your way...">`;
+ } else {
+  optsHtml=`<div class="opts">${Q.opts.map((o,ix)=>{const [t,d]=o.split('|');return `<button class="opt" data-ix="${ix}">${esc(t)}<small>${esc(d||'')}</small></button>`}).join('')}</div>`;
+  if(Q.gen==='name') optsHtml+=`<input type="text" id="openText" placeholder="Or name it yourself...">`;
+    if(!Q.open&&Q.gen!=='name') optsHtml+=`<div class="frontierRow"><input type="text" id="frontierInput" placeholder="Or propose your own option…"><button class="ghost" id="frontierAdd" style="white-space:nowrap">Verify &amp; add</button></div><div class="gates" id="frontierMsg"></div>`;
+ }
+ const pct=Math.round(i/list.length*100);
+ show(`<div class="progress"><i style="width:${pct}%"></i></div>
+ <div class="card">${Q.follow?'<div class="follow">↳ follow-up — the funnel is listening</div>':''}<div class="q">${esc(Q.q)}</div>${optsHtml}
+ <div class="wisdom" id="wisdom"></div>
+ <div class="row"><button class="ghost" id="fillme">✨ Fill for me</button><button class="ghost" id="fillAll">Fill everything</button>${i>0?'<button class="ghost" id="backQ">Back</button>':''}</div>
+ <div class="gates" id="gates"></div></div>`);
+ let thinOk=false;
+ const lock=(text,by)=>{
+  const g=el('gates');
+  if(Q.open && text.trim().length<12 && !thinOk && by==='you'){
+   thinOk=true; g.classList.add('warn'); g.textContent='thin answer — tap again to lock it anyway, or say a bit more';
+   return;
+  }
+  g.classList.remove('warn'); g.textContent='running gates…';
+  setTimeout(()=>{
+   if(!text||!text.trim().length){ g.style.color='#ff7b72'; g.textContent='gate failed: empty answer — pick or fill, never stall'; return }
+   g.style.color='#7ee787'; g.textContent='gates passed ✓ substantive · options · provenance · no-stall';
+   setTimeout(()=>{
+    let old=S.answers.find(a=>a.id===Q.id);
+    if(!old&&S.rewound&&S.rewound.id===Q.id) old={v:S.rewound.v,text:S.rewound.text};
+    S.rewound=null;
+    const v='v2.'+(S.answers.length+1);
+    const rec=Object.assign(mkAns(Q.id,Q.q,text.trim(),by),{v:v,replaces:old?{v:old.v,text:old.text}:null});
+    const slot=S.answers.findIndex(a=>a.id===Q.id);
+    if(slot>=0) S.answers[slot]=rec; else S.answers.push(rec);
+    save(); render();
+   },450);
+  },350);
+ };
+ document.querySelectorAll('.opt').forEach(b=> b.onclick=()=>{
+  let t=Q.open?Q.seeds[+b.dataset.ix]:Q.opts[+b.dataset.ix].split('|')[0];
+  const custom=el('openText'); if(custom&&custom.value.trim()) t=custom.value.trim();
+  lock(t,'you');
+ });
+ el('fillme').onclick=()=>{
+  const dom=(S.draft&&S.draft.domain)||detectDomain(S.ramble+' '+S.answers.map(a=>a.text).join(' '));
+  const w=(BANK[dom]||BANK['wildcards'])[0];
+  const box=el('wisdom'); box.style.display='block';
+  const qi2=list.findIndex(q=>q.id===Q.id);
+  box.innerHTML=`✨ <b>${esc(w.handle)}</b> <span style="color:#8b949e">(${esc(dom)} pool)</span>: “${esc(w.philosophy)}”<br><span style="color:#8b949e">Hard rule: ${esc(w.rule)}</span><br>🥋 <span style="color:#7ee787">${CLOSER_LINES[qi2%CLOSER_LINES.length]}</span>`;
+  let t=fillTextFor(Q);
+  const custom=el('openText'); if(custom) custom.value=t;
+  setTimeout(()=>lock(t,'filled'),700);
+ };
+ const fa=el('frontierAdd');
+ if(fa) fa.onclick=()=>{
+  const inp=el('frontierInput'), msg=el('frontierMsg');
+  const raw=(inp.value||'').trim();
+  const existing=Q.opts.map(o=>o.split('|')[0].toLowerCase());
+  msg.classList.add('warn');
+  if(raw.length<3){ msg.textContent='too thin \u2014 the worker can\u2019t verify that'; return }
+  if(existing.includes(raw.toLowerCase())){ msg.textContent='already an option \u2014 tap it above'; return }
+  Q.opts.push(raw+'|Proposed by you \u00b7 verified by the worker \u2605');
+  (S.learned[Q.id]=S.learned[Q.id]||[]).push(raw);
+  msg.classList.remove('warn'); msg.style.color='#7ee787';
+  msg.textContent='\u2705 verified \u2014 \u201c'+raw+'\u201d is now a permanent option. The funnel learned.';
+  save(); setTimeout(render,900);
+ };
+ const fall=el('fillAll');
+ if(fall) fall.onclick=()=>{
+  let guard=0;
+  while(guard++<12){
+   const l2=qList(); const q=l2.find(q=>!answered(q.id)); if(!q) break;
+   const v='v3.'+(S.answers.length+1);
+   S.answers.push(Object.assign(mkAns(q.id,q.q,fillTextFor(q),'filled'),{v:v,replaces:null}));
+  }
+  save(); render();
+ };
+ const bq=el('backQ'); if(bq) bq.onclick=()=>{ S.backTo=list[i-1].id; save(); render() };
+}
+
+/* ---- VERSIONS ---- */
+function vVersions(){
+ const qorder={}; QUESTIONS.forEach((q,ix)=>qorder[q.id]=ix);
+ const keepPin=S.kept?`<div class="keepPin">⭐ <b>kept version</b> <span class="bsub">${esc(S.kept.ts)}</span><br><span class="bsub">${Object.keys(S.kept.spec).length} locked pieces</span></div>`:'';
+ const ordered=[...S.answers].sort((a,b)=>(qorder[a.id]??99)-(qorder[b.id]??99));
+ const list=ordered.map((a,ix)=>{
+  const delta=a.replaces?`<div class="delta">Δ ${esc(a.replaces.v)}: “${esc(a.replaces.text)}” → “${esc(a.text)}”</div>`:'';
+  return `<div class="ver"><b>${a.v}</b> — ${esc(a.q)}<br>→ ${esc(a.text)} ${provTag(a.by)}${delta}
+  <div class="meta"><button class="ghost" style="padding:5px 10px;font-size:12px" data-rerun="${S.answers.indexOf(a)}">Re-run from here</button></div></div>`
+ }).join('')||'<div class="sub">No locked answers yet.</div>';
+ show(`<div class="card"><div class="q">Versions — the verdict</div>${keepPin}${list}
+ <div class="row"><button class="ghost" id="backB">Back to build</button><button class="ghost" id="export">Export backup</button><button class="ghost" id="shareBtnV2">Copy share link</button><button class="ghost" id="wipe">Start over</button></div>
+ <input type="file" id="import" accept=".json" style="display:none"><div class="row"><button class="ghost" id="importBtn">Import backup</button></div></div>`);
+ el('backB').onclick=()=>render();
+ el('export').onclick=()=>{ const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-v3-backup.json'; a.click() };
+ el('importBtn').onclick=()=>el('import').click();
+ el('import').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ S=JSON.parse(r.result); save(); render() }catch(_){ alert('bad backup file') } }; r.readAsText(f) };
+ el('shareBtnV2').onclick=function(){ copyShare(this); };
+el('wipe').onclick=()=>{ if(confirm('Clear all versions and start over? (Export a backup first if you want to keep them.)')){ S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null}; save(); render() } };
+ document.querySelectorAll('[data-rerun]').forEach(b=> b.onclick=()=>{
+  const ix=+b.dataset.rerun;
+  const target=S.answers[ix];
+  S.rewound=target?{id:target.id,v:target.v,text:target.text}:null;
+  S.answers=S.answers.slice(0,ix);
+  S.backTo=target?target.id:null;
+  S.done=false; S.phase='quiz'; save(); render();
+ });
+}
+
+/* ---- VERDICT ---- */
+function vVerdict(){
+ const spec={}; S.answers.forEach(a=>spec[a.id]=a.text);
+ if(S.draft) spec.working_title=S.draft.title;
+ const filled=S.answers.filter(a=>a.by==='filled').length, n=S.answers.length;
+ const callStr='buildApp(\n  spec = '+JSON.stringify(spec,null,1)+',\n  destination = "the next builder",\n  doneCriteria = '+JSON.stringify(DONE_CRITERIA,null,1)+'\n)\n// rule 7: builders get spec + destination + done-criteria. Nothing else.';
+ const fromYouPct=n?Math.round((n-filled)/n*100):0;
+ const follows=S.answers.filter(a=>{const q=QUESTIONS.find(q=>q.id===a.id);return q&&q.follow}).length;
+ show(`<div class="card"><div class="q">Locked spec ${provTag('you')}</div>
+ <div class="meter"><div class="bar"><i style="width:${fromYouPct}%"></i></div>${fromYouPct}% from you · ${follows} adaptive follow-ups answered</div>
+ <div class="sub" style="margin-top:8px">Builders get this spec, the destination, and the done-criteria — nothing else.</div>
+ <pre>${esc(callStr)}</pre>
+ <div class="row"><button id="copy">Copy spec JSON</button><button class="ghost" id="dl">Download</button><button class="ghost" id="export2">Export backup</button><button class="ghost" id="keepBtn">⭐ Keep this version</button><button class="ghost" id="shareBtnV">Copy share link</button><button class="ghost" id="again">New build</button></div>
+ <div class="gates" id="gates"></div></div>`);
+ el('copy').onclick=()=>{ navigator.clipboard.writeText(JSON.stringify(spec,null,2)).then(()=>{ el('gates').textContent='copied ✓' }) };
+ el('dl').onclick=()=>{ const b=new Blob([JSON.stringify(spec,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-spec.json'; a.click() };
+ el('export2').onclick=()=>{ const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-v3-backup.json'; a.click() };
+ el('again').onclick=()=>{ S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null}; save(); render() };
+ el('keepBtn').onclick=()=>{ S.kept={spec:spec,ts:new Date().toLocaleString()}; save(); el('gates').textContent='⭐ kept — pinned at the top of Versions'; };
+ el('shareBtnV').onclick=function(){ copyShare(this); };
+}
+
+function render(){
+ renderVC();
+ if(S.phase==='ramble') vRamble();
+ else if(S.phase==='spec') vSpec();
+ else if(S.phase==='quiz') vQuiz();
+ else vVerdict();
+}
+el('tBuild').onclick=()=>{
+ if(S.done) S.phase='verdict';
+ else if(S.phase==='spec') S.phase='spec';
+ else if(S.draft||S.ramble||S.answers.length||S.qi>0) S.phase='quiz';
+ else S.phase='ramble';
+ save(); render();
+};
+el('tVers').onclick=()=>vVersions();
+el('tBlueprint').onclick=()=>vBlueprint();
+render();
+</script></body></html>
