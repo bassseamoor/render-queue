@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>The Funnel v2</title>
+<title>The Funnel v3</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -77,16 +77,23 @@ pre{background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:15px;p
 .kv{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:14px;padding:14px;white-space:pre-wrap;line-height:1.7;color:#c9d4f2;margin-top:8px}
 .frontierRow{display:flex;gap:8px;margin-top:12px}
 .frontierRow input{flex:1;margin-top:0}
+.libGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.libCard{border:1px solid var(--line);border-radius:14px;padding:12px;background:rgba(255,255,255,.03)}
+.libCard b{font-size:14px}
+.libCard .meta{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.libCard .meta button{padding:5px 10px;font-size:12px}
+@media (max-width:480px){.libGrid{grid-template-columns:1fr}}
 .keepPin{border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.07);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-size:13px;line-height:1.5}
 @media (max-width:480px){.card{padding:18px 16px}h1{font-size:22px}.q{font-size:17px}}
 </style></head><body>
 <div id="app">
 <h1><span class="spin">🌀</span> The Funnel <small>v2</small></h1>
-<div class="sub">two-sided quiz · adaptive follow-ups · fills from the real worker bank · versions never lost</div>
+<div class="sub">two-sided quiz · adaptive follow-ups · fills from the real worker bank · a library of your apps</div>
 <div class="rules" id="ruleStrip"></div>
 <div class="tabs">
 <button class="ghost" id="tBuild">Build</button>
 <button class="ghost" id="tBlueprint">Blueprint</button>
+<button class="ghost" id="tLib">Library</button>
 <button class="ghost" id="tVers">Versions <span id="vCount"></span></button>
 </div>
 <div id="screen"></div>
@@ -146,6 +153,25 @@ function renderVC(){ document.getElementById('vCount').textContent = S.answers.l
 const el = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 S.learned=S.learned||{};
+S.library=S.library||[];
+S.extraApps=S.extraApps||[];
+/* everything shipped before the library existed — the funnel can use all of it */
+const SEED_APPS=[
+ ['Parallax Engine','https://bassseamoor.github.io/render-queue/parallax-engine.html'],
+ ['Canal Metropolis','https://bassseamoor.github.io/render-queue/canal-metropolis.html'],
+ ['FORGE image engine','https://bassseamoor.github.io/render-queue/forge.html'],
+ ['FORGE 2.0 scene runtime','https://bassseamoor.github.io/render-queue/forge-2.html'],
+ ['STRATA world engine','https://bassseamoor.github.io/render-queue/strata.html'],
+ ['Road Atlas v2','https://bassseamoor.github.io/render-queue/road-atlas-v2.html'],
+ ['Vita Verde film studio','https://bassseamoor.github.io/render-queue/vita-verde.html'],
+ ['Aquarium','https://bassseamoor.github.io/render-queue/aquarium.html'],
+ ['Fireplace','https://bassseamoor.github.io/render-queue/fireplace.html'],
+ ['Rainforest','https://bassseamoor.github.io/render-queue/rainforest.html'],
+ ['Road Trip Studio','https://bassseamoor.github.io/render-queue/roadtrip.html'],
+ ['Quiz funnel v2','https://bassseamoor.github.io/render-queue/quiz-funnel-v2.html'],
+ ['Alien Planet','https://bassseamoor.github.io/render-queue/alien-planet.html'],
+ ['Molten','https://bassseamoor.github.io/render-queue/molten.html']
+];
 /* re-apply learned frontier options (rule 11) */
 Object.entries(S.learned).forEach(([qid,arr])=>{
  const q=QUESTIONS.find(q=>q.id===qid); if(!q||!q.opts) return;
@@ -416,7 +442,7 @@ function vVersions(){
  el('importBtn').onclick=()=>el('import').click();
  el('import').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ S=JSON.parse(r.result); save(); render() }catch(_){ alert('bad backup file') } }; r.readAsText(f) };
  el('shareBtnV2').onclick=function(){ copyShare(this); };
-el('wipe').onclick=()=>{ if(confirm('Clear all versions and start over? (Export a backup first if you want to keep them.)')){ S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null}; save(); render() } };
+el('wipe').onclick=()=>{ if(confirm('Clear all versions and start over? (Export a backup first if you want to keep them.)')){ const lib=S.library||[]; const xa=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:lib,extraApps:xa}; save(); render() } };
  document.querySelectorAll('[data-rerun]').forEach(b=> b.onclick=()=>{
   const ix=+b.dataset.rerun;
   const target=S.answers[ix];
@@ -424,6 +450,46 @@ el('wipe').onclick=()=>{ if(confirm('Clear all versions and start over? (Export 
   S.answers=S.answers.slice(0,ix);
   S.backTo=target?target.id:null;
   S.done=false; S.phase='quiz'; save(); render();
+ });
+}
+
+/* ---- LIBRARY: humans build many apps, not one ---- */
+function vLibrary(){
+ const lib=S.library||[];
+ const cards=lib.map((e,ix)=>{
+  const n=e.answers.length, fy=e.answers.filter(a=>a.by==='you').length;
+  return `<div class="libCard"><b>${esc(e.title)}</b><br><span class="bsub">${esc(e.ts)} · ${n} answers (${fy} from you)</span>
+  <div class="meta"><button class="ghost" data-open="${ix}">Open</button><button class="ghost" data-del="${ix}">Delete</button></div></div>`;
+ }).join('')||'<div class="sub">Nothing saved yet. Finish a build, hit 📚 Save to library, and it lives here.</div>';
+ const shipped=SEED_APPS.concat(S.extraApps||[]).map((a,ix)=>{
+  return `<div class="libCard"><b>${esc(a[0])}</b><br><span class="bsub">shipped · tap to open</span>
+  <div class="meta"><a href="${esc(a[1])}" target="_blank" rel="noopener" style="text-decoration:none"><button class="ghost">Open ↗</button></a>${ix>=SEED_APPS.length?`<button class="ghost" data-xdel="${ix-SEED_APPS.length}">Remove</button>`:''}</div></div>`;
+ }).join('');
+ show(`<div class="card"><div class="q">Library — every app you've built</div>
+ <div class="sub">Not one app you keep updating. A shelf of everything — funnel-made and everything you shipped before.</div>
+ <div class="blabel">From the funnel</div><div class="libGrid">${cards}</div>
+ <div class="blabel" style="margin-top:14px">Your existing builds</div><div class="libGrid">${shipped}</div>
+ <div class="frontierRow" style="margin-top:12px"><input type="text" id="appTitle" placeholder="App title…"><input type="text" id="appUrl" placeholder="https://…"><button class="ghost" id="appAdd" style="white-space:nowrap">Add</button></div>
+ <div class="row" style="margin-top:12px"><button class="ghost" id="libNew">＋ New build</button></div></div>`);
+ el('appAdd').onclick=()=>{
+  const ti=el('appTitle').value.trim(), ur=el('appUrl').value.trim();
+  if(ti.length<2||!/^https?:\/\//.test(ur)){ el('appTitle').focus(); return }
+  S.extraApps.push([ti,ur]); save(); vLibrary();
+ };
+ document.querySelectorAll('[data-xdel]').forEach(b=> b.onclick=()=>{
+  S.extraApps.splice(+b.dataset.xdel,1); save(); vLibrary();
+ });
+ el('libNew').onclick=()=>{ const l2=S.library||[]; const xa2=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:l2,extraApps:xa2}; save(); render() };
+ document.querySelectorAll('[data-open]').forEach(b=> b.onclick=()=>{
+  const e=S.library[+b.dataset.open]; if(!e) return;
+  S.answers=JSON.parse(JSON.stringify(e.answers));
+  S.blueprint=e.blueprint?JSON.parse(JSON.stringify(e.blueprint)):null;
+  S.draft=e.draft?JSON.parse(JSON.stringify(e.draft)):S.draft;
+  S.kept=null; S.done=true; S.phase='verdict'; save(); render();
+ });
+ document.querySelectorAll('[data-del]').forEach(b=> b.onclick=()=>{
+  if(!confirm('Delete "'+(S.library[+b.dataset.del]||{}).title+'"?')) return;
+  S.library.splice(+b.dataset.del,1); save(); vLibrary();
  });
 }
 
@@ -439,14 +505,22 @@ function vVerdict(){
  <div class="meter"><div class="bar"><i style="width:${fromYouPct}%"></i></div>${fromYouPct}% from you · ${follows} adaptive follow-ups answered</div>
  <div class="sub" style="margin-top:8px">Builders get this spec, the destination, and the done-criteria — nothing else.</div>
  <pre>${esc(callStr)}</pre>
- <div class="row"><button id="copy">Copy spec JSON</button><button class="ghost" id="dl">Download</button><button class="ghost" id="export2">Export backup</button><button class="ghost" id="keepBtn">⭐ Keep this version</button><button class="ghost" id="shareBtnV">Copy share link</button><button class="ghost" id="again">New build</button></div>
+ <div class="row"><button id="copy">Copy spec JSON</button><button class="ghost" id="dl">Download</button><button class="ghost" id="export2">Export backup</button><button class="ghost" id="keepBtn">⭐ Keep this version</button><button class="ghost" id="libSave">📚 Save to library</button><button class="ghost" id="shareBtnV">Copy share link</button><button class="ghost" id="again">New build</button></div>
  <div class="gates" id="gates"></div></div>`);
  el('copy').onclick=()=>{ navigator.clipboard.writeText(JSON.stringify(spec,null,2)).then(()=>{ el('gates').textContent='copied ✓' }) };
  el('dl').onclick=()=>{ const b=new Blob([JSON.stringify(spec,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-spec.json'; a.click() };
  el('export2').onclick=()=>{ const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-v3-backup.json'; a.click() };
- el('again').onclick=()=>{ S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null}; save(); render() };
+ el('again').onclick=()=>{ const lib=S.library||[]; const xa=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:lib,extraApps:xa}; save(); render() };
  el('keepBtn').onclick=()=>{ S.kept={spec:spec,ts:new Date().toLocaleString()}; save(); el('gates').textContent='⭐ kept — pinned at the top of Versions'; };
  el('shareBtnV').onclick=function(){ copyShare(this); };
+ el('libSave').onclick=()=>{
+  const snap=JSON.stringify(S.answers.map(a=>[a.id,a.text,a.by]));
+  if((S.library||[]).some(e=>e.snap===snap)){ el('gates').textContent='📚 already in your library'; return }
+  S.library.push({id:'lib'+Date.now(), title:(S.draft&&S.draft.title)||'Untitled build', ts:new Date().toLocaleString(),
+   snap:snap, answers:JSON.parse(JSON.stringify(S.answers)), blueprint:S.blueprint?JSON.parse(JSON.stringify(S.blueprint)):null,
+   draft:S.draft?JSON.parse(JSON.stringify(S.draft)):null});
+  save(); el('gates').textContent='📚 saved to your library — build as many as you want';
+ };
 }
 
 function render(){
@@ -464,6 +538,7 @@ el('tBuild').onclick=()=>{
  save(); render();
 };
 el('tVers').onclick=()=>vVersions();
+el('tLib').onclick=()=>vLibrary();
 el('tBlueprint').onclick=()=>vBlueprint();
 render();
 </script></body></html>
