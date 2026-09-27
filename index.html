@@ -388,19 +388,27 @@ function setStage(s) {
   renderStage();
   renderFavPicker();
 }
-function stageUrl(studioKey, seed, preset, qid) {
+function encParams(p) {
+  try {
+    return btoa(unescape(encodeURIComponent(JSON.stringify(p || {}))))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  } catch (e) { return ""; }
+}
+function stageUrl(studioKey, seed, preset, qid, params) {
   const st = STUDIOS[studioKey];
   const wh = (preset.q || "1920x1080").split("x");
   let url = st.url + "?render=1&seed=" + encodeURIComponent(seed) +
     "&fps=" + preset.fps + "&seconds=" + preset.seconds +
     "&w=" + wh[0] + "&h=" + wh[1];
   if (qid) url += "&qid=" + qid;
+  const pe = params ? encParams(params) : "";
+  if (pe) url += "&p=" + pe;
   return url;
 }
 function renderNow(presetId) {
   const s = getStage();
   if (!s || !STUDIOS[s.studio]) return;
-  location.href = stageUrl(s.studio, s.seed, PRESETS[presetId] || PRESETS.standard);
+  location.href = stageUrl(s.studio, s.seed, PRESETS[presetId] || PRESETS.standard, null, s.params);
 }
 function renderStage() {
   const tray = $("stageTray");
@@ -416,6 +424,7 @@ function renderStage() {
     '<div class="stage-body">' +
     '<div class="stage-studio">' + esc(cleanName(st.name)) + '</div>' +
     '<div class="stage-seed">' + esc(s.seed) + '</div>' +
+    (s.params ? '<div class="stage-seed" style="color:#8fd6a4">⚙️ settings saved</div>' : '') +
     '<div class="presets">' +
     '<button class="preset test" data-p="test"><span class="pl">' + PRESETS.test.label + '</span><span class="ps">' + PRESETS.test.sub + '</span></button>' +
     '<button class="preset" data-p="standard"><span class="pl">' + PRESETS.standard.label + '</span><span class="ps">' + PRESETS.standard.sub + '</span></button>' +
@@ -443,9 +452,12 @@ function renderStage() {
     $("customToggle").textContent = open ? "⚙️ Custom settings ▸" : "⚙️ Custom settings ▾";
   };
   $("customGo").onclick = () => {
-    location.href = stageUrl(s.studio, s.seed, { seconds: +$("cSecs").value, fps: +$("cFps").value, q: $("cQ").value });
+    location.href = stageUrl(s.studio, s.seed, { seconds: +$("cSecs").value, fps: +$("cFps").value, q: $("cQ").value }, null, s.params);
   };
-  $("stageTweak").onclick = () => rqOpenStudio(st.url + "?seed=" + encodeURIComponent(s.seed), cleanName(st.name));
+  $("stageTweak").onclick = () => {
+      const pe = s.params ? encParams(s.params) : "";
+      rqOpenStudio(st.url + "?seed=" + encodeURIComponent(s.seed) + (pe ? "&p=" + pe : ""), cleanName(st.name));
+    };
   $("stageQueue").onclick = queueStaged;
   $("stageClear").onclick = () => setStage(null);
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -465,6 +477,7 @@ async function queueStaged() {
     status: "queued",
     created: new Date().toISOString(),
     thumb: s.thumb || null,
+    params: s.params || null,
   };
   queue.items = queue.items || [];
   queue.items.push(it);
@@ -485,7 +498,7 @@ function loadFavorites() {
       if (f && f.seed) {
         let sk = FSC[m[1]];
         if (m[1] === "parallax" && /^PX1-1-/i.test(String(f.seed))) sk = "canal-metropolis";
-        out.push({ studio: sk, seed: f.seed, thumb: f.thumb || null, ts: f.ts || 0 });
+        out.push({ studio: sk, seed: f.seed, thumb: f.thumb || null, ts: f.ts || 0, params: f.params || null });
       }
     }
   }
@@ -510,7 +523,7 @@ function renderFavPicker() {
     b.innerHTML = '<img src="' + (f.thumb || PLACEHOLDER) + '" alt="">' +
       '<div class="fb"><div class="fs">' + esc(cleanName(st.name || f.studio)) + '</div>' +
       '<div class="fc">' + esc(f.seed) + '</div></div>';
-    b.onclick = () => setStage({ studio: f.studio, seed: f.seed, thumb: f.thumb || null });
+    b.onclick = () => setStage({ studio: f.studio, seed: f.seed, thumb: f.thumb || null, params: f.params || null });
     row.appendChild(b);
   }
 }
@@ -586,7 +599,7 @@ function render() {
     const br = d.querySelector(".btn-render");
     if (br) br.onclick = () => {
       it.status = "rendering";
-      location.href = stageUrl(resolveStudio(it).key, it.seed, { seconds: it.seconds, fps: it.fps, q: it.q }, it.id);
+      location.href = stageUrl(resolveStudio(it).key, it.seed, { seconds: it.seconds, fps: it.fps, q: it.q }, it.id, it.params);
     };
     const bs = d.querySelector(".btn-soon");
     if (bs) bs.onclick = () => alert("One-tap render is coming to this studio — open it from its name link above to hunt for seeds for now.");
