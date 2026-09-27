@@ -64,7 +64,9 @@
     },
     params: H.controls.map(liveParam),
     canvas: function () { return H.canvas(); },
-    fileBase: function (seedStr) { return 'canal-metropolis-' + String(seedStr).replace(/[^\w\-]+/g, '_'); }
+    fileBase: function (seedStr) { return 'canal-metropolis-' + String(seedStr).replace(/[^\w\-]+/g, '_'); },
+    getCamera: function () { return (typeof H.getCamera === 'function') ? H.getCamera() : null; },
+    setCamera: function (c) { if (typeof H.setCamera === 'function') H.setCamera(c); },
   };
   SeedConsole.init(window.SeedConsoleAdapter);
 })();

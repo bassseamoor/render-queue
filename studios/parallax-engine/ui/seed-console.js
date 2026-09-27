@@ -22,6 +22,9 @@
  *   ],
  *   canvas:   () => HTMLCanvasElement|null,  // main render canvas for recording
  *   fileBase: (seedStr) => string, // filename base for recordings (no extension)
+ *   getCamera: () => object|null,  // OPTIONAL: snapshot of the user's camera
+ *                                   // (orbit/zoom/pan the console doesn't own)
+ *   setCamera: (cam) => void,      // OPTIONAL: restore a camera from getCamera()
  * }
  * The console calls setSeed on load (with ?seed= override or a random seed).
  */
@@ -123,19 +126,23 @@
       try { q = new URLSearchParams(location.search).get('seed'); } catch (e) {}
       var start = (q && q.trim()) ? q.trim() : A.randomSeed();
       this.applySeed(start, { silent: true });
-      // Restore a full settings snapshot from ?p= (base64url JSON). Favorites
-      // carry every setting, so a starred render reopens exactly as it was saved.
+      // Restore a full snapshot from ?p= (base64url JSON: {v:1,params,camera}).
+      // Favorites carry every setting plus the camera, so a starred render
+      // reopens exactly as it was saved.
       try {
         var pRaw = new URLSearchParams(location.search).get('p');
         if (pRaw) {
           var pB64 = String(pRaw).replace(/-/g, '+').replace(/_/g, '/');
           while (pB64.length % 4) pB64 += '=';
-          var pVals = JSON.parse(decodeURIComponent(escape(atob(pB64))));
+          var pSnap = JSON.parse(decodeURIComponent(escape(atob(pB64))));
+          var pVals = (pSnap && pSnap.v === 1 && pSnap.params) ? pSnap.params : pSnap;
           var selfP = this;
           (this.A.params || []).forEach(function (p) {
             if (pVals[p.key] != null) { try { p.set(pVals[p.key]); } catch (e) {} }
           });
           selfP.refreshParams();
+          var pCam = (pSnap && pSnap.v === 1) ? (pSnap.camera || null) : null;
+          if (pCam && typeof this.A.setCamera === 'function') { try { this.A.setCamera(pCam); } catch (e) {} }
         }
       } catch (e) {}
       // H key or double-tap toggles full chrome hide (clean recordings)
@@ -361,6 +368,12 @@
       // drawing buffers are fresh, then save the favorite with it.
       function save(thumb) {
         var entry = { seed: s, params: snap, ts: Date.now() };
+        try {
+          if (typeof self.A.getCamera === 'function') {
+            var scCam = self.A.getCamera();
+            if (scCam) entry.camera = scCam;
+          }
+        } catch (e) { /* camera is a bonus, never a blocker */ }
         if (thumb) entry.thumb = thumb;
         var list = self.favs.get([]);
         list.unshift(entry);
@@ -427,6 +440,9 @@
                 if (f.params[p.key] != null) { try { p.set(f.params[p.key]); } catch (e) {} }
               });
               self.refreshParams();
+              if (f.camera && typeof self.A.setCamera === 'function') {
+                try { self.A.setCamera(f.camera); } catch (e) {}
+              }
             }, 50);
           }
           self.toast('Loaded favorite: ' + f.seed);

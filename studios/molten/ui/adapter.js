@@ -63,7 +63,9 @@
       viewParam
     ],
     canvas: function () { return H.canvas(); },
-    fileBase: function (seedStr) { return 'molten-' + String(seedStr).replace(/[^\w\-]+/g, '_'); }
+    fileBase: function (seedStr) { return 'molten-' + String(seedStr).replace(/[^\w\-]+/g, '_'); },
+    getCamera: function () { var st = H.getState(); return { yaw: st.yaw, pitch: st.pitch, zoom: st.zoom }; },
+    setCamera: function (c) { if (!c) return; H.update('yaw', c.yaw, false); H.update('pitch', c.pitch, false); H.update('zoom', c.zoom, false); },
   };
   SeedConsole.init(window.SeedConsoleAdapter);
 })();

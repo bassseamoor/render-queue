@@ -1785,7 +1785,7 @@ if(p===photoPrograms.surface){sampler(p,'uShadow',world.shadow.tex,2);sampler(p,
 // Mouse: drag orbits, wheel zooms, Shift/right-drag pans.
 // The exported video always uses the cinematic camera — every read below
 // and in commonUniforms is gated on !window.__renderMode.
-var freeCam={active:false,tO:0,tE:0,tD:0,tPX:0,tPZ:0,aO:0,aE:0,aD:0,aPX:0,aPZ:0,tZK:1,aZK:1,tCX:0,tCY:0,aCX:0,aCY:0,lastT:-1};
+var freeCam={active:false,locked:false,tO:0,tE:0,tD:0,tPX:0,tPZ:0,aO:0,aE:0,aD:0,aPX:0,aPZ:0,tZK:1,aZK:1,tCX:0,tCY:0,aCX:0,aCY:0,lastT:-1};
 function camTakeover(){
  if(window.__renderMode||!current||!current.city)return false;
  if(freeCam.active)return true;
@@ -1817,7 +1817,7 @@ function renderPhotoCity(w,t,params,dest){if(!photoPrograms)photoPrograms={surfa
  if(!w.flagTex)w.flagTex=bakeFlagTexture();
  updateBlimpSign();
  if(!w.shadow){w.shadow=target(1024,1024);gl.bindTexture(gl.TEXTURE_2D,w.shadow.tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);w.shadowAt=-100;}
- const s=w.city,phase=s.phase,drift=params.drift,RM=window.__renderMode,fc=(!RM&&freeCam.active)?freeCam:null;
+ const s=w.city,phase=s.phase,drift=params.drift,RM=window.__renderMode,fc=((!RM||freeCam.locked)&&freeCam.active)?freeCam:null;
  const angle=fc?fc.aO:(s.angle+.055*organic(elapsed*.24,phase)*drift);
  const dist=fc?fc.aD:s.distance;
  const eye=[Math.sin(angle)*dist,fc?fc.aE:s.elevation,Math.cos(angle)*dist],focus=fc?[fc.aPX,1.05,fc.aPZ]:[organic(elapsed*.20,phase)*1.5*drift,1.05,organic(elapsed*.13,phase+2)*1.5*drift],fov=(37+.25*organic(elapsed*.34,phase+4))*Math.PI/180;const view=matMul(perspective(fov,width/height),lookAt(eye,focus));
@@ -1905,7 +1905,7 @@ const landscapeClock=t=>t*.1+elapsed*.9;
 function build(c,time=0){const world={config:JSON.parse(JSON.stringify(c)),planes:[],particles:[],epoch:c.realm===1?0:Math.floor(landscapeClock(time)/360),next:null,born:time,city:c.realm===1?cityPlan(c):null};for(let i=1;i<8;i++)world.planes[i]=makePlane(c,i,world.epoch);if(c.realm!==1){world.particles[0]=makeParticles(c,0);world.particles[1]=makeParticles(c,1);}return world}
 function disposeWorld(w){if(!w)return;if(w.shadow)dropTarget(w.shadow);if(w.materialTexture)gl.deleteTexture(w.materialTexture);if(w.billboardTex)gl.deleteTexture(w.billboardTex);if(w.foliageTex)gl.deleteTexture(w.foliageTex);w.planes.forEach(m=>m&&m.dispose());w.particles.forEach(m=>m.dispose());if(w.next)w.next.forEach(m=>m&&m.dispose())}
 let current,previous=null,transitionStart=-100,worldTime=0,lastFrame=0,elapsed=0,playbackRate=60,TRANSITION_DUR=0.3,previewEnd=null,seeking=false,quality=1,qualityTarget=1,slowCount=0,goodCount=0,frames=0,smoothed={...defaults};
-function commonUniforms(p,w,t,params){const c=w.config,pal=realms[c.realm],s=storyAt(c,t),motion=elapsed,phase=(hash(c.layout+':weather')%10000)*.01;const drift=params.drift;const fc2=(!window.__renderMode&&freeCam.active)?freeCam:null;const camera=[(organic(motion*.43,phase)*.009+organic(motion*.11,phase+2)*.015)*drift+(fc2?fc2.aCX:0),(organic(motion*.29,phase+4)*.003+organic(motion*.073,phase+1)*.005)*drift+(fc2?fc2.aCY:0)];const zoom=(1.+.015*organic(motion*.94,phase+5))*(fc2?fc2.aZK:1);const daylight=c.realm===4||c.realm===5?0:s.day;const warm=Math.max(0,s.warmth)*1.3;const key=pal.light.map((v,i)=>mix(v,[1,.76,.43][i],warm));uniform(p,'uSize',[width,height]);uniform(p,'uLens',params.focus*lightUI.tilt);uniform(p,'uCamera',camera);uniform(p,'uZoom',zoom);uniform(p,'uTime',motion);uniform(p,'uStory',t);uniform(p,'uDay',s.day);uniform(p,'uEnergy',s.energy);uniform(p,'uGrowth',s.growth);uniform(p,'uFront',s.front);uniform(p,'uRealm',c.realm);uniform(p,'uSeed',hash(c.detail)%8192);uniform(p,'uWeather',organic(motion*.82,phase));uniform(p,'uMist',params.mist*s.mist);uniform(p,'uGlow',params.glow*(.65+s.energy*.55));uniform(p,'uRays',params.rays*(.6+s.day*.9));uniform(p,'uSky',pal.sky.map((v,i)=>v*(1+daylight*.7)+key[i]*daylight*.43));uniform(p,'uFog',pal.fog.map((v,i)=>v+key[i]*daylight*.30));uniform(p,'uKey',key);uniform(p,'uKeyPos',[pal.key[0]+Math.sin(s.sun*2.3)*.27,pal.key[1]+Math.sin(s.sun*3.1)*.09])}
+function commonUniforms(p,w,t,params){const c=w.config,pal=realms[c.realm],s=storyAt(c,t),motion=elapsed,phase=(hash(c.layout+':weather')%10000)*.01;const drift=params.drift;const fc2=((!window.__renderMode||freeCam.locked)&&freeCam.active)?freeCam:null;const camera=[(organic(motion*.43,phase)*.009+organic(motion*.11,phase+2)*.015)*drift+(fc2?fc2.aCX:0),(organic(motion*.29,phase+4)*.003+organic(motion*.073,phase+1)*.005)*drift+(fc2?fc2.aCY:0)];const zoom=(1.+.015*organic(motion*.94,phase+5))*(fc2?fc2.aZK:1);const daylight=c.realm===4||c.realm===5?0:s.day;const warm=Math.max(0,s.warmth)*1.3;const key=pal.light.map((v,i)=>mix(v,[1,.76,.43][i],warm));uniform(p,'uSize',[width,height]);uniform(p,'uLens',params.focus*lightUI.tilt);uniform(p,'uCamera',camera);uniform(p,'uZoom',zoom);uniform(p,'uTime',motion);uniform(p,'uStory',t);uniform(p,'uDay',s.day);uniform(p,'uEnergy',s.energy);uniform(p,'uGrowth',s.growth);uniform(p,'uFront',s.front);uniform(p,'uRealm',c.realm);uniform(p,'uSeed',hash(c.detail)%8192);uniform(p,'uWeather',organic(motion*.82,phase));uniform(p,'uMist',params.mist*s.mist);uniform(p,'uGlow',params.glow*(.65+s.energy*.55));uniform(p,'uRays',params.rays*(.6+s.day*.9));uniform(p,'uSky',pal.sky.map((v,i)=>v*(1+daylight*.7)+key[i]*daylight*.43));uniform(p,'uFog',pal.fog.map((v,i)=>v+key[i]*daylight*.30));uniform(p,'uKey',key);uniform(p,'uKeyPos',[pal.key[0]+Math.sin(s.sun*2.3)*.27,pal.key[1]+Math.sin(s.sun*3.1)*.09])}
 function drawMesh(m,depth,w,t,params,particle=false){const p=programs.mesh;gl.useProgram(p.p);commonUniforms(p,w,t,params);uniform(p,'uDepth',depth);const cut=m.count/12*quality*params.density/1.5;uniform(p,'uParticleCut',particle?cut:-1);gl.bindBuffer(gl.ARRAY_BUFFER,m.buffer);attribute(p,'aPos',2,64,0);attribute(p,'aColor',4,64,8);attribute(p,'aMeta',4,64,24);attribute(p,'aUV',2,64,40);attribute(p,'aBuild',4,64,48);gl.drawArrays(gl.TRIANGLES,0,particle?Math.min(m.count,Math.ceil(cut)*12):m.count)}
 function composite(tex,dest,blur,opacity=1){gl.bindFramebuffer(gl.FRAMEBUFFER,dest.fb);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);const p=programs.composite;gl.useProgram(p.p);uniform(p,'uSize',[width,height]);uniform(p,'uBlur',blur);uniform(p,'uOpacity',opacity);sampler(p,'uTex',tex,0);screen(p)}
 function mist(w,t,params,target,stage){gl.bindFramebuffer(gl.FRAMEBUFFER,target.fb);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);const p=programs.mist;gl.useProgram(p.p);commonUniforms(p,w,t,params);uniform(p,'uStage',stage);screen(p)}
@@ -1947,7 +1947,9 @@ rng:rng,fresh:fresh,mix:mix,clamp:clamp,hash:hash,codeOf:codeOf,parseCode:parseC
 cityFamily:cityFamily,changeWorld:changeWorld,disposeWorld:disposeWorld,syncLensUI:syncLensUI,
 defaults:defaults,controls:controls,canvas:function(){return canvas;},
 get config(){return config;},get smoothed(){return smoothed;},get current(){return current;},
-get previous(){return previous;},set previous(v){previous=v;}};
+get previous(){return previous;},set previous(v){previous=v;},
+getCamera:function(){return{active:freeCam.active,tO:freeCam.tO,tE:freeCam.tE,tD:freeCam.tD,tPX:freeCam.tPX,tPZ:freeCam.tPZ,tZK:freeCam.tZK,tCX:freeCam.tCX,tCY:freeCam.tCY};},
+setCamera:function(c){if(!c)return;var keys=['tO','tE','tD','tPX','tPZ','tZK','tCX','tCY'],k,a,i;for(i=0;i<keys.length;i++){k=keys[i];if(c[k]==null)continue;freeCam[k]=c[k];a='a'+k.slice(1);freeCam[a]=c[k];}freeCam.active=!!c.active;freeCam.locked=!!c.active;if(freeCam.active){var cr=$('camReset');if(cr)cr.hidden=false;}}};
 function draw(now){
 var RM=window.__renderMode;
 if(RM){
@@ -2058,7 +2060,7 @@ canvas.addEventListener('wheel',function(e){
  freeCam.tD=clamp(freeCam.tD*z,14,60);freeCam.tZK=clamp(freeCam.tZK*z,.45,3);
 },{passive:false});
 canvas.addEventListener('contextmenu',function(e){if(freeCam.active)e.preventDefault();});
-$('camReset').onclick=()=>{freeCam.active=false;freeCam.lastT=-1;$('camReset').hidden=true;};
+$('camReset').onclick=()=>{freeCam.active=false;freeCam.locked=false;freeCam.lastT=-1;$('camReset').hidden=true;};
 document.addEventListener('keydown',e=>{if(e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement)return;if(e.key.toLowerCase()==='h'||e.key==='Escape')setHidden(!document.body.classList.contains('hidden'));if(e.key.toLowerCase()==='f')$('fullscreen').click()});
 document.querySelectorAll('[data-drawer]').forEach(b=>b.onclick=()=>{const was=$(b.dataset.drawer).classList.contains('open');document.querySelectorAll('.drawer').forEach(e=>e.classList.remove('open'));document.querySelectorAll('[data-drawer]').forEach(e=>e.setAttribute('aria-expanded','false'));if(!was){$(b.dataset.drawer).classList.add('open');b.setAttribute('aria-expanded','true');if(b.dataset.drawer==='library')showHistory()}scheduleHide()});
 document.querySelector('.dock').addEventListener('pointerdown',scheduleHide);

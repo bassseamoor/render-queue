@@ -72,6 +72,8 @@ if (!H) throw new Error('[alien-planet] studio hooks missing — app.js must loa
       param('distance', 'Forest reach', 90, 260, 10, true)
     ],
     canvas: function () { return document.getElementById('scene'); },
+    getCamera: function () { return (typeof H.getCamera === 'function') ? H.getCamera() : null; },
+    setCamera: function (c) { if (typeof H.setCamera === 'function') H.setCamera(c); },
     fileBase: function (seedStr) {
       var s = seedStr == null ? H.cfg.seed : seedStr;
       return 'xenora-' + String(s).replace(/[^a-z0-9_-]/gi, '-').slice(0, 40);

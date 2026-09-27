@@ -267,7 +267,9 @@ window.__renderReset=function(){
 window.__alienHooks={
 regenerate:regenerate,outputs:outputs,save:save,
 get cfg(){return cfg;},set cfg(v){cfg=v;},
-get recording(){return recording;},set recording(v){recording=v;}};
+get recording(){return recording;},set recording(v){recording=v;},
+getCamera:function(){return{yaw:yaw,pitch:pitch,targetYaw:targetYaw,targetPitch:targetPitch};},
+setCamera:function(c){if(!c)return;if(c.yaw!=null)yaw=c.yaw;if(c.pitch!=null)pitch=c.pitch;if(c.targetYaw!=null)targetYaw=c.targetYaw;if(c.targetPitch!=null)targetPitch=c.targetPitch;}};
 
 function frame(now){
 var RM=window.__renderMode;

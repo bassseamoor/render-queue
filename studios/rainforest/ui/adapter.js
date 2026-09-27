@@ -87,6 +87,8 @@ window.SeedConsoleAdapter = (function () {
     },
     params: params,
     canvas: function () { return H.$('scene'); },
+    getCamera: function () { return (typeof H.getCamera === 'function') ? H.getCamera() : null; },
+    setCamera: function (c) { if (typeof H.setCamera === 'function') H.setCamera(c); },
     fileBase: function (seed) {
       return 'rainforest-' +
         String(seed || '').toLowerCase()
