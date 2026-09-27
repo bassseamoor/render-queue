@@ -589,7 +589,7 @@ main{inset:var(--top-h) 0 0 0;padding:16px 12px 120px}
           </div>
           <div id="planProj" hidden>
             <div class="plan-picker" id="planPicker"></div>
-            <div class="plan-bar" id="planBar" hidden><span id="planBarName"></span><span class="sp"></span><button class="btn" id="planRename">Rename</button><button class="btn" id="planDelete">Delete</button><button class="btn" id="planReset" hidden>Reset to original</button></div>
+            <div class="plan-bar" id="planBar" hidden><span id="planBarName"></span><span class="sp"></span><button class="btn" id="planCopy">Copy</button><button class="btn" id="planRename">Rename</button><button class="btn" id="planDelete">Delete</button><button class="btn" id="planReset" hidden>Reset to original</button></div>
             <div class="build-row" id="buildRow" hidden><button class="btn primary" id="planBuild">⬆ Push</button><span class="build-status" id="buildStatus"></span></div>
             <div class="aq-wrap">
               <div class="aq-side" id="planSide"></div>
@@ -2508,10 +2508,12 @@ function openPlanItem(id){
   var bar=$('#planBar');
   if(bar){
     var showBar=!!planUserId,isOv=!!ov;
-    bar.hidden=!showBar;
-    var nm=$('#planBarName');if(nm)nm.textContent=isOv?'Your edits \u2014 stored on this device. The original is kept.':(showBar?'Your plan \u2014 stored on this device':'');
-    var rn=$('#planRename'),dl=$('#planDelete'),rs=$('#planReset');
-    if(rn)rn.hidden=isOv;if(dl)dl.hidden=isOv;if(rs)rs.hidden=!isOv;
+    var canCopy=pr.kind!=='aq';
+    bar.hidden=!(showBar||canCopy);
+    var nm=$('#planBarName');if(nm)nm.textContent=isOv?'Your edits \u2014 stored on this device. The original is kept.':(showBar?'Your plan \u2014 stored on this device':(canCopy?'Blueprint \u2014 built into the app':''));
+    var cp=$('#planCopy'),rn=$('#planRename'),dl=$('#planDelete'),rs=$('#planReset');
+    if(cp)cp.hidden=!canCopy;
+    if(rn)rn.hidden=isOv||!planUserId;if(dl)dl.hidden=isOv||!planUserId;if(rs)rs.hidden=!isOv;
   }
   var c=$('#crumbProj');
   if(pr.kind==='aq'){
@@ -2568,6 +2570,23 @@ function planDeleteCur(){
     toast('Plan deleted.');
   });
 }
+function planCopyCur(){
+  var t=(window.__evoPlan&&window.__evoPlan.txt)||'';
+  if(!t){toast('Nothing to copy yet.');return;}
+  function done(){toast('Blueprint copied.');}
+  function fallback(){
+    try{
+      var ta=document.createElement('textarea');
+      ta.value=t;ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
+      document.body.appendChild(ta);ta.select();ta.setSelectionRange(0,ta.value.length);
+      var ok=document.execCommand('copy');ta.remove();
+      if(ok)done();else toast('Copy did not work on this browser.');
+    }catch(e){toast('Copy did not work on this browser.');}
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,fallback);}
+  else fallback();
+}
 $('#swMoor').addEventListener('click',showMoor);
 $('#swPlans').addEventListener('click',function(){showPlans()});
 function planResetCur(){
@@ -2582,6 +2601,7 @@ function planResetCur(){
   });
 }
 (function(){
+  var cp=$('#planCopy');if(cp)cp.addEventListener('click',planCopyCur);
   var rn=$('#planRename');if(rn)rn.addEventListener('click',planRenameCur);
   var dl=$('#planDelete');if(dl)dl.addEventListener('click',planDeleteCur);
   var rs=$('#planReset');if(rs)rs.addEventListener('click',planResetCur);
@@ -3968,7 +3988,7 @@ window.__moorImportStuff=function(file,cb){
 </script>
 
 <script>/* ===== inlined: ui:live-updater (relay v3) ===== */
-window.__MOOR_LIVE_VER='20260926-022';
+window.__MOOR_LIVE_VER='20260926-023';
 (function(){
   // Relay v3: same connections as v2 (VER_URL + three bundle URLs, same document-swap).
   // Changes vs v2, all append-only:
