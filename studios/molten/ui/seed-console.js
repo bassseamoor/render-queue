@@ -122,6 +122,21 @@
       try { q = new URLSearchParams(location.search).get('seed'); } catch (e) {}
       var start = (q && q.trim()) ? q.trim() : A.randomSeed();
       this.applySeed(start, { silent: true });
+      // Restore a full settings snapshot from ?p= (base64url JSON). Favorites
+      // carry every setting, so a starred render reopens exactly as it was saved.
+      try {
+        var pRaw = new URLSearchParams(location.search).get('p');
+        if (pRaw) {
+          var pB64 = String(pRaw).replace(/-/g, '+').replace(/_/g, '/');
+          while (pB64.length % 4) pB64 += '=';
+          var pVals = JSON.parse(decodeURIComponent(escape(atob(pB64))));
+          var selfP = this;
+          (this.A.params || []).forEach(function (p) {
+            if (pVals[p.key] != null) { try { p.set(pVals[p.key]); } catch (e) {} }
+          });
+          selfP.refreshParams();
+        }
+      } catch (e) {}
       // H key or double-tap toggles full chrome hide (clean recordings)
       var self = this;
       document.addEventListener('keydown', function (e) {
