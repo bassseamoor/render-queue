@@ -3766,9 +3766,27 @@ function drawSettings(){
       '<div class="set-row"><span>Version</span><b>'+esc(String(window.__MOOR_LIVE_VER||'dev'))+'</b></div>'+
       '<div class="set-row"><span>Updates</span><span style="display:flex;align-items:center;gap:8px"><small id="moor-update-row" style="max-width:280px">Checking\u2026</small><button id="moor-check-now" style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--accent-dim);color:var(--text);cursor:pointer">Check now</button></span></div>'+
       '<div class="set-row"><span>Update feed</span><small style="max-width:300px">bassseamoor/test-submission-portfolio \u00b7 branch moor-updates \u00b7 live/moor.html</small></div>'+
-      '<div class="set-row"><span>Source</span><small style="max-width:300px">This file is the whole app. No build step.</small></div>';
+      '<div class="set-row"><span>Source</span><small style="max-width:300px">This file is the whole app. No build step.</small></div>'+
+      '<h4 style="margin:18px 0 4px;font-size:12px;letter-spacing:.08em;color:var(--muted)">YOUR STUFF</h4>'+
+      '<div class="set-row"><span>Move to another device<small>Plans, apps, projects and settings in one file</small></span><span style="display:flex;gap:8px;align-items:center"><button id="moor-mv-send" style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--accent-dim);color:var(--text);cursor:pointer">Send</button><button id="moor-mv-get" style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--accent-dim);color:var(--text);cursor:pointer">Receive</button></span></div>'+
+      '<div id="moor-mv-msg" style="font-size:11px;color:var(--muted);padding:4px 2px;min-height:16px"></div>'+
+      '<input type="file" id="moor-mv-file" accept="application/json,.json" style="display:none">';
     var __mcb=setMain.querySelector('#moor-check-now');
     if(__mcb) __mcb.addEventListener('click',function(){ if(window.__moorCheckNow) window.__moorCheckNow(); });
+    var __mmsg=setMain.querySelector('#moor-mv-msg');
+    function __mSay(t){ if(__mmsg) __mmsg.textContent=t; }
+    var __msend=setMain.querySelector('#moor-mv-send');
+    if(__msend) __msend.addEventListener('click',function(){ __mSay('Packing your stuff\u2026'); if(window.__moorExportStuff) window.__moorExportStuff(function(n){ __mSay('Packed '+n+' items into a file. Get it to your other device (AirDrop, email, Files), then tap Receive there.'); }); });
+    var __mfile=setMain.querySelector('#moor-mv-file');
+    var __mget=setMain.querySelector('#moor-mv-get');
+    if(__mget) __mget.addEventListener('click',function(){ if(__mfile) __mfile.click(); });
+    if(__mfile) __mfile.addEventListener('change',function(){
+      var f=__mfile.files&&__mfile.files[0]; if(!f) return; __mfile.value='';
+      if(!window.__moorImportStuff){ __mSay('Receive isn\u2019t ready in this version.'); return; }
+      if(!confirm('Receive will replace everything on this device with what\u2019s in the file. Continue?')) return;
+      __mSay('Receiving\u2026');
+      window.__moorImportStuff(f,function(err,n){ if(err){ __mSay(err); } else { __mSay('Received '+n+' items. Reloading\u2026'); } });
+    });
     try{ var __mur=setMain.querySelector('#moor-update-row'); if(__mur&&window.__moorUpdateStatus) __mur.textContent=window.__moorUpdateStatus().label; }catch(__mue){}
     return;
   }
@@ -3903,8 +3921,54 @@ drawSettings();applySet();applyPanel();
 
 </script>
 
+<script>
+/* ===== device mover: send/receive all local state ===== */
+(function(){
+"use strict";
+var SKIP={ 'moor-live':1, 'moor.justUpdated':1 };
+function ours(k){ return k.indexOf('moor.')===0 || k.indexOf('colony.')===0; }
+function idbOpen(){ return new Promise(function(res,rej){ try{ var r=indexedDB.open('moor-continuity-crypto',1); r.onupgradeneeded=function(){ try{ r.result.createObjectStore('keys'); }catch(e){} }; r.onsuccess=function(){ res(r.result); }; r.onerror=function(){ rej(r.error||new Error('idb')); }; }catch(e){ rej(e); } }); }
+function idbGet(db){ return new Promise(function(res){ try{ var t=db.transaction('keys','readonly'); var q=t.objectStore('keys').get('enc-key-1'); q.onsuccess=function(){ res(q.result||null); }; q.onerror=function(){ res(null); }; }catch(e){ res(null); } }); }
+function idbPut(db,v){ return new Promise(function(res){ var done=function(ok){ res(ok); }; try{ var t=db.transaction('keys','readwrite'); var q=t.objectStore('keys').put(v,'enc-key-1'); q.onsuccess=function(){ done(true); }; q.onerror=function(){ done(false); }; }catch(e){ done(false); } }); }
+window.__moorExportStuff=function(cb){
+  var ls={};
+  try{ for(var i=0;i<localStorage.length;i++){ var k=localStorage.key(i); if(k&&ours(k)&&!SKIP[k]){ try{ ls[k]=localStorage.getItem(k); }catch(e){} } } }catch(e){}
+  var payload={ app:'moor', kind:'device-move', v:1, exportedAt:new Date().toISOString(), ls:ls, encJwk:null };
+  function finish(){
+    try{
+      var blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+      var a=document.createElement('a');
+      var d=new Date(), p2=function(n){ return (n<10?'0':'')+n; };
+      a.href=URL.createObjectURL(blob);
+      a.download='moor-my-stuff-'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'-'+p2(d.getHours())+p2(d.getMinutes())+'.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ try{ URL.revokeObjectURL(a.href); }catch(e){} a.remove(); },4000);
+    }catch(e){}
+    if(cb) cb(Object.keys(ls).length);
+  }
+  try{ idbOpen().then(function(db){ idbGet(db).then(function(j){ if(j) payload.encJwk=j; try{ db.close(); }catch(e){} finish(); }, finish); }, finish); }
+  catch(e){ finish(); }
+};
+window.__moorImportStuff=function(file,cb){
+  var rd=new FileReader();
+  rd.onload=function(){
+    var p=null; try{ p=JSON.parse(rd.result); }catch(e){}
+    if(!p||p.app!=='moor'||p.kind!=='device-move'||!p.ls||typeof p.ls!=='object'){ cb('That file doesn\u2019t look like a Moor export.'); return; }
+    var keys=Object.keys(p.ls), n=0;
+    try{ for(var i=0;i<keys.length;i++){ try{ localStorage.setItem(keys[i],p.ls[keys[i]]); n++; }catch(e){} } }
+    catch(e){ cb('Couldn\u2019t write to this browser\u2019s storage.'); return; }
+    function reloaded(){ cb(null,n); try{ location.reload(); }catch(e){} }
+    if(p.encJwk){ try{ idbOpen().then(function(db){ idbPut(db,p.encJwk).then(function(){ try{ db.close(); }catch(e){} reloaded(); }, reloaded); }, reloaded); }catch(e){ reloaded(); } }
+    else reloaded();
+  };
+  rd.onerror=function(){ cb('Couldn\u2019t read that file.'); };
+  try{ rd.readAsText(file); }catch(e){ cb('Couldn\u2019t read that file.'); }
+};
+})();
+</script>
+
 <script>/* ===== inlined: ui:live-updater (relay v3) ===== */
-window.__MOOR_LIVE_VER='20260926-021';
+window.__MOOR_LIVE_VER='20260926-022';
 (function(){
   // Relay v3: same connections as v2 (VER_URL + three bundle URLs, same document-swap).
   // Changes vs v2, all append-only:
