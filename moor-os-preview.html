@@ -265,7 +265,7 @@ const Brain = {
   async chat(p,key,messages){
     const cfg = BRAIN_PROVIDERS[p];
     const r = await fetch(cfg.endpoint, { method:'POST', headers:this.headers(p,key),
-      body: JSON.stringify({ model:cfg.chatModel, messages:messages, temperature:0.7, max_tokens:900 }) });
+      body: JSON.stringify({ model:cfg.chatModel, messages:messages, temperature:0.7, max_tokens:8000 }) });
     if(!r.ok){ const t = await r.text().catch(()=> ''); throw new Error(cfg.name+' '+r.status+(t?': '+t.slice(0,140):'')); }
     const d = await r.json();
     const c = d.choices && d.choices[0] && d.choices[0].message;
@@ -356,7 +356,7 @@ const OB = {
         '<p class="ob-sub">Choose how smart features will run on your device. You can change this any time in Settings.</p>'+
         '<div class="ob-cards">'+
         '<button class="ob-choice acc-a" data-ob="local"><div class="tile">'+ic('dl')+'</div><div class="t">This computer</div>'+
-        '<div class="d">Free forever. Private. Downloads a model to your machine.</div></button>'+
+        '<div class="d">Runs on your key for now. Local PC models link up with sync.</div></button>'+
         '<button class="ob-choice acc-b" data-ob="key"><div class="tile">'+ic('key')+'</div><div class="t">I have a key</div>'+
         '<div class="d">Groq, Cerebras, OpenAI and more. Paste one key and you&rsquo;re in.</div></button>'+
         '</div>'+back+'</div></div>';
@@ -365,7 +365,7 @@ const OB = {
       R.innerHTML = '<div class="ob-veil"><div class="ob-card">'+
         '<h2>This computer</h2><p class="ob-sub">On this phone, Moor runs on your API key. Local models live on your PC — linking it arrives with sync.</p>'+
         '<div class="ob-row"><button class="ob-btn" id="ob-to-key">Use a key instead &rarr;</button></div>'+back+'</div></div>';
-      R.querySelector('#ob-to-key').onclick = ()=>show('key');
+      R.querySelector('#ob-to-key').onclick = ()=>OB.show('key');
     }
     if(screen === 'key'){
       const hues = ['#5eead4','#c4b5fd','#93c5fd'];
@@ -498,7 +498,8 @@ const OS = {
   },
   /* One-off windows: text editor, viewer, and sandboxed HTML apps */
   _shell(title, tint, icon, w, h){
-    if(this.wins['_x'+title]){ this.focus('_x'+title); const ww=this.wins['_x'+title]; if(ww.min) this.unmin('_x'+title); return null; }
+    const dup = Object.keys(this.wins).find(k=>{ const ww=this.wins[k]; return ww.appDef && ww.appDef.title===title && k.indexOf('_x')===0; });
+    if(dup){ this.focus(dup); const ww=this.wins[dup]; if(ww.min) this.unmin(dup); return null; }
     const id = '_x'+title+'_'+Date.now().toString(36);
     const desk = document.getElementById('desk');
     const el = document.createElement('div');
@@ -647,6 +648,25 @@ const ATOMS = [
   ["export","System","Take your data with you, in any format."],["sync","System","Shared state across devices and people."]
 ];
 const FAMCOL = {Data:'#5eead4',Interaction:'#c4b5fd',Logic:'#fcd34d',Presentation:'#93c5fd',System:'#f9a8d4'};
+const PART_EXAMPLES = {
+  _default:'{\n  "kind": "part",\n  "config": { "label": "My thing" }\n}',
+  value:'{\n  "kind": "value",\n  "config": { "label": "Title", "type": "text", "default": "Hello" }\n}',
+  list:'{\n  "kind": "list",\n  "config": { "label": "Items", "item": { "kind": "value" } }\n}',
+  record:'{\n  "kind": "record",\n  "config": { "fields": ["name", "phone", "notes"] } }',
+  input:'{\n  "kind": "input",\n  "config": { "label": "Add item", "placeholder": "Type here…" } }',
+  choice:'{\n  "kind": "choice",\n  "config": { "label": "Size", "options": ["S", "M", "L"] } }',
+  trigger:'{\n  "kind": "trigger",\n  "config": { "on": "tap", "do": { "action": "add-item" } } }',
+  transform:'{\n  "kind": "transform",\n  "config": { "from": "items", "steps": ["sort", "unique"] } }',
+  rule:'{\n  "kind": "rule",\n  "config": { "if": "streak >= 7", "then": "celebrate" } }',
+  sequence:'{\n  "kind": "sequence",\n  "config": { "steps": ["ask-name", "ask-goal", "build"] } }',
+  random:'{\n  "kind": "random",\n  "config": { "pick": 1, "from": "ideas" } }',
+  card:'{\n  "kind": "card",\n  "config": { "title": "{name}", "body": "{notes}" } }',
+  feed:'{\n  "kind": "feed",\n  "config": { "source": "items", "order": "newest" } }',
+  chart:'{\n  "kind": "chart",\n  "config": { "source": "log", "type": "bars" } }',
+  store:'{\n  "kind": "store",\n  "config": { "key": "my-app-data" } }',
+  clock:'{\n  "kind": "clock",\n  "config": { "every": "1 day", "do": { "action": "remind" } } }',
+  export:'{\n  "kind": "export",\n  "config": { "format": "json", "what": "items" } }'
+};
 
 OS.apps = {
 /* Apps grid: built-ins + apps you built with the Assistant */
@@ -708,7 +728,7 @@ assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade8
         const reply = await Brain.chat(prov, key, hist);
         t.remove(); bubble(reply, false);
         hist.push({ role:'assistant', content:reply });
-        const m = reply.match(/```html\s*([\s\S]*?)```/i);
+        const m = reply.match(/```html\s*([\s\S]*?)```/i) || reply.match(/```html\s*([\s\S]*)$/i);
         if(m && m[1].trim()) saveGeneratedApp(m[1].trim(), msgs);
       }catch(e){ t.remove(); bubble('Hmm — '+e.message, false); }
     }
@@ -858,8 +878,18 @@ templates: { title:'Templates', icon:'layers', tint:'linear-gradient(135deg,#c4b
         ATOMS.filter(a=>(a[0]+a[1]+a[2]).toLowerCase().includes(query)).forEach(([n,fam,d])=>{
           const c = FAMCOL[fam];
           const el = document.createElement('div'); el.className='card'; el.style.marginBottom='8px'; el.style.padding='11px 14px';
+          el.style.cursor='pointer';
           el.innerHTML = '<div class="row"><div style="width:10px;height:10px;border-radius:99px;background:'+c+';flex:none;box-shadow:0 0 10px '+c+'"></div>'+
-            '<div style="flex:1"><span style="font-weight:650;font-size:14px">'+esc(n)+'</span> <span class="tiny" style="color:'+c+'">'+esc(fam)+'</span><div class="small muted">'+esc(d)+'</div></div></div>';
+            '<div style="flex:1"><span style="font-weight:650;font-size:14px">'+esc(n)+'</span> <span class="tiny" style="color:'+c+'">'+esc(fam)+'</span><div class="small muted">'+esc(d)+'</div></div>'+
+            '<div class="tiny muted" style="flex:none">▸</div></div>'+
+            '<div class="part-detail" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07)">'+
+            '<div class="tiny muted" style="margin-bottom:6px">The quiz fills in config — never code. Example:</div>'+
+            '<pre class="tiny" style="background:rgba(0,0,0,.3);padding:10px;border-radius:10px;overflow-x:auto;white-space:pre-wrap;color:#c4b5fd">'+esc(PART_EXAMPLES[n]||PART_EXAMPLES._default)+'</pre></div>';
+          el.onclick = ()=>{
+            const det = el.querySelector('.part-detail'), open = det.style.display!=='none';
+            det.style.display = open?'none':'block';
+            el.querySelector('.row > div:last-child').textContent = open?'▸':'▾';
+          };
           list.appendChild(el);
         });
         if(!list.children.length) list.innerHTML = '<div class="muted small" style="padding:12px">No parts match.</div>';
