@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Moor · Desk</title>
+<style>
+:root{
+  --bg:#0c0e0b; --ink:#f2f5ea; --mut:#a7b198; --faint:#6f7a64;
+  --accent:#b8e986; --amber:#e8c87a; --blue:#9fc6e8; --rose:#e07a6a; --violet:#c4a9e8;
+  --line:rgba(255,255,255,.09); --ice:rgba(159,198,232,.55);
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--ink); overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,sans-serif;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+}
+#bg{position:fixed;inset:0;pointer-events:none;
+  background:
+    radial-gradient(60vmax 60vmax at 12% -10%, rgba(232,200,122,.10), transparent 65%),
+    radial-gradient(70vmax 70vmax at 105% 110%, rgba(184,233,134,.09), transparent 65%);}
+#brand{position:fixed;top:calc(16px + env(safe-area-inset-top));left:22px;z-index:10;
+  font-size:17px;font-weight:700;letter-spacing:.4px}
+/* ---------- desk layout ---------- */
+#desk{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  gap:44px;padding:80px 40px 120px}
+/* ---------- card stack (left) ---------- */
+#stackWrap{position:relative;width:360px;height:460px;flex:0 0 auto}
+.card{position:absolute;border-radius:22px;border:1px solid var(--ice);
+  background:linear-gradient(160deg,rgba(40,52,66,.55),rgba(20,26,34,.6));
+  box-shadow:0 18px 50px rgba(0,0,0,.5),0 0 28px -4px rgba(159,198,232,.35),inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.card.b1{inset:0;transform:translate(-26px,18px) rotate(-7deg);opacity:.55}
+.card.b2{inset:0;transform:translate(-13px,9px) rotate(-3.5deg);opacity:.8}
+.card.front{inset:0;padding:20px 20px 16px;display:flex;flex-direction:column}
+.card-title{font-size:13px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--mut);margin-bottom:14px}
+#grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tile{border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:16px;
+  padding:12px 6px 10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;
+  transition:transform .18s var(--ease),box-shadow .18s var(--ease),border-color .18s;min-height:44px}
+.tile:active{transform:scale(.95)}
+.tile .sw{width:34px;height:34px;border-radius:11px;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 4px 10px rgba(0,0,0,.35)}
+.tile .tn{font-size:11.5px;color:var(--mut);font-weight:600;text-align:center;line-height:1.25}
+.tile.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent),0 0 18px -2px var(--accent)}
+.tile.selected .tn{color:var(--ink)}
+.tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#detail{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;font-size:13.5px;color:var(--mut);min-height:44px;line-height:1.45}
+#detail b{color:var(--ink)}
+/* ---------- big panel (right) ---------- */
+#panel{flex:1 1 auto;max-width:760px;min-width:0;align-self:stretch;border-radius:28px;
+  border:1px solid var(--line);background:linear-gradient(165deg,rgba(32,40,28,.72),rgba(15,19,13,.78));
+  box-shadow:0 24px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.07);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  padding:22px;display:flex;flex-direction:column}
+.panel-head{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.panel-head .pt{font-size:16px;font-weight:700}
+#chips{display:flex;gap:8px;margin-left:auto}
+.chip{display:none;border:1px dashed rgba(184,233,134,.5);color:var(--accent);background:rgba(184,233,134,.07);
+  font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:999px;cursor:pointer;min-height:36px}
+.chip.show{display:inline-block}
+.chip:active{transform:scale(.95)}
+.wins{display:flex;gap:16px;flex:1;min-height:0}
+.win{flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:20px;
+  background:rgba(255,255,255,.03);overflow:hidden;
+  transition:opacity .32s var(--ease),transform .32s var(--ease)}
+.win.fading{opacity:0;transform:scale(.96)}
+.win.gone{display:none}
+.win-head{display:flex;align-items:center;gap:8px;padding:13px 14px 13px 18px;cursor:pointer;min-height:48px}
+.win-head .wt{font-size:15px;font-weight:700}
+.win-head .hint{font-size:11.5px;color:var(--faint);margin-left:2px}
+.x{margin-left:auto;width:30px;height:30px;flex:0 0 30px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--rose);display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 10px rgba(224,122,106,.45)}
+.x:active{transform:scale(.9)}
+.x svg{width:13px;height:13px;stroke:#fff;stroke-width:2.6;stroke-linecap:round}
+.win-body{padding:0 16px 16px;overflow:hidden;max-height:420px;transition:max-height .35s var(--ease),padding .35s var(--ease),opacity .3s}
+.win.collapsed .win-body{max-height:0;padding-top:0;padding-bottom:0;opacity:0}
+.chartcard{background:rgba(244,246,240,.92);border-radius:14px;padding:14px 12px 10px}
+.chartcard svg{width:100%;height:96px;display:block}
+.chartcard path{stroke:#1c1e1a;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.chart-cap{font-size:12.5px;color:var(--mut);margin-top:10px}
+.note{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);
+  border-radius:12px;background:rgba(255,255,255,.025);margin-bottom:8px;font-size:13.5px;cursor:pointer;min-height:44px}
+.note .box{width:18px;height:18px;flex:0 0 18px;border-radius:6px;border:1.5px solid var(--mut);margin-top:1px;
+  display:flex;align-items:center;justify-content:center;transition:background .2s,border-color .2s}
+.note .box svg{width:11px;height:11px;stroke:#0c0e0b;stroke-width:3;fill:none;stroke-linecap:round;opacity:0}
+.note.done .box{background:var(--accent);border-color:var(--accent)}
+.note.done .box svg{opacity:1}
+.note.done .nt{color:var(--faint);text-decoration:line-through}
+/* ---------- dock ---------- */
+#dock{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(22px + env(safe-area-inset-bottom));z-index:10;
+  display:flex;align-items:center;gap:12px;padding:10px 22px 10px 12px;border-radius:999px;
+  border:1px solid var(--line);background:rgba(22,27,19,.78);
+  box-shadow:0 14px 40px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.07);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);min-width:min(420px,calc(100vw - 48px))}
+#heart{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.05);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .18s var(--ease)}
+#heart:active{transform:scale(.9)}
+#heart svg{width:22px;height:22px;fill:none;stroke:var(--mut);stroke-width:2;transition:fill .2s,stroke .2s}
+#heart.active svg{fill:var(--rose);stroke:var(--rose);filter:drop-shadow(0 0 6px rgba(224,122,106,.8))}
+.dock-label{font-size:13.5px;color:var(--mut)}
+.dock-label b{color:var(--ink)}
+#toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(8px);
+  z-index:30;background:rgba(24,30,21,.94);border:1px solid var(--line);font-size:13.5px;
+  padding:10px 18px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;white-space:nowrap}
+#toast.on{opacity:1;transform:translateX(-50%)}
+/* ---------- portrait ---------- */
+@media(max-width:700px){
+  body{overflow-y:auto}
+  #desk{position:static;flex-direction:column;align-items:stretch;gap:20px;padding:74px 18px 120px;min-height:100dvh}
+  #stackWrap{width:100%;height:400px;flex:none}
+  #panel{align-self:auto;max-width:none}
+  .wins{flex-direction:column}
+  #brand{left:18px}
+}
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<header id="brand">Moor</header>
+<main id="desk">
+  <section id="stackWrap" aria-label="Tile stack">
+    <div class="card back b1"></div>
+    <div class="card back b2"></div>
+    <div class="card front">
+      <div class="card-title">Your tiles</div>
+      <div id="grid"></div>
+      <div id="detail">Tap a tile to see what it&rsquo;s up to.</div>
+    </div>
+  </section>
+  <section id="panel" aria-label="Workspace panel">
+    <div class="panel-head"><span class="pt">Today</span><span id="chips"></span></div>
+    <div class="wins">
+      <div class="win" id="win-pulse">
+        <div class="win-head" data-win="win-pulse" role="button" tabindex="0" aria-label="Toggle Pulse window">
+          <span class="wt">Pulse</span><span class="hint">tap header to fold</span>
+          <button class="x" data-close="win-pulse" aria-label="Close Pulse">
+            <svg viewBox="0 0 14 14"><path d="M2 2l10 10M12 2L2 12"/></svg>
+          </button>
+        </div>
+        <div class="win-body">
+          <div class="chartcard">
+            <svg viewBox="0 0 200 96" preserveAspectRatio="none">
+              <path d="M4 70 C 22 66, 30 40, 48 44 S 70 78, 88 60 S 118 20, 136 34 S 168 66, 196 40"/>
+            </svg>
+          </div>
+          <div class="chart-cap">Steady all morning, one small spike at 10:24.</div>
+        </div>
+      </div>
+      <div class="win" id="win-notes">
+        <div class="win-head" data-win="win-notes" role="button" tabindex="0" aria-label="Toggle Notes window">
+          <span class="wt">Notes</span><span class="hint">tap header to fold</span>
+          <button class="x" data-close="win-notes" aria-label="Close Notes">
+            <svg viewBox="0 0 14 14"><path d="M2 2l10 10M12 2L2 12"/></svg>
+          </button>
+        </div>
+        <div class="win-body" id="notes-body"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<footer id="dock">
+  <button id="heart" aria-label="Toggle favorite" aria-pressed="false">
+    <svg viewBox="0 0 24 24"><path d="M12 20.5C7 16.5 3 13.2 3 9.3 3 6.4 5.2 4.5 7.7 4.5c1.7 0 3.3.9 4.3 2.4 1-1.5 2.6-2.4 4.3-2.4 2.5 0 4.7 1.9 4.7 4.8 0 3.9-4 7.2-9 11.2z"/></svg>
+  </button>
+  <span class="dock-label" id="dock-label">Tap the heart to <b>favorite this desk</b></span>
+</footer>
+<div id="toast" role="status"></div>
+<script>
+"use strict";
+/* ---------- tap helper: pointer events only; never rely on synthesized click ---------- */
+let lastTapAt = 0;
+function onTap(el, fn){
+  let sx=0, sy=0, st=0, active=false;
+  el.addEventListener("pointerdown", e=>{ sx=e.clientX; sy=e.clientY; st=Date.now(); active=true; });
+  el.addEventListener("pointerup", e=>{
+    if(!active) return; active=false;
+    const dt=Date.now()-st, d=Math.hypot(e.clientX-sx, e.clientY-sy);
+    if(dt<600 && d<12){ lastTapAt=Date.now(); fn(e); }
+  });
+  el.addEventListener("pointercancel", ()=>{ active=false; });
+  el.addEventListener("keydown", e=>{
+    if(e.key==="Enter" || e.key===" "){ e.preventDefault(); lastTapAt=Date.now(); fn(e); }
+  });
+}
+/* a tap's belated synthesized click must never undo what the tap just did */
+document.addEventListener("click", e=>{
+  if(Date.now()-lastTapAt < 700){ e.stopPropagation(); e.preventDefault(); }
+}, true);
+document.addEventListener("contextmenu", e=>e.preventDefault());
+/* ---------- toast ---------- */
+let toastT=null;
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("on");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"), 2200);
+}
+/* ---------- tiles ---------- */
+const TILES=[
+  {name:"Sunny Meadow", color:"#e8d44d", state:"your creatures are basking in the warm corner"},
+  {name:"Warm Hearth",  color:"#d98a3d", state:"the fire is crackling softly, all is cozy"},
+  {name:"Deep Channel", color:"#4d9de8", state:"messages are flowing smoothly, nothing stuck"},
+  {name:"Redwood Stand",color:"#8a2f3d", state:"your trees grew a little taller overnight"},
+  {name:"Soft Cloud",   color:"#e8a9c4", state:"everything feels light today, no weight"},
+  {name:"Quiet Stone",  color:"#8a8f96", state:"nothing needs attention, enjoy the calm"},
+  {name:"Green Shoot",  color:"#7dc46a", state:"two new ideas sprouted this morning"},
+  {name:"Amber Lamp",   color:"#e8b84d", state:"the room is warm and ready for focus"},
+  {name:"Blue Bell",    color:"#5d7fe8", state:"one gentle reminder is waiting for you"}
+];
+const grid=document.getElementById("grid"), detail=document.getElementById("detail");
+let selected=-1;
+TILES.forEach((t,i)=>{
+  const b=document.createElement("button");
+  b.className="tile"; b.type="button";
+  b.setAttribute("aria-label", t.name);
+  b.innerHTML=`<span class="sw" style="background:${t.color}"></span><span class="tn">${t.name}</span>`;
+  onTap(b, ()=>{
+    document.querySelectorAll(".tile").forEach(x=>x.classList.remove("selected"));
+    b.classList.add("selected"); selected=i;
+    detail.innerHTML=`<b>${t.name}</b> &mdash; ${t.state}.`;
+  });
+  grid.appendChild(b);
+});
+/* ---------- notes ---------- */
+const NOTES=["Water the redwoods","Review the morning pulse","Write one thank-you note"];
+const nb=document.getElementById("notes-body");
+NOTES.forEach(n=>{
+  const d=document.createElement("div");
+  d.className="note"; d.setAttribute("role","button"); d.setAttribute("tabindex","0");
+  d.innerHTML=`<span class="box"><svg viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3.5"/></svg></span><span class="nt">${n}</span>`;
+  onTap(d, ()=>{ d.classList.toggle("done"); });
+  nb.appendChild(d);
+});
+/* ---------- sub-windows: close / reopen / fold ---------- */
+const chips=document.getElementById("chips");
+function chipFor(winId, label){
+  const c=document.createElement("button");
+  c.className="chip"; c.type="button"; c.id="chip-"+winId; c.textContent="Reopen "+label;
+  onTap(c, ()=>{
+    const w=document.getElementById(winId);
+    w.classList.remove("gone");
+    void w.offsetWidth; /* reflow so the fade-in animates */
+    w.classList.remove("fading");
+    c.classList.remove("show");
+    toast(label+" is back");
+  });
+  chips.appendChild(c);
+  return c;
+}
+const chipEls={ "win-pulse": chipFor("win-pulse","Pulse"), "win-notes": chipFor("win-notes","Notes") };
+document.querySelectorAll(".x").forEach(x=>{
+  onTap(x, e=>{
+    e.stopPropagation();
+    const id=x.dataset.close, w=document.getElementById(id);
+    const label=id==="win-pulse"?"Pulse":"Notes";
+    w.classList.add("fading");
+    setTimeout(()=>{ w.classList.add("gone"); chipEls[id].classList.add("show"); }, 340);
+    toast(label+" closed");
+  });
+});
+document.querySelectorAll(".win-head").forEach(h=>{
+  onTap(h, e=>{
+    if(e.target.closest(".x")) return; /* the close button handles itself */
+    document.getElementById(h.dataset.win).classList.toggle("collapsed");
+  });
+});
+/* ---------- dock heart ---------- */
+const heart=document.getElementById("heart"), dockLabel=document.getElementById("dock-label");
+onTap(heart, ()=>{
+  const on=heart.classList.toggle("active");
+  heart.setAttribute("aria-pressed", on?"true":"false");
+  dockLabel.innerHTML = on ? "This desk is <b>favorited</b>" : "Tap the heart to <b>favorite this desk</b>";
+  toast(on ? "Desk favorited" : "Removed from favorites");
+});
+</script>
+</body>
+</html>
