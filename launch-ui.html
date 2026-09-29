@@ -134,7 +134,9 @@
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
   #dock { position: absolute; left: 20px; right: 20px; bottom: 24px; z-index: 5;
-    display: flex; gap: 10px; align-items: stretch; }
+    display: flex; gap: 10px; align-items: stretch; pointer-events: none; }
+  #composer { pointer-events: none; }
+  #composer input, #composer button, #tplbtn { pointer-events: auto; }
   #composer { flex: 1; border-radius: 999px; padding: 8px 8px 8px 20px;
     display: flex; align-items: center; gap: 12px; min-height: 62px; }
   #composer .spark { color: var(--acc); font-size: 20px; flex: none; }
@@ -207,6 +209,33 @@
   .win.open { opacity: 1; }
   .win.top { border-color: rgba(174,222,132,.42);
     box-shadow: 0 40px 110px rgba(0,0,0,.7), 0 0 54px rgba(174,222,132,.13), inset 0 1px 0 rgba(255,255,255,.16); }
+  /* resizable windows: first drag locks current dims, body becomes flexible */
+  .win.sized .winbody { height: auto; flex: 1; min-height: 0; }
+  .win.shaded .winbody { display: none; }
+  .win.shaded { height: auto !important; }
+  .win.shaded .wresize { display: none; }
+  .wresize { position: absolute; right: 2px; bottom: 2px; width: 30px; height: 30px;
+    cursor: nwse-resize; touch-action: none; z-index: 6; }
+  .wresize::after { content: ""; position: absolute; right: 7px; bottom: 7px; width: 10px; height: 10px;
+    border-right: 2px solid rgba(255,255,255,.42); border-bottom: 2px solid rgba(255,255,255,.42);
+    border-bottom-right-radius: 5px; }
+  .wresize:hover::after { border-color: var(--acc); }
+  /* thin green scrollbars */
+  .winbody { scrollbar-width: thin; scrollbar-color: rgba(174,222,132,.45) transparent; }
+  .winbody::-webkit-scrollbar { width: 10px; }
+  .winbody::-webkit-scrollbar-track { background: transparent; }
+  .winbody::-webkit-scrollbar-thumb { background: rgba(174,222,132,.32); border-radius: 6px;
+    border: 2px solid transparent; background-clip: content-box; }
+  .winbody::-webkit-scrollbar-thumb:hover { background: rgba(174,222,132,.6);
+    border: 2px solid transparent; background-clip: content-box; }
+  /* layer menu */
+  .layermenu { position: absolute; top: 62px; right: 10px; z-index: 30; min-width: 170px;
+    background: rgba(14,20,14,.97); border: 1px solid var(--stroke); border-radius: 14px; padding: 6px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.65); }
+  .lmitem { padding: 10px 12px; border-radius: 9px; font-size: 13.5px; color: var(--ink);
+    cursor: pointer; transition: transform .12s ease; }
+  .lmitem:hover { background: rgba(174,222,132,.14); }
+  .lmitem:active { transform: scale(.97); }
   .winhead { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; flex: none;
     border-bottom: 1px solid rgba(255,255,255,.07); touch-action: none; cursor: grab; }
   .winhead .orb { width: 36px; height: 36px; border-radius: 11px; margin: 0; flex: none; }
@@ -218,6 +247,11 @@
   .winhead button:active { transform: scale(.9); }
   .winbody { height: 400px; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
     padding: 18px 18px 28px; }
+  @media (min-width: 700px) {
+    .win { width: 360px; margin-left: -180px; }
+    .winbody { height: 400px; }
+    .wintitle { font-size: 15.5px; }
+  }
   .winbody .asub { color: var(--dim); font-size: 13.5px; margin-bottom: 18px; }
   .pads { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .pad { aspect-ratio: 1.4; border-radius: 18px; border: 1px solid var(--stroke);
@@ -524,6 +558,7 @@ window.addEventListener("pointerup", function(){
 });
 window.addEventListener("pointercancel", function(){ drag = null; camDragged = false; });
 spaceEl.addEventListener("wheel", function(e){
+  if (e.target.closest && e.target.closest(".win, #appsheet, #sheet, #askbar, #topbar")) return;
   e.preventDefault();
   cam.tz = Math.max(-300, Math.min(600, cam.tz - e.deltaY * .6));
   camKick();
@@ -687,8 +722,8 @@ function openApp(keyOrTile){
   win.className = "win";
   win.innerHTML = "<div class='winhead'><div class='orb' style='background:"+col+"'><span class='glyph'>"+t.icon+"</span></div>"+
     "<div class='wintitle'>"+nm.replace(/</g,"&lt;")+"</div>"+
-    "<button class='wapps' title='All apps'>◫</button><button class='wclose' title='Close'>✕</button></div>"+
-    "<div class='winbody'></div>";
+    "<button class='wlayers' title='Layers'>▤</button><button class='wapps' title='All apps'>◫</button><button class='wclose' title='Close'>✕</button></div>"+
+    "<div class='winbody'></div><div class='wresize' title='Resize'></div>";
   var body = win.querySelector(".winbody");
   body.innerHTML = appBodyHTML(t, nm);
   var wx = parseFloat(tileEl.dataset.wx || "0"), wy = parseFloat(tileEl.dataset.wy || "0"), wz = parseFloat(tileEl.dataset.wz || "0");
@@ -708,16 +743,35 @@ function openApp(keyOrTile){
   focusWin(win);
   hideHint();
   /* pan + level the camera gently so the window sits centered and readable — you stay in the space */
-  cam.tpx = -wx; cam.trx = 8; cam.tryy = 0; camKick();
+  cam.tpx = -wx; cam.trx = 12; cam.tryy = 0; camKick();
+  /* if the tall window still hangs off-screen after the glide, nudge the pitch — but never fight the user */
+  (function(w, pitched){
+    setTimeout(function(){
+      if (!document.body.contains(w) || cam.trx !== pitched) return;
+      var b = w.getBoundingClientRect(), need = 0;
+      if (b.bottom > window.innerHeight - 16) need = b.bottom - (window.innerHeight - 16);
+      else if (b.top < 72) need = b.top - 72;
+      if (Math.abs(need) > 4){
+        cam.trx = Math.max(-10, Math.min(28, cam.trx + need / 5));
+        camKick();
+      }
+    }, 850);
+  })(win, 12);
   wireWin(win, body, tileEl, t);
   blip(520);
 }
 function placeWin(win){
   win.style.transform = "translate3d(" + win._wx.toFixed(0) + "px," + win._wy.toFixed(0) + "px," + win._wz.toFixed(0) + "px)";
 }
+/* Layering is spatial: windows live in the 3D world, so "front" means closer to
+   the camera (larger _wz). No DOM moves here — re-inserting on pointerdown was
+   cancelling the very click the user just made (all title-bar buttons dead to a mouse). */
 function focusWin(win){
-  winlayer.appendChild(win);
-  winlayer.querySelectorAll(".win").forEach(function(w){ w.classList.remove("top"); });
+  var topZ = -Infinity, w;
+  var wins = winlayer.querySelectorAll(".win");
+  for (var i = 0; i < wins.length; i++){ w = wins[i]; if (w !== win && (w._wz || 0) > topZ) topZ = w._wz; }
+  if ((win._wz || 0) < topZ){ win._wz = topZ + 24; placeWin(win); }
+  wins.forEach(function(x){ x.classList.remove("top"); });
   win.classList.add("top");
 }
 function closeWin(win){
@@ -733,8 +787,19 @@ function closeWin(win){
 function wireWin(win, body, tileEl, t){
   win.querySelector(".wclose").addEventListener("click", function(e){ e.stopPropagation(); closeWin(win); });
   win.querySelector(".wapps").addEventListener("click", function(e){ e.stopPropagation(); openAppSheet(); });
+  win.querySelector(".wlayers").addEventListener("click", function(e){ e.stopPropagation(); toggleLayerMenu(win); });
+  /* Chromium won't wheel-scroll inside the 3D world — scroll by hand (touch scrolls natively) */
+  body.addEventListener("wheel", function(e){
+    var d = e.deltaY * (e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? body.clientHeight : 1));
+    var max = body.scrollHeight - body.clientHeight;
+    if ((d < 0 && body.scrollTop > 0) || (d > 0 && body.scrollTop < max - 1)){
+      e.preventDefault(); e.stopPropagation();
+      body.scrollTop += d;
+    }
+  }, { passive: false });
   win.addEventListener("pointerdown", function(){ focusWin(win); }, true);
   wireWinDrag(win);
+  wireWinResize(win);
   var ahead = win.querySelector(".winhead .orb");
   body.querySelectorAll(".swatch").forEach(function(sw){
     sw.addEventListener("click", function(){
@@ -869,6 +934,72 @@ function wireWinDrag(win){
   window.addEventListener("pointerup", function(){ drag = null; });
   window.addEventListener("pointercancel", function(){ drag = null; });
 }
+function wireWinResize(win){
+  var h = win.querySelector(".wresize");
+  var rs = null;
+  h.addEventListener("pointerdown", function(e){
+    e.stopPropagation(); e.preventDefault();
+    focusWin(win);
+    if (!win.classList.contains("sized")){
+      var w0 = win.offsetWidth, h0 = win.offsetHeight;
+      win.classList.add("sized");
+      win.style.width = w0 + "px";
+      win.style.height = h0 + "px";
+      win.style.marginLeft = (-w0/2) + "px";
+    }
+    rs = { x: e.clientX, y: e.clientY, w: win.offsetWidth, hh: win.offsetHeight };
+    try { h.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  h.addEventListener("pointermove", function(e){
+    if (!rs) return;
+    var s = 1500 / Math.max(200, 1500 - win._wz - cam.z);
+    var w = Math.max(220, Math.min(window.innerWidth * .94, rs.w + (e.clientX - rs.x) / s));
+    var hh = Math.max(200, Math.min(window.innerHeight * .82, rs.hh + (e.clientY - rs.y) / s));
+    win.style.width = w + "px";
+    win.style.marginLeft = (-w/2) + "px";
+    win.style.height = hh + "px";
+  });
+  var end = function(){ rs = null; };
+  h.addEventListener("pointerup", end);
+  h.addEventListener("pointercancel", end);
+}
+function sendToBack(win){
+  var wins = winlayer.querySelectorAll(".win"), w;
+  var minZ = Infinity;
+  for (var i = 0; i < wins.length; i++){ w = wins[i]; if (w !== win && (w._wz || 0) < minZ) minZ = w._wz; }
+  if (minZ !== Infinity){ win._wz = minZ - 24; placeWin(win); }
+  var topW = null, topZ = -Infinity;
+  wins.forEach(function(x){ var z = x._wz || 0; if (z > topZ){ topZ = z; topW = x; } });
+  wins.forEach(function(x){ x.classList.remove("top"); });
+  if (topW) topW.classList.add("top");
+}
+function toggleLayerMenu(win){
+  var m = win.querySelector(".layermenu");
+  if (m){ m.remove(); return; }
+  m = document.createElement("div");
+  m.className = "layermenu";
+  var shaded = win.classList.contains("shaded");
+  m.innerHTML = "<div class='lmitem' data-a='front'>Bring to front</div>"+
+    "<div class='lmitem' data-a='back'>Send to back</div>"+
+    "<div class='lmitem' data-a='shade'>"+(shaded ? "Restore size" : "Minimize")+"</div>";
+  win.appendChild(m);
+  m.addEventListener("click", function(e){
+    var a = e.target.closest(".lmitem"); if (!a) return;
+    e.stopPropagation();
+    var act = a.dataset.a;
+    m.remove();
+    if (act === "front") focusWin(win);
+    else if (act === "back") sendToBack(win);
+    else if (act === "shade") win.classList.toggle("shaded");
+    blip(520);
+  });
+}
+/* tapping anywhere outside a layer menu closes it */
+document.addEventListener("pointerdown", function(e){
+  document.querySelectorAll(".layermenu").forEach(function(m){
+    if (!m.contains(e.target) && !(e.target.closest && e.target.closest(".wlayers"))) m.remove();
+  });
+}, true);
 
 /* apps launcher: open any app from anywhere */
 var appsheet = document.getElementById("appsheet");
