@@ -25,7 +25,7 @@ DROP_PATH = "drop.json"
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "phone-sync-config.json")
 
-APP_VERSION = "v3"
+APP_VERSION = "v4"
 
 
 # ---------------------------------------------------------------- config ---
@@ -154,6 +154,22 @@ def find_data_dirs():
 
 
 # ---------------------------------------------------------------- install ---
+def _created_label(app):
+    c = app.get("created")
+    if isinstance(c, bool):
+        return ""
+    if isinstance(c, (int, float)):
+        try:
+            import datetime
+            ts = c / 1000.0 if c > 1e12 else float(c)
+            return " - " + datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        except Exception:
+            return ""
+    if isinstance(c, str) and c:
+        return " - " + c[:10]
+    return ""
+
+
 def install_into(data_dir, apps):
     creations = os.path.join(data_dir, "creations")
     os.makedirs(creations, exist_ok=True)
@@ -175,8 +191,7 @@ def install_into(data_dir, apps):
         entry = {
             "id": aid,
             "name": app.get("name") or aid,
-            "desc": "Built on phone%s" % (
-                (" - " + app["created"][:10]) if app.get("created") else ""),
+            "desc": "Built on phone" + _created_label(app),
             "file": dest,
         }
         old = by_id.get(aid)
