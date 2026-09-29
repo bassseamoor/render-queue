@@ -221,6 +221,59 @@ const P = {
 function ic(n, s){ return '<svg '+(s?'style="'+s+'"':'')+' viewBox="0 0 24 24">'+P[n]+'</svg>'; }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
+/* ================= BRAIN: real, browser-direct (BYOK) =================
+   Your key is stored only in this phone's browser localStorage and sent
+   only to the provider you pick. Nothing passes through any Moor server. */
+const BRAIN_PROVIDERS = {
+  groq:      { name:'Groq',       endpoint:'https://api.groq.com/openai/v1/chat/completions',
+               models:'https://api.groq.com/openai/v1/models', chatModel:'openai/gpt-oss-20b', hint:'gsk_…' },
+  cerebras:  { name:'Cerebras',   endpoint:'https://api.cerebras.ai/v1/chat/completions',
+               models:'https://api.cerebras.ai/v1/models',     chatModel:'llama-3.3-70b',      hint:'csk-…' },
+  openrouter:{ name:'OpenRouter', endpoint:'https://openrouter.ai/api/v1/chat/completions',
+               models:'https://openrouter.ai/api/v1/models',   chatModel:'openai/gpt-oss-20b', hint:'sk-or-…' }
+};
+const Brain = {
+  keyFor(p){ try{ return localStorage.getItem('moor.preview.key.'+p)||''; }catch(e){ return ''; } },
+  saveKey(p,k){ try{ localStorage.setItem('moor.preview.key.'+p,k); localStorage.setItem('moor.preview.provider',p); }catch(e){} },
+  clearKey(p){ try{ localStorage.removeItem('moor.preview.key.'+p);
+    if(localStorage.getItem('moor.preview.provider')===p) localStorage.removeItem('moor.preview.provider'); }catch(e){} },
+  activeProvider(){ try{ const p=localStorage.getItem('moor.preview.provider'); return (p&&this.keyFor(p))?p:null; }catch(e){ return null; } },
+  headers(p,key){
+    const h = { 'Content-Type':'application/json', 'Authorization':'Bearer '+key };
+    if(p==='openrouter'){ h['HTTP-Referer']='https://bassseamoor.github.io/render-queue/moor-os-preview.html'; h['X-Title']='Moor OS Preview'; }
+    return h;
+  },
+  async testKey(p,key){
+    const cfg = BRAIN_PROVIDERS[p];
+    // Groq/Cerebras validate keys on GET /models; OpenRouter's /models is public, so the chat probe is the test there.
+    if(p !== 'openrouter'){
+      let r;
+      try{ r = await fetch(cfg.models, { headers:{ 'Authorization':'Bearer '+key } }); }
+      catch(e){ return { ok:false, msg:'Network error — are you online?' }; }
+      if(r.status===401||r.status===403) return { ok:false, msg:'That key was rejected. Double-check it.' };
+      if(!r.ok) return { ok:false, msg:cfg.name+' said '+r.status+'. Try again in a bit.' };
+    }
+    let r2;
+    try{
+      r2 = await fetch(cfg.endpoint, { method:'POST', headers:this.headers(p,key),
+        body: JSON.stringify({ model:cfg.chatModel, messages:[{role:'user',content:'Reply with exactly: ok'}], max_tokens:10 }) });
+    }catch(e){ return { ok:false, msg:'Key looks valid, but the chat probe failed to send. Are you online?' }; }
+    if(r2.status===401||r2.status===403) return { ok:false, msg:'That key was rejected. Double-check it.' };
+    if(!r2.ok) return { ok:false, msg:cfg.name+' said '+r2.status+'. Try again in a bit.' };
+    return { ok:true, msg:'Key works. Brain online.' };
+  },
+  async chat(p,key,messages){
+    const cfg = BRAIN_PROVIDERS[p];
+    const r = await fetch(cfg.endpoint, { method:'POST', headers:this.headers(p,key),
+      body: JSON.stringify({ model:cfg.chatModel, messages:messages, temperature:0.7, max_tokens:900 }) });
+    if(!r.ok){ const t = await r.text().catch(()=> ''); throw new Error(cfg.name+' '+r.status+(t?': '+t.slice(0,140):'')); }
+    const d = await r.json();
+    const c = d.choices && d.choices[0] && d.choices[0].message;
+    return c ? c.content.trim() : '(empty reply)';
+  }
+};
+const BRAIN_SYS = 'You are Moor, the assistant inside Moor OS, a local-first personal operating system. Be warm, concise, and plain-spoken. Keep replies short unless asked for detail. This is a UI preview, so be honest that anything beyond chatting (files, apps, building) is mocked.';
+
 /* ================= ONBOARDING (mockup) ================= */
 const OB = {
   root: document.getElementById('ob-root'),
@@ -277,33 +330,41 @@ const OB = {
     }
     if(screen === 'key'){
       const hues = ['#5eead4','#c4b5fd','#93c5fd'];
-      const provs = [{n:'Groq'},{n:'Cerebras'},{n:'OpenAI'}];
+      const ids = Object.keys(BRAIN_PROVIDERS);
       R.innerHTML = '<div class="ob-veil"><div class="ob-card">'+
-        '<h2>I have a key</h2><p class="ob-sub">Pick a provider, paste a key, done. Keys stay encrypted on this device.</p>'+
-        '<div id="ob-provs">'+provs.map((p,i)=>
-          '<div class="ob-prov" data-i="'+i+'"><div class="tile" style="color:'+hues[i]+';background:'+hues[i]+'1f;border-color:'+hues[i]+'55">'+esc(p.n[0])+'</div>'+
-          '<div class="pt"><div class="n">'+p.n+'</div><div class="s">No key saved yet.</div>'+
-          '<div class="ob-keyform"><input type="password" placeholder="Paste key…"><button class="ob-btn" style="padding:11px 22px">Save &amp; test</button></div>'+
-          '<div class="ob-verdict"></div></div></div>').join('')+'</div>'+
+        '<h2>I have a key</h2><p class="ob-sub">Pick a provider, paste a key, done. Your key stays in this browser and goes straight to the provider — never through us.</p>'+
+        '<div id="ob-provs">'+ids.map((id,i)=>{ const p=BRAIN_PROVIDERS[id];
+          const has = Brain.keyFor(id) ? 'Key saved on this device.' : 'No key saved yet.';
+          return '<div class="ob-prov" data-id="'+id+'"><div class="tile" style="color:'+hues[i]+';background:'+hues[i]+'1f;border-color:'+hues[i]+'55">'+esc(p.name[0])+'</div>'+
+          '<div class="pt"><div class="n">'+p.name+'</div><div class="s">'+has+'</div>'+
+          '<div class="ob-keyform"><input type="password" placeholder="'+p.hint+'" autocomplete="off" spellcheck="false"><button class="ob-btn" style="padding:11px 22px">Save &amp; test</button></div>'+
+          '<div class="ob-verdict"></div></div></div>'; }).join('')+'</div>'+
         '<div class="ob-row" id="ob-key-enter"></div>'+back+'</div></div>';
       R.querySelectorAll('.ob-prov').forEach(d=>{
+        const pid = d.getAttribute('data-id');
         d.addEventListener('click', e=>{
           if(e.target.closest('.ob-keyform') || e.target.closest('button')) return;
           d.querySelector('.ob-keyform').classList.toggle('open');
         });
         const btn = d.querySelector('.ob-keyform button'), v = d.querySelector('.ob-verdict');
-        btn.onclick = ()=>{
+        btn.onclick = async ()=>{
           const inp = d.querySelector('input');
-          if(!inp.value.trim()){ v.className='ob-verdict no'; v.textContent='Paste a key first.'; return; }
-          v.className='ob-verdict'; v.textContent='Testing…';
-          setTimeout(()=>{
-            v.className='ob-verdict ok'; v.textContent='Key works. Nice.';
+          const key = inp.value.trim();
+          if(!key){ v.className='ob-verdict no'; v.textContent='Paste a key first.'; return; }
+          btn.disabled = true; v.className='ob-verdict'; v.textContent='Testing against '+BRAIN_PROVIDERS[pid].name+'…';
+          const res = await Brain.testKey(pid, key);
+          btn.disabled = false;
+          if(res.ok){
+            Brain.saveKey(pid, key);
+            v.className='ob-verdict ok'; v.textContent=res.msg;
+            d.querySelector('.s').textContent='Key saved on this device.';
+            inp.value='';
             const row = R.querySelector('#ob-key-enter');
             if(!row.querySelector('button')){
               const e2 = document.createElement('button'); e2.className='ob-btn'; e2.textContent='Enter Moor →';
               e2.onclick = ()=>OB.finish(); row.appendChild(e2);
             }
-          }, 1100);
+          } else { v.className='ob-verdict no'; v.textContent=res.msg; }
         };
       });
     }
@@ -496,38 +557,64 @@ OS.apps = {
 assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade80,#22c55e)', w:480, h:560,
   render(body){
     body.style.display='flex'; body.style.flexDirection='column'; body.style.padding='0';
+    const prov = Brain.activeProvider();
+    if(!prov){
+      const ids = Object.keys(BRAIN_PROVIDERS);
+      body.innerHTML = '<div class="w-body pad"><div class="sec-t" style="margin-top:0">Connect a brain</div>'+
+        '<p class="small muted" style="line-height:1.6">Paste an API key and I can actually think. It stays in this browser, and goes straight to the provider you pick.</p>'+
+        '<div id="as-provlist"></div></div>';
+      const host = body.querySelector('#as-provlist');
+      ids.forEach(id=>{
+        const p = BRAIN_PROVIDERS[id];
+        const d = document.createElement('div'); d.className='card'; d.style.marginBottom='10px';
+        d.innerHTML = '<div class="row"><div style="flex:1"><div style="font-weight:650">'+p.name+'</div><div class="tiny muted">'+p.chatModel+'</div></div></div>'+
+          '<div class="row" style="margin-top:10px;gap:8px"><input type="password" id="as-k-'+id+'" placeholder="'+p.hint+'" style="flex:1">'+
+          '<button class="pill-cta" id="as-b-'+id+'">Connect</button></div>'+
+          '<div class="small" id="as-v-'+id+'" style="margin-top:8px;min-height:20px"></div>';
+        host.appendChild(d);
+        d.querySelector('#as-b-'+id).onclick = async ()=>{
+          const key = d.querySelector('#as-k-'+id).value.trim();
+          const v = d.querySelector('#as-v-'+id);
+          if(!key){ v.style.color='#f2b8b8'; v.textContent='Paste a key first.'; return; }
+          v.style.color='var(--dim)'; v.textContent='Testing…';
+          const res = await Brain.testKey(id, key);
+          if(res.ok){ Brain.saveKey(id, key); OS.apps.assistant.render(body); }
+          else { v.style.color='#f2b8b8'; v.textContent=res.msg; }
+        };
+      });
+      return;
+    }
+    const cfg = BRAIN_PROVIDERS[prov], key = Brain.keyFor(prov);
+    const hist = [{ role:'system', content:BRAIN_SYS }];
     body.innerHTML =
+      '<div style="flex:none;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.07)" class="row">'+
+      '<div style="width:9px;height:9px;border-radius:99px;background:#4ade80;box-shadow:0 0 10px #4ade80"></div>'+
+      '<div class="small" style="flex:1"><b>'+cfg.name+'</b> · '+cfg.chatModel+'</div>'+
+      '<button class="chipbtn" id="as-disc" style="padding:6px 12px;font-size:12px">Disconnect</button></div>'+
       '<div id="as-msgs" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;touch-action:pan-y"></div>'+
-      '<div style="padding:10px 12px;display:flex;gap:8px;overflow-x:auto;flex:none" id="as-chips"></div>'+
       '<div style="display:flex;gap:8px;padding:0 12px 14px;flex:none"><input type="text" id="as-in" placeholder="Ask anything…" style="font-size:16px"><button class="pill-cta" id="as-send">Send</button></div>';
     const msgs = body.querySelector('#as-msgs'), inp = body.querySelector('#as-in');
-    const replies = [
-      "Got it — in the real Moor I'd run that on your machine right now. This is just the preview, so I'm all talk.",
-      "Good question. The full version would check your files, your models, and your memory before answering.",
-      "I can do that — well, the real me can. Want to keep touring the UI?",
-      "Noted. In Moor, everything I make for you lands as a real app in your Apps grid."
-    ];
-    let ri = 0;
+    body.querySelector('#as-disc').onclick = ()=>{ Brain.clearKey(prov); OS.apps.assistant.render(body); };
     function bubble(txt, me){
       const d = document.createElement('div');
-      d.style.cssText = 'max-width:82%;padding:10px 14px;border-radius:16px;font-size:14.5px;line-height:1.55;'+
+      d.style.cssText = 'max-width:85%;padding:10px 14px;border-radius:16px;font-size:14.5px;line-height:1.6;white-space:pre-wrap;'+
         (me ? 'align-self:flex-end;background:linear-gradient(135deg,#4ade80,#22c55e);color:#06110a;border-bottom-right-radius:5px'
             : 'align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.09);border-bottom-left-radius:5px');
       d.textContent = txt; msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
+      return d;
     }
-    function ask(q){
-      if(!q.trim()) return; bubble(q, true); inp.value='';
-      const t = document.createElement('div');
-      t.style.cssText='align-self:flex-start;color:var(--faint);font-size:13px;padding:4px 6px'; t.textContent='thinking…';
-      msgs.appendChild(t); msgs.scrollTop = msgs.scrollHeight;
-      setTimeout(()=>{ t.remove(); bubble(replies[ri++ % replies.length], false); }, 900);
+    async function ask(q){
+      q = q.trim(); if(!q) return;
+      bubble(q, true); inp.value='';
+      hist.push({ role:'user', content:q });
+      const t = bubble('thinking…', false); t.style.color='var(--faint)';
+      try{
+        const reply = await Brain.chat(prov, key, hist);
+        t.remove(); bubble(reply, false);
+        hist.push({ role:'assistant', content:reply });
+      }catch(e){ t.remove(); bubble('Hmm — '+e.message, false); }
     }
-    bubble("Hey — I'm the Moor assistant. This is a UI preview, so my brain is fake, but the furniture is real. Try the chips below.", false);
-    const chips = body.querySelector('#as-chips');
-    ["Make me a habit tracker","What's on my calendar?","Show me my files"].forEach(c=>{
-      const b = document.createElement('button'); b.className='chipbtn'; b.textContent=c; b.style.flex='none';
-      b.onclick = ()=>ask(c); chips.appendChild(b);
-    });
+    bubble("Brain connected — "+cfg.name+", "+cfg.chatModel+". Ask me anything, for real this time.", false);
     body.querySelector('#as-send').onclick = ()=>ask(inp.value);
     inp.addEventListener('keydown', e=>{ if(e.key==='Enter') ask(inp.value); });
   }},
@@ -709,15 +796,23 @@ calendar: { title:'Calendar', icon:'cal', tint:'linear-gradient(135deg,#f9a8d4,#
 settings: { title:'Settings', icon:'gear', tint:'linear-gradient(135deg,#94a3b8,#64748b)', w:520, h:520,
   render(body){
     const hues = [['Green','#4ade80'],['Teal','#5eead4'],['Violet','#c4b5fd'],['Blue','#93c5fd'],['Amber','#fcd34d']];
+    const prov = Brain.activeProvider();
+    const brainLine = prov
+      ? '<b style="color:#5eead4">'+BRAIN_PROVIDERS[prov].name+'</b> · '+BRAIN_PROVIDERS[prov].chatModel+' — live'
+      : 'Not connected — open Assistant to add a key';
     body.innerHTML =
       '<div class="sec-t">Intelligence</div>'+
-      '<div class="grid2"><button class="chipbtn" id="st-local">This computer</button><button class="chipbtn" id="st-key">I have a key</button></div>'+
-      '<div class="small muted" style="margin-top:8px" id="st-brain">Currently: this computer (qwen3:4b) — preview</div>'+
+      '<div class="card"><div class="small" id="st-brain" style="line-height:1.6">'+brainLine+'</div>'+
+      '<div class="row" style="margin-top:10px;gap:8px">'+
+      (prov ? '<button class="chipbtn" id="st-disc">Disconnect key</button>'
+            : '<button class="chipbtn" id="st-conn">Connect a key</button>')+'</div>'+
+      '<div class="tiny muted" style="margin-top:8px">Keys stay in this browser and go straight to the provider.</div></div>'+
       '<div class="sec-t">Accent color</div><div class="row" id="st-acc" style="gap:10px"></div>'+
-      '<div class="sec-t">Storage</div><div class="card small muted">Everything lives on this device. 4.2 GB free.</div>'+
-      '<div class="sec-t">About</div><div class="card small muted">Moor OS · UI preview v0.1<br>Nothing here is real yet — it&rsquo;s all furniture.</div>';
-    body.querySelector('#st-local').onclick = ()=>{ body.querySelector('#st-brain').textContent='Currently: this computer (qwen3:4b) — preview'; toast('Switched to local (preview)'); };
-    body.querySelector('#st-key').onclick = ()=>{ body.querySelector('#st-brain').textContent='Currently: API key — preview'; toast('Switched to key (preview)'); };
+      '<div class="sec-t">Storage</div><div class="card small muted">Everything lives on this device. Preview data only.</div>'+
+      '<div class="sec-t">About</div><div class="card small muted">Moor OS · UI preview v0.2<br>Brain: bring-your-own-key, direct to provider.<br>Everything else here is still furniture.</div>';
+    const bd = body.querySelector('#st-disc'), bc = body.querySelector('#st-conn');
+    if(bd) bd.onclick = ()=>{ Brain.clearKey(prov); OS.apps.settings.render(body); toast('Key removed from this browser'); };
+    if(bc) bc.onclick = ()=>OS.open('assistant');
     const acc = body.querySelector('#st-acc');
     hues.forEach(([n,c])=>{
       const b = document.createElement('button');
