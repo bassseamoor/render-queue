@@ -837,6 +837,58 @@ const KitsUI = {
   }
 };
 
+/* ================= PHONE -> PC SYNC =================
+   Packages the apps you built on this phone and pushes them to a private
+   GitHub mailbox repo (moor-phone-drop). Your PC pulls them from there
+   with phone-sync.py into its "Made by you" shelf. Token is paste-once,
+   stored only in this browser, and only ever sent to api.github.com. */
+const PhoneSync = {
+  REPO:'bassseamoor/moor-phone-drop', PATH:'drop.json',
+  _ls(k){ try{ return localStorage.getItem(k)||''; }catch(e){ return ''; } },
+  token(){ return this._ls('moor.preview.github_pat'); },
+  saveToken(t){ try{ localStorage.setItem('moor.preview.github_pat', t); }catch(e){} },
+  clearToken(){ try{ localStorage.removeItem('moor.preview.github_pat'); }catch(e){} },
+  lastSync(){ return this._ls('moor.preview.sync_last'); },
+  api(path, opts){
+    opts = opts||{};
+    const h = {'Accept':'application/vnd.github+json','Authorization':'Bearer '+this.token()};
+    if(opts.headers) for(const k in opts.headers) h[k]=opts.headers[k];
+    opts.headers = h;
+    return fetch('https://api.github.com'+path, opts);
+  },
+  b64(s){ return btoa(unescape(encodeURIComponent(s))); },
+  collect(){
+    return (Store.data.apps||[]).filter(a=>a&&a.code).map(a=>({
+      id:String(a.id), name:String(a.name||'Untitled app'), kit:a.kit||null,
+      color:a.color||null, created:a.created||Date.now(), html:String(a.code) }));
+  },
+  async send(say){
+    say = say||function(){};
+    if(!this.token()) throw new Error('Paste your GitHub token first.');
+    const apps = this.collect();
+    if(!apps.length) throw new Error('No apps to send yet — build something first.');
+    const payload = { moor:1, kind:'phone-drop', exported_at:new Date().toISOString(),
+                      device:'web', app_count:apps.length, apps:apps };
+    const url = '/repos/'+this.REPO+'/contents/'+this.PATH;
+    say('Packaging '+apps.length+' app'+(apps.length>1?'s':'')+'…');
+    let sha = null;
+    const cur = await this.api(url);
+    if(cur.status===200){ const j = await cur.json(); sha = j.sha||null; }
+    else if(cur.status===401||cur.status===403) throw new Error('GitHub rejected the token — check it and try again.');
+    else if(cur.status!==404) throw new Error('GitHub said '+cur.status+' — try again.');
+    say('Uploading to your private mailbox…');
+    const put = { message:'phone drop '+new Date().toISOString(),
+                  content:this.b64(JSON.stringify(payload)) };
+    if(sha) put.sha = sha;
+    const r = await this.api(url, { method:'PUT',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(put) });
+    if(r.status===401||r.status===403) throw new Error('GitHub rejected the token — check it and try again.');
+    if(!r.ok) throw new Error('Upload failed ('+r.status+') — try again.');
+    try{ localStorage.setItem('moor.preview.sync_last', new Date().toISOString()); }catch(e){}
+    return apps.length;
+  }
+};
+
 OS.apps = {
 /* Apps grid: built-ins + apps you built with the Assistant */
 assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade80,#22c55e)', w:480, h:560,
@@ -1263,7 +1315,15 @@ settings: { title:'Settings', icon:'gear', tint:'linear-gradient(135deg,#94a3b8,
       '<input type="file" id="st-file" accept=".json" style="display:none">'+
       '<button class="chipbtn" id="st-wipe" style="color:#f2b8b8">Erase everything</button></div>'+
       '<div class="tiny muted" style="margin-top:8px">Your stuff lives only in this browser. Export a backup before you clear site data.</div></div>'+
-      '<div class="sec-t">About</div><div class="card small muted">Moor · v1.0<br>Brain: bring-your-own-key, direct to provider.<br>Sync with your PC is coming.</div>';
+      '<div class="sec-t">Sync to PC</div><div class="card">'+
+      '<div class="small" style="line-height:1.6">Send the apps you built here to the Moor on your PC. They land in your &ldquo;Made by you&rdquo; shelf.</div>'+
+      '<input type="password" id="st-ghpat" placeholder="'+(PhoneSync.token()?'Token saved — paste to replace':'GitHub token (paste once)')+'" style="width:100%;margin-top:10px;font-size:16px">'+
+      '<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">'+
+      '<button class="chipbtn" id="st-sync">Send apps to PC</button>'+
+      '<button class="chipbtn" id="st-patclear">Forget token</button></div>'+
+      '<div class="tiny muted" id="st-syncstat" style="margin-top:8px">'+(PhoneSync.lastSync()?'Last sent '+new Date(PhoneSync.lastSync()).toLocaleString():'Not sent yet')+'</div>'+
+      '<div class="tiny muted" style="margin-top:8px">The token only touches your private <b>moor-phone-drop</b> mailbox repo. Make one: github.com &rarr; Settings &rarr; Developer settings &rarr; Personal access tokens &rarr; Fine-grained &rarr; pick the repo &rarr; Contents: read &amp; write.</div></div>'+
+      '<div class="sec-t">About</div><div class="card small muted">Moor · v1.0<br>Brain: bring-your-own-key, direct to provider.<br>Phone &rarr; PC sync lives in the section above.</div>';
     const bd = body.querySelector('#st-disc'), bc = body.querySelector('#st-conn');
     if(bd) bd.onclick = ()=>{ Brain.clearKey(prov); OS.apps.settings.render(body); toast('Key removed from this browser'); };
     if(bc) bc.onclick = ()=>OS.open('assistant');
@@ -1321,6 +1381,22 @@ settings: { title:'Settings', icon:'gear', tint:'linear-gradient(135deg,#94a3b8,
       try{ localStorage.removeItem(DB_KEY); }catch(e){}
       try{ indexedDB.deleteDatabase('moor-blobs'); }catch(e){}
       location.reload();
+    };
+    // phone -> PC sync wiring
+    const pat = body.querySelector('#st-ghpat');
+    if(pat) pat.onchange = ()=>{ const t = pat.value.trim(); if(t){ PhoneSync.saveToken(t); pat.value=''; pat.placeholder='Token saved — paste to replace'; toast('Token saved in this browser'); } };
+    const pcl = body.querySelector('#st-patclear');
+    if(pcl) pcl.onclick = ()=>{ PhoneSync.clearToken(); if(pat) pat.placeholder='GitHub token (paste once)'; toast('Token forgotten'); };
+    const ssb = body.querySelector('#st-sync'), sst = body.querySelector('#st-syncstat');
+    if(ssb) ssb.onclick = async ()=>{
+      ssb.disabled = true;
+      const say = t=>{ if(sst) sst.textContent = t; };
+      try{
+        const n = await PhoneSync.send(say);
+        say('Sent '+n+' app'+(n>1?'s':'')+' — run phone-sync on your PC to pull them in.');
+        toast('Sent to your PC mailbox');
+      }catch(e){ say(e.message); }
+      ssb.disabled = false;
     };
   }}
 };
