@@ -53,8 +53,28 @@
   #syncpill { pointer-events: auto; display: flex; align-items: center; gap: 8px;
     padding: 10px 16px; border-radius: 999px; font-size: 12.5px; color: var(--dim); }
   #topright { display: flex; align-items: center; gap: 10px; pointer-events: auto; }
-  #appsbtn { width: 46px; height: 46px; border-radius: 50%; color: var(--ink); font-size: 19px; }
-  #appsbtn:active { transform: scale(.92); }
+  #appsbtn, #homebtn { width: 46px; height: 46px; border-radius: 50%; color: var(--ink); font-size: 19px;
+    transition: transform .14s ease, background .2s ease; }
+  #appsbtn:active, #homebtn:active { transform: scale(.9); }
+  #askwrap:focus-within { border-color: rgba(174,222,132,.55);
+    box-shadow: 0 10px 40px rgba(0,0,0,.5), 0 0 26px rgba(174,222,132,.13); }
+  @keyframes rowIn { from { opacity: 0; transform: translateY(16px); } }
+  #hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 118px; z-index: 5;
+    font-size: 12.5px; color: var(--dim); background: rgba(10,14,10,.74); border: 1px solid var(--stroke);
+    padding: 10px 18px; border-radius: 999px; white-space: nowrap;
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    opacity: 0; transition: opacity .7s ease; pointer-events: none; }
+  #hint.show { opacity: 1; }
+  #hint b { color: var(--ink); font-weight: 700; }
+  @media (hover: hover) {
+    .tile:hover .orb { transform: translateY(-4px) scale(1.07);
+      box-shadow: 0 16px 38px rgba(0,0,0,.55), 0 0 30px rgba(174,222,132,.14), inset 0 2px 5px rgba(255,255,255,.4); }
+    .tile:hover .nm { color: #fff; }
+    #appsbtn:hover, #homebtn:hover { background: rgba(174,222,132,.16); }
+    #sendbtn:hover { box-shadow: 0 0 22px rgba(174,222,132,.35); }
+    .winhead button:hover { background: rgba(255,255,255,.12); }
+  }
+  .tile:active .orb { transform: scale(.93); }
   #syncpill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--acc);
     box-shadow: 0 0 10px rgba(174,222,132,.8); }
 
@@ -145,7 +165,7 @@
   #sheet { z-index: 40; }
   #appsheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 40;
     border-radius: 26px 26px 0 0; padding: 14px 22px 40px; max-height: 72vh; overflow-y: auto;
-    transform: translateY(102%); transition: transform .38s cubic-bezier(.2,.9,.25,1); }
+    transform: translateY(102%); transition: transform .5s cubic-bezier(.22,1.25,.36,1); }
   #appsheet.open { transform: translateY(0); }
   #appsheet .grab { width: 44px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.22); margin: 2px auto 18px; }
   #appsheet h2 { font-size: 20px; margin: 0 0 4px; letter-spacing: -.3px; }
@@ -179,12 +199,14 @@
   .win { position: absolute; left: 50%; top: 42%; width: 250px; margin-left: -125px;
     transform-style: preserve-3d; pointer-events: auto;
     display: flex; flex-direction: column; overflow: hidden;
-    background: rgba(14,20,14,.90);
+    background: linear-gradient(165deg, rgba(26,34,26,.94), rgba(12,17,12,.90));
     -webkit-backdrop-filter: blur(28px); backdrop-filter: blur(28px);
-    border: 1px solid rgba(174,222,132,.28); border-radius: 22px;
-    box-shadow: 0 40px 100px rgba(0,0,0,.65), 0 0 60px rgba(174,222,132,.08), inset 0 1px 0 rgba(255,255,255,.12);
-    opacity: 0; transition: opacity .3s ease; }
+    border: 1px solid rgba(255,255,255,.13); border-radius: 22px;
+    box-shadow: 0 40px 100px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.14);
+    opacity: 0; }
   .win.open { opacity: 1; }
+  .win.top { border-color: rgba(174,222,132,.42);
+    box-shadow: 0 40px 110px rgba(0,0,0,.7), 0 0 54px rgba(174,222,132,.13), inset 0 1px 0 rgba(255,255,255,.16); }
   .winhead { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; flex: none;
     border-bottom: 1px solid rgba(255,255,255,.07); touch-action: none; cursor: grab; }
   .winhead .orb { width: 36px; height: 36px; border-radius: 11px; margin: 0; flex: none; }
@@ -253,6 +275,7 @@
     <div class="wm">M O O R<small id="greet">Good evening</small></div>
     <div id="topright">
       <div class="glass" id="syncpill"><div class="dot"></div>phone linked</div>
+      <button class="glass" id="homebtn" title="Reset view">⌂</button>
       <button class="glass" id="appsbtn" title="All apps">◫</button>
     </div>
   </div>
@@ -267,6 +290,7 @@
     </div>
   </div>
   <div id="toast"></div>
+  <div id="hint">drag to look around&ensp;·&ensp;tap a tile to open it&ensp;·&ensp;<b>◫</b> opens any app</div>
 
   <div id="dock">
     <div class="glass" id="composer">
@@ -348,6 +372,14 @@ function toast(msg){
   if (toastT) clearTimeout(toastT);
   toastT = setTimeout(function(){ t.classList.remove("show"); toastT = null; }, 2600);
 }
+/* one transient hint that teaches the space, then gets out of the way */
+var hintEl = document.getElementById("hint"), hintHidden = false;
+function hideHint(){
+  if (hintHidden) return; hintHidden = true;
+  hintEl.classList.remove("show");
+}
+setTimeout(function(){ if (!hintHidden) hintEl.classList.add("show"); }, 1400);
+setTimeout(hideHint, 12000);
 
 function pretty(s){
   s = s.trim().replace(/\s+/g, " ");
@@ -474,6 +506,7 @@ function camLoop(){
 function camKick(){ if (!camRAF) camRAF = requestAnimationFrame(camLoop); }
 var drag = null;
 spaceEl.addEventListener("pointerdown", function(e){
+  hideHint();
   drag = { x: e.clientX, y: e.clientY, trx: cam.trx, tryy: cam.tryy };
   camDragged = false;
 });
@@ -666,7 +699,14 @@ function openApp(keyOrTile){
   win._tile = tileEl; tileEl._win = win;
   placeWin(win);
   winlayer.appendChild(win);
-  requestAnimationFrame(function(){ win.classList.add("open"); });
+  win.classList.add("open");
+  var baseTf = win.style.transform;
+  win.animate([
+    { opacity: 0, transform: baseTf + " translateY(30px) scale(.9)" },
+    { opacity: 1, transform: baseTf + " translateY(0px) scale(1)" }
+  ], { duration: 420, easing: "cubic-bezier(.22,1.35,.36,1)" });
+  focusWin(win);
+  hideHint();
   /* pan + level the camera gently so the window sits centered and readable — you stay in the space */
   cam.tpx = -wx; cam.trx = 8; cam.tryy = 0; camKick();
   wireWin(win, body, tileEl, t);
@@ -675,11 +715,20 @@ function openApp(keyOrTile){
 function placeWin(win){
   win.style.transform = "translate3d(" + win._wx.toFixed(0) + "px," + win._wy.toFixed(0) + "px," + win._wz.toFixed(0) + "px)";
 }
-function focusWin(win){ winlayer.appendChild(win); }
+function focusWin(win){
+  winlayer.appendChild(win);
+  winlayer.querySelectorAll(".win").forEach(function(w){ w.classList.remove("top"); });
+  win.classList.add("top");
+}
 function closeWin(win){
   if (win._tile && win._tile._win === win) win._tile._win = null;
-  win.classList.remove("open");
-  setTimeout(function(){ win.remove(); }, 320);
+  win.style.pointerEvents = "none";
+  var baseTf = win.style.transform;
+  var a = win.animate([
+    { opacity: 1, transform: baseTf + " scale(1)" },
+    { opacity: 0, transform: baseTf + " translateY(18px) scale(.9)" }
+  ], { duration: 240, easing: "cubic-bezier(.5,0,.8,.4)" });
+  a.onfinish = function(){ win.remove(); };
 }
 function wireWin(win, body, tileEl, t){
   win.querySelector(".wclose").addEventListener("click", function(e){ e.stopPropagation(); closeWin(win); });
@@ -831,13 +880,14 @@ function renderAppList(){
     l.innerHTML = "<div class='sub2' style='padding:14px 2px'>Nothing here yet — ask Moor to build something.</div>";
     return;
   }
-  tiles.forEach(function(tileEl){
+  tiles.forEach(function(tileEl, i){
     var t = T[tileEl.dataset.key] || { name: "App", icon: "" };
     var nm = tileEl.querySelector("b").textContent;
     var col = tileEl.querySelector(".orb").style.background;
     var r = document.createElement("div");
     r.className = "trow";
     r.innerHTML = '<div class="orb" style="background:'+col+'"><span class="glyph">'+t.icon+'</span></div><div><b>'+nm+'</b><span>'+t.name+'</span></div><div class="plus">›</div>';
+    r.style.animation = "rowIn .4s " + (i * 40) + "ms cubic-bezier(.22,1.2,.36,1) backwards";
     r.addEventListener("click", function(){ closeAppSheet(); setTimeout(function(){ openApp(tileEl); }, 120); });
     l.appendChild(r);
   });
@@ -848,6 +898,9 @@ function closeAppSheet(){
   if (!sheet.classList.contains("open")) scrim.classList.remove("open");
 }
 document.getElementById("appsbtn").addEventListener("click", openAppSheet);
+document.getElementById("homebtn").addEventListener("click", function(){
+  cam.trx = 10; cam.tryy = 0; cam.tz = 80; cam.tpx = 0; camKick(); blip(440);
+});
 document.getElementById("appsheetclose").addEventListener("click", closeAppSheet);
 </script>
 </body>
