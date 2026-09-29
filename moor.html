@@ -317,7 +317,7 @@ const Brain = {
     return c ? c.content.trim() : '(empty reply)';
   }
 };
-const BRAIN_SYS = 'You are Moor, the assistant inside Moor OS, a local-first personal operating system. Be warm, concise, and plain-spoken. Keep replies short unless asked for detail. Notes, habits, calendar, files, and apps on this device are real and persistent. When the user asks you to make, build, or create an app, tool, game, or tracker, output the COMPLETE app as ONE self-contained HTML file inside a single ```html code fence (no external URLs except public CDNs), then briefly describe it outside the fence. Never truncate the code.';
+const BRAIN_SYS = 'You are Moor, the assistant inside Moor OS, a local-first personal operating system. Be warm, concise, and plain-spoken. Keep replies short unless asked for detail. Notes, habits, calendar, files, and apps on this device are real and persistent. When the user asks you to make, build, or create an app, tool, game, or tracker, output the COMPLETE app as ONE self-contained HTML file inside a single ```html code fence (no external URLs except public CDNs), then briefly describe it outside the fence. Never truncate the code.' + ' Tested kits exist for common builds (games, trackers, timers, organizers) in the Kits app — when users ask for something a kit covers, point them there instead of generating code from scratch.';
 
 /* ================= STORE: the app's real memory ================= */
 const DB_KEY='moor.db.v1';
@@ -713,6 +713,130 @@ const PART_EXAMPLES = {
   export:'{\n  "kind": "export",\n  "config": { "format": "json", "what": "items" } }'
 };
 
+/* ================= KITS ================= */
+const Kits = {
+  base: (window.MOOR_KITS_BASE || 'https://bassseamoor.github.io/render-queue/kits/'),
+  index: null, _kits: {},
+  async load(){
+    if(this.index) return this.index;
+    const r = await fetch(this.base + 'index.json', {cache:'no-cache'});
+    if(!r.ok) throw new Error('kit catalog unavailable');
+    this.index = await r.json();
+    return this.index;
+  },
+  async getKit(id){
+    if(this._kits[id]) return this._kits[id];
+    const r = await fetch(this.base + id + '/kit.json', {cache:'no-cache'});
+    if(!r.ok) throw new Error('kit not found');
+    const k = await r.json(); this._kits[id] = k; return k;
+  },
+  match(text){
+    if(!this.index || !this.index.kits) return null;
+    const words = text.toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>2);
+    if(!words.length) return null;
+    let best=null, bestScore=0;
+    this.index.kits.forEach(k=>{
+      const hay = ((k.keywords||[]).join(' ')+' '+k.name+' '+(k.description||'')).toLowerCase();
+      let s=0;
+      words.forEach(w=>{ if(hay.indexOf(w)>=0) s += ((k.keywords||[]).indexOf(w)>=0 ? 3 : 1); });
+      if(s>bestScore){ bestScore=s; best=k; }
+    });
+    return bestScore>=2 ? best : null;
+  },
+  defaults(kit){
+    const c={};
+    (kit.quiz||[]).forEach(q=>{ c[q.id] = (q.default!==undefined ? q.default : (q.type==='toggles'?[]:null)); });
+    return c;
+  },
+  async buildHTML(kit, config){
+    const r = await fetch(this.base + kit.id + '/assembler.js', {cache:'no-cache'});
+    if(!r.ok) throw new Error('assembler unavailable');
+    const code = await r.text();
+    const prev = window.MoorKit;
+    try{
+      (0,eval)(code);
+      if(!window.MoorKit || typeof window.MoorKit.build!=='function') throw new Error('bad assembler');
+      const html = window.MoorKit.build(config||{});
+      if(typeof html!=='string' || html.indexOf('<!DOCTYPE html>')!==0) throw new Error('bad build output');
+      return html;
+    }finally{ if(prev===undefined){ try{delete window.MoorKit;}catch(e){} } else window.MoorKit = prev; }
+  }
+};
+const KitsUI = {
+  _pending: null,
+  render(body){
+    const pend = this._pending; this._pending = null;
+    if(pend){ this.quiz(body, pend); return; }
+    body.innerHTML = '<div class="sec-t" style="margin-top:0">Kit gallery</div>'+
+      '<div class="small muted" style="margin-bottom:12px;line-height:1.6">Pick one, answer a few quick questions, get a working app. No API key needed.</div><div id="kz-list"></div>';
+    const list = body.querySelector('#kz-list');
+    list.innerHTML = '<div class="small muted">Loading kits…</div>';
+    Kits.load().then(idx=>{
+      list.innerHTML = '';
+      if(!idx.kits || !idx.kits.length){ list.innerHTML = '<div class="small muted">No kits yet — check back soon.</div>'; return; }
+      idx.kits.forEach(k=>{
+        const d = document.createElement('div'); d.className='card'; d.style.marginBottom='10px';
+        d.innerHTML = '<div class="row"><div style="font-size:26px;flex:none;width:38px;text-align:center">'+esc(k.icon||'▦')+'</div>'+
+          '<div style="flex:1;min-width:0"><div style="font-weight:650;font-size:15px">'+esc(k.name)+'</div>'+
+          '<div class="small muted" style="line-height:1.5">'+esc(k.description||'')+'</div></div></div>'+
+          '<button class="pill-cta" style="margin-top:10px;width:100%;padding:11px">Build '+esc(k.name)+'</button>';
+        d.querySelector('button').onclick = ()=>KitsUI.quiz(body, k.id);
+        list.appendChild(d);
+      });
+    }).catch(()=>{ list.innerHTML = '<div class="small muted">Kits need internet the first time — connect and reopen.</div>'; });
+  },
+  quiz(body, kitId){
+    Kits.getKit(kitId).then(kit=>{
+      const answers = Kits.defaults(kit);
+      const qs = kit.quiz||[];
+      let qi = 0;
+      function optBtn(q, o){
+        const on = q.type==='toggles' ? (answers[q.id]||[]).indexOf(o.id)>=0 : answers[q.id]===o.id;
+        return '<button data-opt="'+esc(o.id)+'" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:13px 14px;border-radius:14px;cursor:pointer;color:#fff;border:1px solid '+(on?'#4ade80':'rgba(255,255,255,.12)')+';background:'+(on?'rgba(74,222,128,.12)':'rgba(255,255,255,.04)')+'">'+
+          '<div style="font-weight:650;font-size:14.5px">'+esc(o.label)+(on?' ✓':'')+'</div>'+(o.hint?'<div class="small muted">'+esc(o.hint)+'</div>':'')+'</button>';
+      }
+      function draw(){
+        if(qi>=qs.length){ build(); return; }
+        const q = qs[qi];
+        body.innerHTML =
+          '<button class="chipbtn" id="kz-back" style="margin-bottom:12px">← '+(qi===0?'Gallery':'Back')+'</button>'+
+          '<div class="tiny muted" style="margin-bottom:6px">'+esc(kit.name)+' · '+(qi+1)+' of '+qs.length+'</div>'+
+          '<div style="font-size:19px;font-weight:700;margin-bottom:14px;line-height:1.35">'+esc(q.question)+'</div>'+
+          '<div id="kz-opts">'+q.options.map(o=>optBtn(q,o)).join('')+'</div>'+
+          '<button class="pill-cta" id="kz-next" style="width:100%;margin-top:6px;padding:13px">'+(qi===qs.length-1?'Build my '+esc(kit.name):'Next →')+'</button>';
+        body.querySelector('#kz-back').onclick = ()=>{ if(qi===0) KitsUI.render(body); else { qi--; draw(); } };
+        body.querySelectorAll('#kz-opts [data-opt]').forEach(b=>{
+          b.onclick = ()=>{
+            const id = b.getAttribute('data-opt');
+            if(q.type==='toggles'){
+              const arr = answers[q.id]||[];
+              answers[q.id] = arr.indexOf(id)>=0 ? arr.filter(x=>x!==id) : arr.concat([id]);
+            }else answers[q.id]=id;
+            draw();
+          };
+        });
+        body.querySelector('#kz-next').onclick = ()=>{ qi++; draw(); };
+      }
+      function build(){
+        body.innerHTML = '<div class="small muted" style="text-align:center;padding:40px 0">Building your '+esc(kit.name)+'…</div>';
+        Kits.buildHTML(kit, answers).then(html=>{
+          const D = Store.data;
+          const app = { id:uid(), name:kit.name, code:html, color:'#fcd34d', created:Date.now(), kit:kit.id };
+          D.apps.push(app); Store.save();
+          toast('Built! Saved to your Apps');
+          OS.openHTML(app);
+          KitsUI.render(body);
+        }).catch(e=>{
+          body.innerHTML = '<div class="small" style="color:#f2b8b8">Build failed: '+esc(e.message)+'</div>'+
+            '<button class="chipbtn" id="kz-retry" style="margin-top:12px">← Back to gallery</button>';
+          body.querySelector('#kz-retry').onclick = ()=>KitsUI.render(body);
+        });
+      }
+      draw();
+    }).catch(()=>toast('Could not load kit'));
+  }
+};
+
 OS.apps = {
 /* Apps grid: built-ins + apps you built with the Assistant */
 assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade80,#22c55e)', w:480, h:560,
@@ -723,7 +847,12 @@ assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade8
       const ids = Object.keys(BRAIN_PROVIDERS);
       body.innerHTML = '<div class="w-body pad"><div class="sec-t" style="margin-top:0">Connect a brain</div>'+
         '<p class="small muted" style="line-height:1.6">Paste an API key and I can actually think. It stays in this browser, and goes straight to the provider you pick.</p>'+
-        '<div id="as-provlist"></div></div>';
+        '<div id="as-provlist"></div>'+
+        '<div class="sec-t" style="margin-top:20px">No key? No problem.</div>'+
+        '<p class="small muted" style="line-height:1.6">Tell me what you want to make and I\'ll point you at the right kit. Quizzes and building work with no key at all.</p>'+
+        '<div class="row" style="gap:8px"><input type="text" id="as-guide-in" placeholder="e.g. I need a CRM" style="flex:1;font-size:16px">'+
+        '<button class="pill-cta" id="as-guide-go">Go</button></div>'+
+        '<div id="as-guide-out" style="margin-top:10px"></div></div>';
       const host = body.querySelector('#as-provlist');
       ids.forEach(id=>{
         const p = BRAIN_PROVIDERS[id];
@@ -743,6 +872,26 @@ assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade8
           else { v.style.color='#f2b8b8'; v.textContent=res.msg; }
         };
       });
+      const gin = body.querySelector('#as-guide-in'), gout = body.querySelector('#as-guide-out');
+      function guide(){
+        const q = gin.value.trim(); if(!q) return;
+        gout.innerHTML = '<div class="small muted">Looking…</div>';
+        Kits.load().then(()=>{
+          const m = Kits.match(q);
+          if(m){
+            gout.innerHTML = '<div class="card"><div class="row"><div style="font-size:24px;flex:none;width:36px;text-align:center">'+esc(m.icon||'▦')+'</div>'+
+              '<div style="flex:1"><div style="font-weight:650">'+esc(m.name)+'</div><div class="small muted">'+esc(m.description||'')+'</div></div></div>'+
+              '<button class="pill-cta" id="as-guide-build" style="margin-top:10px;width:100%">Set it up →</button></div>';
+            gout.querySelector('#as-guide-build').onclick = ()=>{ KitsUI._pending = m.id; OS.open('kits'); };
+          }else{
+            gout.innerHTML = '<div class="small muted">Nothing matches that yet — here\'s everything I can build:</div>'+
+              '<button class="pill-cta" id="as-guide-browse" style="margin-top:8px">Browse all kits</button>';
+            gout.querySelector('#as-guide-browse').onclick = ()=>OS.open('kits');
+          }
+        }).catch(()=>{ gout.innerHTML = '<div class="small muted">Kits need internet the first time — connect and retry.</div>'; });
+      }
+      body.querySelector('#as-guide-go').onclick = guide;
+      gin.addEventListener('keydown', e=>{ if(e.key==='Enter') guide(); });
       return;
     }
     const cfg = BRAIN_PROVIDERS[prov], key = Brain.keyFor(prov);
@@ -783,6 +932,8 @@ assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade8
   }},
 apps: { title:'Apps', icon:'grid', tint:'linear-gradient(135deg,#93c5fd,#6366f1)', w:560, h:480,
   render(body){ drawAppsGrid(body); }},
+kits: { title:'Kits', icon:'spark', tint:'linear-gradient(135deg,#fcd34d,#f59e0b)', w:560, h:520,
+  render(body){ KitsUI.render(body); }},
 files: { title:'Files', icon:'folder', tint:'linear-gradient(135deg,#93c5fd,#3b82f6)', w:620, h:460,
   render(body){
     body.style.display='flex'; body.style.padding='0'; body.style.gap='0';
@@ -1180,6 +1331,7 @@ function drawAppsGrid(body){
     ['Assistant','chat','#4ade80','assistant'],['Notes','note','#fcd34d','notes'],
     ['Habits','checkSq','#5eead4','habits'],['Files','folder','#93c5fd','files'],
     ['Calendar','cal','#f9a8d4','calendar'],['Templates','layers','#c4b5fd','templates'],
+    ['Kits','spark','#fcd34d','kits'],
     ['Settings','gear','#94a3b8','settings']
   ];
   let html = '<div class="sec-t" style="margin-top:0">All apps</div><div id="ap-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:14px;margin-bottom:6px"></div>';
