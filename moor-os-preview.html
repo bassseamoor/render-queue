@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#05070a">
-<title>Moor — OS Preview</title>
+<title>Moor</title>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
@@ -174,7 +174,7 @@ input:focus,textarea:focus{outline:none;border-color:rgba(94,234,212,.5)}
 <div id="os">
   <div id="topbar">
     <div class="logo">Moor <span>OS</span></div>
-    <div id="preview-tag">PREVIEW</div>
+    <div id="preview-tag">v1.0</div>
     <button id="replay-ob">↺ Onboarding</button>
     <div id="clock"></div>
   </div>
@@ -272,7 +272,69 @@ const Brain = {
     return c ? c.content.trim() : '(empty reply)';
   }
 };
-const BRAIN_SYS = 'You are Moor, the assistant inside Moor OS, a local-first personal operating system. Be warm, concise, and plain-spoken. Keep replies short unless asked for detail. This is a UI preview, so be honest that anything beyond chatting (files, apps, building) is mocked.';
+const BRAIN_SYS = 'You are Moor, the assistant inside Moor OS, a local-first personal operating system. Be warm, concise, and plain-spoken. Keep replies short unless asked for detail. Notes, habits, calendar, files, and apps on this device are real and persistent. When the user asks you to make, build, or create an app, tool, game, or tracker, output the COMPLETE app as ONE self-contained HTML file inside a single ```html code fence (no external URLs except public CDNs), then briefly describe it outside the fence. Never truncate the code.';
+
+/* ================= STORE: the app's real memory ================= */
+const DB_KEY='moor.db.v1';
+function uid(){ return 'x'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function todayStr(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fmtSize(b){ if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+const Store = {
+  data:null,
+  load(){
+    try{ this.data = JSON.parse(localStorage.getItem(DB_KEY)) || null; }catch(e){ this.data=null; }
+    if(!this.data){
+      const r = uid();
+      this.data = {
+        notes:[{ id:uid(), title:'Welcome to Moor', body:'This is a real note. It lives on this device.\n\nEverything here is yours now — notes, habits, calendar, files, and apps you build with the Assistant.', updated:Date.now() }],
+        habits:[
+          { id:uid(), name:'Read 20 min', color:'#4ade80', log:{} },
+          { id:uid(), name:'Workout', color:'#5eead4', log:{} }
+        ],
+        events:{},
+        apps:[],
+        templates:[],
+        files:{ root:'root', items:{} },
+        settings:{ accent:'#4ade80' }
+      };
+      const w = uid();
+      this.data.files.items['root'] = { id:'root', name:'Files', type:'dir', parent:null, children:[w] };
+      this.data.files.items[w] = { id:w, name:'Welcome.txt', type:'file', parent:'root', mime:'text/plain',
+        seed:'Welcome to your files.\n\nCreate folders, write notes, upload photos — it all stays on this device.', updated:Date.now() };
+    }
+    return this.data;
+  },
+  save(){ try{ localStorage.setItem(DB_KEY, JSON.stringify(this.data)); }catch(e){ toast('Storage is full — export your data from Settings.'); } }
+};
+/* Blobs: file contents live in IndexedDB (localStorage is too small for uploads) */
+const Blobs = {
+  db:null,
+  open(){ const self=this; return new Promise(function(res,rej){
+    try{
+      const q = indexedDB.open('moor-blobs',1);
+      q.onupgradeneeded = function(e){ e.target.result.createObjectStore('blobs'); };
+      q.onsuccess = function(e){ self.db=e.target.result; res(); };
+      q.onerror = function(){ rej(new Error('db')); };
+    }catch(e){ rej(e); }
+  }); },
+  put(id,val){ const self=this; return new Promise(function(res,rej){
+    if(!self.db) return rej(new Error('nodb'));
+    const t = self.db.transaction('blobs','readwrite').objectStore('blobs').put(val,id);
+    t.onsuccess=res; t.onerror=function(){rej(new Error('put'));}; }); },
+  get(id){ const self=this; return new Promise(function(res,rej){
+    if(!self.db) return rej(new Error('nodb'));
+    const t = self.db.transaction('blobs','readonly').objectStore('blobs').get(id);
+    t.onsuccess=function(){res(t.result);}; t.onerror=function(){rej(new Error('get'));}; }); },
+  del(id){ const self=this; return new Promise(function(res){
+    if(!self.db) return res();
+    try{ const t=self.db.transaction('blobs','readwrite').objectStore('blobs').delete(id); t.onsuccess=res; t.onerror=res; }
+    catch(e){ res(); } }); },
+  all(){ const self=this; return new Promise(function(res){
+    if(!self.db) return res([]);
+    try{ const t=self.db.transaction('blobs','readonly').objectStore('blobs').getAllKeys();
+      t.onsuccess=function(){res(t.result||[]);}; t.onerror=function(){res([]);}; }
+    catch(e){ res([]); } }); }
+};
 
 /* ================= ONBOARDING (mockup) ================= */
 const OB = {
@@ -301,32 +363,9 @@ const OB = {
     }
     if(screen === 'local'){
       R.innerHTML = '<div class="ob-veil"><div class="ob-card">'+
-        '<h2>This computer</h2>'+
-        '<p class="ob-status" id="ob-local-status"><b>Looking</b> for a model on your machine…</p>'+
-        '<div class="ob-bar" id="ob-dlbar" style="display:none"><i></i></div>'+
-        '<p class="ob-status small" id="ob-dltext"></p>'+
-        '<div class="ob-row" id="ob-local-row"></div>'+back+'</div></div>';
-      const st = R.querySelector('#ob-local-status'), row = R.querySelector('#ob-local-row');
-      const bar = R.querySelector('#ob-dlbar'), fill = bar.querySelector('i'), dt = R.querySelector('#ob-dltext');
-      setTimeout(()=>{
-        st.innerHTML = 'No model found yet. Let&rsquo;s grab you a starter — <b>qwen3:4b</b>, small and quick, about 2.5 GB.';
-        const b = document.createElement('button'); b.className='ob-btn'; b.textContent='Download qwen3:4b';
-        b.onclick = ()=>{
-          row.innerHTML=''; bar.style.display='block'; dt.textContent='Downloading… 0%';
-          let p = 0;
-          const t = setInterval(()=>{
-            p = Math.min(100, p + 2 + Math.random()*5);
-            fill.style.width = p+'%'; dt.textContent = 'Downloading… '+Math.floor(p)+'%';
-            if(p >= 100){ clearInterval(t);
-              st.innerHTML = '<b>qwen3:4b</b> is ready. Your machine can think now.';
-              dt.textContent='';
-              const e = document.createElement('button'); e.className='ob-btn'; e.textContent='Enter Moor →';
-              e.onclick = ()=>OB.finish(); row.appendChild(e);
-            }
-          }, 160);
-        };
-        row.appendChild(b);
-      }, 1200);
+        '<h2>This computer</h2><p class="ob-sub">On this phone, Moor runs on your API key. Local models live on your PC — linking it arrives with sync.</p>'+
+        '<div class="ob-row"><button class="ob-btn" id="ob-to-key">Use a key instead &rarr;</button></div>'+back+'</div></div>';
+      R.querySelector('#ob-to-key').onclick = ()=>show('key');
     }
     if(screen === 'key'){
       const hues = ['#5eead4','#c4b5fd','#93c5fd'];
@@ -443,7 +482,7 @@ const OS = {
     desk.appendChild(el);
     const body = el.querySelector('.w-body');
     a.render(body, el);
-    const win = { id, el, min:false, maxed:narrow };
+    const win = { id, el, min:false, maxed:narrow, appDef:a };
     this.wins[id] = win; this.order.push(id);
     el.querySelectorAll('.w-ctl button').forEach(b=>{
       b.onclick = (e)=>{ e.stopPropagation(); const c=b.dataset.c;
@@ -456,6 +495,61 @@ const OS = {
     this.makeDraggable(el, el.querySelector('.w-titlebar'), win);
     this.focus(id); this.renderTaskbar();
     document.querySelectorAll('.rail-btn').forEach(b=>b.classList.toggle('active', b.dataset.app===id));
+  },
+  /* One-off windows: text editor, viewer, and sandboxed HTML apps */
+  _shell(title, tint, icon, w, h){
+    if(this.wins['_x'+title]){ this.focus('_x'+title); const ww=this.wins['_x'+title]; if(ww.min) this.unmin('_x'+title); return null; }
+    const id = '_x'+title+'_'+Date.now().toString(36);
+    const desk = document.getElementById('desk');
+    const el = document.createElement('div');
+    el.className = 'win';
+    const narrow = desk.clientWidth < 640;
+    const W = Math.min(w||560, desk.clientWidth-16), H = Math.min(h||480, desk.clientHeight-16);
+    if(narrow){ el.classList.add('maxed'); el.style.cssText='left:78px;top:8px;right:8px;bottom:70px'; }
+    else { const n=this.order.length; el.style.cssText='left:'+(90+(n*36)%220)+'px;top:'+(40+(n*30)%160)+'px;width:'+W+'px;height:'+H+'px'; }
+    el.innerHTML =
+      '<div class="w-titlebar"><div class="w-icon" style="background:'+tint+'">'+ic(icon)+'</div>'+
+      '<div class="w-title">'+esc(title)+'</div>'+
+      '<div class="w-ctl"><button data-c="min">'+ic('minus')+'</button>'+
+      (narrow?'':'<button data-c="max">'+ic('max')+'</button>')+
+      '<button data-c="close" class="close">'+ic('x')+'</button></div></div><div class="w-body pad"></div>';
+    desk.appendChild(el);
+    const body = el.querySelector('.w-body');
+    const win = { id, el, min:false, maxed:narrow, appDef:{icon:icon, title:title, tint:tint} };
+    this.wins[id] = win; this.order.push(id);
+    el.querySelectorAll('.w-ctl button').forEach(b=>{
+      b.onclick = (e)=>{ e.stopPropagation(); const c=b.dataset.c;
+        if(c==='close') this.close(id); if(c==='min') this.min(id); if(c==='max') this.toggleMax(id); };
+    });
+    el.addEventListener('pointerdown', ()=>this.focus(id), true);
+    this.makeDraggable(el, el.querySelector('.w-titlebar'), win);
+    this.focus(id); this.renderTaskbar();
+    return { id, body };
+  },
+  openEditor(name, text, onSave){
+    const w = this._shell(name, 'linear-gradient(135deg,#fcd34d,#f59e0b)', 'note', 560, 460);
+    if(!w) return;
+    w.body.style.display='flex'; w.body.style.flexDirection='column'; w.body.style.padding='12px';
+    w.body.innerHTML = '<textarea id="ed-t" style="flex:1;resize:none;line-height:1.6;font-family:ui-monospace,monospace;font-size:14px"></textarea>'+
+      '<div class="row" style="margin-top:10px;justify-content:flex-end;gap:8px"><button class="chipbtn" id="ed-cancel">Cancel</button><button class="pill-cta" id="ed-save">Save</button></div>';
+    const ta = w.body.querySelector('#ed-t'); ta.value = text||'';
+    w.body.querySelector('#ed-cancel').onclick = ()=>this.close(w.id);
+    w.body.querySelector('#ed-save').onclick = async ()=>{ await onSave(ta.value); this.close(w.id); toast('Saved'); };
+  },
+  openViewer(name, html){
+    const w = this._shell(name, 'linear-gradient(135deg,#93c5fd,#3b82f6)', 'doc', 560, 460);
+    if(!w) return;
+    w.body.innerHTML = html;
+  },
+  openHTML(app){
+    const w = this._shell(app.name, app.color||'linear-gradient(135deg,#4ade80,#22c55e)', 'spark', 560, 520);
+    if(!w) return;
+    w.body.style.padding='0'; w.body.style.display='flex';
+    const f = document.createElement('iframe');
+    f.setAttribute('sandbox','allow-scripts allow-modals allow-popups');
+    f.style.cssText='flex:1;border:none;border-radius:0 0 16px 16px;background:#fff';
+    f.srcdoc = app.code;
+    w.body.appendChild(f);
   },
   focus(id){
     const w = this.wins[id]; if(!w) return;
@@ -520,7 +614,8 @@ const OS = {
     if(!ids.length){ tb.innerHTML = '<div class="tb-empty">Tap an icon to open an app</div>'; return; }
     tb.innerHTML = '';
     ids.forEach(id=>{
-      const a = this.apps[id], w = this.wins[id];
+      const w = this.wins[id]; if(!w) return;
+      const a = w.appDef || this.apps[id]; if(!a) return;
       const c = document.createElement('button');
       c.className = 'tb-chip'+(w.min?'':' active');
       c.innerHTML = ic(a.icon)+'<span>'+esc(a.title)+'</span>';
@@ -554,6 +649,7 @@ const ATOMS = [
 const FAMCOL = {Data:'#5eead4',Interaction:'#c4b5fd',Logic:'#fcd34d',Presentation:'#93c5fd',System:'#f9a8d4'};
 
 OS.apps = {
+/* Apps grid: built-ins + apps you built with the Assistant */
 assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade80,#22c55e)', w:480, h:560,
   render(body){
     body.style.display='flex'; body.style.flexDirection='column'; body.style.padding='0';
@@ -612,6 +708,8 @@ assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade8
         const reply = await Brain.chat(prov, key, hist);
         t.remove(); bubble(reply, false);
         hist.push({ role:'assistant', content:reply });
+        const m = reply.match(/```html\s*([\s\S]*?)```/i);
+        if(m && m[1].trim()) saveGeneratedApp(m[1].trim(), msgs);
       }catch(e){ t.remove(); bubble('Hmm — '+e.message, false); }
     }
     bubble("Brain connected — "+cfg.name+", "+cfg.chatModel+". Ask me anything, for real this time.", false);
@@ -619,81 +717,143 @@ assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade8
     inp.addEventListener('keydown', e=>{ if(e.key==='Enter') ask(inp.value); });
   }},
 apps: { title:'Apps', icon:'grid', tint:'linear-gradient(135deg,#93c5fd,#6366f1)', w:560, h:480,
-  render(body){
-    const items = [
-      ['Assistant','chat','#4ade80','assistant'],['Notes','note','#fcd34d','notes'],
-      ['Habits','checkSq','#5eead4','habits'],['Files','folder','#93c5fd','files'],
-      ['Calendar','cal','#f9a8d4','calendar'],['Templates','layers','#c4b5fd','templates'],
-      ['Music','music','#fb7185',null],['Photos','img','#38bdf8',null],
-      ['Timer','clock','#fbbf24',null],['Settings','gear','#94a3b8','settings']
-    ];
-    body.innerHTML = '<div class="sec-t">All apps</div><div id="ap-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:14px"></div>';
-    const g = body.querySelector('#ap-grid');
-    items.forEach(([n,icn,c,app])=>{
-      const d = document.createElement('button');
-      d.style.cssText='background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;color:#dfe6df;font-size:12px';
-      d.innerHTML = '<div style="width:58px;height:58px;border-radius:17px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,'+c+'44,'+c+'14);border:1px solid '+c+'55;box-shadow:0 8px 22px rgba(0,0,0,.35)">'+ic(icn,'width:26px;height:26px;stroke:'+c+';fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round')+'</div>'+esc(n);
-      d.onclick = ()=>{ app ? OS.open(app) : toast(n+' isn\u2019t in this preview'); };
-      g.appendChild(d);
-    });
-  }},
+  render(body){ drawAppsGrid(body); }},
 files: { title:'Files', icon:'folder', tint:'linear-gradient(135deg,#93c5fd,#3b82f6)', w:620, h:460,
   render(body){
     body.style.display='flex'; body.style.padding='0'; body.style.gap='0';
-    const groups = {
-      'Everything':[['Welcome.txt','doc','#93c5fd'],['Sunset photo.jpg','img','#38bdf8'],['Grocery list.txt','doc','#93c5fd'],['Voice memo.m4a','music','#fb7185'],['Budget 2026.numbers','doc','#4ade80']],
-      'App folders':[['notes','folder','#fcd34d'],['habit-tracker','folder','#5eead4'],['templates','folder','#c4b5fd']],
-      'Made by you':[['My first app','spark','#4ade80'],['Workout plan','doc','#93c5fd']]
-    };
+    const D = Store.data;
+    let dirId = D.files.root;
     body.innerHTML =
-      '<div style="width:150px;flex:none;border-right:1px solid rgba(255,255,255,.07);padding:12px 8px" id="fi-side"></div>'+
-      '<div style="flex:1;padding:12px;overflow-y:auto;touch-action:pan-y" id="fi-main"></div>';
-    const side = body.querySelector('#fi-side'), main = body.querySelector('#fi-main');
-    function show(g){
-      side.querySelectorAll('button').forEach(b=>b.style.background = b.dataset.g===g?'rgba(147,197,253,.12)':'none');
-      main.innerHTML = '<div class="sec-t" style="margin-top:0">'+esc(g)+'</div>';
-      groups[g].forEach(([n,icn,c])=>{
+      '<div style="flex:1;display:flex;flex-direction:column;min-width:0">'+
+      '<div id="fi-crumb" style="flex:none;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.07)" class="small"></div>'+
+      '<div style="flex:1;padding:12px;overflow-y:auto;touch-action:pan-y" id="fi-main"></div>'+
+      '<div style="flex:none;display:flex;gap:8px;padding:10px 12px;border-top:1px solid rgba(255,255,255,.07)">'+
+      '<button class="chipbtn" id="fi-mkdir">+ Folder</button><button class="chipbtn" id="fi-newfile">+ Text file</button>'+
+      '<button class="chipbtn" id="fi-upload">Upload</button><input type="file" id="fi-file" style="display:none" multiple></div></div>';
+    const main = body.querySelector('#fi-main'), crumb = body.querySelector('#fi-crumb');
+    function item(id){ return D.files.items[id]; }
+    function kids(id){ const d=item(id); return (d.children||[]).map(item).filter(Boolean)
+      .sort((a,b)=> (a.type===b.type) ? a.name.localeCompare(b.name) : (a.type==='dir'?-1:1)); }
+    function pathTo(id){ const out=[]; let c=item(id); while(c){ out.unshift(c); c=c.parent?item(c.parent):null; } return out; }
+    async function ensureSeed(f){ try{ if(f.seed && !(await Blobs.get(f.id))){ await Blobs.put(f.id,{kind:'text',text:f.seed,mime:f.mime}); } }catch(e){} }
+    function draw(){
+      const d = item(dirId);
+      crumb.innerHTML = '';
+      pathTo(dirId).forEach((c,i,arr)=>{
+        const b = document.createElement('button');
+        b.style.cssText='background:none;border:none;color:'+(i===arr.length-1?'#fff':'#93c5fd')+';font-size:13px;cursor:pointer;padding:2px 4px';
+        b.textContent = c.name; b.onclick = ()=>{ dirId=c.id; draw(); };
+        crumb.appendChild(b);
+        if(i<arr.length-1){ const s2=document.createElement('span'); s2.className='muted'; s2.textContent=' / '; crumb.appendChild(s2); }
+      });
+      main.innerHTML='';
+      const ks = kids(dirId);
+      if(!ks.length) main.innerHTML = '<div class="small muted" style="padding:20px;text-align:center">Empty folder.</div>';
+      ks.forEach(f=>{
+        const isDir = f.type==='dir';
+        const c = isDir ? '#fcd34d' : '#93c5fd';
         const r = document.createElement('div');
         r.className='row'; r.style.cssText+=';padding:10px;border-radius:12px;cursor:pointer';
-        r.innerHTML = '<div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:'+c+'1c;border:1px solid '+c+'44;flex:none">'+ic(icn,'width:18px;height:18px;stroke:'+c+';fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round')+'</div><div style="font-size:14px">'+esc(n)+'</div>';
-        r.onclick = ()=>toast('\u201c'+n+'\u201d is decorative in this preview');
+        r.innerHTML = '<div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:'+c+'1c;border:1px solid '+c+'44;flex:none">'+
+          ic(isDir?'folder':'doc','width:18px;height:18px;stroke:'+c+';fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round')+'</div>'+
+          '<div style="flex:1;min-width:0"><div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(f.name)+'</div>'+
+          '<div class="tiny muted">'+(isDir?((f.children||[]).length+' items'):(f.size?fmtSize(f.size):''))+'</div></div>'+
+          '<button data-fdel="'+f.id+'" style="background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer;flex:none">×</button>';
+        r.onclick = (e)=>{
+          if(e.target.closest('[data-fdel]')) return;
+          if(isDir){ dirId=f.id; draw(); } else openFile(f);
+        };
+        r.querySelector('[data-fdel]').onclick = async ()=>{
+          if(!confirm('Delete "'+f.name+'"?')) return;
+          async function rm(x){ if(x.type==='dir'){ for(const c of (x.children||[])){ const ci=item(c); if(ci) await rm(ci); } }
+            else await Blobs.del(x.id); delete D.files.items[x.id]; }
+          const par = item(f.parent);
+          if(par) par.children = (par.children||[]).filter(c=>c!==f.id);
+          await rm(f); Store.save(); draw(); toast('Deleted');
+        };
         main.appendChild(r);
       });
     }
-    Object.keys(groups).forEach(g=>{
-      const b = document.createElement('button');
-      b.dataset.g=g; b.textContent=g;
-      b.style.cssText='display:block;width:100%;text-align:left;background:none;border:none;color:#dfe6df;font-size:13.5px;padding:10px 12px;border-radius:10px;cursor:pointer';
-      b.onclick=()=>show(g); side.appendChild(b);
-    });
-    show('Everything');
+    function isText(f){ return (f.mime||'').indexOf('text/')===0 || /\.(txt|md|json|js|html|css|csv)$/i.test(f.name); }
+    async function openFile(f){
+      await ensureSeed(f);
+      let v = null;
+      try{ v = await Blobs.get(f.id); }catch(e){}
+      if(isText(f)){
+        const txt = v&&v.kind==='text' ? v.text : '';
+        OS.openEditor(f.name, txt, async (nv)=>{ await Blobs.put(f.id,{kind:'text',text:nv,mime:f.mime||'text/plain'});
+          f.size = nv.length; f.updated=Date.now(); Store.save(); draw(); });
+      } else if((f.mime||'').indexOf('image/')===0){
+        if(v && v.blob){ const url = URL.createObjectURL(v.blob); OS.openViewer(f.name, '<img src="'+url+'" style="max-width:100%;border-radius:12px">'); }
+        else toast('No preview available');
+      } else {
+        if(v && v.blob){ const a=document.createElement('a'); a.href=URL.createObjectURL(v.blob); a.download=f.name; a.click(); }
+        else toast('Nothing stored for this file yet');
+      }
+    }
+    body.querySelector('#fi-mkdir').onclick = ()=>{
+      const n = prompt('Folder name:'); if(!n||!n.trim()) return;
+      const id = uid(), d = item(dirId);
+      D.files.items[id] = {id:id,name:n.trim(),type:'dir',parent:dirId,children:[],updated:Date.now()};
+      d.children.push(id); Store.save(); draw();
+    };
+    body.querySelector('#fi-newfile').onclick = ()=>{
+      const n = prompt('File name:', 'Note.txt'); if(!n||!n.trim()) return;
+      const id = uid(), d = item(dirId);
+      D.files.items[id] = {id:id,name:n.trim(),type:'file',parent:dirId,mime:'text/plain',size:0,updated:Date.now()};
+      d.children.push(id); Store.save(); draw();
+      openFile(D.files.items[id]);
+    };
+    const fi = body.querySelector('#fi-file');
+    body.querySelector('#fi-upload').onclick = ()=>fi.click();
+    fi.onchange = async ()=>{
+      const d = item(dirId);
+      try{
+        for(const file of fi.files){
+          const id = uid();
+          const txt = file.type.indexOf('text/')===0 || /\.(txt|md|json|js|html|css|csv)$/i.test(file.name);
+          if(txt){ const t = await file.text(); await Blobs.put(id,{kind:'text',text:t,mime:file.type||'text/plain'}); }
+          else await Blobs.put(id,{kind:'blob',blob:file,mime:file.type||'application/octet-stream'});
+          D.files.items[id] = {id:id,name:file.name,type:'file',parent:dirId,mime:file.type||'',size:file.size,updated:Date.now()};
+          d.children.push(id);
+        }
+        Store.save(); draw(); toast('Uploaded');
+      }catch(e){ toast('Upload failed — storage unavailable'); }
+      fi.value='';
+    };
+    draw();
   }},
 templates: { title:'Templates', icon:'layers', tint:'linear-gradient(135deg,#c4b5fd,#8b5cf6)', w:640, h:500,
   render(body){
+    const D = Store.data;
     body.innerHTML =
-      '<div class="row" style="gap:8px;margin-bottom:12px"><button class="chipbtn" id="tm-saved">Saved</button><button class="chipbtn" id="tm-parts">Parts · 20</button></div>'+
-      '<input type="text" id="tm-q" placeholder="Search…" style="margin-bottom:12px">'+
+      '<div class="row" style="gap:8px;margin-bottom:12px"><button class="chipbtn" id="tm-saved">Mine</button><button class="chipbtn" id="tm-parts">Parts &middot; 20</button></div>'+
+      '<input type="text" id="tm-q" placeholder="Search&hellip;" style="margin-bottom:12px">'+
       '<div id="tm-list"></div>';
     const list = body.querySelector('#tm-list'), q = body.querySelector('#tm-q');
-    const saved = [
-      ['Habit tracker','checkSq','#5eead4','Streaks, reminders, weekly view.'],
-      ['Photo gallery','img','#38bdf8','Grids, albums, favorites.'],
-      ['Team chat','chat','#4ade80','Channels, threads, presence.']
-    ];
     let tab = 'saved';
     function draw(){
       const query = q.value.toLowerCase(); list.innerHTML='';
       body.querySelector('#tm-saved').style.borderColor = tab==='saved'?'rgba(196,181,253,.5)':'';
       body.querySelector('#tm-parts').style.borderColor = tab==='parts'?'rgba(196,181,253,.5)':'';
       if(tab==='saved'){
-        saved.filter(s=>s[0].toLowerCase().includes(query)).forEach(([n,icn,c,d])=>{
+        const ts = D.templates.filter(t=>t.name.toLowerCase().includes(query));
+        if(!ts.length) list.innerHTML = '<div class="small muted" style="padding:12px">No templates yet. Build an app with the Assistant, then tap ⧉ on it in the Apps grid to save it as a reusable template.</div>';
+        ts.slice().reverse().forEach(t=>{
           const el = document.createElement('div'); el.className='card'; el.style.marginBottom='10px';
-          el.innerHTML = '<div class="row"><div style="width:42px;height:42px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;background:'+c+'1c;border:1px solid '+c+'44">'+ic(icn,'width:20px;height:20px;stroke:'+c+';fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round')+'</div>'+
-            '<div style="flex:1"><div style="font-weight:650;font-size:14.5px">'+esc(n)+'</div><div class="small muted">'+esc(d)+'</div></div>'+
-            '<button class="chipbtn">Use</button></div>';
-          el.querySelector('button').onclick = ()=>toast('Template quiz isn\u2019t in this preview');
+          el.innerHTML = '<div class="row"><div style="width:42px;height:42px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;background:'+(t.color||'#c4b5fd')+'1c;border:1px solid '+(t.color||'#c4b5fd')+'44">'+ic('layers','width:20px;height:20px;stroke:'+(t.color||'#c4b5fd')+';fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round')+'</div>'+
+            '<div style="flex:1;min-width:0"><div style="font-weight:650;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(t.name)+'</div><div class="small muted">Template &middot; '+new Date(t.created).toLocaleDateString()+'</div></div>'+
+            '<button class="chipbtn" data-use="'+t.id+'">New app</button>'+
+            '<button data-tdel="'+t.id+'" style="background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer">&times;</button></div>';
           list.appendChild(el);
         });
+        list.querySelectorAll('[data-use]').forEach(b=>{ b.onclick = ()=>{
+          const t = D.templates.find(x=>x.id===b.dataset.use); if(!t) return;
+          const app = { id:uid(), name:t.name+' copy', code:t.code, color:t.color, created:Date.now() };
+          D.apps.push(app); Store.save(); toast('App created from template'); OS.openHTML(app); }; });
+        list.querySelectorAll('[data-tdel]').forEach(b=>{ b.onclick = ()=>{
+          if(!confirm('Delete this template?')) return;
+          D.templates = D.templates.filter(x=>x.id!==b.dataset.tdel); Store.save(); draw(); }; });
       } else {
         ATOMS.filter(a=>(a[0]+a[1]+a[2]).toLowerCase().includes(query)).forEach(([n,fam,d])=>{
           const c = FAMCOL[fam];
@@ -712,86 +872,148 @@ templates: { title:'Templates', icon:'layers', tint:'linear-gradient(135deg,#c4b
 notes: { title:'Notes', icon:'note', tint:'linear-gradient(135deg,#fcd34d,#f59e0b)', w:600, h:480,
   render(body){
     body.style.display='flex'; body.style.padding='0';
-    let notes;
-    try{ notes = JSON.parse(localStorage.getItem('moor.preview.notes')||'null') || [
-      {t:'Ideas for Moor', b:'- onboarding first\n- installer next\n- strangers should smile in 60 seconds'},
-      {t:'Grocery', b:'oats\neggs\ncoffee\nsourdough'},
-      {t:'Quote', b:'"Free isn\u2019t the opposite of making money \u2014 free is the distribution."'}
-    ]; }catch(e){ notes = []; }
-    let cur = 0;
+    const D = Store.data;
+    let cur = D.notes.length ? D.notes[0].id : null;
     body.innerHTML =
       '<div style="width:170px;flex:none;border-right:1px solid rgba(255,255,255,.07);padding:10px;overflow-y:auto;touch-action:pan-y" id="nt-list"></div>'+
-      '<div style="flex:1;display:flex;flex-direction:column;padding:12px"><input type="text" id="nt-title" style="margin-bottom:10px;font-weight:650">'+
-      '<textarea id="nt-body" style="flex:1;resize:none;line-height:1.6"></textarea></div>';
+      '<div style="flex:1;display:flex;flex-direction:column;padding:12px;min-width:0"><input type="text" id="nt-title" placeholder="Title" style="margin-bottom:10px;font-weight:650">'+
+      '<textarea id="nt-body" placeholder="Write…" style="flex:1;resize:none;line-height:1.6"></textarea>'+
+      '<div class="row" style="margin-top:10px;justify-content:flex-end"><button class="chipbtn" id="nt-del" style="color:#f2b8b8">Delete</button></div></div>';
     const listEl = body.querySelector('#nt-list'), ti = body.querySelector('#nt-title'), ta = body.querySelector('#nt-body');
-    function save(){ try{ localStorage.setItem('moor.preview.notes', JSON.stringify(notes)); }catch(e){} }
+    function sorted(){ return D.notes.slice().sort((a,b)=>b.updated-a.updated); }
     function drawList(){
       listEl.innerHTML='';
-      notes.forEach((n,i)=>{
+      sorted().forEach(n=>{
         const b = document.createElement('button');
-        b.style.cssText='display:block;width:100%;text-align:left;background:'+(i===cur?'rgba(252,211,77,.1)':'none')+';border:none;color:#dfe6df;padding:10px 12px;border-radius:10px;font-size:13.5px;cursor:pointer;margin-bottom:4px';
-        b.innerHTML = '<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(n.t)+'</div><div class="tiny muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(n.b.split('\n')[0])+'</div>';
-        b.onclick = ()=>{cur=i;drawList();drawEd();}; listEl.appendChild(b);
+        b.style.cssText='display:block;width:100%;text-align:left;background:'+(n.id===cur?'rgba(252,211,77,.1)':'none')+';border:none;color:#dfe6df;padding:10px 12px;border-radius:10px;font-size:13.5px;cursor:pointer;margin-bottom:4px';
+        b.innerHTML = '<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(n.title||'Untitled')+'</div><div class="tiny muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc((n.body||'').split('\n')[0])+'</div>';
+        b.onclick = ()=>{cur=n.id;drawList();drawEd();}; listEl.appendChild(b);
       });
       const add = document.createElement('button');
       add.className='chipbtn'; add.style.cssText+=';width:100%;margin-top:6px'; add.textContent='+ New note';
-      add.onclick = ()=>{ notes.push({t:'Untitled',b:''}); cur=notes.length-1; save(); drawList(); drawEd(); };
+      add.onclick = ()=>{ const n={id:uid(),title:'',body:'',updated:Date.now()}; D.notes.push(n); cur=n.id; Store.save(); drawList(); drawEd(); ti.focus(); };
       listEl.appendChild(add);
     }
-    function drawEd(){ ti.value = notes[cur]?notes[cur].t:''; ta.value = notes[cur]?notes[cur].b:''; }
-    ti.oninput = ()=>{ if(notes[cur]){notes[cur].t=ti.value;save();drawList();} };
-    ta.oninput = ()=>{ if(notes[cur]){notes[cur].b=ta.value;save();} };
+    function curNote(){ return D.notes.find(n=>n.id===cur); }
+    function drawEd(){ const n=curNote(); ti.value=n?n.title:''; ta.value=n?n.body:''; }
+    let t=null;
+    function edited(){ const n=curNote(); if(!n) return; n.title=ti.value; n.body=ta.value; n.updated=Date.now();
+      clearTimeout(t); t=setTimeout(()=>{ Store.save(); drawList(); }, 600); }
+    ti.oninput = edited; ta.oninput = edited;
+    body.querySelector('#nt-del').onclick = ()=>{
+      const i = D.notes.findIndex(n=>n.id===cur); if(i<0) return;
+      D.notes.splice(i,1); Store.save(); const s2=sorted(); cur = s2.length?s2[0].id:null; drawList(); drawEd(); toast('Note deleted');
+    };
     drawList(); drawEd();
   }},
 habits: { title:'Habits', icon:'checkSq', tint:'linear-gradient(135deg,#5eead4,#14b8a6)', w:520, h:500,
   render(body){
-    const days = ['M','T','W','T','F','S','S'];
-    let state;
-    try{ state = JSON.parse(localStorage.getItem('moor.preview.habits')||'null') || {
-      'Morning walk':[1,1,1,0,1,1,0],'Read 20 min':[1,1,0,1,1,0,0],'No sugar':[1,0,1,1,0,1,0],'Ship something':[0,1,1,1,1,0,0]
-    }; }catch(e){ state={}; }
-    function save(){ try{localStorage.setItem('moor.preview.habits',JSON.stringify(state));}catch(e){} }
+    const D = Store.data;
+    const dayNames = ['M','T','W','T','F','S','S'];
+    function weekDays(){ // Monday-first dates of this week
+      const now = new Date(), dow = (now.getDay()+6)%7, mon = new Date(now);
+      mon.setDate(now.getDate()-dow);
+      const out=[]; for(let i=0;i<7;i++){ const d=new Date(mon); d.setDate(mon.getDate()+i); out.push(d); } return out;
+    }
+    function streak(h){
+      let s=0; const d=new Date();
+      if(!h.log[todayStr(d)]) d.setDate(d.getDate()-1); // allow today pending
+      while(h.log[todayStr(d)]){ s++; d.setDate(d.getDate()-1); }
+      return s;
+    }
     function draw(){
-      body.innerHTML = '<div class="sec-t" style="margin-top:0">This week — tap to toggle</div><div id="hb"></div>';
+      const days = weekDays();
+      let html = '<div class="row" style="justify-content:space-between;align-items:center;margin-top:0"><div class="sec-t" style="margin:0">This week — tap to toggle</div>'+
+        '<button class="chipbtn" id="hb-add" style="padding:7px 14px">+ Habit</button></div><div id="hb"></div>';
+      body.innerHTML = html;
       const hb = body.querySelector('#hb');
-      Object.keys(state).forEach(name=>{
-        const vals = state[name], done = vals.filter(Boolean).length;
+      if(!D.habits.length) hb.innerHTML = '<div class="card small muted">No habits yet. Add one above.</div>';
+      D.habits.forEach(h=>{
+        const st = streak(h);
         const card = document.createElement('div'); card.className='card'; card.style.marginBottom='10px';
-        let cells = '';
-        vals.forEach((v,i)=>{
-          cells += '<button data-h="'+esc(name)+'" data-d="'+i+'" style="width:34px;height:34px;border-radius:10px;border:1px solid '+(v?'rgba(94,234,212,.6)':'rgba(255,255,255,.12)')+';background:'+(v?'rgba(94,234,212,.22)':'rgba(255,255,255,.04)')+';color:'+(v?'#5eead4':'var(--faint)')+';font-size:12px;cursor:pointer">'+(v?'✓':days[i])+'</button>';
+        let cells='';
+        days.forEach((d,i)=>{
+          const k = todayStr(d), v = !!h.log[k], isToday = k===todayStr();
+          cells += '<button data-h="'+h.id+'" data-k="'+k+'" title="'+k+'" style="flex:1;aspect-ratio:1;max-width:40px;border-radius:10px;border:1px solid '+(v?h.color+'99':'rgba(255,255,255,.12)')+';background:'+(v?h.color+'33':'rgba(255,255,255,.04)')+';color:'+(v?h.color:'var(--faint)')+';font-size:12px;cursor:pointer;'+(isToday?'box-shadow:0 0 0 1.5px '+h.color+'88;':'')+'">'+(v?'✓':dayNames[i])+'</button>';
         });
-        card.innerHTML = '<div class="row" style="justify-content:space-between;margin-bottom:10px"><div style="font-weight:650;font-size:14.5px">'+esc(name)+'</div><div class="small" style="color:#5eead4">'+done+'/7 · '+Math.round(done/7*100)+'%</div></div>'+
-          '<div style="display:flex;gap:7px">'+cells+'</div>'+
-          '<div class="ob-bar" style="margin:12px 0 0"><i style="width:'+(done/7*100)+'%"></i></div>';
+        card.innerHTML = '<div class="row" style="justify-content:space-between;margin-bottom:10px"><div style="font-weight:650;font-size:14.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(h.name)+'</div>'+
+          '<div class="small" style="color:'+h.color+';margin:0 8px;flex:none">'+(st?('🔥 '+st):'0')+'</div>'+
+          '<button data-del="'+h.id+'" style="background:none;border:none;color:var(--faint);font-size:15px;cursor:pointer;flex:none">×</button></div>'+
+          '<div style="display:flex;gap:6px">'+cells+'</div>';
         hb.appendChild(card);
       });
       hb.querySelectorAll('button[data-h]').forEach(b=>{
-        b.onclick = ()=>{ const h=b.dataset.h; state[h][+b.dataset.d]^=1; save(); draw(); };
+        b.onclick = ()=>{ const h=D.habits.find(x=>x.id===b.dataset.h); if(!h) return;
+          if(h.log[b.dataset.k]) delete h.log[b.dataset.k]; else h.log[b.dataset.k]=1;
+          Store.save(); draw(); };
       });
+      hb.querySelectorAll('button[data-del]').forEach(b=>{
+        b.onclick = ()=>{ const i=D.habits.findIndex(x=>x.id===b.dataset.del); if(i>=0){ D.habits.splice(i,1); Store.save(); draw(); toast('Habit deleted'); } };
+      });
+      body.querySelector('#hb-add').onclick = ()=>{
+        const wrap = document.createElement('div'); wrap.className='card'; wrap.style.marginBottom='10px';
+        wrap.innerHTML = '<div class="row" style="gap:8px"><input type="text" id="hb-name" placeholder="Habit name…" style="flex:1"><button class="pill-cta" id="hb-save">Add</button></div>';
+        hb.prepend(wrap);
+        const inp = wrap.querySelector('#hb-name'); inp.focus();
+        const colors = ['#4ade80','#5eead4','#c4b5fd','#93c5fd','#fcd34d','#f9a8d4'];
+        function save(){ const n=inp.value.trim(); if(!n) return;
+          D.habits.push({id:uid(),name:n,color:colors[D.habits.length%colors.length],log:{}}); Store.save(); draw(); }
+        wrap.querySelector('#hb-save').onclick = save;
+        inp.addEventListener('keydown',e=>{ if(e.key==='Enter') save(); });
+      };
     }
     draw();
   }},
 calendar: { title:'Calendar', icon:'cal', tint:'linear-gradient(135deg,#f9a8d4,#ec4899)', w:520, h:500,
   render(body){
-    // September 2026: Sep 1 is a Tuesday
-    const events = {3:[['10:00','Ship Moor preview']],9:[['09:00','Morning walk'],['15:30','Dentist']],14:[['12:00','Lunch with Priya']],21:[['18:00','Demo night']],28:[['09:00','Review onboarding']]};
-    let html = '<div class="sec-t" style="margin-top:0">September 2026</div>';
-    html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center" class="tiny muted"><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div><div>S</div>';
-    for(let i=0;i<1;i++) html += '<div></div>'; // Sep 1 = Tuesday -> 1 blank
-    for(let d=1; d<=30; d++){
-      const has = events[d], today = d===28;
-      html += '<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:10px;font-size:13px;position:relative;'+
-        (today?'background:rgba(249,168,212,.18);border:1px solid rgba(249,168,212,.5);font-weight:700':'border:1px solid transparent')+'">'+d+
-        (has?'<div style="position:absolute;bottom:4px;width:5px;height:5px;border-radius:99px;background:#f9a8d4"></div>':'')+'</div>';
+    const D = Store.data;
+    if(!D.events) D.events = {};
+    let view = new Date(); view.setDate(1);
+    const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    function draw(){
+      const y = view.getFullYear(), m = view.getMonth();
+      const first = (new Date(y,m,1).getDay()+6)%7, dim = new Date(y,m+1,0).getDate();
+      let html = '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">'+
+        '<button class="chipbtn" id="cal-prev">‹</button><div class="sec-t" style="margin:0">'+MN[m]+' '+y+'</div><button class="chipbtn" id="cal-next">›</button></div>';
+      html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center" class="tiny muted"><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div><div>S</div>';
+      for(let i=0;i<first;i++) html += '<div></div>';
+      for(let d=1; d<=dim; d++){
+        const k = y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+        const evs = D.events[k]||[], isToday = k===todayStr();
+        html += '<button data-day="'+k+'" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:10px;font-size:13px;position:relative;cursor:pointer;background:'+(isToday?'rgba(249,168,212,.18)':'none')+';border:1px solid '+(isToday?'rgba(249,168,212,.5)':'transparent')+';color:#dfe6df">'+d+
+          (evs.length?'<div style="position:absolute;bottom:4px;width:5px;height:5px;border-radius:99px;background:#f9a8d4"></div>':'')+'</button>';
+      }
+      html += '</div><div id="cal-day" style="margin-top:6px"></div>';
+      body.innerHTML = html;
+      body.querySelector('#cal-prev').onclick = ()=>{ view.setMonth(view.getMonth()-1); draw(); };
+      body.querySelector('#cal-next').onclick = ()=>{ view.setMonth(view.getMonth()+1); draw(); };
+      body.querySelectorAll('button[data-day]').forEach(b=>{ b.onclick = ()=>drawDay(b.dataset.day); });
+      drawDay(todayStr());
     }
-    html += '</div><div class="sec-t">Upcoming</div>';
-    Object.keys(events).sort((a,b)=>a-b).forEach(d=>{
-      events[d].forEach(([t,n])=>{
-        html += '<div class="card" style="margin-bottom:8px;padding:10px 14px"><div class="row"><div class="small" style="color:#f9a8d4;font-weight:700;width:52px;flex:none">'+t+'</div><div style="font-size:14px">Sep '+d+' — '+esc(n)+'</div></div></div>';
+    function drawDay(k){
+      const host = body.querySelector('#cal-day'); if(!host) return;
+      const evs = (D.events[k]||[]).slice().sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+      let html = '<div class="sec-t">'+k+'</div>';
+      if(!evs.length) html += '<div class="small muted" style="margin-bottom:8px">Nothing scheduled.</div>';
+      evs.forEach(e=>{
+        html += '<div class="card" style="margin-bottom:8px;padding:10px 14px"><div class="row"><div class="small" style="color:#f9a8d4;font-weight:700;flex:none;min-width:52px">'+esc(e.time||'--:--')+'</div>'+
+          '<div style="font-size:14px;flex:1">'+esc(e.title)+'</div>'+
+          '<button data-evid="'+e.id+'" style="background:none;border:none;color:var(--faint);font-size:15px;cursor:pointer">×</button></div></div>';
       });
-    });
-    body.innerHTML = html;
+      html += '<div class="row" style="gap:8px;margin-top:4px"><input type="time" id="cal-time" value="09:00" style="width:96px;flex:none">'+
+        '<input type="text" id="cal-title" placeholder="Add event…" style="flex:1"><button class="pill-cta" id="cal-add">Add</button></div>';
+      host.innerHTML = html;
+      host.querySelectorAll('button[data-evid]').forEach(b=>{
+        b.onclick = ()=>{ D.events[k] = (D.events[k]||[]).filter(e=>e.id!==b.dataset.evid);
+          if(!D.events[k].length) delete D.events[k]; Store.save(); draw(); };
+      });
+      const ti = host.querySelector('#cal-title'), tm = host.querySelector('#cal-time');
+      function add(){ const t=ti.value.trim(); if(!t) return;
+        (D.events[k] = D.events[k]||[]).push({id:uid(),title:t,time:tm.value}); Store.save(); draw(); }
+      host.querySelector('#cal-add').onclick = add;
+      ti.addEventListener('keydown',e=>{ if(e.key==='Enter') add(); });
+    }
+    draw();
   }},
 settings: { title:'Settings', icon:'gear', tint:'linear-gradient(135deg,#94a3b8,#64748b)', w:520, h:520,
   render(body){
@@ -808,8 +1030,14 @@ settings: { title:'Settings', icon:'gear', tint:'linear-gradient(135deg,#94a3b8,
             : '<button class="chipbtn" id="st-conn">Connect a key</button>')+'</div>'+
       '<div class="tiny muted" style="margin-top:8px">Keys stay in this browser and go straight to the provider.</div></div>'+
       '<div class="sec-t">Accent color</div><div class="row" id="st-acc" style="gap:10px"></div>'+
-      '<div class="sec-t">Storage</div><div class="card small muted">Everything lives on this device. Preview data only.</div>'+
-      '<div class="sec-t">About</div><div class="card small muted">Moor OS · UI preview v0.2<br>Brain: bring-your-own-key, direct to provider.<br>Everything else here is still furniture.</div>';
+      '<div class="sec-t">Your data</div><div class="card"><div class="small" id="st-meter" style="line-height:1.6">Measuring…</div>'+
+      '<div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">'+
+      '<button class="chipbtn" id="st-export">Export backup</button>'+
+      '<button class="chipbtn" id="st-import">Import</button>'+
+      '<input type="file" id="st-file" accept=".json" style="display:none">'+
+      '<button class="chipbtn" id="st-wipe" style="color:#f2b8b8">Erase everything</button></div>'+
+      '<div class="tiny muted" style="margin-top:8px">Your stuff lives only in this browser. Export a backup before you clear site data.</div></div>'+
+      '<div class="sec-t">About</div><div class="card small muted">Moor · v1.0<br>Brain: bring-your-own-key, direct to provider.<br>Sync with your PC is coming.</div>';
     const bd = body.querySelector('#st-disc'), bc = body.querySelector('#st-conn');
     if(bd) bd.onclick = ()=>{ Brain.clearKey(prov); OS.apps.settings.render(body); toast('Key removed from this browser'); };
     if(bc) bc.onclick = ()=>OS.open('assistant');
@@ -817,13 +1045,127 @@ settings: { title:'Settings', icon:'gear', tint:'linear-gradient(135deg,#94a3b8,
     hues.forEach(([n,c])=>{
       const b = document.createElement('button');
       b.title=n; b.style.cssText='width:40px;height:40px;border-radius:99px;border:2px solid rgba(255,255,255,.2);background:'+c+';cursor:pointer';
-      b.onclick = ()=>{ document.documentElement.style.setProperty('--acc', c); toast('Accent: '+n); };
+      b.onclick = ()=>{ document.documentElement.style.setProperty('--acc', c);
+        Store.data.settings.accent = c; Store.save(); toast('Accent: '+n); };
       acc.appendChild(b);
     });
+    // storage meter
+    (async ()=>{
+      let bytes = 0;
+      try{ bytes = (localStorage.getItem(DB_KEY)||'').length; }catch(e){}
+      let nBlobs = 0, blobBytes = 0;
+      try{
+        const keys = await Blobs.all(); nBlobs = keys.length;
+        for(const k of keys){ const v = await Blobs.get(k);
+          if(v){ blobBytes += v.kind==='text' ? (v.text||'').length : (v.blob ? v.blob.size : 0); } }
+      }catch(e){}
+      const m = body.querySelector('#st-meter');
+      if(m) m.innerHTML = 'Using <b>'+fmtSize(bytes+blobBytes)+'</b> on this device — '+
+        Store.data.notes.length+' notes · '+Store.data.habits.length+' habits · '+
+        Store.data.apps.length+' apps · '+Object.keys(Store.data.files.items).length+' files.';
+    })();
+    body.querySelector('#st-export').onclick = async ()=>{
+      const keys = await Blobs.all().catch(()=>[]);
+      const blobs = {};
+      for(const k of keys){ const v = await Blobs.get(k).catch(()=>null);
+        if(v && v.kind==='text') blobs[k]=v; /* binary blobs skip in JSON backup */ }
+      const payload = { moor:1, exported:new Date().toISOString(), db:Store.data, blobs:blobs };
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(payload)],{type:'application/json'}));
+      a.download = 'moor-backup-'+todayStr()+'.json'; a.click();
+      toast('Backup downloaded');
+    };
+    const sfi = body.querySelector('#st-file');
+    body.querySelector('#st-import').onclick = ()=>sfi.click();
+    sfi.onchange = async ()=>{
+      const f = sfi.files[0]; if(!f) return;
+      try{
+        const p = JSON.parse(await f.text());
+        if(!p.db || !p.db.files) throw new Error('bad backup');
+        if(!confirm('Replace everything with this backup?')) return;
+        Store.data = p.db; Store.save();
+        if(p.blobs) for(const k of Object.keys(p.blobs)) await Blobs.put(k, p.blobs[k]).catch(()=>{});
+        toast('Backup restored — restarting'); setTimeout(()=>location.reload(), 800);
+      }catch(e){ toast('That file is not a Moor backup'); }
+      sfi.value='';
+    };
+    body.querySelector('#st-wipe').onclick = ()=>{
+      if(!confirm('Erase ALL Moor data on this device? This cannot be undone.')) return;
+      if(!confirm('Really erase everything? Export a backup first if you want to keep it.')) return;
+      try{ localStorage.removeItem(DB_KEY); }catch(e){}
+      try{ indexedDB.deleteDatabase('moor-blobs'); }catch(e){}
+      location.reload();
+    };
   }}
 };
+
+function drawAppsGrid(body){
+  const D = Store.data;
+  const items = [
+    ['Assistant','chat','#4ade80','assistant'],['Notes','note','#fcd34d','notes'],
+    ['Habits','checkSq','#5eead4','habits'],['Files','folder','#93c5fd','files'],
+    ['Calendar','cal','#f9a8d4','calendar'],['Templates','layers','#c4b5fd','templates'],
+    ['Settings','gear','#94a3b8','settings']
+  ];
+  let html = '<div class="sec-t" style="margin-top:0">All apps</div><div id="ap-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:14px;margin-bottom:6px"></div>';
+  html += '<div class="sec-t">Made by you</div><div id="ap-made"></div>';
+  body.innerHTML = html;
+  const g = body.querySelector('#ap-grid');
+  items.forEach(function(it){
+    const n=it[0], icn=it[1], c=it[2], app=it[3];
+    const d = document.createElement('button');
+    d.style.cssText='background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;color:#dfe6df;font-size:12px';
+    d.innerHTML = '<div style="width:58px;height:58px;border-radius:17px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,'+c+'44,'+c+'14);border:1px solid '+c+'55;box-shadow:0 8px 22px rgba(0,0,0,.35)">'+ic(icn,'width:26px;height:26px;stroke:'+c+';fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round')+'</div>'+esc(n);
+    d.onclick = ()=>OS.open(app);
+    g.appendChild(d);
+  });
+  const made = body.querySelector('#ap-made');
+  if(!D.apps.length){ made.innerHTML = '<div class="small muted">Nothing yet. Ask the Assistant to <b>make you an app</b> &mdash; it will appear here.</div>'; return; }
+  D.apps.slice().reverse().forEach(a=>{
+    const r = document.createElement('div'); r.className='card'; r.style.marginBottom='8px';
+    r.innerHTML = '<div class="row"><div style="width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:'+(a.color||'#4ade80')+'22;border:1px solid '+(a.color||'#4ade80')+'55;flex:none">'+ic('spark','width:19px;height:19px;stroke:'+(a.color||'#4ade80')+';fill:none;stroke-width:1.7')+'</div>'+
+      '<div style="flex:1;min-width:0"><div style="font-weight:650;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(a.name)+'</div><div class="tiny muted">Built '+new Date(a.created).toLocaleDateString()+'</div></div>'+
+      '<button class="chipbtn" data-open="'+a.id+'" style="padding:7px 12px">Open</button>'+
+      '<button class="chipbtn" data-tpl="'+a.id+'" title="Save as template" style="padding:7px 10px">⧉</button>'+
+      '<button data-adel="'+a.id+'" style="background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer">×</button></div>';
+    made.appendChild(r);
+  });
+  made.querySelectorAll('[data-open]').forEach(b=>{ b.onclick = ()=>{ const a=D.apps.find(x=>x.id===b.dataset.open); if(a) OS.openHTML(a); }; });
+  made.querySelectorAll('[data-tpl]').forEach(b=>{ b.onclick = ()=>{
+    const a=D.apps.find(x=>x.id===b.dataset.tpl); if(!a) return;
+    D.templates.push({id:uid(),name:a.name,code:a.code,color:a.color,created:Date.now()});
+    Store.save(); toast('Saved as template'); }; });
+  made.querySelectorAll('[data-adel]').forEach(b=>{ b.onclick = ()=>{
+    if(!confirm('Delete this app?')) return;
+    D.apps = D.apps.filter(x=>x.id!==b.dataset.adel); Store.save(); drawAppsGrid(body); toast('Deleted'); }; });
+}
+/* Save a model-generated HTML app into the OS */
+function saveGeneratedApp(code, msgs){
+  const D = Store.data;
+  const colors = ['#4ade80','#5eead4','#c4b5fd','#93c5fd','#fcd34d','#f9a8d4'];
+  const wrap = document.createElement('div');
+  wrap.style.cssText='align-self:flex-start;display:flex;gap:8px;margin:2px 0 6px;flex-wrap:wrap;align-items:center';
+  wrap.innerHTML = '<input type="text" id="sg-name" placeholder="Name this app&hellip;" style="width:170px;padding:9px 12px">'+
+    '<button class="pill-cta" id="sg-save" style="padding:9px 16px">Save app</button>';
+  msgs.appendChild(wrap); msgs.scrollTop = msgs.scrollHeight;
+  const inp = wrap.querySelector('#sg-name'); inp.focus();
+  wrap.querySelector('#sg-save').onclick = ()=>{
+    const name = inp.value.trim()||'Untitled app';
+    const app = { id:uid(), name:name, code:code, color:colors[D.apps.length%colors.length], created:Date.now() };
+    D.apps.push(app); Store.save();
+    wrap.innerHTML = '<button class="pill-cta" id="sg-open">Open '+esc(name)+' &rarr;</button>';
+    wrap.querySelector('#sg-open').onclick = ()=>OS.openHTML(app);
+    toast('Saved to your Apps');
+  };
+}
 /* ================= INIT ================= */
 (function(){
+  Store.load();
+  Blobs.open().catch(()=>{});
+  try{
+    const a = Store.data.settings && Store.data.settings.accent;
+    if(a) document.documentElement.style.setProperty('--acc', a);
+  }catch(e){}
   let onboarded = false;
   try{ onboarded = localStorage.getItem('moor.preview.onboarded') === '1'; }catch(e){}
   if(onboarded){ OS.boot(); } else { OB.show('welcome'); }
