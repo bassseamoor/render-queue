@@ -1,260 +1,283 @@
 #!/usr/bin/env python3
 """phone-sync.py -- pull apps you built on your phone into this PC's Moor.
 
-Your phone's Moor (Settings -> Sync to PC) drops a package into your private
-GitHub mailbox repo (bassseamoor/moor-phone-drop). This script fetches that
-package and installs each app into your PC Moor's "Made by you" shelf
-(data/creations/*.html + data/my-apps.json).
+Run:  python phone-sync.py        (or double-click MOOR-Phone-Sync.cmd)
 
-v2: finds your Moor folder(s) automatically -- no more guessing which folder
-your Moor actually runs from. If several look like a real Moor (serve.py
-present), the apps go into ALL of them, so whichever one you open has them.
-Your saved token (phone-sync-config.json next to this script) is reused;
-you are only asked for it once.
+One-way phone -> PC. No questions asked: it finds every Moor install on
+this PC, installs the phone apps into each one, then checks your RUNNING
+Moor (the one in your browser) to prove the apps actually show up.
 
-After that, just run it any time -- double-click MOOR-Phone-Sync.cmd.
-No Moor restart needed: the app reads the shelf from disk on every load.
-Only Python's standard library is used.
+Your GitHub token is saved in phone-sync-config.json next to this script
+(after the first run) so you only paste it once.
 """
 
 import base64
+import getpass
 import json
 import os
-import re
 import sys
-import urllib.error
 import urllib.request
-from pathlib import Path
+import urllib.error
 
-REPO = "bassseamoor/moor-phone-drop"
+OWNER = "bassseamoor"
+REPO = "moor-phone-drop"
 DROP_PATH = "drop.json"
-CONFIG_NAME = "phone-sync-config.json"
-# MOOR_SYNC_API overrides the mailbox URL (used for testing; normally the
-# public GitHub API below).
-API = os.environ.get("MOOR_SYNC_API") or \
-    "https://api.github.com/repos/{}/contents/{}".format(REPO, DROP_PATH)
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "phone-sync-config.json")
+
+APP_VERSION = "v3"
 
 
-def script_dir():
-    return Path(sys.argv[0]).resolve().parent \
-        if getattr(sys, "frozen", False) is False else Path(sys.executable).resolve().parent
-
-
-def find_data_dirs():
-    """Return data-dir Paths for every Moor install found on this PC."""
-    found = []
-
-    # 1. Explicit override wins (serve.py itself honours this env var).
-    env_data = os.environ.get("MOOR_DATA_DIR")
-    if env_data:
-        p = Path(env_data)
-        if p.is_dir():
-            found.append(p)
-
-    # 2. Known install locations: a folder counts if serve.py lives in it.
-    home = Path.home()
-    local_app = Path(os.environ.get("LOCALAPPDATA", "")) if os.environ.get("LOCALAPPDATA") else None
-    candidates = [
-        Path(r"C:\Users\User\AppData\Local\moor"),
-        local_app / "moor" if local_app else None,
-        home / "AppData" / "Local" / "moor",
-        Path(r"C:\Users\User\Documents\Codex\moor-v1-deploy\moor-v1"),
-        home / "Documents" / "Codex" / "moor-v1-deploy" / "moor-v1",
-    ]
-    for cand in candidates:
-        if cand is None:
-            continue
-        try:
-            if (cand / "serve.py").is_file():
-                d = cand / "data"
-                if d not in found:
-                    found.append(d)
-        except OSError:
-            continue
-
-    # 3. Last resort: a saved folder from an older run of this script.
-    cfg_path = script_dir() / CONFIG_NAME
-    try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        cfg = {}
-    old = cfg.get("moor_dir")
-    if old:
-        d = Path(old) / "data"
-        try:
-            if (Path(old) / "serve.py").is_file() and d not in found:
-                found.append(d)
-        except OSError:
-            pass
-
-    # Deduplicate while keeping order.
-    seen, uniq = set(), []
-    for d in found:
-        key = str(d).lower()
-        if key not in seen:
-            seen.add(key)
-            uniq.append(d)
-    return uniq
-
-
-def load_token():
-    cfg_path = script_dir() / CONFIG_NAME
+# ---------------------------------------------------------------- config ---
+def load_config():
     cfg = {}
-    if cfg_path.is_file():
+    if os.path.isfile(CONFIG_FILE):
         try:
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            cfg = json.load(open(CONFIG_FILE, encoding="utf-8"))
+        except Exception:
             cfg = {}
-    if "--token" in sys.argv:
-        cfg["token"] = sys.argv[sys.argv.index("--token") + 1]
-    if not cfg.get("token") and os.environ.get("MOOR_PHONE_TOKEN"):
-        cfg["token"] = os.environ["MOOR_PHONE_TOKEN"]
-    if not cfg.get("token"):
-        print("One-time setup: a token that can READ the private mailbox repo.")
-        print("github.com -> Settings -> Developer settings -> Personal access")
-        print("tokens -> Fine-grained -> repo: {} -> Contents: read".format(REPO))
-        cfg["token"] = input("GitHub token: ").strip()
+    return cfg
+
+
+def save_config(cfg):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception as e:
+        print("Note: could not save config: %s" % e)
+
+
+def get_token(cfg):
+    token = cfg.get("token") or os.environ.get("MOOR_PHONE_DROP_TOKEN") or ""
+    if not token:
+        print("Paste your GitHub token (input hidden, stored next to this script).")
         try:
-            cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-            print("Saved token next to this script -- you won't be asked again.")
-        except OSError as e:
-            print("Could not save token: {}".format(e))
-    return cfg.get("token", "")
+            token = getpass.getpass("Token: ").strip()
+        except Exception:
+            token = input("Token: ").strip()
+        if not token:
+            print("No token given -- nothing to do.")
+            sys.exit(1)
+        cfg["token"] = token
+        save_config(cfg)
+        print("Token saved for next time.")
+    return token
+
+
+# --------------------------------------------------------------- github ---
+def gh_request(url, token, method="GET", data=None):
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", "Bearer " + token)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "moor-phone-sync")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
 
 
 def fetch_drop(token):
-    req = urllib.request.Request(API, headers={
-        "Accept": "application/vnd.github+json",
-        "Authorization": "Bearer " + token,
-        "User-Agent": "moor-phone-sync",
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            doc = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None
-        if e.code in (401, 403):
-            sys.exit("GitHub rejected the token ({}). Check it and run again.".format(e.code))
-        sys.exit("GitHub said {}. Try again in a bit.".format(e.code))
-    except OSError as e:
-        sys.exit("Could not reach GitHub: {}".format(e))
-    try:
-        payload = json.loads(base64.b64decode(doc["content"]).decode("utf-8"))
-    except (KeyError, ValueError):
-        sys.exit("The mailbox file did not look right. Send again from your phone.")
-    if payload.get("kind") != "phone-drop" or not isinstance(payload.get("apps"), list):
-        sys.exit("The mailbox file is not a phone drop. Send again from your phone.")
-    return payload
+    url = ("https://api.github.com/repos/%s/%s/contents/%s"
+           % (OWNER, REPO, DROP_PATH))
+    status, body = gh_request(url, token)
+    if status == 404:
+        print("ERROR: the phone mailbox is empty -- send an app from your phone first.")
+        sys.exit(1)
+    if status != 200:
+        print("ERROR: GitHub said %s. Is the token still valid?" % status)
+        sys.exit(1)
+    content_b64 = json.loads(body.decode("utf-8"))["content"]
+    drop = json.loads(base64.b64decode(content_b64).decode("utf-8"))
+    if drop.get("kind") != "phone-drop":
+        print("ERROR: unexpected mailbox format.")
+        sys.exit(1)
+    return drop.get("apps", [])
 
 
-def safe_name(app_id):
-    s = re.sub(r"[^a-zA-Z0-9_-]", "", str(app_id))[:48]
-    return s or "app"
+# ----------------------------------------------------------- moor detect ---
+def candidate_roots():
+    home = os.path.expanduser("~")
+    local = os.environ.get("LOCALAPPDATA") or os.path.join(home, "AppData", "Local")
+    docs = os.path.join(home, "Documents")
+    return [
+        os.path.join(local, "moor"),
+        os.path.join(home, "AppData", "Local", "moor"),
+        os.path.join(docs, "Codex", "moor-v1-deploy", "moor-v1"),
+        os.path.join(docs, "Codex", "moor-v1-deploy"),
+        os.path.join(home, "moor-v1"),
+        os.path.join(home, "moor"),
+        os.path.join(home, "Documents", "moor-v1"),
+    ]
 
 
+def find_data_dirs():
+    """Every folder where Moor keeps its data (data/my-apps.json)."""
+    found = []
+    seen = set()
+
+    def add(d):
+        d = os.path.normpath(d)
+        if d not in seen and os.path.isfile(os.path.join(d, "my-apps.json")):
+            seen.add(d)
+            found.append(d)
+
+    env = os.environ.get("MOOR_DATA_DIR")
+    if env and os.path.isdir(env):
+        add(env)
+
+    for root in candidate_roots():
+        # serve.py right here -> data/ beside it
+        if os.path.isfile(os.path.join(root, "serve.py")):
+            d = os.path.join(root, "data")
+            if os.path.isdir(d):
+                add(d)
+        # nested moor-v1/serve.py (standard deploy layout) -> data/ beside it
+        nested = os.path.join(root, "moor-v1")
+        if os.path.isfile(os.path.join(nested, "serve.py")):
+            d = os.path.join(nested, "data")
+            if os.path.isdir(d):
+                add(d)
+        # data dir exists even if serve.py moved
+        if os.path.isdir(os.path.join(root, "data")):
+            add(os.path.join(root, "data"))
+
+    # last resort: honour the folder from an older config, if it still fits
+    cfg = load_config()
+    old = cfg.get("moor_dir")
+    if old:
+        d = os.path.join(old, "data")
+        if os.path.isdir(d):
+            add(d)
+
+    return found
+
+
+# ---------------------------------------------------------------- install ---
 def install_into(data_dir, apps):
-    """Install apps into one data dir. Returns (added, updated, unchanged, problems)."""
-    creations = data_dir / "creations"
-    try:
-        creations.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        sys.exit("Could not create {}: {}".format(creations, e))
-    reg_path = data_dir / "my-apps.json"
-    try:
-        registry = json.loads(reg_path.read_text(encoding="utf-8"))
-        if not isinstance(registry, list):
-            registry = []
-    except (OSError, ValueError):
-        registry = []
-    by_id = {str(a.get("id")): a for a in registry if isinstance(a, dict)}
+    creations = os.path.join(data_dir, "creations")
+    os.makedirs(creations, exist_ok=True)
+    reg_path = os.path.join(data_dir, "my-apps.json")
 
-    added, updated, skipped = 0, 0, 0
+    try:
+        registered = json.load(open(reg_path, encoding="utf-8"))
+        if not isinstance(registered, list):
+            registered = []
+    except Exception:
+        registered = []
+    by_id = {a.get("id"): a for a in registered if isinstance(a, dict)}
+
+    new = updated = unchanged = 0
     for app in apps:
-        if not isinstance(app, dict) or not app.get("html"):
-            skipped += 1
+        aid = app.get("id") or "app"
+        html = app.get("html") or ""
+        dest = os.path.join(creations, aid + ".html")
+        entry = {
+            "id": aid,
+            "name": app.get("name") or aid,
+            "desc": "Built on phone%s" % (
+                (" - " + app["created"][:10]) if app.get("created") else ""),
+            "file": dest,
+        }
+        old = by_id.get(aid)
+        same = (old == entry and os.path.isfile(dest)
+                and open(dest, encoding="utf-8").read() == html)
+        if same:
+            unchanged += 1
             continue
-        aid = str(app.get("id") or safe_name(app.get("name")))
-        fname = safe_name(aid) + ".html"
-        target = creations / fname
-        html = app["html"]
-        name = str(app.get("name") or "Untitled app")
-        desc = "Sent from your phone" + (" - kit: " + app["kit"] if app.get("kit") else "")
-
-        entry = by_id.get(aid)
-        if entry is not None and target.is_file():
-            try:
-                same = target.read_text(encoding="utf-8") == html
-            except OSError:
-                same = False
-            if same and entry.get("file") == fname:
-                skipped += 1
-                continue
-            entry["name"] = name
-            entry["desc"] = desc
-            entry["file"] = fname
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(html)
+        if old:
+            registered[registered.index(old)] = entry
             updated += 1
         else:
-            registry.append({"id": aid, "name": name, "desc": desc, "file": fname})
-            by_id[aid] = registry[-1]
-            added += 1
+            registered.append(entry)
+            new += 1
+        by_id[aid] = entry
+
+    with open(reg_path, "w", encoding="utf-8") as f:
+        json.dump(registered, f, indent=2)
+
+    # verify: every registered app really has its file
+    missing = [a["id"] for a in registered
+               if isinstance(a, dict) and not os.path.isfile(a.get("file", ""))]
+    if missing:
+        print("WARNING in %s: registered but file missing: %s"
+              % (data_dir, ", ".join(missing)))
+    return new, updated, unchanged
+
+
+# ------------------------------------------------------------------ live ---
+def live_check(app_ids):
+    """Ask the RUNNING Moor in the browser which of our apps it shows."""
+    results = {}
+    for port in (18793, 18794):
         try:
-            target.write_text(html, encoding="utf-8")
-        except OSError as e:
-            sys.exit("Could not write {}: {}".format(target, e))
-
-    try:
-        reg_path.write_text(json.dumps(registry, indent=2), encoding="utf-8")
-    except OSError as e:
-        sys.exit("Could not update the app registry: {}".format(e))
-
-    # Verify: every registered entry must have its file on disk.
-    problems = []
-    try:
-        check = json.loads(reg_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        check = []
-    for a in check:
-        if isinstance(a, dict) and a.get("file"):
-            if not (creations / a["file"]).is_file():
-                problems.append(a.get("file"))
-    return added, updated, skipped, problems
+            with urllib.request.urlopen(
+                    "http://127.0.0.1:%d/api/apps" % port, timeout=5) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            have = {a.get("id") for a in data.get("apps", [])
+                    if isinstance(a, dict)}
+            results[port] = sorted(i for i in app_ids if i in have)
+        except Exception:
+            results[port] = None
+    return results
 
 
+# ------------------------------------------------------------------- main ---
 def main():
-    data_dirs = find_data_dirs()
-    if not data_dirs:
-        sys.exit(
-            "Could not find your Moor installation on this PC.\n"
-            "Set the MOOR_DATA_DIR environment variable to its data folder\n"
-            "and run again."
-        )
-    print("Found Moor data folder(s):")
-    for d in data_dirs:
-        print("  " + str(d))
+    print("MOOR phone sync %s" % APP_VERSION)
+    print("=" * 40)
+    cfg = load_config()
+    token = get_token(cfg)
 
-    token = load_token()
-    if not token:
-        sys.exit("No token given -- nothing to do.")
-
-    payload = fetch_drop(token)
-    if payload is None:
-        print("Nothing in the mailbox yet -- send apps from your phone first")
-        print("(Moor on your phone -> Settings -> Sync to PC -> Send apps to PC).")
+    print("Reading the phone mailbox...")
+    apps = fetch_drop(token)
+    print("Mailbox has %d app(s)." % len(apps))
+    if not apps:
+        print("Nothing to install.")
         return
 
-    apps = payload["apps"]
-    print("Mailbox has {} app{} (sent {}).".format(
-        len(apps), "" if len(apps) == 1 else "s", payload.get("exported_at", "?")))
+    data_dirs = find_data_dirs()
+    if not data_dirs:
+        print("ERROR: could not find your Moor's data folder on this PC.")
+        print("Tried the usual places; tell me where your Moor lives and I'll fix it.")
+        sys.exit(1)
 
+    print("Found Moor data folder(s):")
     for d in data_dirs:
-        added, updated, skipped, problems = install_into(d, apps)
-        print("{}: {} new, {} updated, {} unchanged.".format(d, added, updated, skipped))
-        if problems:
-            print("  WARNING: registered but file missing: {}".format(", ".join(problems)))
-    print("Done.")
-    print("Just refresh your PC Moor's Apps view -- they are under \"Made by you\".")
-    print("(No restart needed.)")
+        print("  " + d)
+
+    total = [0, 0, 0]
+    for d in data_dirs:
+        n, u, c = install_into(d, apps)
+        total[0] += n
+        total[1] += u
+        total[2] += c
+        print("Installed into %s: %d new, %d updated, %d unchanged"
+              % (d, n, u, c))
+
+    print("-" * 40)
+    print("Checking the Moor running in your browser...")
+    ids = [a.get("id") for a in apps if a.get("id")]
+    live = live_check(ids)
+    any_live = False
+    for port, shown in live.items():
+        if shown is None:
+            print("  port %d: no Moor answering there" % port)
+        else:
+            any_live = True
+            print("  port %d: Moor shows %d of %d phone app(s)%s" % (
+                port, len(shown), len(ids),
+                (" (%s)" % ", ".join(shown)) if shown else ""))
+    print("=" * 40)
+    if any_live and all(live[p] is not None and len(live[p]) == len(ids)
+                        for p in live if live[p] is not None):
+        print("Done. Open your Moor's Apps view (grid icon, left side),")
+        print("look under 'Made by you' -- your phone apps are there.")
+    else:
+        print("Files are installed, but the running Moor isn't showing them yet.")
+        print("Tell me what you see above and I'll sort it out.")
 
 
 if __name__ == "__main__":
