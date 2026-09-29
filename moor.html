@@ -171,6 +171,50 @@ input:focus,textarea:focus{outline:none;border-color:rgba(94,234,212,.5)}
 </head>
 <body>
 <div id="ob-root"></div>
+<script>
+/* iOS tap shim: this device's WebKit delivers pointer events but often never
+   synthesizes click, so buttons show :active and do nothing. Fire the tap from
+   pointerup (which IS delivered) and swallow the late native click if it comes. */
+(function(){
+  var pd=null, lastSyn=null, firing=false;
+  function walk(el){
+    while(el && el!==document.documentElement){
+      if(!el.tagName) return null;
+      var tg=el.tagName;
+      if(tg==='BUTTON'||tg==='INPUT'||tg==='TEXTAREA'||tg==='SELECT') return el;
+      if(el.onclick) return el;
+      el=el.parentElement;
+    }
+    return null;
+  }
+  window.addEventListener('pointerdown', function(e){
+    var t=walk(e.target);
+    pd = t ? {el:t, x:e.clientX, y:e.clientY, pid:e.pointerId} : null;
+  }, {capture:true, passive:true});
+  window.addEventListener('pointercancel', function(){ pd=null; }, {capture:true, passive:true});
+  window.addEventListener('pointerup', function(e){
+    if(!pd || e.pointerId!==pd.pid){ pd=null; return; }
+    var t=walk(e.target), dx=e.clientX-pd.x, dy=e.clientY-pd.y, rec=pd;
+    pd=null;
+    if(!t || t!==rec.el || dx*dx+dy*dy>196 || t.disabled) return;
+    lastSyn={el:t, t:Date.now()};
+    firing=true;
+    try{
+      if(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'){ try{ t.focus(); }catch(_){} }
+      t.click();
+    }finally{ firing=false; }
+  }, {capture:true, passive:true});
+  window.addEventListener('click', function(e){
+    if(!e.isTrusted || !e.detail) return; // synthetic clicks are untrusted; keyboard clicks have detail 0
+    // Any trusted tap-click arriving within 900ms of a shim-fired tap is the
+    // browser's late duplicate of that same tap (its target may even have been
+    // re-resolved after the handler mutated the DOM). Swallow it: one tap, one action.
+    if(lastSyn && Date.now()-lastSyn.t<900){
+      e.stopPropagation(); e.preventDefault(); lastSyn=null;
+    }
+  }, true);
+})();
+</script>
 
 <div id="os">
   <div id="topbar">
@@ -382,10 +426,10 @@ const OB = {
         '<div class="ob-row" id="ob-key-enter"></div>'+back+'</div></div>';
       R.querySelectorAll('.ob-prov').forEach(d=>{
         const pid = d.getAttribute('data-id');
-        d.addEventListener('click', e=>{
+        d.onclick = e=>{
           if(e.target.closest('.ob-keyform') || e.target.closest('button')) return;
           d.querySelector('.ob-keyform').classList.toggle('open');
-        });
+        };
         const btn = d.querySelector('.ob-keyform button'), v = d.querySelector('.ob-verdict');
         btn.onclick = async ()=>{
           const inp = d.querySelector('input');
