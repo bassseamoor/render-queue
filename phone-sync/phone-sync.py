@@ -25,7 +25,7 @@ DROP_PATH = "drop.json"
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "phone-sync-config.json")
 
-APP_VERSION = "v4"
+APP_VERSION = "v5"
 
 
 # ---------------------------------------------------------------- config ---
@@ -187,12 +187,15 @@ def install_into(data_dir, apps):
     for app in apps:
         aid = app.get("id") or "app"
         html = app.get("html") or ""
-        dest = os.path.join(creations, aid + ".html")
+        fname = aid + ".html"
+        dest = os.path.join(creations, fname)
         entry = {
             "id": aid,
             "name": app.get("name") or aid,
             "desc": "Built on phone" + _created_label(app),
-            "file": dest,
+            # basename only: serve.py serves /creations/<file> and the
+            # registry guard matches on the exact string.
+            "file": fname,
         }
         old = by_id.get(aid)
         same = (old == entry and os.path.isfile(dest)
@@ -215,7 +218,8 @@ def install_into(data_dir, apps):
 
     # verify: every registered app really has its file
     missing = [a["id"] for a in registered
-               if isinstance(a, dict) and not os.path.isfile(a.get("file", ""))]
+               if isinstance(a, dict)
+               and not os.path.isfile(os.path.join(creations, a.get("file", "")))]
     if missing:
         print("WARNING in %s: registered but file missing: %s"
               % (data_dir, ", ".join(missing)))
