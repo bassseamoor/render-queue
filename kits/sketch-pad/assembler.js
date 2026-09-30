@@ -25,7 +25,8 @@ function build(config) {
   var name = NAMES[config.name] || NAMES.sketchbook;
   var palette = PALETTES[palKey];
   var dark = look === "chalkboard";
-  var inkDefault = dark ? "#f5f5f5" : "#232323";
+  var inkDefault = dark ? "#ffffff" :
+    palKey === "neon" ? "#0a0a0a" : palKey === "pastel" ? "#5b5b66" : "#222222";
   var bgColor = dark ? "#101216" : "#f7f3ea";
   var uiFg = dark ? "#f2f4f8" : "#22242b";
   var uiDim = dark ? "rgba(242,244,248,.55)" : "rgba(34,36,43,.55)";
@@ -277,12 +278,15 @@ function appScript(look, defTool, inkDefault, bgColor) {
   ' try{\n' +
   '  var ex=document.createElement("canvas");ex.width=cv.width;ex.height=cv.height;\n' +
   '  var exx=ex.getContext("2d");\n' +
-  '  if(exportBg==="b"){exx.fillStyle=BGC;exx.fillRect(0,0,ex.width,ex.height);}\n' +
-  '  var oldCtx=ctx;ctx=exx;\n' +
+  '  var layer=document.createElement("canvas");layer.width=cv.width;layer.height=cv.height;\n' +
+  '  var lx=layer.getContext("2d");\n' +
+  '  var oldCtx=ctx;ctx=lx;\n' +
   '  var oldDpr=dpr;dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));\n' +
-  '  exx.setTransform(dpr,0,0,dpr,0,0);\n' +
+  '  lx.setTransform(dpr,0,0,dpr,0,0);\n' +
   '  for(var i=0;i<strokes.length;i++)drawStroke(strokes[i]);\n' +
   '  ctx=oldCtx;dpr=oldDpr;\n' +
+  '  if(exportBg==="b"){exx.fillStyle=BGC;exx.fillRect(0,0,ex.width,ex.height);}\n' +
+  '  exx.drawImage(layer,0,0);\n' +
   '  var url=ex.toDataURL("image/png");\n' +
   '  pv.src=url;dl.href=url;\n' +
   ' }catch(e){}\n' +

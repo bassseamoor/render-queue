@@ -223,7 +223,7 @@ function engineSrc() {
   // ---- render ----
   function updateDotsByIdx() {
     var doneRounds = 0;
-    for (var i = 0; i <= idx; i++) {
+    for (var i = 0; i < idx; i++) {
       if (phases[i] && phases[i].kind === "work") doneRounds = phases[i].round;
     }
     for (var j = 0; j < C.rounds; j++) {
@@ -335,6 +335,15 @@ function engineSrc() {
     var doneRounds = 0;
     for (var i = 0; i < Math.min(idx, phases.length); i++) {
       if (phases[i].kind === "work") doneRounds = phases[i].round;
+    }
+    if (idx >= phases.length) {
+      // Ran every phase: all rounds are done, even when the last phase was work
+      // (no cool-down), which would otherwise leave the final dot on "cur".
+      for (var j = 0; j < C.rounds; j++) {
+        var d = $("dot" + j);
+        if (d) d.className = "dot done";
+      }
+      doneRounds = C.rounds;
     }
     $("e-rounds").textContent = doneRounds + "/" + C.rounds;
     $("e-work").textContent = fmtDur(doneRounds * C.work);

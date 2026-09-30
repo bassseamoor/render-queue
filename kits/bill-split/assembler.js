@@ -152,6 +152,7 @@ function build(config) {
   '    $("rbrk").textContent="Subtotal "+money(subtotal())+" · Tip ("+clamp(st.tip,0,100)+"%) "+money(tipAmt())+(HAS_TAX?" · Tax "+money(taxAmt()):"")+" · Total "+money(total());\n' +
   '  }\n' +
   '  save();\n' +
+  '  if(HAS_CUSTOM&&st.target!=="bill"){var _pa=document.querySelectorAll("#plist .pamt");if(_pa[st.sel])_pa[st.sel].textContent=money(parseFloat(st.shares[st.sel])||0);}\n' +
   '}\n' +
   'function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}\n' +
   'function chr(c){return String.fromCharCode(c);}\n' +
@@ -237,7 +238,7 @@ function build(config) {
   '  else fallback();\n' +
   '  function fallback(){try{$("sumtxt").select();document.execCommand("copy");toast("Copied");}catch(e){toast("Select and copy the text");}}\n' +
   '});\n' +
-  'document.addEventListener("keydown",function(e){if(e.key>="0"&&e.key<="9")press(e.key);else if(e.key===".")press(".");else if(e.key==="Backspace")press("\u232B");});\n' +
+  'document.addEventListener("keydown",function(e){var t=e.target;if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"))return;if(e.key>="0"&&e.key<="9")press(e.key);else if(e.key===".")press(".");else if(e.key==="Backspace")press("\u232B");});\n' +
   'if(HAS_CUSTOM)buildRows();\n' +
   'if(st.tax!==undefined&&$("taxinp"))$("taxinp").value=st.tax;\n' +
   'render();\n' +
