@@ -757,10 +757,10 @@ const OS = {
         res.innerHTML = '';
         out.slice(0,4).forEach(o=>res.appendChild(hitButton(o)));
         if(m){
-          const b = document.createElement('button'); b.className = 'hm-hit';
+          const b = document.createElement('button'); b.className = 'hm-hit'; b.setAttribute('data-bb','1');
           b.innerHTML = '<div class="hm-ic" style="background:rgba(252,211,77,.14);border:1px solid rgba(252,211,77,.4)"><div style="font-size:22px">▦</div></div>'+
-            '<div style="flex:1;min-width:0"><div style="font-weight:650">Build: '+esc(m.name)+'</div><div class="small muted">'+esc(m.description||'Answer a few questions, get a working app.')+'</div></div><div class="pill-cta" style="padding:9px 16px;flex:none">Set it up →</div>';
-          b.onclick = ()=>{ KitsUI._pending = m.id; OS.open('kits'); };
+            '<div style="flex:1;min-width:0"><div style="font-weight:650">Build: '+esc(m.name)+'</div><div class="small muted">One tap — no questions, just the app.</div></div><div class="pill-cta" style="padding:9px 16px;flex:none">Build →</div>';
+          b.onclick = ()=>BuildLoop.uiBuild(txt, res);
           res.appendChild(b);
         }else if(!out.length){
           const b = document.createElement('button'); b.className = 'hm-hit';
@@ -770,12 +770,12 @@ const OS = {
         }
       }
       draw(null);
-      Kits.load().then(()=>draw(Kits.match(txt))).catch(()=>{
-        if(my===askSeq && !out.length) res.innerHTML = '<div class="small muted">Kits need internet the first time — connect and retry.</div>';
-      });
+      try{ draw(Kits.match(txt)); }catch(e){}
+      // Enter on a buildable request builds immediately — the bar is the whole loop.
+      run._auto = !out.length && (BUILD_INTENT.test(txt) || !!Kits.match(txt));
     };
     q.addEventListener('input', ()=>{ clearTimeout(deb); deb = setTimeout(run, 220); });
-    q.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(deb); run(); } });
+    q.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(deb); run(); const bb = res.querySelector('[data-bb]'); if(run._auto && bb) bb.click(); } });
   },
   refreshHome(){ if(document.getElementById('home')) this.renderHome(); },
   renderTray(){
@@ -839,11 +839,237 @@ const PART_EXAMPLES = {
 };
 
 /* ================= KITS ================= */
+const KITS_BUNDLED = {"index":{"kits":[{"id":"pomodoro","name":"Focus Timer","description":"A beautiful pomodoro focus timer with session tracking.","icon":"\u23f1","keywords":["timer","focus","pomodoro","productivity","work","study","concentration","deep work","countdown","break","technique","25 minutes","sprint"]},{"id":"world-3d","name":"Little World","description":"A living 3D ecosystem in your pocket. Creatures wander, get hungry, eat, breed with mutated traits, age and die. Plants regrow. Every world has a seed you can share.","icon":"\ud83c\udf0d","keywords":["3d","world","ecosystem","simulation","sim","creatures","evolution","nature","terrarium","aquarium","wildlife","god game","sandbox","life"]},{"id":"arena-roguelike","name":"Arena Roguelike","description":"Archero-style arena battler: drag to move, stand still to auto-fire, draft upgrades between rooms, survive 10 rooms.","icon":"\ud83c\udff9","keywords":["archero","archeryo","roguelike","arena","shooter","archer","dungeon","game","survivor","battle","action","bow"]},{"id":"organizer","name":"Organizer","description":"A beautiful personal CRM \u2014 track clients, appointments, and follow-ups.","icon":"\ud83d\uddc2\ufe0f","keywords":["crm","clients","customers","appointments","booking","contacts","business","leads","tracker","tattoo","schedule","follow-up"]},{"id":"habit-tracker","name":"Habit Tracker","description":"A beautiful daily habit tracker with streaks, a weekly grid, and a today progress ring.","icon":"\ud83d\udd25","keywords":["habit","habits","tracker","streak","streaks","daily","routine","checklist","goals","discipline","consistency","flame"]},{"id":"flashcards","name":"Flashcards","description":"A beautiful flashcard study app \u2014 decks, flip animations, shuffle and self-graded review.","icon":"\ud83c\udccf","keywords":["flashcards","study","deck","cards","memorize","revision","vocabulary","language","exam","learning","memory","quiz"]},{"id":"drum-machine","name":"Drum Machine","description":"A pocket drum machine: 16 touch pads, a 16-step sequencer, and fully synthesized drum sounds. No samples, no files.","icon":"\ud83e\udd41","keywords":["drum","drums","beat","beats","beatmaker","beat maker","drum machine","sequencer","step sequencer","hip hop","hiphop","techno","music","rhythm"]},{"id":"journal","name":"Daybook","description":"A beautiful daily journal with prompts, moods, and streaks.","icon":"\ud83d\udcd3","keywords":["journal","diary","daily","writing","mood","reflection","thoughts","notes","gratitude","log","memoir","prompt"]},{"id":"budget-tracker","name":"Budget","description":"Track spending, set category budgets, and see where your money goes.","icon":"\ud83d\udcb0","keywords":["budget","money","expenses","spending","finance","tracker","costs","wallet","savings","bills","cash","outgoings"]},{"id":"game-2048","name":"2048","description":"The classic sliding-tile puzzle. Swipe to merge matching numbers and chase 2048.","icon":"\ud83d\udd22","keywords":["2048","puzzle","tiles","numbers","merge","sliding","swipe","game","brain","logic","math","addictive"]},{"id":"white-noise","name":"Sleep Sounds","description":"A sleep & focus sound mixer. Pure synthesized soundscapes \u2014 no audio files.","icon":"\ud83c\udf0a","keywords":["sleep","white noise","rain","ocean","focus","relax","calm","ambient","fan","brown noise","pink noise","meditation"]},{"id":"recipe-box","name":"Recipe Box","description":"Your personal recipe box \u2014 collect recipes, check off ingredients, and cook step by step.","icon":"\ud83c\udf73","keywords":["recipe","recipes","cooking","cook","food","meal","kitchen","ingredients","dinner","bake","baking","chef"]},{"id":"pixel-art","name":"Pixel Studio","description":"A touch-first pixel art pad. Draw sprites, doodles, and 8-bit art on a tappable grid, then export as PNG.","icon":"\ud83c\udfa8","keywords":["pixel","art","drawing","paint","sprite","canvas","8bit","retro","doodle","sketch","pixelart","draw"]},{"id":"unit-converter","name":"Unit Converter","description":"Convert length, weight, temperature, speed, volume, time and data with a big touch keypad, live results, favorites and history.","icon":"\ud83d\udd04","keywords":["converter","units","conversion","metric","imperial","length","weight","temperature","calculator","math","measure","convert"]},{"id":"kanban","name":"Kanban Board","description":"A beautiful touch-first kanban board \u2014 add cards, tap or drag them across columns, label them, and watch progress build.","icon":"\ud83d\udccb","keywords":["kanban","tasks","task","board","todo","to-do","project","projects","workflow","productivity","agile","trello"]},{"id":"water-tracker","name":"Water Tracker","description":"A beautiful daily water tracker with an animated filling vessel, quick-add buttons, streaks, gentle sip reminders, and a 7-day history.","icon":"\ud83d\udca7","keywords":["water","hydration","drink","drinking","hydrate","intake","bottle","reminder","wellness","health","tracker","thirst"]},{"id":"tabata-timer","name":"Tabata Timer","description":"A punchy HIIT interval timer \u2014 work/rest rounds with voice-of-doom beeps, round dots, and a finish-line summary.","icon":"\u23f1\ufe0f","keywords":["tabata","hiit","interval","workout","timer","exercise","training","rounds","fitness","gym","cardio","sweat"]},{"id":"bill-split","name":"Fair Share","description":"Split restaurant bills in seconds \u2014 tip, tax, even or per-person shares.","icon":"\ud83e\uddfe","keywords":["bill","split","tip","calculator","restaurant","check","friends","share","dinner","money","gratuity","divide"]},{"id":"countdown","name":"Countdown","description":"Beautiful countdowns to the events you can't wait for \u2014 weddings, trips, launches.","icon":"\u23f3","keywords":["countdown","timer","event","wedding","birthday","vacation","trip","days left","holiday","new year","launch","coming soon"]},{"id":"sketch-pad","name":"Sketchbook","description":"A touch-first freehand sketch pad and whiteboard. Velocity-smooth strokes, brush/marker/highlighter/eraser tools, undo/redo, and PNG export.","icon":"\u270f\ufe0f","keywords":["sketch","draw","drawing","whiteboard","doodle","art","paint","pad","note","notes","canvas","pen","ink","whiteboard marker","brainstorm"]}]},"quiz":{"pomodoro":[{"default":"25","id":"focus_len","options":[{"hint":"Quick sprints","id":"15","label":"15 min"},{"hint":"The classic","id":"25","label":"25 min"},{"hint":"Deep work","id":"50","label":"50 min"}],"question":"Focus length?","type":"cards"},{"default":"midnight","id":"vibe","options":[{"hint":"Dark and calm","id":"midnight","label":"Midnight"},{"hint":"Warm and light","id":"paper","label":"Paper"}],"question":"What's the vibe?","type":"cards"},{"default":["tick","streak"],"id":"extras","options":[{"hint":"Soft tick each second while focusing","id":"tick","label":"Ticking sound"},{"hint":"Show today's completed sessions","id":"streak","label":"Session counter"}],"question":"Anything extra?","type":"toggles"}],"world-3d":[{"default":"hills","id":"terrain","options":[{"hint":"Gentle green slopes and ponds","id":"hills","label":"Rolling Hills"},{"hint":"Scattered isles in open water","id":"islands","label":"Islands"},{"hint":"High peaks with snow caps","id":"mountains","label":"Mountains"}],"question":"What kind of land?","type":"cards"},{"default":"balanced","id":"life","options":[{"hint":"A quiet, fragile world","id":"sparse","label":"Sparse"},{"hint":"The classic ecosystem","id":"balanced","label":"Balanced"},{"hint":"Maximum chaos, maximum life","id":"teeming","label":"Teeming"}],"question":"How much life?","type":"cards"},{"default":"day","id":"sky","options":[{"hint":"Bright blue, clear and calm","id":"day","label":"Day"},{"hint":"Warm low light, long shadows","id":"sunset","label":"Sunset"},{"hint":"Purple dark, teal glow, stars","id":"alien","label":"Alien Night"}],"question":"What sky?","type":"cards"}],"arena-roguelike":[{"default":"archer","id":"hero","options":[{"hint":"Balanced bow, steady arrows","id":"archer","label":"Archer"},{"hint":"Slow heavy bolts, big damage","id":"mage","label":"Mage"},{"hint":"Rapid fire, lighter hits","id":"gunner","label":"Gunner"}],"question":"Your hero?","type":"cards"},{"default":"dungeon","id":"theme","options":[{"hint":"Torchlit stone, arcane purple","id":"dungeon","label":"Dungeon"},{"hint":"Moonlit grove, deep green","id":"forest","label":"Forest"},{"hint":"Dark grid, electric cyan","id":"neon","label":"Neon"}],"question":"The arena?","type":"cards"},{"default":"classic","id":"difficulty","options":[{"hint":"Fewer, softer enemies","id":"chill","label":"Chill"},{"hint":"The intended fight","id":"classic","label":"Classic"},{"hint":"Dense, fast, painful","id":"brutal","label":"Brutal"}],"question":"How spicy?","type":"cards"}],"organizer":[{"default":["clients","appointments"],"id":"tracking","options":[{"hint":"Names, notes, follow-ups","id":"clients","label":"Clients"},{"hint":"Schedule and statuses","id":"appointments","label":"Appointments"}],"question":"What are you tracking?","type":"toggles"},{"default":"ink","id":"vibe","options":[{"hint":"Dark, premium","id":"ink","label":"Ink Black"},{"hint":"Warm and light","id":"paper","label":"Paper"},{"hint":"Electric night","id":"neon","label":"Neon"}],"question":"What's the vibe?","type":"cards"},{"default":["nudges","deposits"],"id":"extras","options":[{"hint":"Flags clients you haven't contacted","id":"nudges","label":"Follow-up nudges"},{"hint":"Track deposits on appointments","id":"deposits","label":"Deposits"}],"question":"Anything extra?","type":"toggles"}],"habit-tracker":[{"default":"midnight","id":"vibe","options":[{"hint":"Dark and calm","id":"midnight","label":"Midnight"},{"hint":"Warm and light","id":"paper","label":"Paper"},{"hint":"Deep green, earthy","id":"forest","label":"Forest"}],"question":"What's the vibe?","type":"cards"},{"default":["streaks","grid","ring"],"id":"tracking","options":[{"hint":"Flame counters per habit","id":"streaks","label":"Streaks"},{"hint":"7-day check-in overview","id":"grid","label":"Weekly grid"},{"hint":"Progress ring for today","id":"ring","label":"Today ring"}],"question":"How do you want to track?","type":"toggles"},{"default":"fitness","id":"starter","options":[{"hint":"Workout, steps, stretch","id":"fitness","label":"Fitness"},{"hint":"Meditate, read, journal","id":"mindful","label":"Mindfulness"},{"hint":"Deep work, plan, inbox","id":"productive","label":"Productivity"},{"hint":"Add your own habits","id":"blank","label":"Blank slate"}],"question":"Start with\u2026","type":"cards"}],"flashcards":[{"default":"3d","id":"flip","options":[{"hint":"Classic card flip","id":"3d","label":"3D flip"},{"hint":"Card slides sideways","id":"slide","label":"Slide"},{"hint":"Soft crossfade","id":"fade","label":"Fade"}],"question":"How should cards flip?","type":"cards"},{"default":["shuffle","grade","progress"],"id":"aids","options":[{"hint":"Randomize card order each session","id":"shuffle","label":"Shuffle mode"},{"hint":"Grade yourself: got it / missed it","id":"grade","label":"Self-grading"},{"hint":"Show card X of Y while studying","id":"progress","label":"Progress bar"}],"question":"Study aids?","type":"toggles"},{"default":"spanish","id":"starter","options":[{"hint":"8 Spanish basics cards","id":"spanish","label":"Spanish basics"},{"hint":"8 job interview cards","id":"interview","label":"Interview prep"},{"hint":"Empty \u2014 build your own","id":"blank","label":"Start empty"}],"question":"Starter deck?","type":"cards"}],"drum-machine":[{"default":"boombap","id":"kit_sound","options":[{"hint":"Warm, punchy, dusty hip-hop drums","id":"boombap","label":"Boom Bap"},{"hint":"Bright, sharp, electronic drums","id":"electro","label":"Electro"},{"hint":"Soft, round, organic kit drums","id":"acoustic","label":"Acoustic"}],"question":"What should the drums sound like?","type":"cards"},{"default":"pads","id":"layout","options":[{"hint":"Big finger-drumming pads on top","id":"pads","label":"Pads first"},{"hint":"The step grid on top, pads below","id":"sequencer","label":"Sequencer first"}],"question":"How should the screen be arranged?","type":"cards"},{"default":["swing"],"id":"extras","options":[{"hint":"A click track on every beat","id":"metronome","label":"Metronome"},{"hint":"A shuffle knob to loosen the groove","id":"swing","label":"Swing"}],"question":"Anything extra?","type":"toggles"}],"journal":[{"default":"midnight","id":"vibe","options":[{"hint":"Dark and calm","id":"midnight","label":"Midnight"},{"hint":"Warm light page","id":"paper","label":"Paper"},{"hint":"Twilight purple haze","id":"dusk","label":"Dusk"}],"question":"What's the vibe?","type":"cards"},{"default":"daily","id":"prompts","options":[{"hint":"A gentle nudge each day","id":"daily","label":"Daily prompts"},{"hint":"Big questions, slow answers","id":"deep","label":"Deep questions"},{"hint":"Just a blank page","id":"none","label":"No prompts"}],"question":"Writing prompts?","type":"cards"},{"default":["mood","words"],"id":"extras","options":[{"hint":"Emoji mood per entry","id":"mood","label":"Mood tracker"},{"hint":"Live count while you write","id":"words","label":"Word count"}],"question":"Anything extra?","type":"toggles"}],"budget-tracker":[{"default":"midnight","id":"vibe","options":[{"hint":"Dark and calm","id":"midnight","label":"Midnight"},{"hint":"Warm light page","id":"paper","label":"Paper"},{"hint":"Fresh green tint","id":"mint","label":"Mint"}],"question":"What's the vibe?","type":"cards"},{"default":"monthly","id":"style","options":[{"hint":"Budgets restart on the 1st","id":"monthly","label":"Monthly reset"},{"hint":"Always the last 30 days","id":"rolling","label":"Rolling 30 days"},{"hint":"No budgets, log spending only","id":"free","label":"Just tracking"}],"question":"How should budgets work?","type":"cards"},{"default":["chart"],"id":"extras","options":[{"hint":"Donut breakdown of spending","id":"chart","label":"Category chart"},{"hint":"Spending per week, last 4 weeks","id":"weekly","label":"Weekly bars"}],"question":"Anything extra?","type":"toggles"}],"game-2048":[{"default":"4x4","id":"board","options":[{"hint":"The original challenge","id":"4x4","label":"4\u00d74 Classic"},{"hint":"More room to breathe","id":"5x5","label":"5\u00d75 Relaxed"},{"hint":"Tight and fast","id":"3x3","label":"3\u00d73 Blitz"}],"question":"Board size?","type":"cards"},{"default":"midnight","id":"vibe","options":[{"hint":"Dark and calm","id":"midnight","label":"Midnight"},{"hint":"Warm and light","id":"paper","label":"Paper"},{"hint":"Glowing arcade","id":"neon","label":"Neon"}],"question":"What's the vibe?","type":"cards"},{"default":["undo"],"id":"extras","options":[{"hint":"Take back your last move","id":"undo","label":"Undo button"},{"hint":"Track how many moves you used","id":"moves","label":"Move counter"}],"question":"Anything extra?","type":"toggles"}],"white-noise":[{"default":"deepsleep","id":"mix","options":[{"hint":"Brown noise + soft rain","id":"deepsleep","label":"Deep Sleep"},{"hint":"Pink noise for deep work","id":"focus","label":"Focus"},{"hint":"Rain + crickets","id":"rainnight","label":"Rainy Night"}],"question":"What's your starting mix?","type":"cards"},{"default":"midnight","id":"vibe","options":[{"hint":"Dark and calm","id":"midnight","label":"Midnight"},{"hint":"Cool ocean tones","id":"deepblue","label":"Deep Blue"}],"question":"What's the vibe?","type":"cards"},{"default":["timer","visualizer"],"id":"extras","options":[{"hint":"Fade out after 15/30/60 min","id":"timer","label":"Sleep timer"},{"hint":"Gentle animated waves","id":"visualizer","label":"Wave visualizer"}],"question":"Anything extra?","type":"toggles"}],"recipe-box":[{"default":"paper","id":"vibe","options":[{"hint":"Cozy and warm","id":"paper","label":"Warm Paper"},{"hint":"Sleek night mode","id":"dark","label":"Dark"},{"hint":"Crisp and fresh","id":"green","label":"Fresh Green"}],"question":"What's the vibe?","type":"cards"},{"default":"grid","id":"layout","options":[{"hint":"Photo-style cards","id":"grid","label":"Grid cards"},{"hint":"Compact rows","id":"list","label":"List"}],"question":"How should recipes be listed?","type":"cards"},{"default":["cookmode","timers"],"id":"extras","options":[{"hint":"Big-text step-by-step mode","id":"cookmode","label":"Cook mode"},{"hint":"Countdown on each step","id":"timers","label":"Step timers"}],"question":"Anything extra?","type":"toggles"}],"pixel-art":[{"default":"16x16","id":"size","options":[{"hint":"Tiny sprites & icons","id":"8x8","label":"8 \u00d7 8"},{"hint":"The classic pixel canvas","id":"16x16","label":"16 \u00d7 16"},{"hint":"Room for detail","id":"32x32","label":"32 \u00d7 32"}],"question":"Canvas size?","type":"cards"},{"default":"classic","id":"palette","options":[{"hint":"Electric glow colors","id":"neon","label":"Neon"},{"hint":"Soft and dreamy","id":"pastel","label":"Pastel"},{"hint":"Bold everyday colors","id":"classic","label":"Classic"}],"question":"Palette style?","type":"cards"},{"default":"midnight","id":"theme","options":[{"hint":"Dark and calm","id":"midnight","label":"Midnight"},{"hint":"Warm and light","id":"paper","label":"Paper"}],"question":"App look?","type":"cards"},{"default":["mirror","fill"],"id":"extras","options":[{"hint":"Paint symmetrically","id":"mirror","label":"Mirror mode"},{"hint":"Flood-fill areas","id":"fill","label":"Paint bucket"}],"question":"Extra tools?","type":"toggles"}],"unit-converter":[{"default":"length","id":"category","options":[{"hint":"m, ft, miles","id":"length","label":"Length"},{"hint":"kg, lb, oz","id":"weight","label":"Weight"},{"hint":"\u00b0C, \u00b0F, K","id":"temperature","label":"Temperature"},{"hint":"km/h, mph","id":"speed","label":"Speed"},{"hint":"L, gallons","id":"volume","label":"Volume"},{"hint":"sec, min, hr","id":"time","label":"Time"},{"hint":"MB, GB, TB","id":"data","label":"Data"}],"question":"Which category first?","type":"cards"},{"default":"metric_imperial","id":"pair","options":[{"hint":"m to ft, kg to lb","id":"metric_imperial","label":"Metric \u2192 Imperial"},{"hint":"ft to m, lb to kg","id":"imperial_metric","label":"Imperial \u2192 Metric"}],"question":"Start converting which way?","type":"cards"},{"default":"green","id":"accent","options":[{"hint":"Fresh green","id":"green","label":"Emerald"},{"hint":"Cool blue","id":"blue","label":"Ocean"},{"hint":"Warm gold","id":"amber","label":"Amber"},{"hint":"Soft purple","id":"violet","label":"Violet"}],"question":"Pick an accent color","type":"cards"},{"default":"converter","id":"title","options":[{"hint":"Simple","id":"converter","label":"Converter"},{"hint":"Playful","id":"unitlab","label":"Unit Lab"},{"hint":"Serious","id":"measurepro","label":"Measure Pro"},{"hint":"One word","id":"quickconvert","label":"QuickConvert"}],"question":"What should it be called?","type":"cards"}],"kanban":[{"default":"personal","id":"board","options":[{"hint":"Life, errands, home","id":"personal","label":"Personal"},{"hint":"Team tasks and projects","id":"work","label":"Work"},{"hint":"One big thing to ship","id":"project","label":"Project"},{"hint":"Ship something new","id":"launch","label":"Launch"}],"question":"What's the board for?","type":"cards"},{"default":"classic","id":"columns","options":[{"hint":"To do \u00b7 Doing \u00b7 Done","id":"classic","label":"Classic"},{"hint":"Backlog \u00b7 To do \u00b7 In progress \u00b7 Done","id":"flow","label":"Flow"},{"hint":"Backlog \u00b7 To do \u00b7 In progress \u00b7 Review \u00b7 Done","id":"sprint","label":"Sprint"},{"hint":"To do \u00b7 Done","id":"simple","label":"Simple"}],"question":"Pick your columns","type":"cards"},{"default":"ocean","id":"accent","options":[{"hint":"Cool blue","id":"ocean","label":"Ocean"},{"hint":"Warm orange","id":"sunset","label":"Sunset"},{"hint":"Fresh green","id":"mint","label":"Mint"},{"hint":"Electric purple","id":"violet","label":"Violet"}],"question":"Accent color?","type":"cards"},{"default":["wip","progress","labels","archive"],"id":"extras","options":[{"hint":"Card counts and limits per column","id":"wip","label":"WIP counters"},{"hint":"Overall board completion bar","id":"progress","label":"Progress bar"},{"hint":"Color labels on cards","id":"labels","label":"Card labels"},{"hint":"Archive cards instead of deleting","id":"archive","label":"Archive bin"}],"question":"Extras?","type":"toggles"}],"water-tracker":[{"default":"g2000","id":"goal","options":[{"hint":"Light day","id":"g1500","label":"1.5 L"},{"hint":"The standard","id":"g2000","label":"2 L"},{"hint":"Active lifestyle","id":"g2500","label":"2.5 L"},{"hint":"Athlete mode","id":"g3000","label":"3 L"}],"question":"What's your daily water goal?","type":"cards"},{"default":"classic","id":"sizes","options":[{"hint":"The classics","id":"classic","label":"250 + 500 ml"},{"hint":"Bottles and cans","id":"sport","label":"330 + 500 + 750 ml"},{"hint":"Small frequent sips","id":"sips","label":"150 + 250 + 350 ml"}],"question":"Which quick-add buttons?","type":"cards"},{"default":"bottle","id":"style","options":[{"hint":"Sport bottle","id":"bottle","label":"Bottle"},{"hint":"Kitchen glass","id":"glass","label":"Glass"},{"hint":"Minimal droplet","id":"drop","label":"Drop"}],"question":"Pick your vessel","type":"cards"},{"default":"aqua","id":"accent","options":[{"hint":"Bright cyan","id":"aqua","label":"Aqua"},{"hint":"Sea green","id":"lagoon","label":"Lagoon"},{"hint":"Ocean blue","id":"deepsea","label":"Deep sea"}],"question":"Accent color?","type":"cards"}],"tabata-timer":[{"default":"tabata","id":"preset","options":[{"hint":"20s work \u00b7 10s rest \u00d7 8","id":"tabata","label":"Tabata"},{"hint":"40s work \u00b7 20s rest \u00d7 10","id":"hiit","label":"Classic HIIT"},{"hint":"45s work \u00b7 15s rest \u00d7 12","id":"endurance","label":"Endurance"}],"question":"Which workout?","type":"cards"},{"default":"short","id":"warmcool","options":[{"hint":"No warm-up or cool-down","id":"none","label":"Straight in"},{"hint":"30s warm-up + 30s cool-down","id":"short","label":"Quick"},{"hint":"60s warm-up + 60s cool-down","id":"full","label":"Proper"}],"question":"Warm-up & cool-down?","type":"cards"},{"default":"ember","id":"accent","options":[{"hint":"Hot orange-red","id":"ember","label":"Ember"},{"hint":"Electric lime","id":"volt","label":"Volt"},{"hint":"Ice cyan","id":"glacier","label":"Glacier"}],"question":"Pick your fire.","type":"cards"},{"default":["sound","awake"],"id":"extras","options":[{"hint":"3-2-1 warning + phase change horn","id":"sound","label":"Countdown beeps"},{"hint":"Blocks auto-lock while running","id":"awake","label":"Keep screen on"}],"question":"Anything extra?","type":"toggles"}],"bill-split":[{"default":"20","id":"tip","options":[{"hint":"Good enough","id":"15","label":"15%"},{"hint":"Solid service","id":"18","label":"18%"},{"hint":"The classic","id":"20","label":"20%"},{"hint":"Generous night","id":"25","label":"25%"}],"question":"Default tip?","type":"cards"},{"default":"fair-share","id":"name","options":[{"hint":"Keep it civil","id":"fair-share","label":"Fair Share"},{"hint":"Diner style","id":"check-please","label":"Check Please"},{"hint":"Short and sweet","id":"split-it","label":"Split It"},{"hint":"Playful","id":"tip-top","label":"Tip Top"}],"question":"App name?","type":"cards"},{"default":"emerald","id":"accent","options":[{"hint":"Fresh green","id":"emerald","label":"Emerald"},{"hint":"Cool blue","id":"ocean","label":"Ocean"},{"hint":"Warm gold","id":"amber","label":"Amber"},{"hint":"Bold purple","id":"violet","label":"Violet"}],"question":"Accent color?","type":"cards"},{"default":["tax","roundup","custom"],"id":"extras","options":[{"hint":"Add tax % to the split","id":"tax","label":"Tax input"},{"hint":"Round each share up to the dollar","id":"roundup","label":"Round-up"},{"hint":"Assign different amounts per person","id":"custom","label":"Per-person mode"}],"question":"Anything extra?","type":"toggles"}],"countdown":[{"default":"newyear","id":"first","options":[{"hint":"Next New Year's Eve","id":"newyear","label":"New Year"},{"hint":"This December 25th","id":"christmas","label":"Christmas"},{"hint":"30 days from now","id":"vacation","label":"Vacation"},{"hint":"I'll add my own","id":"custom","label":"Mine"}],"question":"What's the first countdown for?","type":"cards"},{"default":"aurora","id":"theme","options":[{"hint":"Dark, glowing sky","id":"aurora","label":"Midnight Aurora"},{"hint":"Warm dawn glow","id":"sunrise","label":"Sunrise"},{"hint":"Clean and quiet","id":"minimal","label":"Minimal"}],"question":"Pick a look","type":"cards"},{"default":"violet","id":"accent","options":[{"hint":"Deep purple glow","id":"violet","label":"Violet"},{"hint":"Cool cyan wave","id":"aqua","label":"Aqua"},{"hint":"Warm gold light","id":"amber","label":"Amber"}],"question":"Accent color","type":"cards"}],"sketch-pad":[{"default":"chalkboard","id":"look","options":[{"hint":"Dark board, glowing ink","id":"chalkboard","label":"Chalkboard"},{"hint":"Warm paper, classic ink","id":"paper","label":"Paper"}],"question":"Canvas look?","type":"cards"},{"default":"brush","id":"tool","options":[{"hint":"Pressure-smooth lines","id":"brush","label":"Brush"},{"hint":"Bold strokes","id":"marker","label":"Marker"},{"hint":"Translucent highlights","id":"highlighter","label":"Highlighter"}],"question":"Default pen?","type":"cards"},{"default":"classic","id":"palette","options":[{"hint":"Electric glow colors","id":"neon","label":"Neon"},{"hint":"Soft and dreamy","id":"pastel","label":"Pastel"},{"hint":"Bold everyday colors","id":"classic","label":"Classic"}],"question":"Palette style?","type":"cards"},{"default":"sketchbook","id":"name","options":[{"hint":"Your pocket sketchbook","id":"sketchbook","label":"Sketchbook"},{"hint":"Quick ideas, zero friction","id":"doodlepad","label":"Doodle Pad"},{"hint":"Big ideas, big board","id":"whiteboard","label":"Whiteboard"},{"hint":"Where thoughts get ink","id":"inkwell","label":"Inkwell"}],"question":"Name it?","type":"cards"}]}};
+
+/* ================= BUILD LOOP: request -> result, zero interruptions =================
+   The bar is the whole loop: the user types a request, rules pick the kit, answer
+   every quiz question, and note what the request implies (included vs honestly
+   missing). Nothing ever asks the user a follow-up question. */
+const BUILD_INTENT = /\b(build|make|create|give me|i want|i need|new)\b/i;
+
+/* What each kit's built app actually includes, in plain words (for the receipt). */
+const KIT_DELIVERS = {
+ 'pomodoro':['focus timer with breaks','daily streaks','tick sounds'],
+ 'tabata-timer':['interval rounds','warm-up & cool-down','sound cues'],
+ 'countdown':['live countdown clock','themed event screens'],
+ 'water-tracker':['daily water goal','one-tap drink sizes','bottle visual'],
+ 'bill-split':['tip calculator','tax & totals','per-person shares'],
+ 'habit-tracker':['daily check-ins','streaks','progress grid'],
+ 'organizer':['client list','appointments','payment nudges'],
+ 'flashcards':['flip cards','shuffle','self-grading'],
+ 'journal':['daily entries','writing prompts','mood tracking'],
+ 'budget-tracker':['expense tracking','spending chart'],
+ 'kanban':['task board','custom columns','labels','progress'],
+ 'white-noise':['ambient mixes','sleep timer','visualizer'],
+ 'recipe-box':['recipe cards','cook mode','kitchen timers'],
+ 'pixel-art':['pixel canvas','color palettes','mirror & fill tools'],
+ 'sketch-pad':['drawing canvas','brushes','PNG export'],
+ 'drum-machine':['drum pads','step sequencer','swing'],
+ 'game-2048':['2048 board','undo','move counter'],
+ 'arena-roguelike':['wave combat','10-floor climb','boss fights','3 heroes'],
+ 'world-3d':['3D terrain','living creatures','day/sunset/alien skies'],
+ 'unit-converter':['7 unit types','metric \u21c4 imperial']
+};
+/* Request keywords -> quiz answers. Toggles: '+x' adds, '-x' removes. */
+const KIT_RULES = {
+ 'pomodoro':{focus_len:[[/15|short|quick/i,'15'],[/50|long|hour/i,'50']],
+   extras:[[/silent|quiet|no.?tick/i,'-tick'],[/no.?streak/i,'-streak']]},
+ 'tabata-timer':{preset:[[/\bhiit\b/i,'hiit'],[/endurance|cardio|long/i,'endurance']],
+   warmcool:[[/no.?warm|skip warm/i,'none'],[/full|long warm/i,'full']],
+   extras:[[/silent|quiet|mute/i,'-sound']]},
+ 'countdown':{first:[[/christmas/i,'christmas'],[/vacation|trip|holiday/i,'vacation'],[/wedding|birthday|launch|exam|deadline|party/i,'custom']],
+   theme:[[/sunrise|morning/i,'sunrise'],[/minimal|simple|clean/i,'minimal']],
+   accent:[[/blue|aqua/i,'aqua'],[/amber|gold|orange/i,'amber']]},
+ 'water-tracker':{goal:[[/1500|1\.5/i,'g1500'],[/2500|2\.5/i,'g2500'],[/3000|\b3\b/i,'g3000']],
+   style:[[/glass/i,'glass'],[/drop/i,'drop']],accent:[[/deep/i,'deepsea'],[/lagoon|green/i,'lagoon']]},
+ 'bill-split':{tip:[[/\b15\b/i,'15'],[/\b18\b/i,'18'],[/\b25\b/i,'25']],
+   name:[[/check/i,'check-please'],[/split/i,'split-it'],[/tip.?top/i,'tip-top']],
+   extras:[[/no.?tax/i,'-tax'],[/no.?round/i,'-roundup']]},
+ 'habit-tracker':{vibe:[[/light|paper|white/i,'paper'],[/forest|green/i,'forest']],
+   starter:[[/fitness|gym|workout|exercise/i,'fitness'],[/mindful|meditat|calm/i,'mindful'],[/productiv|work|study/i,'productive']],
+   tracking:[[/no.?streak/i,'-streaks']]},
+ 'organizer':{tracking:[[/client/i,'+clients'],[/appointment|booking|schedul/i,'+appointments']],
+   vibe:[[/light|paper|white/i,'paper'],[/neon/i,'neon']]},
+ 'flashcards':{flip:[[/slide/i,'slide'],[/fade/i,'fade']],
+   starter:[[/spanish|language|vocab/i,'spanish'],[/interview|job|coding/i,'interview']],
+   aids:[[/no.?shuffle/i,'-shuffle']]},
+ 'journal':{vibe:[[/light|paper|white/i,'paper'],[/dusk|sunset/i,'dusk']],
+   prompts:[[/deep/i,'deep'],[/no.?prompt/i,'none']],extras:[[/no.?mood/i,'-mood']]},
+ 'budget-tracker':{vibe:[[/light|paper|white/i,'paper'],[/mint|green/i,'mint']],
+   style:[[/rolling|weekly/i,'rolling'],[/free|simple/i,'free']],extras:[[/weekly/i,'+weekly']]},
+ 'kanban':{board:[[/work|job/i,'work'],[/project/i,'project'],[/launch|startup/i,'launch']],
+   columns:[[/sprint|agile/i,'sprint'],[/simple/i,'simple'],[/flow/i,'flow']],
+   accent:[[/sunset|orange/i,'sunset'],[/mint|green/i,'mint'],[/violet|purple/i,'violet']]},
+ 'white-noise':{mix:[[/focus|work|study/i,'focus'],[/rain/i,'rainnight']],
+   vibe:[[/blue|deep/i,'deepblue']],extras:[[/no.?timer/i,'-timer']]},
+ 'recipe-box':{vibe:[[/dark/i,'dark'],[/green/i,'green']],layout:[[/list/i,'list']],
+   extras:[[/no.?timer/i,'-timers']]},
+ 'pixel-art':{size:[[/8x8|tiny|small/i,'8x8'],[/32x32|big|large/i,'32x32']],
+   palette:[[/neon/i,'neon'],[/pastel/i,'pastel']],theme:[[/light|paper|white/i,'paper']],
+   extras:[[/no.?mirror/i,'-mirror']]},
+ 'sketch-pad':{look:[[/paper|light|white/i,'paper']],tool:[[/marker/i,'marker'],[/highlight/i,'highlighter']],
+   palette:[[/neon/i,'neon'],[/pastel/i,'pastel']],
+   name:[[/doodle/i,'doodlepad'],[/whiteboard/i,'whiteboard'],[/ink/i,'inkwell']]},
+ 'drum-machine':{kit_sound:[[/electro|edm|electronic/i,'electro'],[/acoustic|real|live/i,'acoustic']],
+   layout:[[/sequencer|step/i,'sequencer']],extras:[[/metronome/i,'+metronome']]},
+ 'game-2048':{board:[[/5x5|big/i,'5x5'],[/3x3|small/i,'3x3']],
+   vibe:[[/light|paper|white/i,'paper'],[/neon/i,'neon']],extras:[[/moves|count/i,'+moves']]},
+ 'arena-roguelike':{hero:[[/mage|magic|wizard|spell/i,'mage'],[/gun|shooter|rifle/i,'gunner']],
+   theme:[[/forest|nature|woods/i,'forest'],[/neon|cyber/i,'neon']],
+   difficulty:[[/brutal|hard|difficult|extreme/i,'brutal'],[/easy|chill|relax|casual/i,'chill']]},
+ 'world-3d':{terrain:[[/island|ocean/i,'islands'],[/mountain/i,'mountains']],
+   life:[[/sparse|empty|few/i,'sparse'],[/teeming|lots|many|crowded/i,'teeming']],
+   sky:[[/sunset/i,'sunset'],[/alien|purple|weird/i,'alien']]},
+ 'unit-converter':{category:[[/weight|kg|pound/i,'weight'],[/temp|fahrenheit|celsius|degree/i,'temperature'],
+   [/speed|mph|kph/i,'speed'],[/volume|liter|cup|gallon/i,'volume'],[/time|hour|minute|second/i,'time'],[/data|byte|gb|mb/i,'data']],
+   pair:[[/imperial.*metric|to metric/i,'imperial_metric']],
+   accent:[[/blue/i,'blue'],[/amber|orange/i,'amber'],[/violet|purple/i,'violet']]}
+};
+/* Full-request specials: the request implies a whole shape, not just options. */
+const BUILD_SPECIALS = [
+ {re:/sao|sword art|aincrad/i, kit:'arena-roguelike', name:'SAO Tower',
+  config:{hero:'archer', theme:'dungeon', difficulty:'classic'},
+  req:[['Progressable tower',1,'10 floors with boss fights — climb to the top'],
+       ['Combat',1,'your hero vs enemy waves'],
+       ['World generation',1,'dungeon floors reshuffle every run'],
+       ['Multiplayer',0,'needs a server — this build is single-player']]},
+ {re:/\btower\b.*\bgame\b|\bgame\b.*\btower\b|climb.*tower|tower.*climb/i, kit:'arena-roguelike', name:'Tower Climb',
+  config:{theme:'dungeon', difficulty:'classic'},
+  req:[['Progressable tower',1,'10 floors with boss fights'],
+       ['Combat',1,'hero vs enemy waves'],
+       ['Multiplayer',0,'needs a server — single-player for now']]},
+ {re:/dungeon crawler|roguelike/i, kit:'arena-roguelike', name:'Dungeon Crawl',
+  config:{theme:'dungeon'},
+  req:[['Procedural dungeons',1,'floors reshuffle every run'],
+       ['Combat',1,'hero vs enemy waves'],
+       ['Progression',1,'10 floors, harder each time']]}
+];
+/* Things a request can imply that no kit can do — said plainly, never promised. */
+const BUILD_NOTES = [
+ {re:/multiplayer|\bpvp\b|versus|with friends|co-?op|2 ?player|online\b/i, kits:['arena-roguelike','game-2048','world-3d'],
+  note:'Live multiplayer needs a server — this build is single-player.'},
+ {re:/remind|notification|notify|alarm/i, kits:['pomodoro','tabata-timer','countdown','water-tracker','habit-tracker'],
+  note:'Reminders only sound while the app is open.'},
+ {re:/share with|send to|collaborat/i, kits:['kanban','organizer','recipe-box'],
+  note:'No sharing yet — everything stays on this device.'},
+ {re:/login|account|password|sign.?in/i, kits:null,
+  note:'No accounts — your stuff stays on this device.'}
+];
+function buildAppName(text, kitName){
+  let t = (text||'').toLowerCase()
+    .replace(/^(please\s+)?(build|make|create|give me|i want|i need|can you|could you)\s+/,'')
+    .replace(/^(me\s+)?(a|an|the)\s+/,'')
+    .replace(/\s+(for|to)\s+(my|me)\b.*$/,'')
+    .replace(/\s+please\s*$/,'').trim();
+  if(!t || t.length < 3 || /^(app|game|tool|thing|one|it)$/.test(t)) return kitName;
+  t = t.replace(/\blike\b.*$/,'').trim() || t;
+  t = t.replace(/\b\w/g, c=>c.toUpperCase());
+  return t.length > 26 ? t.slice(0,26).trim() : t;
+}
+const BuildLoop = {
+  _busy:false,
+  kitIndex(id){
+    const e = (KITS_BUNDLED.index.kits||[]).find(k=>k.id===id);
+    return e ? Object.assign({}, e, {quiz: KITS_BUNDLED.quiz[id]||[]}) : null;
+  },
+  match(text){ return Kits.match(text); },
+  planForKit(kitId, text){
+    const kit = this.kitIndex(kitId); if(!kit) return null;
+    const t = (text||'').trim();
+    const config = Kits.defaults(kit);
+    const rules = KIT_RULES[kit.id]||{};
+    (kit.quiz||[]).forEach(q=>{
+      (rules[q.id]||[]).forEach(([re, val])=>{
+        if(!re.test(t)) return;
+        if(q.type==='toggles'){
+          let arr = (config[q.id]||[]).slice();
+          if(val[0]==='+'){ if(arr.indexOf(val.slice(1))<0) arr.push(val.slice(1)); }
+          else if(val[0]==='-'){ arr = arr.filter(x=>x!==val.slice(1)); }
+          config[q.id] = arr;
+        }else config[q.id] = val;
+      });
+    });
+    const req = (KIT_DELIVERS[kit.id]||[]).map(d=>[d,1,'']);
+    const missing = [];
+    BUILD_NOTES.forEach(n=>{
+      if(n.re.test(t) && (!n.kits || n.kits.indexOf(kit.id)>=0)) missing.push(n.note);
+    });
+    return {kit, config, name:buildAppName(t, kit.name), req, missing};
+  },
+  plan(text){
+    const t = (text||'').trim(); if(!t) return null;
+    for(const s of BUILD_SPECIALS){
+      if(s.re.test(t)){
+        const kit = this.kitIndex(s.kit); if(!kit) continue;
+        const config = Object.assign(Kits.defaults(kit), s.config||{});
+        return {kit, config, name:s.name, req:s.req||[], missing:[]};
+      }
+    }
+    const m = this.match(t); if(!m) return null;
+    return this.planForKit(m.id, t);
+  },
+  async runKit(kitId, text){
+    const plan = this.planForKit(kitId, text);
+    if(!plan) return null;
+    const html = await Kits.buildHTML(plan.kit, plan.config);
+    const app = {id:uid(), name:plan.name, code:html, color:'#4ade80', created:Date.now(), kit:plan.kit.id};
+    const D = Store.data; D.apps.push(app); Store.save();
+    OS.refreshHome();
+    return {app, plan};
+  },
+  async run(text){
+    const plan = this.plan(text);
+    if(!plan) return null;
+    const html = await Kits.buildHTML(plan.kit, plan.config);
+    const app = {id:uid(), name:plan.name, code:html, color:'#4ade80', created:Date.now(), kit:plan.kit.id};
+    const D = Store.data; D.apps.push(app); Store.save();
+    OS.refreshHome();
+    return {app, plan};
+  },
+  receiptHTML(plan){
+    const has = (plan.req||[]).filter(r=>r[1]).map(r=>esc(r[0].toLowerCase()));
+    const hasnt = (plan.req||[]).filter(r=>!r[1]);
+    (plan.missing||[]).forEach(m=>hasnt.push(['',0,m]));
+    let h = '<div class="card" style="border-color:rgba(74,222,128,.35)"><div style="font-weight:700;font-size:15px;margin-bottom:6px">\u2713 Built <b>'+esc(plan.name)+'</b></div>';
+    if(has.length) h += '<div class="small" style="line-height:1.6">It has: '+has.join(' \u00b7 ')+'</div>';
+    hasnt.forEach(r=>{
+      const txt = r[2] ? (r[0] ? r[0]+' \u2014 '+r[2] : r[2]) : r[0];
+      h += '<div class="small muted" style="line-height:1.6;margin-top:4px">Not in this build: '+esc(txt)+'</div>';
+    });
+    h += '</div>';
+    return h;
+  },
+  /* Full UI run inside a results element: progress -> open app -> receipt. */
+  async uiBuild(text, resEl){
+    if(this._busy){ toast('Already building — one sec'); return; }
+    this._busy = true;
+    resEl.innerHTML = '<div class="card"><div class="small muted" style="text-align:center;padding:18px">Building your app\u2026</div></div>';
+    try{
+      const r = await this.run(text);
+      // run() -> OS.refreshHome() rebuilds the home DOM, so re-grab #hm-res if it was replaced.
+      if(resEl.id === 'hm-res'){ const fresh = document.getElementById('hm-res'); if(fresh) resEl = fresh; }
+      if(!r){ resEl.innerHTML = '<div class="small muted">Nothing matched that — try the gallery below.</div>'; this._busy=false; return; }
+      OS.openHTML(r.app);
+      resEl.innerHTML = this.receiptHTML(r.plan);
+      toast('Built ' + r.plan.name);
+    }catch(e){
+      resEl.innerHTML = '<div class="card"><div class="small" style="color:#f2b8b8">Couldn\u2019t build that ('+esc(e.message||'offline?')+'). Kits need internet the first time.</div></div>';
+    }
+    this._busy = false;
+  }
+};
+
 const Kits = {
   base: (window.MOOR_KITS_BASE || 'https://bassseamoor.github.io/render-queue/kits/'),
   index: null, _kits: {},
   async load(){
     if(this.index) return this.index;
+    this.index = (typeof KITS_BUNDLED!=='undefined' && KITS_BUNDLED.index) || null;
+    if(this.index){
+      fetch(this.base + 'index.json', {cache:'no-cache'}).then(r=>r.ok?r.json():null)
+        .then(j=>{ if(j && j.kits && j.kits.length) this.index = j; }).catch(()=>{});
+      return this.index;
+    }
     const r = await fetch(this.base + 'index.json', {cache:'no-cache'});
     if(!r.ok) throw new Error('kit catalog unavailable');
     this.index = await r.json();
@@ -851,19 +1077,27 @@ const Kits = {
   },
   async getKit(id){
     if(this._kits[id]) return this._kits[id];
+    if(typeof KITS_BUNDLED!=='undefined' && KITS_BUNDLED.quiz[id]){
+      const e = (KITS_BUNDLED.index.kits||[]).find(k=>k.id===id) || {id};
+      const k = Object.assign({}, e, {quiz: KITS_BUNDLED.quiz[id]});
+      this._kits[id] = k; return k;
+    }
     const r = await fetch(this.base + id + '/kit.json', {cache:'no-cache'});
     if(!r.ok) throw new Error('kit not found');
     const k = await r.json(); this._kits[id] = k; return k;
   },
   match(text){
-    if(!this.index || !this.index.kits) return null;
+    const ix = this.index || ((typeof KITS_BUNDLED!=='undefined') ? KITS_BUNDLED.index : null);
+    if(!ix || !ix.kits) return null;
     const words = text.toLowerCase().replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>2);
     if(!words.length) return null;
     let best=null, bestScore=0;
-    this.index.kits.forEach(k=>{
+    ix.kits.forEach(k=>{
       const hay = ((k.keywords||[]).join(' ')+' '+k.name+' '+(k.description||'')).toLowerCase();
       let s=0;
       words.forEach(w=>{ if(hay.indexOf(w)>=0) s += ((k.keywords||[]).indexOf(w)>=0 ? 3 : 1); });
+      const nm = (k.name||'').toLowerCase(), kid = (k.id||'').replace(/-/g,' ');
+      words.forEach(w=>{ if(w===nm || w===kid) s += 4; });
       if(s>bestScore){ bestScore=s; best=k; }
     });
     return bestScore>=2 ? best : null;
@@ -874,9 +1108,15 @@ const Kits = {
     return c;
   },
   async buildHTML(kit, config){
-    const r = await fetch(this.base + kit.id + '/assembler.js', {cache:'no-cache'});
-    if(!r.ok) throw new Error('assembler unavailable');
-    const code = await r.text();
+    const ck = 'moor.asm.' + kit.id;
+    let code = null;
+    try{ code = localStorage.getItem(ck); }catch(e){}
+    if(!code){
+      const r = await fetch(this.base + kit.id + '/assembler.js', {cache:'no-cache'});
+      if(!r.ok) throw new Error('assembler unavailable');
+      code = await r.text();
+      try{ localStorage.setItem(ck, code); }catch(e){}
+    }
     const prev = window.MoorKit;
     try{
       (0,eval)(code);
@@ -893,7 +1133,7 @@ const KitsUI = {
     const pend = this._pending; this._pending = null;
     if(pend){ this.quiz(body, pend); return; }
     body.innerHTML = '<div class="sec-t" style="margin-top:0">Kit gallery</div>'+
-      '<div class="small muted" style="margin-bottom:12px;line-height:1.6">Pick one, answer a few quick questions, get a working app. No API key needed.</div><div id="kz-list"></div>';
+      '<div class="small muted" style="margin-bottom:12px;line-height:1.6">One tap builds it — no questions. Customize first if you want.</div><div id="kz-list"></div>';
     const list = body.querySelector('#kz-list');
     list.innerHTML = '<div class="small muted">Loading kits…</div>';
     Kits.load().then(idx=>{
@@ -904,8 +1144,23 @@ const KitsUI = {
         d.innerHTML = '<div class="row"><div style="font-size:26px;flex:none;width:38px;text-align:center">'+esc(k.icon||'▦')+'</div>'+
           '<div style="flex:1;min-width:0"><div style="font-weight:650;font-size:15px">'+esc(k.name)+'</div>'+
           '<div class="small muted" style="line-height:1.5">'+esc(k.description||'')+'</div></div></div>'+
-          '<button class="pill-cta" style="margin-top:10px;width:100%;padding:11px">Build '+esc(k.name)+'</button>';
-        d.querySelector('button').onclick = ()=>KitsUI.quiz(body, k.id);
+          '<button class="pill-cta" data-build style="margin-top:10px;width:100%;padding:11px">Build '+esc(k.name)+'</button>'+
+          '<button class="chipbtn" data-custom style="margin-top:8px;width:100%;padding:9px">Customize first</button>';
+        d.querySelector('[data-build]').onclick = async (ev)=>{
+          const btn = ev.currentTarget;
+          btn.disabled = true; btn.textContent = 'Building…';
+          try{
+            const r = await BuildLoop.runKit(k.id, k.name);
+            if(!r) throw new Error('no plan');
+            OS.openHTML(r.app);
+            toast('Built ' + r.plan.name);
+            KitsUI.render(body);
+          }catch(e){
+            btn.disabled = false; btn.textContent = 'Build ' + k.name;
+            toast('Build needs internet the first time');
+          }
+        };
+        d.querySelector('[data-custom]').onclick = ()=>KitsUI.quiz(body, k.id);
         list.appendChild(d);
       });
     }).catch(()=>{ list.innerHTML = '<div class="small muted">Kits need internet the first time — connect and reopen.</div>'; });
@@ -1054,19 +1309,19 @@ assistant: { title:'Assistant', icon:'chat', tint:'linear-gradient(135deg,#4ade8
       function guide(){
         const q = gin.value.trim(); if(!q) return;
         gout.innerHTML = '<div class="small muted">Looking…</div>';
-        Kits.load().then(()=>{
+        try{
           const m = Kits.match(q);
           if(m){
             gout.innerHTML = '<div class="card"><div class="row"><div style="font-size:24px;flex:none;width:36px;text-align:center">'+esc(m.icon||'▦')+'</div>'+
               '<div style="flex:1"><div style="font-weight:650">'+esc(m.name)+'</div><div class="small muted">'+esc(m.description||'')+'</div></div></div>'+
-              '<button class="pill-cta" id="as-guide-build" style="margin-top:10px;width:100%">Set it up →</button></div>';
-            gout.querySelector('#as-guide-build').onclick = ()=>{ KitsUI._pending = m.id; OS.open('kits'); };
+              '<button class="pill-cta" id="as-guide-build" style="margin-top:10px;width:100%">Build →</button></div>';
+            gout.querySelector('#as-guide-build').onclick = ()=>BuildLoop.uiBuild(q, gout);
           }else{
             gout.innerHTML = '<div class="small muted">Nothing matches that yet — here\'s everything I can build:</div>'+
               '<button class="pill-cta" id="as-guide-browse" style="margin-top:8px">Browse all kits</button>';
             gout.querySelector('#as-guide-browse').onclick = ()=>OS.open('kits');
           }
-        }).catch(()=>{ gout.innerHTML = '<div class="small muted">Kits need internet the first time — connect and retry.</div>'; });
+        }catch(e){ gout.innerHTML = '<div class="small muted">Hmm, try again.</div>'; }
       }
       body.querySelector('#as-guide-go').onclick = guide;
       gin.addEventListener('keydown', e=>{ if(e.key==='Enter') guide(); });
