@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Moor</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --ink: #F3F6F2;
+    --dim: rgba(243,246,242,.60);
+    --faint: rgba(243,246,242,.34);
+    --acc: #C8F4A4;
+    --acc-ink: #1a2410;
+    --stroke: rgba(255,255,255,.075);
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0; color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", sans-serif;
+    overflow: hidden; user-select: none; -webkit-user-select: none;
+    background: #050806; -webkit-font-smoothing: antialiased;
+  }
+  .blob { position: fixed; border-radius: 50%; filter: blur(110px); opacity: .45; pointer-events: none; z-index: 0; }
+  .b1 { width: 420px; height: 420px; left: -130px; top: -110px; background: #24401c; animation: drift 17s ease-in-out infinite alternate; }
+  .b2 { width: 340px; height: 340px; right: -120px; top: 36%; background: #1d3d50; animation: drift 22s ease-in-out infinite alternate-reverse; }
+  .b3 { width: 260px; height: 260px; left: 38%; bottom: -140px; background: #1a2f1a; animation: drift 26s ease-in-out infinite alternate; }
+  @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(44px,28px) scale(1.08); } }
+  .vignette { position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    background: radial-gradient(120% 100% at 50% 0%, transparent 45%, rgba(0,0,0,.6) 100%); }
+  .grain { position: fixed; inset: 0; pointer-events: none; z-index: 80; opacity: .07; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"); }
+
+  /* ---------- 3D space ---------- */
+  #space { position: fixed; inset: 0; z-index: 2; overflow: hidden;
+    perspective: 1500px; touch-action: none; }
+  #world { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
+  #ground { position: absolute; left: -60%; right: -60%; top: 62%; bottom: -70%;
+    transform: rotateX(79deg); transform-origin: 50% 0%; pointer-events: none;
+    background-image: linear-gradient(rgba(200,244,164,.09) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(200,244,164,.09) 1px, transparent 1px);
+    background-size: 76px 76px;
+    -webkit-mask-image: radial-gradient(ellipse 62% 55% at 50% 28%, black 25%, transparent 72%);
+    mask-image: radial-gradient(ellipse 62% 55% at 50% 28%, black 25%, transparent 72%); }
+  #dust { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
+  .mote { position: absolute; border-radius: 50%; background: rgba(255,255,255,.5);
+    filter: blur(1px); --z: 0px; animation: motedrift 12s ease-in-out infinite alternate; }
+  @keyframes motedrift { from { transform: translate3d(0,-16px,var(--z)); }
+    to { transform: translate3d(0,16px,var(--z)); } }
+
+  /* ---------- hint pill: teaches "/", then disappears forever ---------- */
+  #hintpill { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%) translateY(12px);
+    z-index: 50; padding: 12px 22px; border-radius: 999px; font-size: 13.5px; color: var(--dim);
+    background: rgba(12,18,12,.78); border: 1px solid var(--stroke);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    opacity: 0; transition: opacity .8s ease, transform .8s ease; pointer-events: none; white-space: nowrap; }
+  #hintpill.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #hintpill b { color: var(--ink); font-weight: 700; }
+  #hintpill .key { display: inline-block; border: 1px solid rgba(255,255,255,.25); border-bottom-width: 2px;
+    border-radius: 6px; padding: 1px 8px; margin: 0 2px; font-family: ui-monospace, Menlo, monospace;
+    color: var(--ink); background: rgba(255,255,255,.06); }
+
+  /* ---------- the command bar ---------- */
+  #cmdbar { position: fixed; left: 50%; top: 17%; transform: translateX(-50%) translateY(-14px) scale(.98);
+    width: min(620px, 92vw); z-index: 60; opacity: 0; pointer-events: none;
+    transition: opacity .22s ease, transform .22s cubic-bezier(.22,1.2,.36,1); }
+  #cmdbar.open { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0) scale(1); }
+  #cmdbox { border-radius: 20px; overflow: hidden;
+    background: linear-gradient(165deg, rgba(22,30,22,.96), rgba(10,15,10,.97));
+    -webkit-backdrop-filter: blur(26px); backdrop-filter: blur(26px);
+    border: 1px solid rgba(200,244,164,.22); border-radius: 20px;
+    box-shadow: 0 30px 90px rgba(0,0,0,.7), 0 0 60px rgba(200,244,164,.08), inset 0 1px 0 rgba(255,255,255,.1); }
+  #cmdrow { display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 20px; }
+  #cmdrow .slash { color: var(--acc); font-size: 20px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; flex: none; }
+  #cmdinput { flex: 1; min-width: 0; background: transparent; border: 0; outline: none;
+    color: var(--ink); font-size: 17px; font-family: inherit; padding: 14px 0; }
+  #cmdinput::placeholder { color: var(--faint); }
+  #cmdresults { max-height: 300px; overflow-y: auto; border-top: 1px solid rgba(255,255,255,.06); display: none; }
+  #cmdresults.show { display: block; }
+  .crow { display: flex; gap: 12px; align-items: center; padding: 11px 20px; font-size: 14.5px;
+    cursor: pointer; color: var(--dim); }
+  .crow .k { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--acc); background: rgba(200,244,164,.1); border-radius: 6px; padding: 3px 8px; flex: none; }
+  .crow .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crow.sel { background: rgba(200,244,164,.09); color: var(--ink); }
+  #cmdreceipt { display: none; padding: 13px 20px 15px; font-size: 13.5px; color: var(--dim);
+    border-top: 1px solid rgba(255,255,255,.06); line-height: 1.55; }
+  #cmdreceipt.show { display: block; }
+  #cmdreceipt .ok { color: var(--acc); font-weight: 700; }
+  #cmdreceipt .bad { color: #f09393; font-weight: 700; }
+  #cmdreceipt .spin { display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid rgba(200,244,164,.3); border-top-color: var(--acc);
+    animation: spin .7s linear infinite; vertical-align: -1px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- windows ---------- */
+  #winlayer { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
+  .win { position: absolute; left: 50%; top: 42%; width: 360px; margin-left: -180px;
+    transform-style: preserve-3d; pointer-events: auto;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: linear-gradient(165deg, rgba(24,32,24,.95), rgba(11,16,11,.96));
+    -webkit-backdrop-filter: blur(28px); backdrop-filter: blur(28px);
+    border: 1px solid rgba(255,255,255,.13); border-radius: 22px;
+    box-shadow: 0 40px 100px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.14);
+    opacity: 0; }
+  .win.open { opacity: 1; }
+  .win.top { border-color: rgba(200,244,164,.42);
+    box-shadow: 0 40px 110px rgba(0,0,0,.7), 0 0 54px rgba(200,244,164,.13), inset 0 1px 0 rgba(255,255,255,.16); }
+  .win.primary { width: min(560px, 92vw); margin-left: calc(min(560px, 92vw) / -2); }
+  .win.sized .winbody { height: auto; flex: 1; min-height: 0; }
+  .win.shaded .winbody { display: none; }
+  .win.shaded { height: auto !important; }
+  .win.shaded .wresize { display: none; }
+  .wresize { position: absolute; right: 2px; bottom: 2px; width: 30px; height: 30px;
+    cursor: nwse-resize; touch-action: none; z-index: 6; }
+  .wresize::after { content: ""; position: absolute; right: 7px; bottom: 7px; width: 10px; height: 10px;
+    border-right: 2px solid rgba(255,255,255,.42); border-bottom: 2px solid rgba(255,255,255,.42);
+    border-bottom-right-radius: 5px; }
+  .wresize:hover::after { border-color: var(--acc); }
+  .winbody { scrollbar-width: thin; scrollbar-color: rgba(200,244,164,.45) transparent; }
+  .winbody::-webkit-scrollbar { width: 10px; }
+  .winbody::-webkit-scrollbar-track { background: transparent; }
+  .winbody::-webkit-scrollbar-thumb { background: rgba(200,244,164,.32); border-radius: 6px;
+    border: 2px solid transparent; background-clip: content-box; }
+  .winbody::-webkit-scrollbar-thumb:hover { background: rgba(200,244,164,.6);
+    border: 2px solid transparent; background-clip: content-box; }
+  .layermenu { position: absolute; top: 62px; right: 10px; z-index: 30; min-width: 170px;
+    background: rgba(13,19,13,.97); border: 1px solid var(--stroke); border-radius: 14px; padding: 6px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.65); }
+  .lmitem { padding: 10px 12px; border-radius: 9px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
+  .lmitem:hover { background: rgba(200,244,164,.14); }
+  .winhead { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; flex: none;
+    border-bottom: 1px solid rgba(255,255,255,.07); touch-action: none; cursor: grab; }
+  .winhead .orb { width: 36px; height: 36px; border-radius: 11px; margin: 0; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 1px 1px rgba(255,255,255,.22), inset 0 -3px 6px rgba(0,0,0,.30), 0 6px 18px rgba(0,0,0,.40); }
+  .winhead .glyph svg { width: 19px; height: 19px; display: block; }
+  .wintitle { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; letter-spacing: -.1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .winhead button { width: 36px; height: 36px; border-radius: 50%; flex: none;
+    border: 1px solid var(--stroke); background: rgba(255,255,255,.06); color: var(--ink); font-size: 15px; }
+  .winhead button:active { transform: scale(.9); }
+  @media (hover: hover) { .winhead button:hover { background: rgba(255,255,255,.12); } }
+  .winbody { height: 400px; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+    padding: 18px 18px 28px; }
+  .winbody .asub { color: var(--dim); font-size: 13.5px; margin-bottom: 16px; }
+  input, textarea { -webkit-user-select: text; user-select: text; }
+
+  /* app widgets */
+  .pad { border-radius: 18px; border: 1px solid var(--stroke);
+    background: rgba(255,255,255,.05); color: var(--ink); font-size: 14px; font-weight: 600;
+    padding: 14px 16px; cursor: pointer; }
+  .pad.hit { background: var(--acc); color: var(--acc-ink); }
+  .bigbtn { width: 100%; border: 0; border-radius: 999px; padding: 15px; font-size: 15px; font-weight: 700;
+    background: var(--acc); color: var(--acc-ink); cursor: pointer; }
+  .bigbtn:active { transform: scale(.97); }
+  .ghostbtn { width: 100%; border-radius: 999px; padding: 13px; font-size: 14px; font-weight: 600;
+    background: rgba(255,255,255,.06); color: var(--ink); border: 1px solid var(--stroke); cursor: pointer; }
+  .field { width: 100%; background: rgba(255,255,255,.05); border: 1px solid var(--stroke);
+    border-radius: 14px; padding: 12px 15px; color: var(--ink); font-size: 15px; font-family: inherit; }
+  .field:focus { outline: none; border-color: rgba(200,244,164,.5); }
+  textarea.field { min-height: 220px; resize: vertical; line-height: 1.6; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 .field { flex: 1; min-width: 0; }
+  .hrow { display: flex; gap: 14px; align-items: center; padding: 13px 4px;
+    border-bottom: 1px solid rgba(255,255,255,.06); font-size: 15px; cursor: pointer; }
+  .hcheck { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--faint); flex: none;
+    display: flex; align-items: center; justify-content: center; color: transparent; font-weight: 800; }
+  .hrow.done .hcheck { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+  .hrow.done span { color: var(--faint); text-decoration: line-through; }
+  .timerbig { font-size: 64px; font-weight: 700; letter-spacing: -2px; text-align: center;
+    margin: 22px 0; font-variant-numeric: tabular-nums; }
+  .xrow { display: flex; gap: 12px; align-items: center; padding: 12px 4px;
+    border-bottom: 1px solid rgba(255,255,255,.06); font-size: 14.5px; }
+  .xrow .amt { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .xrow .del { color: var(--faint); background: none; border: 0; font-size: 16px; cursor: pointer; padding: 4px 8px; }
+  .invtot { display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 4px 4px; font-size: 17px; font-weight: 700; }
+  .term { background: rgba(0,0,0,.4); border: 1px solid var(--stroke); border-radius: 14px;
+    padding: 14px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.7;
+    height: 260px; overflow-y: auto; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
+  .term .p { color: var(--acc); }
+  select.field { appearance: none; }
+  .mini { color: var(--dim); font-size: 12.5px; }
+  .dicebig { font-size: 72px; font-weight: 800; text-align: center; margin: 18px 0 6px;
+    font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+<div class="vignette"></div>
+
+<div id="space">
+  <div id="world">
+    <div id="ground"></div>
+    <div id="dust"></div>
+    <div id="winlayer"></div>
+  </div>
+</div>
+
+<div id="hintpill"><span class="key">/</span>&nbsp; Press <b>/</b> to command Moor</div>
+
+<div id="cmdbar">
+  <div id="cmdbox">
+    <div id="cmdrow">
+      <div class="slash">/</div>
+      <input id="cmdinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        placeholder="Type whatever you want…">
+    </div>
+    <div id="cmdresults"></div>
+    <div id="cmdreceipt"></div>
+  </div>
+</div>
+
+<div class="grain"></div>
+<script>
+"use strict";
+/* ============================================================
+   MOOR SLASH — a clean 3D environment commanded by "/".
+   No chrome. The OS figures out what's needed under the hood:
+   a local tool registry the "/" router plans calls against.
+   Zero network. Zero keys. Everything runs in this page.
+   ============================================================ */
+
+/* ---------- tiny helpers ---------- */
+function $(s, r){ return (r || document).querySelector(s); }
+function $all(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function store(k, v){
+  try {
+    if (arguments.length === 1) { var r = localStorage.getItem(k); return r ? JSON.parse(r) : null; }
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch(e){ return null; }
+}
+function titleCase(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ---------- 3D space camera: drag to look, wheel to dolly, double-tap resets ---------- */
+var worldEl = $("#world"), spaceEl = $("#space");
+var cam = { rx: 10, ry: 0, z: 80, px: 0, trx: 10, tryy: 0, tz: 80, tpx: 0 };
+var camRAF = null;
+function camLoop(){
+  cam.rx += (cam.trx - cam.rx) * .1;
+  cam.ry += (cam.tryy - cam.ry) * .1;
+  cam.z  += (cam.tz - cam.z) * .1;
+  cam.px += (cam.tpx - cam.px) * .1;
+  worldEl.style.transform = "translateZ(" + cam.z.toFixed(1) + "px) translateX(" + cam.px.toFixed(1) +
+    "px) rotateX(" + cam.rx.toFixed(2) + "deg) rotateY(" + cam.ry.toFixed(2) + "deg)";
+  if (Math.abs(cam.trx - cam.rx) > .03 || Math.abs(cam.tryy - cam.ry) > .03 ||
+      Math.abs(cam.tz - cam.z) > .5 || Math.abs(cam.tpx - cam.px) > .5) camRAF = requestAnimationFrame(camLoop);
+  else camRAF = null;
+}
+function camKick(){ if (!camRAF) camRAF = requestAnimationFrame(camLoop); }
+(function(){
+  var drag = null;
+  spaceEl.addEventListener("pointerdown", function(e){ drag = { x: e.clientX, y: e.clientY, trx: cam.trx, tryy: cam.tryy }; });
+  window.addEventListener("pointermove", function(e){
+    if (!drag) return;
+    cam.tryy = Math.max(-38, Math.min(38, drag.tryy + (e.clientX - drag.x) * .09));
+    cam.trx = Math.max(-6, Math.min(32, drag.trx - (e.clientY - drag.y) * .06));
+    camKick();
+  });
+  window.addEventListener("pointerup", function(){ drag = null; });
+  window.addEventListener("pointercancel", function(){ drag = null; });
+  spaceEl.addEventListener("wheel", function(e){
+    if (e.target.closest && e.target.closest(".win, #cmdbar")) return;
+    e.preventDefault();
+    cam.tz = Math.max(-300, Math.min(600, cam.tz - e.deltaY * .6));
+    camKick();
+  }, { passive: false });
+  spaceEl.addEventListener("dblclick", function(){
+    cam.trx = 10; cam.tryy = 0; cam.tz = 80; cam.tpx = 0; camKick();
+  });
+  camKick();
+})();
+
+/* floating dust motes for depth */
+(function(){
+  var dust = $("#dust");
+  for (var i = 0; i < 30; i++){
+    var m = document.createElement("div");
+    m.className = "mote";
+    var s = 2 + Math.random() * 4;
+    m.style.width = m.style.height = s.toFixed(0) + "px";
+    m.style.left = (Math.random() * 100).toFixed(1) + "%";
+    m.style.top = (Math.random() * 100).toFixed(1) + "%";
+    m.style.setProperty("--z", (-900 + Math.random() * 1100).toFixed(0) + "px");
+    m.style.opacity = (.12 + Math.random() * .3).toFixed(2);
+    m.style.animationDuration = (8 + Math.random() * 10).toFixed(1) + "s";
+    dust.appendChild(m);
+  }
+})();
+
+/* ---------- icons (thin-stroke pictograms) ---------- */
+var IC = {
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="4" width="12" height="16" rx="2.5"/><path d="M9.5 9.5h5M9.5 13h5M9.5 16.5h3"/></svg>',
+  files: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2.5 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-14a2 2 0 0 1-2-2v-11z"/></svg>',
+  terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M7 9.5l3 3-3 3M12.5 15.5H17"/></svg>',
+  budget: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="6.5" width="17" height="11" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 10v.01M17.5 14v.01"/></svg>',
+  habit: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5c1.8 3.6 5.5 5.8 5.5 10a5.5 5.5 0 0 1-11 0c0-1.9.9-3.6 2-4.8.4 1.4 1.3 2.4 2.7 2.9-.4-2.9-.1-5.6.8-8.1z"/></svg>',
+  timer: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 3"/></svg>',
+  dice: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8"><rect x="4.5" y="4.5" width="15" height="15" rx="4"/><circle cx="9" cy="9" r="1.3" fill="rgba(255,255,255,.92)" stroke="none"/><circle cx="15" cy="9" r="1.3" fill="rgba(255,255,255,.92)" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="rgba(255,255,255,.92)" stroke="none"/><circle cx="9" cy="15" r="1.3" fill="rgba(255,255,255,.92)" stroke="none"/><circle cx="15" cy="15" r="1.3" fill="rgba(255,255,255,.92)" stroke="none"/></svg>',
+  convert: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h11l-3-3M17 16H6l3 3"/></svg>',
+  counter: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.92)" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4L12 3z"/><path d="M18.5 15.5l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9.9-2.6z"/></svg>'
+};
+
+/* ============================================================
+   APP REGISTRY — built-ins. "make me X" kits register here too.
+   ============================================================ */
+var APPS = {};
+
+function renderNotes(){
+  var saved = store("moor.notes") || "";
+  return "<div class='asub'>autosaves as you type</div>" +
+    "<textarea class='field' id='notepad' placeholder='Start typing…'>" + esc(saved) + "</textarea>" +
+    "<div class='mini' style='margin-top:10px'><span id='wcount'>0</span> words · kept on this device</div>";
+}
+function wireNotes(body){
+  var ta = body.querySelector("#notepad"), wc = body.querySelector("#wcount");
+  function upd(){ wc.textContent = (ta.value.trim() ? ta.value.trim().split(/\s+/).length : 0); }
+  upd();
+  ta.addEventListener("input", function(){ store("moor.notes", ta.value); upd(); });
+}
+
+function renderFiles(){
+  var rows = [["Field notes.txt","2 KB"],["Budget — September.csv","14 KB"],["cabin-photos/","38 items"],["voice-memo-041.m4a","4.1 MB"],["drafts/","12 items"]];
+  return "<div class='asub'>5 items · this device</div>" + rows.map(function(r){
+    return "<div class='xrow'><span>" + esc(r[0]) + "</span><span class='mini' style='margin-left:auto'>" + esc(r[1]) + "</span></div>";
+  }).join("");
+}
+function wireFiles(){}
+
+function renderTerminal(){
+  return "<div class='term' id='termout'><span class='p'>moor</span> — type <b>help</b>\n</div>" +
+    "<div class='row2'><input class='field' id='termin' placeholder='command…' autocomplete='off' autocorrect='off' autocapitalize='off' spellcheck='false'></div>";
+}
+function wireTerminal(body){
+  var out = body.querySelector("#termout"), inp = body.querySelector("#termin");
+  function print(s){ out.innerHTML += esc(s) + "\n"; out.scrollTop = out.scrollHeight; }
+  inp.addEventListener("keydown", function(e){
+    if (e.key !== "Enter") return;
+    var c = inp.value.trim(); inp.value = "";
+    print("› " + c);
+    if (!c) return;
+    var lc = c.toLowerCase();
+    if (lc === "help") print("open <app> · automations · clear · whoami");
+    else if (lc === "clear") out.innerHTML = "";
+    else if (lc === "whoami") print("you, commanding Moor");
+    else if (lc.indexOf("open ") === 0) { var r = Tools.open_app(lc.slice(5).trim()); print(r.message); }
+    else if (lc === "automations") { var r2 = Tools.list_open(); print(r2.message); print(listAutomations().message); }
+    else if (lc.indexOf("echo ") === 0) print(c.slice(5));
+    else print("unknown command — try help");
+  });
+}
+
+APPS.notes = { name: "Notes", color: "linear-gradient(135deg,#4d8a4d,#224422)", icon: IC.notes, render: renderNotes, wire: wireNotes, keys: ["note","notes","journal","writing","notepad"] };
+APPS.files = { name: "Files", color: "linear-gradient(135deg,#3f7fa8,#1e3f5c)", icon: IC.files, render: renderFiles, wire: wireFiles, keys: ["file","files","documents","finder"] };
+APPS.terminal = { name: "Terminal", color: "linear-gradient(135deg,#3a3f4a,#1c1f26)", icon: IC.terminal, render: renderTerminal, wire: wireTerminal, keys: ["terminal","shell","console","command"] };
+
+/* ============================================================
+   KITS — what "make me X" can build. Each is genuinely usable.
+   ============================================================ */
+var KITS = {
+  budget: { name: "Budget Tracker", icon: IC.budget, color: "linear-gradient(135deg,#4d8a4d,#224422)",
+    match: "budget|expense|spending|money tracker|finance",
+    blurb: "Add expenses, see the running total.",
+    notIn: "No bank sync, no categories — just tracking.",
+    render: function(uid){
+      return "<div class='asub'>tap an entry to remove it</div>" +
+        "<div class='row2' style='margin-bottom:12px'><input class='field' id='xamt-" + uid + "' placeholder='12.50' inputmode='decimal'>" +
+        "<input class='field' id='xlabel-" + uid + "' placeholder='Coffee'></div>" +
+        "<button class='bigbtn' id='xadd-" + uid + "'>Add expense</button>" +
+        "<div id='xlist-" + uid + "' style='margin-top:14px'></div>" +
+        "<div class='invtot'><span>Total</span><span id='xtot-" + uid + "'>$0.00</span></div>";
+    },
+    wire: function(body, uid){
+      var items = store("moor.budget." + uid) || [];
+      function draw(){
+        var list = body.querySelector("#xlist-" + uid), tot = 0;
+        list.innerHTML = "";
+        items.forEach(function(it, i){
+          tot += it.amt;
+          var r = document.createElement("div");
+          r.className = "xrow";
+          r.innerHTML = "<span>" + esc(it.label) + "</span><span class='amt'>$" + it.amt.toFixed(2) + "</span><button class='del'>×</button>";
+          r.querySelector(".del").addEventListener("click", function(){ items.splice(i,1); store("moor.budget." + uid, items); draw(); });
+          list.appendChild(r);
+        });
+        body.querySelector("#xtot-" + uid).textContent = "$" + tot.toFixed(2);
+      }
+      draw();
+      body.querySelector("#xadd-" + uid).addEventListener("click", function(){
+        var a = parseFloat(body.querySelector("#xamt-" + uid).value);
+        var l = body.querySelector("#xlabel-" + uid).value.trim() || "Expense";
+        if (!(a > 0)) return;
+        items.unshift({ amt: a, label: l });
+        store("moor.budget." + uid, items);
+        body.querySelector("#xamt-" + uid).value = ""; body.querySelector("#xlabel-" + uid).value = "";
+        draw();
+      });
+    } },
+  habit: { name: "Habit Tracker", icon: IC.habit, color: "linear-gradient(135deg,#3f8a5a,#1e4028)",
+    match: "habit|streak|routine|checklist|todo",
+    blurb: "Daily check-offs that persist.",
+    notIn: "No reminders, no streak history — just today.",
+    render: function(uid){
+      return "<div class='asub'>today · tap to check off</div><div id='hlist-" + uid + "'></div>" +
+        "<div class='row2' style='margin-top:12px'><input class='field' id='hnew-" + uid + "' placeholder='New habit…'>" +
+        "<button class='bigbtn' id='hadd-" + uid + "' style='width:auto;padding:12px 22px'>+</button></div>";
+    },
+    wire: function(body, uid){
+      var items = store("moor.habit." + uid) || [{ t: "Drink water", d: false }, { t: "Read 20 min", d: false }, { t: "Walk", d: false }];
+      function draw(){
+        var list = body.querySelector("#hlist-" + uid);
+        list.innerHTML = "";
+        items.forEach(function(it, i){
+          var r = document.createElement("div");
+          r.className = "hrow" + (it.d ? " done" : "");
+          r.innerHTML = "<div class='hcheck'>✓</div><span>" + esc(it.t) + "</span>";
+          r.addEventListener("click", function(){ it.d = !it.d; store("moor.habit." + uid, items); draw(); });
+          list.appendChild(r);
+        });
+      }
+      draw();
+      function add(){
+        var v = body.querySelector("#hnew-" + uid).value.trim();
+        if (!v) return;
+        items.push({ t: v, d: false }); store("moor.habit." + uid, items);
+        body.querySelector("#hnew-" + uid).value = ""; draw();
+      }
+      body.querySelector("#hadd-" + uid).addEventListener("click", add);
+      body.querySelector("#hnew-" + uid).addEventListener("keydown", function(e){ if (e.key === "Enter") add(); });
+    } },
+  timer: { name: "Focus Timer", icon: IC.timer, color: "linear-gradient(135deg,#a05a44,#5c2a20)",
+    match: "timer|pomodoro|focus|countdown|stopwatch",
+    blurb: "A 25-minute countdown. Start it, do the thing.",
+    notIn: "No sessions log — one timer, right now.",
+    render: function(uid){
+      return "<div class='asub'>25 minute session</div><div class='timerbig' id='tmr-" + uid + "'>25:00</div>" +
+        "<button class='bigbtn' id='tgo-" + uid + "'>Start</button> " +
+        "<button class='ghostbtn' id='trs-" + uid + "' style='margin-top:10px'>Reset</button>";
+    },
+    wire: function(body, uid){
+      var s = 25 * 60, iv = null, el = body.querySelector("#tmr-" + uid), btn = body.querySelector("#tgo-" + uid);
+      function show(){ var m = Math.floor(s / 60), ss = s % 60; el.textContent = (m < 10 ? "0" : "") + m + ":" + (ss < 10 ? "0" : "") + ss; }
+      function stop(){ if (iv) clearInterval(iv); iv = null; btn.textContent = "Start"; btn.disabled = false; }
+      btn.addEventListener("click", function(){
+        if (iv) { stop(); return; }
+        btn.textContent = "Pause";
+        iv = setInterval(function(){
+          s--; show();
+          if (s <= 0 || !document.body.contains(el)) { stop(); if (s <= 0) el.textContent = "Done."; }
+        }, 1000);
+      });
+      body.querySelector("#trs-" + uid).addEventListener("click", function(){ stop(); s = 25 * 60; show(); });
+    } },
+  dice: { name: "Dice Roller", icon: IC.dice, color: "linear-gradient(135deg,#7a5aa0,#3c2a5c)",
+    match: "dice|roll|d20|random number",
+    blurb: "Rolls a d20. Keeps a history.",
+    notIn: "No custom dice — d20 only.",
+    render: function(uid){
+      return "<div class='asub'>tap to roll</div><div class='dicebig' id='dval-" + uid + ">—</div>" +
+        "<button class='bigbtn' id='dgo-" + uid + "'>Roll d20</button>" +
+        "<div class='mini' style='margin-top:12px' id='dhist-" + uid + "'></div>";
+    },
+    wire: function(body, uid){
+      var hist = [];
+      body.querySelector("#dgo-" + uid).addEventListener("click", function(){
+        var v = 1 + Math.floor(Math.random() * 20);
+        body.querySelector("#dval-" + uid).textContent = v;
+        hist.unshift(v); hist = hist.slice(0, 8);
+        body.querySelector("#dhist-" + uid).textContent = "history: " + hist.join(" · ");
+      });
+    } },
+  convert: { name: "Unit Converter", icon: IC.convert, color: "linear-gradient(135deg,#3f8a80,#1e4d48)",
+    match: "convert|converter|units|miles|kilometer|celsius|fahrenheit|pounds|kilos",
+    blurb: "Length, weight, temperature — both directions.",
+    notIn: "No currency — units only.",
+    render: function(uid){
+      return "<div class='asub'>converts both ways</div>" +
+        "<input class='field' id='cval-" + uid + "' placeholder='100' inputmode='decimal' style='margin-bottom:10px'>" +
+        "<div class='row2' style='margin-bottom:12px'><select class='field' id='cfrom-" + uid + "'>" +
+        "<option value='km'>kilometers</option><option value='mi'>miles</option>" +
+        "<option value='kg'>kilograms</option><option value='lb'>pounds</option>" +
+        "<option value='c'>°C</option><option value='f'>°F</option></select>" +
+        "<select class='field' id='cto-" + uid + "'>" +
+        "<option value='mi'>miles</option><option value='km'>kilometers</option>" +
+        "<option value='lb'>pounds</option><option value='kg'>kilograms</option>" +
+        "<option value='f'>°F</option><option value='c'>°C</option></select></div>" +
+        "<div class='dicebig' style='font-size:40px' id='cout-" + uid + ">—</div>";
+    },
+    wire: function(body, uid){
+      var val = body.querySelector("#cval-" + uid), fr = body.querySelector("#cfrom-" + uid),
+          to = body.querySelector("#cto-" + uid), out = body.querySelector("#cout-" + uid);
+      function cv(){
+        var v = parseFloat(val.value);
+        if (!(v >= 0) && !(v < 0)) { out.textContent = "—"; return; }
+        var a = fr.value, b = to.value, r = null;
+        function L(x, u){ return u === "km" ? x : x * 1.60934; }
+        function W(x, u){ return u === "kg" ? x : x * 0.453592; }
+        if ("km mi".indexOf(a) >= 0 && "km mi".indexOf(b) >= 0) r = L(v, a) / (b === "km" ? 1 : 1.60934);
+        else if ("kg lb".indexOf(a) >= 0 && "kg lb".indexOf(b) >= 0) r = W(v, a) / (b === "kg" ? 1 : 0.453592);
+        else if (a === "c" && b === "f") r = v * 9 / 5 + 32;
+        else if (a === "f" && b === "c") r = (v - 32) * 5 / 9;
+        else if (a === b) r = v;
+        out.textContent = (r === null) ? "can't convert those" : (+r.toFixed(2)).toString();
+      }
+      [val, fr, to].forEach(function(el){ el.addEventListener("input", cv); el.addEventListener("change", cv); });
+    } },
+  counter: { name: "Counter", icon: IC.counter, color: "linear-gradient(135deg,#a08a3f,#5c4a20)",
+    match: "counter|tally|count",
+    blurb: "A big number. Plus, minus, reset.",
+    notIn: "Nothing else. It's a counter.",
+    render: function(uid){
+      return "<div class='dicebig' id='nval-" + uid + "'>0</div>" +
+        "<div class='row2'><button class='bigbtn' id='nminus-" + uid + "'>−</button>" +
+        "<button class='bigbtn' id='nplus-" + uid + "'>+</button></div>" +
+        "<button class='ghostbtn' id='nreset-" + uid + "' style='margin-top:10px'>Reset</button>";
+    },
+    wire: function(body, uid){
+      var n = store("moor.counter." + uid) || 0, el = body.querySelector("#nval-" + uid);
+      function show(){ el.textContent = n; store("moor.counter." + uid, n); }
+      show();
+      body.querySelector("#nplus-" + uid).addEventListener("click", function(){ n++; show(); });
+      body.querySelector("#nminus-" + uid).addEventListener("click", function(){ n--; show(); });
+      body.querySelector("#nreset-" + uid).addEventListener("click", function(){ n = 0; show(); });
+    } }
+};
+function matchKit(q){
+  q = " " + q.toLowerCase() + " ";
+  for (var k in KITS){ if (new RegExp(KITS[k].match).test(q)) return k; }
+  return null;
+}
+function pretty(s){
+  s = s.trim().replace(/\s+/g, " ");
+  var prev;
+  do { prev = s; s = s.replace(/^(i want to|i want|please|build me|make me|give me|create|build|a|an|the)\s+/i, ""); } while (s !== prev);
+  if (!s) s = "untitled";
+  if (s.length > 26) s = s.slice(0, 26).replace(/\s+\S*$/, "") + "…";
+  return titleCase(s);
+}
+
+/* ============================================================
+   WINDOWS — apps open as floating glass windows in the 3D space.
+   Layering is spatial: "front" = closer to the camera (larger _wz).
+   No DOM moves on focus — re-insertion cancels in-flight clicks.
+   ============================================================ */
+var winlayer = $("#winlayer");
+var winSeq = 0;
+var CASCADE = [[0,0],[72,-52],[-72,48],[112,44],[-112,-58],[36,-104]];
+
+function openWindow(appId, opts){
+  opts = opts || {};
+  var app = APPS[appId];
+  if (!app) return null;
+  /* already open? focus it */
+  var existing = $all(".win").filter(function(w){ return w._appId === appId; })[0];
+  if (existing && document.body.contains(existing)){ focusWin(existing); return existing; }
+  var nwin = $all(".win").length;
+  var win = document.createElement("div");
+  win.className = "win" + (nwin === 0 && !opts.small ? " primary" : "");
+  win._appId = appId; win._seq = winSeq++;
+  win.innerHTML = "<div class='winhead'><div class='orb' style='background:" + app.color + "'>" +
+    "<span class='glyph'>" + app.icon + "</span></div>" +
+    "<div class='wintitle'>" + esc(opts.title || app.name) + "</div>" +
+    "<button class='wlayers' title='Layers'>▤</button><button class='wclose' title='Close'>✕</button></div>" +
+    "<div class='winbody'></div><div class='wresize' title='Resize'></div>";
+  var body = win.querySelector(".winbody");
+  var uid = appId + "-" + win._seq;
+  body.innerHTML = app.render(uid);
+  var o = CASCADE[nwin % CASCADE.length];
+  win._wx = o[0]; win._wy = -20 + o[1]; win._wz = 300;
+  if (opts.wx !== undefined){ win._wx = opts.wx; win._wy = opts.wy; win._wz = opts.wz; }
+  placeWin(win);
+  winlayer.appendChild(win);
+  win.classList.add("open");
+  var baseTf = win.style.transform;
+  win.animate([
+    { opacity: 0, transform: baseTf + " translateY(30px) scale(.9)" },
+    { opacity: 1, transform: baseTf + " translateY(0px) scale(1)" }
+  ], { duration: 420, easing: "cubic-bezier(.22,1.35,.36,1)" });
+  focusWin(win);
+  wireWin(win, body, app, uid);
+  /* glide the camera so the new window sits readable — you stay in the space */
+  cam.tpx = -win._wx * .5; cam.trx = 12; cam.tryy = 0; camKick();
+  return win;
+}
+function placeWin(win){
+  win.style.transform = "translate3d(" + win._wx.toFixed(0) + "px," + win._wy.toFixed(0) + "px," + win._wz.toFixed(0) + "px)";
+}
+function focusWin(win){
+  var topZ = -Infinity, wins = $all(".win"), i, w;
+  for (i = 0; i < wins.length; i++){ w = wins[i]; if (w !== win && (w._wz || 0) > topZ) topZ = w._wz; }
+  if ((win._wz || 0) < topZ){ win._wz = topZ + 24; placeWin(win); }
+  wins.forEach(function(x){ x.classList.remove("top"); });
+  win.classList.add("top");
+}
+function closeWin(win){
+  win.style.pointerEvents = "none";
+  var baseTf = win.style.transform;
+  var a = win.animate([
+    { opacity: 1, transform: baseTf + " scale(1)" },
+    { opacity: 0, transform: baseTf + " translateY(18px) scale(.9)" }
+  ], { duration: 240, easing: "cubic-bezier(.5,0,.8,.4)" });
+  a.onfinish = function(){ win.remove(); };
+}
+function sendToBack(win){
+  var wins = $all(".win"), minZ = Infinity, i, w;
+  for (i = 0; i < wins.length; i++){ w = wins[i]; if (w !== win && (w._wz || 0) < minZ) minZ = w._wz; }
+  if (minZ !== Infinity){ win._wz = minZ - 24; placeWin(win); }
+  var topW = null, topZ = -Infinity;
+  wins.forEach(function(x){ var z = x._wz || 0; if (z > topZ){ topZ = z; topW = x; } });
+  wins.forEach(function(x){ x.classList.remove("top"); });
+  if (topW) topW.classList.add("top");
+}
+function wireWin(win, body, app, uid){
+  win.querySelector(".wclose").addEventListener("click", function(e){ e.stopPropagation(); closeWin(win); });
+  win.querySelector(".wlayers").addEventListener("click", function(e){
+    e.stopPropagation();
+    var m = win.querySelector(".layermenu");
+    if (m){ m.remove(); return; }
+    m = document.createElement("div");
+    m.className = "layermenu";
+    var shaded = win.classList.contains("shaded");
+    m.innerHTML = "<div class='lmitem' data-a='front'>Bring to front</div>" +
+      "<div class='lmitem' data-a='back'>Send to back</div>" +
+      "<div class='lmitem' data-a='shade'>" + (shaded ? "Restore size" : "Minimize") + "</div>";
+    win.appendChild(m);
+    m.addEventListener("click", function(ev){
+      var a = ev.target.closest(".lmitem"); if (!a) return;
+      ev.stopPropagation();
+      var act = a.dataset.a; m.remove();
+      if (act === "front") focusWin(win);
+      else if (act === "back") sendToBack(win);
+      else if (act === "shade") win.classList.toggle("shaded");
+    });
+  });
+  /* Chromium won't wheel-scroll inside a 3D world — scroll by hand */
+  body.addEventListener("wheel", function(e){
+    var d = e.deltaY * (e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? body.clientHeight : 1));
+    var max = body.scrollHeight - body.clientHeight;
+    if ((d < 0 && body.scrollTop > 0) || (d > 0 && body.scrollTop < max - 1)){
+      e.preventDefault(); e.stopPropagation();
+      body.scrollTop += d;
+    }
+  }, { passive: false });
+  win.addEventListener("pointerdown", function(){ focusWin(win); }, true);
+  wireWinDrag(win);
+  wireWinResize(win);
+  try { app.wire(body, uid); } catch(err){ /* an app failing never breaks the window */ }
+}
+function wireWinDrag(win){
+  var hd = win.querySelector(".winhead"), drag = null;
+  hd.addEventListener("pointerdown", function(e){
+    if (e.target.closest("button")) return;
+    e.stopPropagation();
+    focusWin(win);
+    drag = { x: e.clientX, y: e.clientY, wx: win._wx, wy: win._wy };
+  });
+  window.addEventListener("pointermove", function(e){
+    if (!drag) return;
+    var s = 1500 / Math.max(200, 1500 - win._wz - cam.z);
+    win._wx = drag.wx + (e.clientX - drag.x) / s;
+    win._wy = drag.wy + (e.clientY - drag.y) / s;
+    placeWin(win);
+  });
+  window.addEventListener("pointerup", function(){ drag = null; });
+  window.addEventListener("pointercancel", function(){ drag = null; });
+}
+function wireWinResize(win){
+  var h = win.querySelector(".wresize"), rs = null;
+  h.addEventListener("pointerdown", function(e){
+    e.stopPropagation(); e.preventDefault();
+    focusWin(win);
+    if (!win.classList.contains("sized")){
+      var w0 = win.offsetWidth, h0 = win.offsetHeight;
+      win.classList.add("sized");
+      win.style.width = w0 + "px"; win.style.height = h0 + "px";
+      win.style.marginLeft = (-w0/2) + "px";
+    }
+    rs = { x: e.clientX, y: e.clientY, w: win.offsetWidth, hh: win.offsetHeight };
+    try { h.setPointerCapture(e.pointerId); } catch(err){}
+  });
+  h.addEventListener("pointermove", function(e){
+    if (!rs) return;
+    var s = 1500 / Math.max(200, 1500 - win._wz - cam.z);
+    var w = Math.max(220, Math.min(window.innerWidth * .94, rs.w + (e.clientX - rs.x) / s));
+    var hh = Math.max(200, Math.min(window.innerHeight * .82, rs.hh + (e.clientY - rs.y) / s));
+    win.style.width = w + "px"; win.style.marginLeft = (-w/2) + "px"; win.style.height = hh + "px";
+  });
+  var end = function(){ rs = null; };
+  h.addEventListener("pointerup", end);
+  h.addEventListener("pointercancel", end);
+}
+document.addEventListener("pointerdown", function(e){
+  $all(".layermenu").forEach(function(m){
+    if (!m.contains(e.target) && !(e.target.closest && e.target.closest(".wlayers"))) m.remove();
+  });
+}, true);
+
+/* ============================================================
+   TOOL REGISTRY — the OS's hands. Every tool returns {ok, label, message}.
+   The router plans calls against these; receipts report what ran.
+   ============================================================ */
+function findAppId(name){
+  name = name.toLowerCase().trim();
+  var best = null;
+  for (var id in APPS){
+    var app = APPS[id];
+    if (id === name || app.name.toLowerCase() === name) return id;
+    var keys = [app.name.toLowerCase()].concat(app.keys || []);
+    for (var i = 0; i < keys.length; i++){
+      if (keys[i].indexOf(name) >= 0 || name.indexOf(keys[i]) >= 0){ best = id; break; }
+    }
+  }
+  return best;
+}
+function openWins(){ return $all(".win").filter(function(w){ return document.body.contains(w); }); }
+
+var Tools = {
+  open_app: function(name){
+    var id = findAppId(name);
+    if (!id) return { ok: false, label: "open " + name, message: "no app named “" + name + "”" };
+    openWindow(id);
+    return { ok: true, label: "open " + APPS[id].name, message: APPS[id].name + " opened" };
+  },
+  close_app: function(name){
+    var id = findAppId(name);
+    if (!id) return { ok: false, label: "close " + name, message: "no app named “" + name + "”" };
+    var w = openWins().filter(function(x){ return x._appId === id; })[0];
+    if (!w) return { ok: false, label: "close " + APPS[id].name, message: APPS[id].name + " isn't open" };
+    closeWin(w);
+    return { ok: true, label: "close " + APPS[id].name, message: APPS[id].name + " closed" };
+  },
+  focus_app: function(name){
+    var id = findAppId(name);
+    if (!id) return { ok: false, label: "focus " + name, message: "no app named “" + name + "”" };
+    var w = openWins().filter(function(x){ return x._appId === id; })[0];
+    if (!w){ openWindow(id); return { ok: true, label: "focus " + APPS[id].name, message: APPS[id].name + " wasn't open — opened it" }; }
+    focusWin(w);
+    return { ok: true, label: "focus " + APPS[id].name, message: APPS[id].name + " focused" };
+  },
+  minimize_app: function(name){
+    var id = findAppId(name);
+    if (!id) return { ok: false, label: "minimize " + name, message: "no app named “" + name + "”" };
+    var w = openWins().filter(function(x){ return x._appId === id; })[0];
+    if (!w) return { ok: false, label: "minimize " + APPS[id].name, message: APPS[id].name + " isn't open" };
+    w.classList.add("shaded");
+    return { ok: true, label: "minimize " + APPS[id].name, message: APPS[id].name + " minimized" };
+  },
+  build_app: function(what){
+    var kit = matchKit(what);
+    if (!kit) return { ok: false, label: "build " + what, message: "I can't build that yet — try: budget, habits, timer, dice, converter, counter" };
+    var id = "built-" + kit + "-" + Date.now().toString(36);
+    APPS[id] = { name: pretty(what), color: KITS[kit].color, icon: KITS[kit].icon,
+      render: KITS[kit].render, wire: KITS[kit].wire, keys: [KITS[kit].name.toLowerCase()] };
+    openWindow(id, { title: pretty(what) });
+    return { ok: true, label: "build " + KITS[kit].name,
+      message: KITS[kit].name + " built from kit · " + KITS[kit].blurb + " " + KITS[kit].notIn };
+  },
+  create_note: function(text){
+    var cur = store("moor.notes") || "";
+    store("moor.notes", (cur ? cur + "\n" : "") + text);
+    var w = openWins().filter(function(x){ return x._appId === "notes"; })[0];
+    if (w){ var ta = w.querySelector("#notepad"); if (ta){ ta.value = store("moor.notes"); ta.dispatchEvent(new Event("input")); } }
+    else openWindow("notes");
+    return { ok: true, label: "note: “" + (text.length > 24 ? text.slice(0, 24) + "…" : text) + "”", message: "noted" };
+  },
+  arrange: function(layout){
+    var wins = openWins();
+    if (!wins.length) return { ok: false, label: "arrange " + layout, message: "nothing is open to arrange" };
+    if (layout === "side by side"){
+      var n = wins.length, gap = Math.min(430, (window.innerWidth - 120) / Math.max(1, n));
+      wins.forEach(function(w, i){
+        w._wx = (i - (n - 1) / 2) * gap; w._wy = -20; w._wz = 300; placeWin(w);
+      });
+    } else if (layout === "cascade"){
+      wins.forEach(function(w, i){
+        var o = CASCADE[i % CASCADE.length];
+        w._wx = o[0]; w._wy = -20 + o[1]; w._wz = 300; placeWin(w);
+      });
+    } else if (layout === "focus"){
+      wins.forEach(function(w, i){
+        if (i === 0){ w._wx = 0; w._wy = -20; w._wz = 340; }
+        else { w._wx = (i % 2 ? 1 : -1) * 420; w._wy = -20; w._wz = 120; }
+        placeWin(w);
+      });
+      focusWin(wins[0]);
+    }
+    return { ok: true, label: "arrange " + layout, message: wins.length + " window" + (wins.length > 1 ? "s" : "") + " arranged " + layout };
+  },
+  list_open: function(){
+    var wins = openWins();
+    if (!wins.length) return { ok: true, label: "what's open", message: "nothing is open — the space is clear" };
+    return { ok: true, label: "what's open",
+      message: "open now: " + wins.map(function(w){ return APPS[w._appId].name; }).join(", ") };
+  },
+  notify: function(msg){ return { ok: true, label: "say", message: msg }; }
+};
+
+/* ---------- automations: named routines, persisted ---------- */
+function getAutomations(){ return store("moor.automations") || {}; }
+function listAutomations(){
+  var a = getAutomations(), names = Object.keys(a);
+  if (!names.length) return { ok: true, label: "automations", message: "no automations yet — “automate morning: open notes, open terminal”" };
+  return { ok: true, label: "automations", message: "automations: " + names.join(", ") };
+}
+
+/* ============================================================
+   ROUTER — input → planned tool calls → executed → receipt.
+   Predefined capabilities first; honest "can't yet" otherwise.
+   ============================================================ */
+function planClause(clause){
+  clause = clause.trim();
+  if (!clause) return null;
+  var lc = clause.toLowerCase();
+  var m;
+  if ((m = lc.match(/^(open|launch|show)\s+(.+)$/))) return { tool: "open_app", args: [m[2].trim()], };
+  if ((m = lc.match(/^(close|quit|shut)\s+(.+)$/))) return { tool: "close_app", args: [m[2].trim()] };
+  if ((m = lc.match(/^(focus|bring)\s+(.+?)(?:\s+to\s+front)?$/))) return { tool: "focus_app", args: [m[2].trim()] };
+  if ((m = lc.match(/^minimi[sz]e\s+(.+)$/))) return { tool: "minimize_app", args: [m[2].trim()] };
+  if ((m = lc.match(/^(make me|build|create|give me)\s+(.+)$/))) return { tool: "build_app", args: [m[2].trim()] };
+  if ((m = lc.match(/^(note|remember|jot down|jot)\s+(.+)$/))) return { tool: "create_note", args: [clause.slice(m[1].length).trim()] };
+  if (/side by side/.test(lc)) return { tool: "arrange", args: ["side by side"] };
+  if (/cascade/.test(lc)) return { tool: "arrange", args: ["cascade"] };
+  if (/focus mode/.test(lc)) return { tool: "arrange", args: ["focus"] };
+  if (/^(what'?s open|list|open windows|windows)$/.test(lc)) return { tool: "list_open", args: [] };
+  if (/^(help|what can you do|commands)$/.test(lc)) return { tool: "notify", args: ["try: open notes · make me a budget tracker · open notes and terminal side by side · automate morning: open notes, open terminal"], _help: true };
+  /* bare names resolve to apps or kits */
+  if (findAppId(lc)) return { tool: "open_app", args: [lc] };
+  if (matchKit(lc)) return { tool: "build_app", args: [lc] };
+  return { tool: "notify", args: ["I can't do that yet"], _unknown: true };
+}
+
+function planInput(raw){
+  var input = raw.trim();
+  if (!input) return { special: "empty" };
+  var autos = getAutomations();
+  var lc = input.toLowerCase();
+  /* automation management first — commas inside the body belong to it */
+  var m;
+  if ((m = input.match(/^automate\s+([a-z0-9-_ ]+?)\s*:\s*(.+)$/i))){
+    return { special: "save-auto", name: m[1].trim().toLowerCase(), body: m[2].trim() };
+  }
+  if (/^automations?$/.test(lc)) return { special: "list-auto" };
+  if ((m = lc.match(/^forget\s+(.+)$/))) return { special: "forget-auto", name: m[1].trim() };
+  /* invoking a saved automation replays its body */
+  if (autos[lc]) return { steps: planClauses(autos[lc]), via: lc };
+  return { steps: planClauses(input) };
+}
+function planClauses(input){
+  /* split chained commands — "and" / "then" / commas.
+     A trailing arrange phrase ("side by side", "cascade", "focus mode")
+     splits off its own step so "open terminal and files side by side"
+     becomes open terminal + open files + arrange. */
+  var clauses = input.split(/\s*,\s*|\s+then\s+|\s+and\s+/i);
+  var steps = [];
+  clauses.forEach(function(c){
+    c = c.trim();
+    if (!c) return;
+    var m = c.match(/^(.*?)\s+(side by side|cascade|focus mode)$/i);
+    if (m && m[1].trim()){
+      var pre = planClause(m[1].trim());
+      if (pre) steps.push(pre);
+      steps.push({ tool: "arrange", args: [m[2].toLowerCase()] });
+    } else {
+      var p = planClause(c);
+      if (p) steps.push(p);
+    }
+  });
+  return steps;
+}
+
+function executePlan(p){
+  var receipt = $("#cmdreceipt");
+  if (p.special === "empty"){ receipt.className = ""; receipt.innerHTML = ""; return; }
+  if (p.special === "save-auto"){
+    var autos = getAutomations();
+    autos[p.name] = p.body; store("moor.automations", autos);
+    showReceipt('<span class="ok">✓</span> automation <b>“' + esc(p.name) + "”</b> saved — type <b>" + esc(p.name) + "</b> to run it");
+    return;
+  }
+  if (p.special === "list-auto"){ showReceipt(esc(listAutomations().message)); return; }
+  if (p.special === "forget-auto"){
+    var a2 = getAutomations();
+    if (a2[p.name]){ delete a2[p.name]; store("moor.automations", a2); showReceipt('<span class="ok">✓</span> forgot <b>“' + esc(p.name) + "”</b>"); }
+    else showReceipt('<span class="bad">—</span> no automation named <b>“' + esc(p.name) + "”</b>");
+    return;
+  }
+  var steps = p.steps || [];
+  if (!steps.length){ showReceipt('<span class="bad">—</span> nothing to do'); return; }
+  receipt.innerHTML = '<span class="spin"></span>setting up…';
+  receipt.classList.add("show");
+  var results = [], i = 0;
+  function next(){
+    if (i >= steps.length){ done(); return; }
+    var s = steps[i++];
+    var r;
+    try { r = Tools[s.tool].apply(null, s.args); }
+    catch(err){ r = { ok: false, label: s.tool, message: "crashed: " + err.message }; }
+    r.tool = s.tool; r._unknown = s._unknown; r._help = s._help;
+    results.push(r);
+    setTimeout(next, 140);
+  }
+  function done(){
+    var failed = results.filter(function(r){ return !r.ok && !r._unknown; });
+    var unknowns = results.filter(function(r){ return r._unknown; });
+    var helped = results.filter(function(r){ return r._help; });
+    if (helped.length && results.length === 1){ showReceipt(esc(helped[0].message)); return; }
+    if (unknowns.length && results.length === 1){ showReceipt('<span class="bad">—</span> ' + esc(unknowns[0].message)); return; }
+    var labels = results.filter(function(r){ return r.ok; }).map(function(r){ return esc(r.label); });
+    var html = "";
+    if (labels.length) html += '<span class="ok">✓</span> Ran ' + labels.length + " tool" + (labels.length > 1 ? "s" : "") + ": " + labels.join(" → ");
+    if (p.via) html += ' <span class="mini">(automation “' + esc(p.via) + "”)</span>";
+    var notes = [];
+    failed.forEach(function(r){ notes.push('<span class="bad">—</span> ' + esc(r.label) + ": " + esc(r.message)); });
+    unknowns.forEach(function(r){ notes.push('<span class="bad">—</span> ' + esc(r.message)); });
+    results.forEach(function(r){ if (r.ok && r.tool === "build_app") notes.push(esc(r.message)); });
+    if (notes.length) html += (html ? "<br>" : "") + notes.join("<br>");
+    showReceipt(html || '<span class="bad">—</span> nothing ran');
+  }
+  setTimeout(next, 320);
+}
+function showReceipt(html){
+  var receipt = $("#cmdreceipt");
+  receipt.innerHTML = html;
+  receipt.classList.add("show");
+  clearTimeout(showReceipt._t);
+  showReceipt._t = setTimeout(function(){
+    if (!document.activeElement || document.activeElement !== $("#cmdinput")) closeBar();
+  }, 5200);
+}
+
+/* ============================================================
+   THE "/" BAR — summon, live suggestions, keyboard flow.
+   ============================================================ */
+var cmdbar = $("#cmdbar"), cmdinput = $("#cmdinput"),
+    cmdresults = $("#cmdresults"), cmdreceipt = $("#cmdreceipt");
+var selIdx = -1, currentSuggestions = [];
+
+var EXAMPLES = ["open notes", "make me a budgeting app", "open notes and terminal side by side",
+  "automate morning: open notes, open terminal", "note buy milk tomorrow", "what's open"];
+
+function summon(){
+  hideHintPill(true);
+  cmdbar.classList.add("open");
+  cmdreceipt.classList.remove("show"); cmdreceipt.innerHTML = "";
+  cmdinput.value = "";
+  renderSuggestions("");
+  setTimeout(function(){ cmdinput.focus(); }, 60);
+}
+function closeBar(){
+  cmdbar.classList.remove("open");
+  cmdinput.blur();
+}
+function isTyping(){
+  var a = document.activeElement;
+  return a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+}
+document.addEventListener("keydown", function(e){
+  if (e.key === "/" && !cmdbar.classList.contains("open") && !isTyping()){
+    e.preventDefault(); summon(); return;
+  }
+  if (!cmdbar.classList.contains("open")) return;
+  if (e.key === "Escape"){ closeBar(); return; }
+  if (e.key === "/" && document.activeElement === cmdinput){ e.preventDefault(); return; }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp"){
+    if (!currentSuggestions.length) return;
+    e.preventDefault();
+    selIdx = e.key === "ArrowDown"
+      ? (selIdx + 1) % currentSuggestions.length
+      : (selIdx - 1 + currentSuggestions.length) % currentSuggestions.length;
+    paintSuggestions();
+    return;
+  }
+  if (e.key === "Enter"){
+    e.preventDefault();
+    var v = cmdinput.value;
+    if (selIdx >= 0 && currentSuggestions[selIdx]) v = currentSuggestions[selIdx].fill;
+    runCommand(v);
+  }
+});
+function runCommand(v){
+  v = (v || "").trim();
+  if (!v){ closeBar(); return; }
+  cmdresults.classList.remove("show");
+  executePlan(planInput(v));
+  cmdinput.value = ""; selIdx = -1;
+}
+
+function renderSuggestions(q){
+  q = q.trim().toLowerCase();
+  var sugs = [];
+  var wins = openWins();
+  if (!q){
+    if (wins.length) sugs.push({ k: "open", t: "Open now: " + wins.map(function(w){ return APPS[w._appId].name; }).join(" · "), fill: "what's open" });
+    var autos = getAutomations(), names = Object.keys(autos);
+    if (names.length) sugs.push({ k: "auto", t: "Automations: " + names.join(", "), fill: "automations" });
+    EXAMPLES.slice(0, 4).forEach(function(x){ sugs.push({ k: "try", t: x, fill: x }); });
+  } else {
+    for (var id in APPS){
+      if (APPS[id].name.toLowerCase().indexOf(q) >= 0 || id.indexOf(q) >= 0)
+        sugs.push({ k: "open", t: "open " + APPS[id].name, fill: "open " + APPS[id].name });
+    }
+    for (var kk in KITS){
+      if (KITS[kk].name.toLowerCase().indexOf(q) >= 0 || q.indexOf(kk) >= 0)
+        sugs.push({ k: "make", t: "make a " + KITS[kk].name.toLowerCase(), fill: "make me a " + KITS[kk].name.toLowerCase() });
+    }
+    var autos2 = getAutomations();
+    Object.keys(autos2).forEach(function(n){
+      if (n.indexOf(q) >= 0) sugs.push({ k: "auto", t: "run automation “" + n + "”", fill: n });
+    });
+    if (/^(automate|forget)/.test(q)) sugs.push({ k: "auto", t: q, fill: cmdinput.value });
+    if (!sugs.length) sugs.push({ k: "try", t: "run “" + q + "” anyway", fill: cmdinput.value });
+  }
+  currentSuggestions = sugs.slice(0, 7);
+  selIdx = currentSuggestions.length ? 0 : -1;
+  paintSuggestions();
+}
+function paintSuggestions(){
+  cmdresults.innerHTML = "";
+  currentSuggestions.forEach(function(s, i){
+    var r = document.createElement("div");
+    r.className = "crow" + (i === selIdx ? " sel" : "");
+    r.innerHTML = "<span class='k'>" + esc(s.k) + "</span><span class='t'>" + esc(s.t) + "</span>";
+    (function(su){
+      r.addEventListener("click", function(){ runCommand(su.fill); });
+      r.addEventListener("mousemove", function(){ selIdx = currentSuggestions.indexOf(su); paintSuggestions(); });
+    })(s);
+    cmdresults.appendChild(r);
+  });
+  cmdresults.classList.toggle("show", currentSuggestions.length > 0);
+}
+cmdinput.addEventListener("input", function(){ renderSuggestions(cmdinput.value); });
+
+/* ---------- the hint pill: teaches "/", then disappears forever ---------- */
+var hintPill = $("#hintpill"), hintGone = store("moor.slash.seen") === true;
+function hideHintPill(remember){
+  if (hintGone) return;
+  hintGone = true;
+  hintPill.classList.remove("show");
+  if (remember) store("moor.slash.seen", true);
+}
+if (!hintGone) setTimeout(function(){ if (!hintGone) hintPill.classList.add("show"); }, 1400);
+</script>
+</body>
+</html>
