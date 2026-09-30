@@ -167,6 +167,34 @@ input[type=text],input[type=password],textarea{background:rgba(0,0,0,.35);border
 input:focus,textarea:focus{outline:none;border-color:rgba(94,234,212,.5)}
 .sec-t{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--faint);margin:18px 0 10px}
 .sec-t:first-child{margin-top:0}
+/* ============ HOME (phone launcher) ============ */
+#home{position:absolute;inset:0;z-index:1;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;
+  padding:30px 20px 110px 88px;background:radial-gradient(120% 60% at 80% -10%,rgba(74,222,128,.07),transparent 60%)}
+.hm-title{font-size:36px;font-weight:800;letter-spacing:-.02em;margin:6px 0 2px}
+.hm-sub{color:var(--dim);font-size:14.5px;margin-bottom:20px}
+.hm-ask{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px 16px;margin-bottom:6px}
+.hm-ask svg{width:20px;height:20px;stroke:var(--faint);fill:none;stroke-width:2;flex:none}
+.hm-ask input{background:none!important;border:none!important;padding:0!important;font-size:16px;width:100%}
+.hm-res{margin:6px 0 4px;display:flex;flex-direction:column;gap:8px}
+.hm-hit{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:12px 14px;color:var(--ink)}
+.hm-hit:active{transform:scale(.98)}
+.hm-hit .hm-ic{width:42px;height:42px;flex:none}
+.hm-tray{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;touch-action:pan-x}
+.hm-chip{flex:none;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ink);
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:8px 14px 8px 9px;font-size:13.5px;font-weight:600}
+.hm-chip:active{transform:scale(.95)}
+.hm-chip .hm-ic{width:26px;height:26px}
+.hm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 8px}
+.hm-tile{background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;color:#dfe6df;font-size:11.5px;font-weight:600;min-width:0}
+.hm-tile:active{transform:scale(.93)}
+.hm-tile span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.hm-ic{width:60px;height:60px;border-radius:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 22px rgba(0,0,0,.35)}
+.hm-ic svg{width:27px;height:27px;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.hm-new .hm-ic{background:rgba(255,255,255,.03)!important;border:1.5px dashed rgba(255,255,255,.25)!important;box-shadow:none!important}
+.hm-new .hm-ic svg{stroke:var(--faint)!important}
+@media(min-width:700px){.hm-grid{grid-template-columns:repeat(6,1fr);max-width:640px}#home{padding-left:96px}}
 </style>
 </head>
 <body>
@@ -261,7 +289,8 @@ const P = {
   book:'<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 1 2-2h13"/>',
   flame:'<path d="M12 3s5 4.5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 1-3.5s.5 1.5 2 1.5c-1-3 2-7 2-7z"/>',
   drop:'<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
-  moon:'<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/>'
+  moon:'<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/>',
+  home:'<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/>',
 };
 function ic(n, s){ return '<svg '+(s?'style="'+s+'"':'')+' viewBox="0 0 24 24">'+P[n]+'</svg>'; }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -480,8 +509,8 @@ const OS = {
       Object.keys(this.wins).forEach(id=>this.close(id, true));
       OB._hist = []; OB.show('welcome');
     };
-    // welcome mat: open Assistant after a beat
-    setTimeout(()=>this.open('assistant'), 600);
+    // home screen is the landing — windows open above it
+    this.renderHome();
   },
   tickClock(){
     const d = new Date();
@@ -493,6 +522,10 @@ const OS = {
   buildRail(){
     const rail = document.getElementById('rail');
     rail.innerHTML = '';
+    const hb = document.createElement('button');
+    hb.className = 'rail-btn'; hb.title = 'Home'; hb.innerHTML = ic('home');
+    hb.onclick = ()=>this.goHome();
+    rail.appendChild(hb);
     Object.keys(this.apps).forEach(id=>{
       const a = this.apps[id];
       const b = document.createElement('button');
@@ -656,6 +689,7 @@ const OS = {
   },
   renderTaskbar(){
     const tb = document.getElementById('taskbar');
+    this.renderTray();
     const ids = this.order;
     if(!ids.length){ tb.innerHTML = '<div class="tb-empty">Tap an icon to open an app</div>'; return; }
     tb.innerHTML = '';
@@ -668,7 +702,98 @@ const OS = {
       c.onclick = ()=>{ w.min ? this.unmin(id) : (w.el.style.zIndex==this.z ? this.min(id) : this.focus(id)); };
       tb.appendChild(c);
     });
-  }
+  },
+  /* ============ HOME (phone launcher) ============ */
+  _homeTiles(){
+    return [
+      ['notes','Notes','note','#fcd34d'],['habits','Habits','checkSq','#5eead4'],
+      ['files','Files','folder','#93c5fd'],['calendar','Calendar','cal','#f9a8d4'],
+      ['templates','Templates','layers','#c4b5fd'],['kits','Kits','spark','#fcd34d'],
+      ['assistant','Chat with Buster','chat','#4ade80'],['settings','Settings','gear','#94a3b8']
+    ];
+  },
+  renderHome(){
+    const desk = document.getElementById('desk');
+    let h = document.getElementById('home');
+    if(!h){ h = document.createElement('div'); h.id = 'home'; desk.prepend(h); }
+    const D = Store.data;
+    let html = '<div class="hm-title">Moor</div><div class="hm-sub">Open anything. Build everything.</div>'+
+      '<div class="hm-ask">'+ic('search')+'<input id="hm-q" type="text" placeholder="What do you want to make or open?" autocomplete="off"></div>'+
+      '<div class="hm-res" id="hm-res"></div>'+
+      '<div id="hm-traywrap"><div class="sec-t">Open</div><div class="hm-tray" id="hm-tray"></div></div>'+
+      '<div class="sec-t">Apps</div><div class="hm-grid" id="hm-grid"></div>';
+    h.innerHTML = html;
+    const grid = h.querySelector('#hm-grid');
+    function tile(icon, label, color, fn, dashed){
+      const b = document.createElement('button');
+      b.className = 'hm-tile'+(dashed?' hm-new':'');
+      b.innerHTML = '<div class="hm-ic" style="background:linear-gradient(135deg,'+color+'44,'+color+'14);border:1px solid '+color+'55">'+
+        ic(icon,'stroke:'+color)+'</div><span>'+esc(label)+'</span>';
+      b.onclick = fn; grid.appendChild(b);
+    }
+    this._homeTiles().forEach(t=>tile(t[2], t[1], t[3], ()=>this.open(t[0])));
+    D.apps.slice().reverse().forEach(a=>{
+      tile('spark', a.name, a.color||'#4ade80', ()=>this.openHTML(a));
+    });
+    tile('plus', 'New App', '#4ade80', ()=>this.open('kits'), true);
+    this.renderTray();
+    const q = h.querySelector('#hm-q'), res = h.querySelector('#hm-res');
+    let deb = null, askSeq = 0;
+    function hitButton(o){
+      const b = document.createElement('button'); b.className = 'hm-hit';
+      if(o.kind==='app') b.innerHTML = '<div class="hm-ic" style="background:linear-gradient(135deg,'+o.color+'44,'+o.color+'14);border:1px solid '+o.color+'55">'+ic(o.icon,'stroke:'+o.color)+'</div><div style="flex:1;font-weight:650">'+esc(o.name)+'</div><div class="muted">Open →</div>';
+      else b.innerHTML = '<div class="hm-ic" style="background:'+(o.app.color||'#4ade80')+'22;border:1px solid '+(o.app.color||'#4ade80')+'55">'+ic('spark','stroke:'+(o.app.color||'#4ade80'))+'</div><div style="flex:1;font-weight:650;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(o.app.name)+'</div><div class="muted">Open →</div>';
+      b.onclick = ()=>{ o.kind==='app' ? OS.open(o.id) : OS.openHTML(o.app); };
+      return b;
+    }
+    const run = ()=>{
+      const txt = q.value.trim(), my = ++askSeq;
+      if(!txt){ res.innerHTML=''; return; }
+      const low = txt.toLowerCase(), out = [];
+      OS._homeTiles().forEach(t=>{ if(t[1].toLowerCase().indexOf(low)>=0 || t[0].indexOf(low)>=0) out.push({kind:'app', id:t[0], name:t[1], icon:t[2], color:t[3]}); });
+      (Store.data.apps||[]).forEach(a=>{ if((a.name||'').toLowerCase().indexOf(low)>=0) out.push({kind:'made', app:a}); });
+      function draw(m){
+        if(my!==askSeq) return;
+        res.innerHTML = '';
+        out.slice(0,4).forEach(o=>res.appendChild(hitButton(o)));
+        if(m){
+          const b = document.createElement('button'); b.className = 'hm-hit';
+          b.innerHTML = '<div class="hm-ic" style="background:rgba(252,211,77,.14);border:1px solid rgba(252,211,77,.4)"><div style="font-size:22px">▦</div></div>'+
+            '<div style="flex:1;min-width:0"><div style="font-weight:650">Build: '+esc(m.name)+'</div><div class="small muted">'+esc(m.description||'Answer a few questions, get a working app.')+'</div></div><div class="pill-cta" style="padding:9px 16px;flex:none">Set it up →</div>';
+          b.onclick = ()=>{ KitsUI._pending = m.id; OS.open('kits'); };
+          res.appendChild(b);
+        }else if(!out.length){
+          const b = document.createElement('button'); b.className = 'hm-hit';
+          b.innerHTML = '<div style="flex:1;min-width:0"><div style="font-weight:650">Nothing matches “'+esc(txt)+'” yet</div><div class="small muted">Browse everything I can build.</div></div><div class="pill-cta" style="padding:9px 16px;flex:none">Browse kits</div>';
+          b.onclick = ()=>OS.open('kits');
+          res.appendChild(b);
+        }
+      }
+      draw(null);
+      Kits.load().then(()=>draw(Kits.match(txt))).catch(()=>{
+        if(my===askSeq && !out.length) res.innerHTML = '<div class="small muted">Kits need internet the first time — connect and retry.</div>';
+      });
+    };
+    q.addEventListener('input', ()=>{ clearTimeout(deb); deb = setTimeout(run, 220); });
+    q.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(deb); run(); } });
+  },
+  refreshHome(){ if(document.getElementById('home')) this.renderHome(); },
+  renderTray(){
+    const wrap = document.getElementById('hm-traywrap'), tray = document.getElementById('hm-tray');
+    if(!wrap || !tray) return;
+    const ids = this.order.filter(id=>this.wins[id]);
+    wrap.style.display = ids.length ? '' : 'none';
+    tray.innerHTML = '';
+    ids.forEach(id=>{
+      const w = this.wins[id], a = w.appDef || this.apps[id]; if(!a) return;
+      const c = document.createElement('button'); c.className = 'hm-chip';
+      const col = (a.tint && a.tint.match(/#[0-9a-f]{6}/i)||['#4ade80'])[0];
+      c.innerHTML = '<div class="hm-ic" style="background:'+col+'22;border:1px solid '+col+'55">'+ic(a.icon,'width:14px;height:14px;stroke:'+col)+'</div>'+esc(a.title)+(w.min?' ··':'');
+      c.onclick = ()=>{ w.min ? this.unmin(id) : this.focus(id); };
+      tray.appendChild(c);
+    });
+  },
+  goHome(){ Object.keys(this.wins).forEach(id=>this.min(id)); }
 };
 /* ================= APPS ================= */
 function toast(msg){
@@ -825,6 +950,7 @@ const KitsUI = {
           D.apps.push(app); Store.save();
           toast('Built! Saved to your Apps');
           OS.openHTML(app);
+          OS.refreshHome();
           KitsUI.render(body);
         }).catch(e=>{
           body.innerHTML = '<div class="small" style="color:#f2b8b8">Build failed: '+esc(e.message)+'</div>'+
@@ -1440,7 +1566,7 @@ function drawAppsGrid(body){
     Store.save(); toast('Saved as template'); }; });
   made.querySelectorAll('[data-adel]').forEach(b=>{ b.onclick = ()=>{
     if(!confirm('Delete this app?')) return;
-    D.apps = D.apps.filter(x=>x.id!==b.dataset.adel); Store.save(); drawAppsGrid(body); toast('Deleted'); }; });
+    D.apps = D.apps.filter(x=>x.id!==b.dataset.adel); Store.save(); drawAppsGrid(body); OS.refreshHome(); toast('Deleted'); }; });
 }
 /* Save a model-generated HTML app into the OS */
 function saveGeneratedApp(code, msgs){
@@ -1455,7 +1581,7 @@ function saveGeneratedApp(code, msgs){
   wrap.querySelector('#sg-save').onclick = ()=>{
     const name = inp.value.trim()||'Untitled app';
     const app = { id:uid(), name:name, code:code, color:colors[D.apps.length%colors.length], created:Date.now() };
-    D.apps.push(app); Store.save();
+    D.apps.push(app); Store.save(); OS.refreshHome();
     wrap.innerHTML = '<button class="pill-cta" id="sg-open">Open '+esc(name)+' &rarr;</button>';
     wrap.querySelector('#sg-open').onclick = ()=>OS.openHTML(app);
     toast('Saved to your Apps');
