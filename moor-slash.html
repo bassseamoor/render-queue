@@ -11,23 +11,33 @@
     --dim: rgba(243,246,242,.60);
     --faint: rgba(243,246,242,.34);
     --acc: #C8F4A4;
+    --acc-rgb: 200, 244, 164;
     --acc-ink: #1a2410;
     --stroke: rgba(255,255,255,.075);
+    /* the room itself — alterable through the "/" bar, persisted */
+    --env-bg: #050806;
+    --env-blob-a: #24401c;
+    --env-blob-b: #1d3d50;
+    --env-blob-c: #1a2f1a;
+    --env-glow: 1;
+    --env-bright: 1;
+    --env-vignette: .6;
   }
   html, body { height: 100%; }
   body {
     margin: 0; color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", sans-serif;
     overflow: hidden; user-select: none; -webkit-user-select: none;
-    background: #050806; -webkit-font-smoothing: antialiased;
+    background: var(--env-bg); -webkit-font-smoothing: antialiased;
   }
-  .blob { position: fixed; border-radius: 50%; filter: blur(110px); opacity: .45; pointer-events: none; z-index: 0; }
-  .b1 { width: 420px; height: 420px; left: -130px; top: -110px; background: #24401c; animation: drift 17s ease-in-out infinite alternate; }
-  .b2 { width: 340px; height: 340px; right: -120px; top: 36%; background: #1d3d50; animation: drift 22s ease-in-out infinite alternate-reverse; }
-  .b3 { width: 260px; height: 260px; left: 38%; bottom: -140px; background: #1a2f1a; animation: drift 26s ease-in-out infinite alternate; }
+  .blob { position: fixed; border-radius: 50%; filter: blur(110px) brightness(var(--env-bright)); opacity: calc(.45 * var(--env-glow)); pointer-events: none; z-index: 0; }
+  .b1 { width: 420px; height: 420px; left: -130px; top: -110px; background: var(--env-blob-a); animation: drift 17s ease-in-out infinite alternate; }
+  .b2 { width: 340px; height: 340px; right: -120px; top: 36%; background: var(--env-blob-b); animation: drift 22s ease-in-out infinite alternate-reverse; }
+  .b3 { width: 260px; height: 260px; left: 38%; bottom: -140px; background: var(--env-blob-c); animation: drift 26s ease-in-out infinite alternate; }
   @keyframes drift { from { transform: translate(0,0) scale(1); } to { transform: translate(44px,28px) scale(1.08); } }
   .vignette { position: fixed; inset: 0; pointer-events: none; z-index: 1;
-    background: radial-gradient(120% 100% at 50% 0%, transparent 45%, rgba(0,0,0,.6) 100%); }
+    filter: brightness(var(--env-bright));
+    background: radial-gradient(120% 100% at 50% 0%, transparent 45%, rgba(0,0,0,var(--env-vignette)) 100%); }
   .grain { position: fixed; inset: 0; pointer-events: none; z-index: 80; opacity: .07; mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E"); }
 
@@ -37,12 +47,16 @@
   #world { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
   #ground { position: absolute; left: -60%; right: -60%; top: 62%; bottom: -70%;
     transform: rotateX(79deg); transform-origin: 50% 0%; pointer-events: none;
-    background-image: linear-gradient(rgba(200,244,164,.09) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(200,244,164,.09) 1px, transparent 1px);
+    background-image: linear-gradient(rgba(var(--acc-rgb),.09) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--acc-rgb),.09) 1px, transparent 1px);
     background-size: 76px 76px;
     -webkit-mask-image: radial-gradient(ellipse 62% 55% at 50% 28%, black 25%, transparent 72%);
     mask-image: radial-gradient(ellipse 62% 55% at 50% 28%, black 25%, transparent 72%); }
   #dust { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; }
+  /* room toggles — the environment reshapes on command */
+  body.hide-grid #ground { display: none; }
+  body.hide-dust #dust { display: none; }
+  #ground { filter: brightness(var(--env-bright)); }
   .mote { position: absolute; border-radius: 50%; background: rgba(255,255,255,.5);
     filter: blur(1px); --z: 0px; animation: motedrift 12s ease-in-out infinite alternate; }
   @keyframes motedrift { from { transform: translate3d(0,-16px,var(--z)); }
@@ -68,8 +82,8 @@
   #cmdbox { border-radius: 20px; overflow: hidden;
     background: linear-gradient(165deg, rgba(22,30,22,.96), rgba(10,15,10,.97));
     -webkit-backdrop-filter: blur(26px); backdrop-filter: blur(26px);
-    border: 1px solid rgba(200,244,164,.22); border-radius: 20px;
-    box-shadow: 0 30px 90px rgba(0,0,0,.7), 0 0 60px rgba(200,244,164,.08), inset 0 1px 0 rgba(255,255,255,.1); }
+    border: 1px solid rgba(var(--acc-rgb),.22); border-radius: 20px;
+    box-shadow: 0 30px 90px rgba(0,0,0,.7), 0 0 60px rgba(var(--acc-rgb),.08), inset 0 1px 0 rgba(255,255,255,.1); }
   #cmdrow { display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 20px; }
   #cmdrow .slash { color: var(--acc); font-size: 20px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; flex: none; }
   #cmdinput { flex: 1; min-width: 0; background: transparent; border: 0; outline: none;
@@ -80,16 +94,16 @@
   .crow { display: flex; gap: 12px; align-items: center; padding: 11px 20px; font-size: 14.5px;
     cursor: pointer; color: var(--dim); }
   .crow .k { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-    color: var(--acc); background: rgba(200,244,164,.1); border-radius: 6px; padding: 3px 8px; flex: none; }
+    color: var(--acc); background: rgba(var(--acc-rgb),.1); border-radius: 6px; padding: 3px 8px; flex: none; }
   .crow .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .crow.sel { background: rgba(200,244,164,.09); color: var(--ink); }
+  .crow.sel { background: rgba(var(--acc-rgb),.09); color: var(--ink); }
   #cmdreceipt { display: none; padding: 13px 20px 15px; font-size: 13.5px; color: var(--dim);
     border-top: 1px solid rgba(255,255,255,.06); line-height: 1.55; }
   #cmdreceipt.show { display: block; }
   #cmdreceipt .ok { color: var(--acc); font-weight: 700; }
   #cmdreceipt .bad { color: #f09393; font-weight: 700; }
   #cmdreceipt .spin { display: inline-block; width: 12px; height: 12px; border-radius: 50%;
-    border: 2px solid rgba(200,244,164,.3); border-top-color: var(--acc);
+    border: 2px solid rgba(var(--acc-rgb),.3); border-top-color: var(--acc);
     animation: spin .7s linear infinite; vertical-align: -1px; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -104,8 +118,8 @@
     box-shadow: 0 40px 100px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.14);
     opacity: 0; }
   .win.open { opacity: 1; }
-  .win.top { border-color: rgba(200,244,164,.42);
-    box-shadow: 0 40px 110px rgba(0,0,0,.7), 0 0 54px rgba(200,244,164,.13), inset 0 1px 0 rgba(255,255,255,.16); }
+  .win.top { border-color: rgba(var(--acc-rgb),.42);
+    box-shadow: 0 40px 110px rgba(0,0,0,.7), 0 0 54px rgba(var(--acc-rgb),.13), inset 0 1px 0 rgba(255,255,255,.16); }
   .win.primary { width: min(560px, 92vw); margin-left: calc(min(560px, 92vw) / -2); }
   .win.sized .winbody { height: auto; flex: 1; min-height: 0; }
   .win.shaded .winbody { display: none; }
@@ -117,18 +131,18 @@
     border-right: 2px solid rgba(255,255,255,.42); border-bottom: 2px solid rgba(255,255,255,.42);
     border-bottom-right-radius: 5px; }
   .wresize:hover::after { border-color: var(--acc); }
-  .winbody { scrollbar-width: thin; scrollbar-color: rgba(200,244,164,.45) transparent; }
+  .winbody { scrollbar-width: thin; scrollbar-color: rgba(var(--acc-rgb),.45) transparent; }
   .winbody::-webkit-scrollbar { width: 10px; }
   .winbody::-webkit-scrollbar-track { background: transparent; }
-  .winbody::-webkit-scrollbar-thumb { background: rgba(200,244,164,.32); border-radius: 6px;
+  .winbody::-webkit-scrollbar-thumb { background: rgba(var(--acc-rgb),.32); border-radius: 6px;
     border: 2px solid transparent; background-clip: content-box; }
-  .winbody::-webkit-scrollbar-thumb:hover { background: rgba(200,244,164,.6);
+  .winbody::-webkit-scrollbar-thumb:hover { background: rgba(var(--acc-rgb),.6);
     border: 2px solid transparent; background-clip: content-box; }
   .layermenu { position: absolute; top: 62px; right: 10px; z-index: 30; min-width: 170px;
     background: rgba(13,19,13,.97); border: 1px solid var(--stroke); border-radius: 14px; padding: 6px;
     box-shadow: 0 18px 50px rgba(0,0,0,.65); }
   .lmitem { padding: 10px 12px; border-radius: 9px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
-  .lmitem:hover { background: rgba(200,244,164,.14); }
+  .lmitem:hover { background: rgba(var(--acc-rgb),.14); }
   .winhead { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; flex: none;
     border-bottom: 1px solid rgba(255,255,255,.07); touch-action: none; cursor: grab; }
   .winhead .orb { width: 36px; height: 36px; border-radius: 11px; margin: 0; flex: none;
@@ -158,7 +172,7 @@
     background: rgba(255,255,255,.06); color: var(--ink); border: 1px solid var(--stroke); cursor: pointer; }
   .field { width: 100%; background: rgba(255,255,255,.05); border: 1px solid var(--stroke);
     border-radius: 14px; padding: 12px 15px; color: var(--ink); font-size: 15px; font-family: inherit; }
-  .field:focus { outline: none; border-color: rgba(200,244,164,.5); }
+  .field:focus { outline: none; border-color: rgba(var(--acc-rgb),.5); }
   textarea.field { min-height: 220px; resize: vertical; line-height: 1.6; }
   .row2 { display: flex; gap: 10px; }
   .row2 .field { flex: 1; min-width: 0; }
@@ -233,6 +247,74 @@ function store(k, v){
   } catch(e){ return null; }
 }
 function titleCase(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ============================================================
+   THE ROOM ITSELF — every visible property of the environment,
+   alterable through the "/" bar and persisted on this device.
+   ============================================================ */
+var ENV_DEFAULTS = {
+  bg: "#050806", accent: "#C8F4A4",
+  blobA: "#24401c", blobB: "#1d3d50", blobC: "#1a2f1a",
+  glow: 1, bright: 1, grid: true, dust: true, vignette: .6,
+  preset: "midnight"
+};
+var ENV_PRESETS = {
+  midnight: { bg:"#050806", accent:"#C8F4A4", blobA:"#24401c", blobB:"#1d3d50", blobC:"#1a2f1a", glow:1, bright:1, grid:true, dust:true, vignette:.6 },
+  dawn:     { bg:"#0c0a08", accent:"#FFD9A0", blobA:"#5a3a22", blobB:"#7a5a2a", blobC:"#4a2a3d", glow:1, bright:1.05, grid:true, dust:true, vignette:.5 },
+  forest:   { bg:"#031007", accent:"#9DF4B4", blobA:"#1d5c2a", blobB:"#0f3d24", blobC:"#2a5c1d", glow:1.1, bright:1, grid:true, dust:true, vignette:.55 },
+  ember:    { bg:"#0d0705", accent:"#FFB08A", blobA:"#5c2418", blobB:"#7a3a15", blobC:"#3d1a2a", glow:1, bright:.95, grid:true, dust:true, vignette:.6 },
+  ocean:    { bg:"#04090d", accent:"#A4E4F4", blobA:"#143a4a", blobB:"#1d3d50", blobC:"#0f2a3d", glow:1, bright:1, grid:true, dust:true, vignette:.55 },
+  void:     { bg:"#000000", accent:"#C8F4A4", blobA:"#101010", blobB:"#0a0a0a", blobC:"#141414", glow:.2, bright:.9, grid:false, dust:false, vignette:.7 }
+};
+var COLOR_NAMES = {
+  red:"#e5484d", orange:"#f76b15", amber:"#ffb224", yellow:"#ffe629",
+  green:"#46a758", mint:"#C8F4A4", teal:"#12a594", blue:"#0090ff",
+  purple:"#8e4ec6", violet:"#6e56cf", pink:"#d6409f", white:"#f5f5f5",
+  ember:"#ff6b3d", gold:"#d4a017", crimson:"#c81e3a", lime:"#a3e635"
+};
+function parseColor(s){
+  s = String(s).trim().toLowerCase();
+  if (COLOR_NAMES[s]) return COLOR_NAMES[s];
+  var h = s.match(/^#?([0-9a-f]{6}|[0-9a-f]{3})$/);
+  if (h){ var v = h[1]; if (v.length === 3) v = v[0]+v[0]+v[1]+v[1]+v[2]+v[2]; return "#" + v; }
+  return null;
+}
+function hexRgb(hex){
+  var n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(", ");
+}
+var Env = {
+  state: Object.assign({}, ENV_DEFAULTS, store("moor.env") || {}),
+  apply: function(){
+    var s = this.state, root = document.documentElement.style;
+    root.setProperty("--env-bg", s.bg);
+    root.setProperty("--acc", s.accent);
+    root.setProperty("--acc-rgb", hexRgb(s.accent));
+    root.setProperty("--env-blob-a", s.blobA);
+    root.setProperty("--env-blob-b", s.blobB);
+    root.setProperty("--env-blob-c", s.blobC);
+    root.setProperty("--env-glow", s.glow);
+    root.setProperty("--env-bright", s.bright);
+    root.setProperty("--env-vignette", s.vignette);
+    document.body.classList.toggle("hide-grid", !s.grid);
+    document.body.classList.toggle("hide-dust", !s.dust);
+  },
+  save: function(){ store("moor.env", this.state); },
+  set: function(prop, val){ this.state[prop] = val; this.state.preset = "custom"; this.apply(); this.save(); },
+  preset: function(name){
+    this.state = Object.assign({}, ENV_DEFAULTS, ENV_PRESETS[name], { preset: name });
+    this.apply(); this.save();
+  },
+  reset: function(){ this.state = Object.assign({}, ENV_DEFAULTS); this.apply(); this.save(); },
+  describe: function(){
+    var s = this.state;
+    return (s.preset === "custom" ? "a custom room" : "the “" + s.preset + "” room") +
+      " · background " + s.bg + " · accents " + s.accent +
+      " · grid " + (s.grid ? "on" : "off") + " · dust " + (s.dust ? "on" : "off") +
+      " · lights " + Math.round(s.bright * 100) + "%";
+  }
+};
+Env.apply();
 
 /* ---------- 3D space camera: drag to look, wheel to dolly, double-tap resets ---------- */
 var worldEl = $("#world"), spaceEl = $("#space");
@@ -791,11 +873,50 @@ var Tools = {
   },
   list_open: function(){
     var wins = openWins();
-    if (!wins.length) return { ok: true, label: "what's open", message: "nothing is open — the space is clear" };
-    return { ok: true, label: "what's open",
+    if (!wins.length) return { ok: true, label: "what's open", message: "nothing is open — the space is clear", _verbose: true };
+    return { ok: true, label: "what's open", _verbose: true,
       message: "open now: " + wins.map(function(w){ return APPS[w._appId].name; }).join(", ") };
   },
-  notify: function(msg){ return { ok: true, label: "say", message: msg }; }
+  notify: function(msg){ return { ok: true, label: "say", message: msg }; },
+  /* the room itself, as tools — the router plans against these */
+  set_env: function(prop, value){
+    if (prop === "bg" || prop === "accent"){
+      var c = parseColor(value);
+      if (!c) return { ok: false, label: "set " + prop,
+        message: "I don't know that color — try purple, teal, ember, or a hex like #2a1a4a" };
+      Env.set(prop, c);
+      var what = prop === "bg" ? "background" : "accents";
+      return { ok: true, label: what + " → " + c, message: what + " now " + c };
+    }
+    if (prop === "bright"){
+      var b = Math.max(.3, Math.min(1.6, parseFloat(value)));
+      if (!(b > 0)) return { ok: false, label: "lights", message: "lights need a level, like 80%" };
+      Env.set("bright", b);
+      return { ok: true, label: "lights → " + Math.round(b * 100) + "%",
+        message: "lights at " + Math.round(b * 100) + "%" };
+    }
+    if (prop === "grid" || prop === "dust"){
+      var on = /^(on|true|show|1)$/i.test(String(value).trim());
+      Env.set(prop, on);
+      return { ok: true, label: prop + " " + (on ? "on" : "off"),
+        message: prop + " turned " + (on ? "on" : "off") };
+    }
+    return { ok: false, label: "set " + prop, message: "I can't reshape that part of the room yet" };
+  },
+  env_preset: function(name){
+    name = String(name).toLowerCase().trim();
+    if (!ENV_PRESETS[name]) return { ok: false, label: "room → " + name,
+      message: "no room called “" + name + "” — try: " + Object.keys(ENV_PRESETS).join(", ") };
+    Env.preset(name);
+    return { ok: true, label: "room → " + name, message: "the room feels like " + name + " now" };
+  },
+  env_reset: function(){
+    Env.reset();
+    return { ok: true, label: "reset room", message: "the room is back to midnight" };
+  },
+  describe_env: function(){
+    return { ok: true, label: "describe room", message: Env.describe(), _verbose: true };
+  }
 };
 
 /* ---------- automations: named routines, persisted ---------- */
@@ -815,6 +936,25 @@ function planClause(clause){
   if (!clause) return null;
   var lc = clause.toLowerCase();
   var m;
+  /* the room itself is alterable — these claim their phrases first */
+  if (/^(midnight|dawn|forest|ember|ocean|void)(\s+mode)?$/.test(lc))
+    return { tool: "env_preset", args: [lc.replace(/\s+mode$/, "").trim()] };
+  if ((m = lc.match(/^(make\s+)?(the\s+)?(room|it|everything)(\s+feel|\s+look)?\s+like\s+(.+)$/)))
+    return { tool: "env_preset", args: [m[5].trim()] };
+  if (/^(dim(\s+the)?(\s+lights?)?|darker)$/.test(lc)) return { tool: "set_env", args: ["bright", ".65"] };
+  if (/^brighter$/.test(lc)) return { tool: "set_env", args: ["bright", "1.25"] };
+  if (/^(make\s+)?(the\s+)?(room|it|lights?)\s+(darker|dimmer)$/.test(lc)) return { tool: "set_env", args: ["bright", ".65"] };
+  if (/^(make\s+)?(the\s+)?(room|it|lights?)\s+brighter$/.test(lc)) return { tool: "set_env", args: ["bright", "1.25"] };
+  if ((m = lc.match(/^(make|set|change)\s+(the\s+)?(background|bg)(\s+color)?(\s+to)?\s+(.+)$/)))
+    return { tool: "set_env", args: ["bg", m[6].trim()] };
+  if ((m = lc.match(/^(make|set|change)\s+(the\s+)?accents?(\s+color)?(\s+to)?\s+(.+)$/)))
+    return { tool: "set_env", args: ["accent", m[5].trim()] };
+  if (/^(turn off|hide|disable)\s+(the\s+)?(grid|floor)$/.test(lc)) return { tool: "set_env", args: ["grid", "off"] };
+  if (/^(turn on|show|enable)\s+(the\s+)?(grid|floor)$/.test(lc)) return { tool: "set_env", args: ["grid", "on"] };
+  if (/^(turn off|hide|disable)\s+(the\s+)?(dust|motes|particles)$/.test(lc)) return { tool: "set_env", args: ["dust", "off"] };
+  if (/^(turn on|show|enable)\s+(the\s+)?(dust|motes|particles)$/.test(lc)) return { tool: "set_env", args: ["dust", "on"] };
+  if (/^reset\s+(the\s+)?(environment|room|space)$/.test(lc)) return { tool: "env_reset", args: [] };
+  if (/^(describe|how does)\s+(the\s+)?(room|environment|space)(\s+look)?$/.test(lc)) return { tool: "describe_env", args: [] };
   if ((m = lc.match(/^(open|launch|show)\s+(.+)$/))) return { tool: "open_app", args: [m[2].trim()], };
   if ((m = lc.match(/^(close|quit|shut)\s+(.+)$/))) return { tool: "close_app", args: [m[2].trim()] };
   if ((m = lc.match(/^(focus|bring)\s+(.+?)(?:\s+to\s+front)?$/))) return { tool: "focus_app", args: [m[2].trim()] };
@@ -825,7 +965,7 @@ function planClause(clause){
   if (/cascade/.test(lc)) return { tool: "arrange", args: ["cascade"] };
   if (/focus mode/.test(lc)) return { tool: "arrange", args: ["focus"] };
   if (/^(what'?s open|list|open windows|windows)$/.test(lc)) return { tool: "list_open", args: [] };
-  if (/^(help|what can you do|commands)$/.test(lc)) return { tool: "notify", args: ["try: open notes · make me a budget tracker · open notes and terminal side by side · automate morning: open notes, open terminal"], _help: true };
+  if (/^(help|what can you do|commands)$/.test(lc)) return { tool: "notify", args: ["try: open notes · make me a budget tracker · open notes and terminal side by side · automate morning: open notes, open terminal · make the background purple · dawn mode · describe the room"], _help: true };
   /* bare names resolve to apps or kits */
   if (findAppId(lc)) return { tool: "open_app", args: [lc] };
   if (matchKit(lc)) return { tool: "build_app", args: [lc] };
@@ -915,7 +1055,7 @@ function executePlan(p){
     var notes = [];
     failed.forEach(function(r){ notes.push('<span class="bad">—</span> ' + esc(r.label) + ": " + esc(r.message)); });
     unknowns.forEach(function(r){ notes.push('<span class="bad">—</span> ' + esc(r.message)); });
-    results.forEach(function(r){ if (r.ok && r.tool === "build_app") notes.push(esc(r.message)); });
+    results.forEach(function(r){ if (r.ok && (r.tool === "build_app" || r._verbose)) notes.push(esc(r.message)); });
     if (notes.length) html += (html ? "<br>" : "") + notes.join("<br>");
     showReceipt(html || '<span class="bad">—</span> nothing ran');
   }
@@ -938,8 +1078,9 @@ var cmdbar = $("#cmdbar"), cmdinput = $("#cmdinput"),
     cmdresults = $("#cmdresults"), cmdreceipt = $("#cmdreceipt");
 var selIdx = -1, currentSuggestions = [];
 
-var EXAMPLES = ["open notes", "make me a budgeting app", "open notes and terminal side by side",
-  "automate morning: open notes, open terminal", "note buy milk tomorrow", "what's open"];
+var EXAMPLES = ["open notes", "make me a budgeting app", "make the background purple", "dawn mode",
+  "open notes and terminal side by side", "automate morning: open notes, open terminal",
+  "note buy milk tomorrow", "what's open", "hide the grid", "describe the room"];
 
 function summon(){
   hideHintPill(true);
