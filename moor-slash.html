@@ -57,6 +57,49 @@
   body.hide-grid #ground { display: none; }
   body.hide-dust #dust { display: none; }
   #ground { filter: brightness(var(--env-bright)); }
+
+  /* ---------- holograms: the lab's interactive furniture ---------- */
+  #holos { position: absolute; inset: 0; transform-style: preserve-3d; pointer-events: none; display: none; }
+  body.env-lab #holos { display: block; animation: holoin 1.2s ease both; }
+  @keyframes holoin { from { opacity: 0; } to { opacity: 1; } }
+  .holospot { position: absolute; transform-style: preserve-3d; pointer-events: none; }
+  #spot-time { left: 5%; top: 30%; transform: translateZ(260px); }
+  #spot-space { right: 5%; top: 28%; transform: translateZ(220px); }
+  #spot-mood { right: 6%; top: 60%; transform: translateZ(280px); }
+  .holo { pointer-events: auto; cursor: pointer; width: 208px; padding: 13px 16px 11px;
+    border-radius: 14px; transform-style: preserve-3d; position: relative; overflow: hidden;
+    background: linear-gradient(160deg, rgba(var(--acc-rgb),.10), rgba(var(--acc-rgb),.03));
+    border: 1px solid rgba(var(--acc-rgb),.38);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    box-shadow: 0 0 34px rgba(var(--acc-rgb),.15), inset 0 0 24px rgba(var(--acc-rgb),.07);
+    color: var(--ink); font-family: ui-monospace, Menlo, monospace;
+    animation: holofloat 7s ease-in-out infinite alternate; }
+  .holo::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 4px); }
+  @keyframes holofloat { from { transform: translateY(-7px); } to { transform: translateY(7px); } }
+  @media (prefers-reduced-motion: reduce) { .holo { animation: none; } }
+  .holo-label { font-size: 10px; letter-spacing: .22em; color: var(--acc); opacity: .85; margin-bottom: 6px; }
+  .holo-big { font-size: 27px; font-weight: 700; color: var(--ink); white-space: nowrap;
+    text-shadow: 0 0 18px rgba(var(--acc-rgb),.5); }
+  .holo-sub { font-size: 11px; color: var(--dim); margin-top: 5px; }
+  @media (max-width: 700px) {
+    /* compact strip across the top — stays clear of the centered windows */
+    .holo { width: 120px; padding: 8px 10px 7px; }
+    .holo-big { font-size: 14px; }
+    .holo-label { font-size: 8px; letter-spacing: .14em; margin-bottom: 4px; }
+    .holo-sub { display: none; }
+    #spot-time { left: 3%; top: 8%; transform: translateZ(200px); }
+    #spot-space { left: 50%; top: 8%; transform: translate(-50%, 0) translateZ(200px); }
+    #spot-mood { right: 3%; top: 8%; transform: translateZ(200px); }
+  }
+  /* transient note flashed by tapping the holograms */
+  #holonote { position: fixed; left: 50%; bottom: 112px; transform: translateX(-50%) translateY(8px);
+    z-index: 55; padding: 10px 18px; border-radius: 999px; font-size: 13px; color: var(--dim);
+    background: rgba(12,18,12,.86); border: 1px solid rgba(var(--acc-rgb),.3);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    opacity: 0; transition: opacity .35s ease, transform .35s ease; pointer-events: none; white-space: nowrap; }
+  #holonote.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #holonote .ok { color: var(--acc); font-weight: 700; }
   .mote { position: absolute; border-radius: 50%; background: rgba(255,255,255,.5);
     filter: blur(1px); --z: 0px; animation: motedrift 12s ease-in-out infinite alternate; }
   @keyframes motedrift { from { transform: translate3d(0,-16px,var(--z)); }
@@ -208,11 +251,23 @@
   <div id="world">
     <div id="ground"></div>
     <div id="dust"></div>
+    <div id="holos">
+      <div class="holospot" id="spot-time"><div class="holo" id="holo-time">
+        <div class="holo-label">TIME</div><div class="holo-big" id="holo-clock">--:--</div><div class="holo-sub" id="holo-date">…</div>
+      </div></div>
+      <div class="holospot" id="spot-space"><div class="holo" id="holo-space">
+        <div class="holo-label">SPACE</div><div class="holo-big" id="holo-wins">0</div><div class="holo-sub">windows open · tap to list</div>
+      </div></div>
+      <div class="holospot" id="spot-mood"><div class="holo" id="holo-mood">
+        <div class="holo-label">MOOD</div><div class="holo-big" id="holo-moodname">lab</div><div class="holo-sub">tap to shift the room</div>
+      </div></div>
+    </div>
     <div id="winlayer"></div>
   </div>
 </div>
 
 <div id="hintpill"><span class="key">/</span>&nbsp; Press <b>/</b> to command Moor</div>
+<div id="holonote"></div>
 
 <div id="cmdbar">
   <div id="cmdbox">
@@ -255,17 +310,19 @@ function titleCase(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
 var ENV_DEFAULTS = {
   bg: "#050806", accent: "#C8F4A4",
   blobA: "#24401c", blobB: "#1d3d50", blobC: "#1a2f1a",
-  glow: 1, bright: 1, grid: true, dust: true, vignette: .6,
+  glow: 1, bright: 1, grid: true, dust: true, vignette: .6, holos: false,
   preset: "midnight"
 };
 var ENV_PRESETS = {
-  midnight: { bg:"#050806", accent:"#C8F4A4", blobA:"#24401c", blobB:"#1d3d50", blobC:"#1a2f1a", glow:1, bright:1, grid:true, dust:true, vignette:.6 },
-  dawn:     { bg:"#0c0a08", accent:"#FFD9A0", blobA:"#5a3a22", blobB:"#7a5a2a", blobC:"#4a2a3d", glow:1, bright:1.05, grid:true, dust:true, vignette:.5 },
-  forest:   { bg:"#031007", accent:"#9DF4B4", blobA:"#1d5c2a", blobB:"#0f3d24", blobC:"#2a5c1d", glow:1.1, bright:1, grid:true, dust:true, vignette:.55 },
-  ember:    { bg:"#0d0705", accent:"#FFB08A", blobA:"#5c2418", blobB:"#7a3a15", blobC:"#3d1a2a", glow:1, bright:.95, grid:true, dust:true, vignette:.6 },
-  ocean:    { bg:"#04090d", accent:"#A4E4F4", blobA:"#143a4a", blobB:"#1d3d50", blobC:"#0f2a3d", glow:1, bright:1, grid:true, dust:true, vignette:.55 },
-  void:     { bg:"#000000", accent:"#C8F4A4", blobA:"#101010", blobB:"#0a0a0a", blobC:"#141414", glow:.2, bright:.9, grid:false, dust:false, vignette:.7 }
+  midnight: { bg:"#050806", accent:"#C8F4A4", blobA:"#24401c", blobB:"#1d3d50", blobC:"#1a2f1a", glow:1, bright:1, grid:true, dust:true, vignette:.6, holos:false },
+  dawn:     { bg:"#0c0a08", accent:"#FFD9A0", blobA:"#5a3a22", blobB:"#7a5a2a", blobC:"#4a2a3d", glow:1, bright:1.05, grid:true, dust:true, vignette:.5, holos:false },
+  forest:   { bg:"#031007", accent:"#9DF4B4", blobA:"#1d5c2a", blobB:"#0f3d24", blobC:"#2a5c1d", glow:1.1, bright:1, grid:true, dust:true, vignette:.55, holos:false },
+  ember:    { bg:"#0d0705", accent:"#FFB08A", blobA:"#5c2418", blobB:"#7a3a15", blobC:"#3d1a2a", glow:1, bright:.95, grid:true, dust:true, vignette:.6, holos:false },
+  ocean:    { bg:"#04090d", accent:"#A4E4F4", blobA:"#143a4a", blobB:"#1d3d50", blobC:"#0f2a3d", glow:1, bright:1, grid:true, dust:true, vignette:.55, holos:false },
+  void:     { bg:"#000000", accent:"#C8F4A4", blobA:"#101010", blobB:"#0a0a0a", blobC:"#141414", glow:.2, bright:.9, grid:false, dust:false, vignette:.7, holos:false },
+  lab:      { bg:"#02060a", accent:"#5EE7FF", blobA:"#0e3a4a", blobB:"#123a6e", blobC:"#0a2a3d", glow:1.2, bright:1.05, grid:true, dust:true, vignette:.55, holos:true }
 };
+var ENV_ALIASES = { stark:"lab", batcave:"lab", garage:"lab", cave:"lab", workshop:"lab" };
 var COLOR_NAMES = {
   red:"#e5484d", orange:"#f76b15", amber:"#ffb224", yellow:"#ffe629",
   green:"#46a758", mint:"#C8F4A4", teal:"#12a594", blue:"#0090ff",
@@ -298,6 +355,7 @@ var Env = {
     root.setProperty("--env-vignette", s.vignette);
     document.body.classList.toggle("hide-grid", !s.grid);
     document.body.classList.toggle("hide-dust", !s.dust);
+    document.body.classList.toggle("env-lab", !!s.holos);
   },
   save: function(){ store("moor.env", this.state); },
   set: function(prop, val){ this.state[prop] = val; this.state.preset = "custom"; this.apply(); this.save(); },
@@ -311,7 +369,7 @@ var Env = {
     return (s.preset === "custom" ? "a custom room" : "the “" + s.preset + "” room") +
       " · background " + s.bg + " · accents " + s.accent +
       " · grid " + (s.grid ? "on" : "off") + " · dust " + (s.dust ? "on" : "off") +
-      " · lights " + Math.round(s.bright * 100) + "%";
+      " · lights " + Math.round(s.bright * 100) + "%" + " · holos " + (s.holos ? "on" : "off");
   }
 };
 Env.apply();
@@ -904,11 +962,13 @@ var Tools = {
     return { ok: false, label: "set " + prop, message: "I can't reshape that part of the room yet" };
   },
   env_preset: function(name){
-    name = String(name).toLowerCase().trim();
-    if (!ENV_PRESETS[name]) return { ok: false, label: "room → " + name,
+    name = String(name).toLowerCase().trim().replace(/^the\s+/, "");
+    var key = ENV_ALIASES[name] || name;
+    if (!ENV_PRESETS[key]) return { ok: false, label: "room → " + name,
       message: "no room called “" + name + "” — try: " + Object.keys(ENV_PRESETS).join(", ") };
-    Env.preset(name);
-    return { ok: true, label: "room → " + name, message: "the room feels like " + name + " now" };
+    Env.preset(key);
+    return { ok: true, label: "room → " + key,
+      message: "the room feels like " + key + " now" + (key === "lab" ? " — the holograms are live, tap them" : "") };
   },
   env_reset: function(){
     Env.reset();
@@ -928,6 +988,51 @@ function listAutomations(){
 }
 
 /* ============================================================
+   HOLOGRAMS — the lab's furniture talks back.
+   TIME: live clock (tap toggles 12/24h).
+   SPACE: live window count (tap lists what's open).
+   MOOD: current room (tap shifts to the next one).
+   ============================================================ */
+function updateHolos(){
+  if (!document.body.classList.contains("env-lab")) return;
+  var clock = $("#holo-clock");
+  if (!clock) return;
+  var now = new Date(), use12 = store("moor.holo.12h") !== false;
+  var h = now.getHours(), hh = use12 ? (h % 12 || 12) : h;
+  var p2 = function(n){ return (n < 10 ? "0" : "") + n; };
+  clock.textContent = hh + ":" + p2(now.getMinutes()) + ":" + p2(now.getSeconds()) + (use12 ? (h >= 12 ? " PM" : " AM") : "");
+  $("#holo-date").textContent = now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  $("#holo-wins").textContent = openWins().length;
+  $("#holo-moodname").textContent = Env.state.preset === "custom" ? "custom" : Env.state.preset;
+}
+function holoNote(html){
+  var n = $("#holonote");
+  n.innerHTML = html;
+  n.classList.add("show");
+  clearTimeout(holoNote._t);
+  holoNote._t = setTimeout(function(){ n.classList.remove("show"); }, 3200);
+}
+$all(".holo").forEach(function(h){ h.addEventListener("pointerdown", function(e){ e.stopPropagation(); }); });
+$("#holo-time").addEventListener("click", function(){
+  store("moor.holo.12h", !(store("moor.holo.12h") !== false));
+  updateHolos();
+  holoNote("clock " + (store("moor.holo.12h") !== false ? "12" : "24") + "h");
+});
+$("#holo-space").addEventListener("click", function(){
+  var r = Tools.list_open();
+  holoNote('<span class="ok">✓</span> ' + esc(r.message));
+});
+$("#holo-mood").addEventListener("click", function(){
+  var order = ["midnight", "dawn", "forest", "ember", "ocean", "void", "lab"];
+  var cur = order.indexOf(Env.state.preset) >= 0 ? Env.state.preset : "lab";
+  var r = Tools.env_preset(order[(order.indexOf(cur) + 1) % order.length]);
+  holoNote('<span class="ok">✓</span> ' + esc(r.message));
+  updateHolos();
+});
+setInterval(updateHolos, 1000);
+updateHolos();
+
+/* ============================================================
    ROUTER — input → planned tool calls → executed → receipt.
    Predefined capabilities first; honest "can't yet" otherwise.
    ============================================================ */
@@ -937,7 +1042,7 @@ function planClause(clause){
   var lc = clause.toLowerCase();
   var m;
   /* the room itself is alterable — these claim their phrases first */
-  if (/^(midnight|dawn|forest|ember|ocean|void)(\s+mode)?$/.test(lc))
+  if (/^(midnight|dawn|forest|ember|ocean|void|lab|stark|batcave|garage|cave|workshop)(\s+mode)?$/.test(lc))
     return { tool: "env_preset", args: [lc.replace(/\s+mode$/, "").trim()] };
   if ((m = lc.match(/^(make\s+)?(the\s+)?(room|it|everything)(\s+feel|\s+look)?\s+like\s+(.+)$/)))
     return { tool: "env_preset", args: [m[5].trim()] };
@@ -1055,7 +1160,7 @@ function executePlan(p){
     var notes = [];
     failed.forEach(function(r){ notes.push('<span class="bad">—</span> ' + esc(r.label) + ": " + esc(r.message)); });
     unknowns.forEach(function(r){ notes.push('<span class="bad">—</span> ' + esc(r.message)); });
-    results.forEach(function(r){ if (r.ok && (r.tool === "build_app" || r._verbose)) notes.push(esc(r.message)); });
+    results.forEach(function(r){ if (r.ok && (r.tool === "build_app" || r.tool === "set_env" || r.tool === "env_preset" || r.tool === "env_reset" || r._verbose)) notes.push(esc(r.message)); });
     if (notes.length) html += (html ? "<br>" : "") + notes.join("<br>");
     showReceipt(html || '<span class="bad">—</span> nothing ran');
   }
@@ -1078,8 +1183,8 @@ var cmdbar = $("#cmdbar"), cmdinput = $("#cmdinput"),
     cmdresults = $("#cmdresults"), cmdreceipt = $("#cmdreceipt");
 var selIdx = -1, currentSuggestions = [];
 
-var EXAMPLES = ["open notes", "make me a budgeting app", "make the background purple", "dawn mode",
-  "open notes and terminal side by side", "automate morning: open notes, open terminal",
+var EXAMPLES = ["open notes", "make me a budgeting app", "lab mode", "make the background purple",
+  "dawn mode", "open notes and terminal side by side", "automate morning: open notes, open terminal",
   "note buy milk tomorrow", "what's open", "hide the grid", "describe the room"];
 
 function summon(){
