@@ -53,6 +53,10 @@
     display: none; background: #3a1d1d; border: 1px solid #7a2e2e; color: #ffb4b4;
     border-radius: 12px; padding: 12px 14px; margin: 14px 0; font-size: 16px;
   }
+  #notice {
+    display: none; background: #1d2a1d; border: 1px solid #3a5a3a; color: #c9e6c9;
+    border-radius: 12px; padding: 12px 14px; margin: 14px 0; font-size: 16px;
+  }
   h2.sect { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: #8e8e96; margin: 30px 0 6px; font-weight: 600; }
   p.sub { color: #b9b9c2; margin: 0 0 18px; }
   .homerow {
@@ -103,6 +107,7 @@
   </header>
 
   <div id="error" role="alert"></div>
+  <div id="notice" role="status"></div>
   <div id="boot">Loading…</div>
 
   <div id="app" style="display:none">
@@ -179,6 +184,8 @@ function lsSet(k, v) {
 
 function showError(msg) { const e = $('error'); e.textContent = msg; e.style.display = 'block'; }
 function clearError() { const e = $('error'); e.style.display = 'none'; e.textContent = ''; }
+function showNotice(msg) { const e = $('notice'); e.textContent = msg; e.style.display = 'block'; }
+function clearNotice() { const e = $('notice'); e.style.display = 'none'; e.textContent = ''; }
 function flashSaved() { const s = $('savedind'); s.classList.add('on'); }
 
 /* Quiet variant: background data refreshes must never clear an error banner
@@ -205,7 +212,7 @@ function call(cmd) {
     return null;
   }
   if (!out.ok) { showError(out.error); return null; }
-  clearError();
+  clearError(); clearNotice();
   lsSet(STORE_KEY, out.store);
   flashSaved();
   return out.result;
@@ -213,6 +220,12 @@ function call(cmd) {
 
 function kindNoun(kind) {
   return kind === 'moor.photo' ? 'Photo' : kind === 'moor.thread' ? 'Thread' : 'Tracker';
+}
+function appNoun(it) {
+  // Fallback notes pages are notes, not trackers — label them honestly.
+  if (it.kit === 'notes') return 'Notes';
+  if (it.kit === 'list') return 'List';
+  return 'Tracker';
 }
 
 function rowSub(it) {
@@ -223,7 +236,9 @@ function rowSub(it) {
     return it.preview ? base + ' — ' + it.preview : base;
   }
   const n = it.row_count || 0;
-  return 'Tracker · ' + n + (n === 1 ? ' row' : ' rows');
+  const noun = appNoun(it);
+  const unit = noun === 'Notes' ? (n === 1 ? ' note' : ' notes') : (n === 1 ? ' row' : ' rows');
+  return noun + ' · ' + n + unit;
 }
 
 function renderHome() {
@@ -281,7 +296,7 @@ $('viewer').onclick = (e) => { if (e.target.id === 'viewer') $('viewer').classLi
 /* ---------- ask bar ---------- */
 function ask(q) {
   const res = call({ op: 'compile', request: q });
-  if (res) { $('ask').value = ''; refresh(); }
+  if (res) { $('ask').value = ''; refresh(); if (res.fallback && res.message) showNotice(res.message); }
 }
 $('askbtn').onclick = () => ask($('ask').value);
 $('ask').onkeydown = (e) => { if (e.key === 'Enter') ask($('ask').value); };
