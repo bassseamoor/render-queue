@@ -351,7 +351,19 @@ var COLOR_NAMES = {
   red:"#e5484d", orange:"#f76b15", amber:"#ffb224", yellow:"#ffe629",
   green:"#46a758", mint:"#C8F4A4", teal:"#12a594", blue:"#0090ff",
   purple:"#8e4ec6", violet:"#6e56cf", pink:"#d6409f", white:"#f5f5f5",
-  ember:"#ff6b3d", gold:"#d4a017", crimson:"#c81e3a", lime:"#a3e635"
+  ember:"#ff6b3d", gold:"#d4a017", crimson:"#c81e3a", lime:"#a3e635",
+  navy:"#1e3a8a", sky:"#7ec8e3", royal:"#4169e1", turquoise:"#40e0d0",
+  magenta:"#ff00ff", cyan:"#00d4ff", indigo:"#4b0082", maroon:"#800000",
+  olive:"#808000", coral:"#ff7f50", salmon:"#fa8072", peach:"#ffdab9",
+  beige:"#f5f5dc", cream:"#fffdd0", ivory:"#fffff0", charcoal:"#36454f",
+  slate:"#708090", silver:"#c0c0c0", gray:"#808080", grey:"#808080",
+  black:"#0a0a0a", brown:"#8b4513", tan:"#d2b48c", khaki:"#f0e68c",
+  "dark blue":"#0b2a5b", "light blue":"#add8e6", "deep blue":"#003366",
+  "dark green":"#0f4d2a", "light green":"#90ee90", "deep green":"#023020",
+  "dark red":"#8b0000", "deep red":"#5c0a0a", "hot pink":"#ff69b4",
+  "deep purple":"#4a1d6b", "light purple":"#c9a9e8", "dark purple":"#3d1a5c",
+  "dark orange":"#cc5500", "burnt orange":"#cc5500", "neon green":"#39ff14",
+  "neon pink":"#ff10f0", "electric blue":"#7df9ff", "midnight blue":"#191970"
 };
 function parseColor(s){
   s = String(s).trim().toLowerCase();
@@ -1080,6 +1092,24 @@ function planClause(clause){
     return { tool: "set_env", args: ["bg", m[6].trim()] };
   if ((m = lc.match(/^(make|set|change)\s+(the\s+)?(accents?|ui|theme|interface)(\s+color)?(\s+to)?\s+(.+)$/)))
     return { tool: "set_env", args: ["accent", m[6].trim()] };
+  /* generous background phrasings — "background teal", "i want the background blue",
+     "make the room purple", "wallpaper red". bare asks get a nudge, not a dead end. */
+  if ((m = lc.match(/^(background|bg|wallpaper)\s+(.+)$/)))
+    return { tool: "set_env", args: ["bg", m[2].trim()] };
+  if ((m = lc.match(/^(i want|i'd like|i would like|give me)\s+(the\s+)?(background|bg|wallpaper)(\s+to\s+be)?\s+(.+)$/)))
+    return { tool: "set_env", args: ["bg", m[5].trim()] };
+  if ((m = lc.match(/^(i want|i'd like|i would like|give me)\s+(the\s+)?(accents?|ui|theme|interface)(\s+to\s+be)?\s+(.+)$/)))
+    return { tool: "set_env", args: ["accent", m[5].trim()] };
+  if (/^(make|set|change)\s+(the\s+)?(background|bg|wallpaper)(\s+color)?$/.test(lc))
+    return { tool: "notify", args: ["what color should the background be? try “change the background to purple”"] };
+  if (/^(make|set|change)\s+(the\s+)?(accents?|ui|theme|interface)(\s+color)?$/.test(lc))
+    return { tool: "notify", args: ["what color should the accents be? try “make the accents teal”"] };
+  if ((m = lc.match(/^(make|set|change)\s+(the\s+)?room\s+(.+)$/))){
+    var rw = m[3].trim();
+    var pk = ENV_ALIASES[rw] || rw;
+    if (ENV_PRESETS[pk]) return { tool: "env_preset", args: [pk] };
+    return { tool: "set_env", args: ["bg", rw] };
+  }
   if (/^(turn off|hide|disable)\s+(the\s+)?(grid|floor)$/.test(lc)) return { tool: "set_env", args: ["grid", "off"] };
   if (/^(turn on|show|enable)\s+(the\s+)?(grid|floor)$/.test(lc)) return { tool: "set_env", args: ["grid", "on"] };
   if (/^(turn off|hide|disable)\s+(the\s+)?(dust|motes|particles)$/.test(lc)) return { tool: "set_env", args: ["dust", "off"] };
