@@ -121,6 +121,24 @@
   .card .v img { max-width: 100%; border-radius: 8px; }
   .fldpreview { display: none; max-width: 140px; border-radius: 8px; margin-top: 8px; }
   #newthreadbox { display: none; margin-top: 12px; }
+  .vx-grid {
+    display: grid; gap: 2px; background: #0a0a0d; padding: 8px;
+    border-radius: 14px; border: 1px solid #26262e;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  .vx-cell { aspect-ratio: 1; border-radius: 4px; background: #1e1e26; min-width: 0; }
+  .vx-pal { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+  .vx-sw {
+    width: 52px; height: 52px; border-radius: 14px; border: 3px solid transparent;
+    margin: 0; padding: 0; min-height: 0;
+  }
+  .vx-sw.sel { border-color: #fff; }
+  .vx-sw.eraser { background: #23232c; color: #b9b9c2; font-size: 22px; width: auto; padding: 0 18px; }
+  .vx-layers { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+  .vx-layers button { width: auto; margin: 0; padding: 12px 20px; min-height: 52px; font-size: 17px; background: #23232c; font-weight: 500; }
+  .vx-layers button.sel { background: #7c6cf0; }
+  .vx-tools { display: flex; gap: 10px; margin-top: 14px; }
+  .vx-tools button { margin-top: 0; min-height: 52px; font-size: 16px; }
 </style>
 </head>
 <body>
@@ -144,6 +162,7 @@
       <div class="examples">
         <button data-ex="customer tracker with fields name, email, status">Customer tracker</button>
         <button data-ex="track my workouts with date, exercise, sets, reps">Track my workouts</button>
+        <button data-ex="build a stadium out of voxels">Voxel stadium</button>
         <button data-ex="reading list with fields title, author">Reading list</button>
         <button data-ex="notes">Notes</button>
       </div>
@@ -266,7 +285,7 @@ function renderHome() {
   list.innerHTML = state.items.map(it => {
     const media = it.kind === 'moor.photo'
       ? `<img class="rh-thumb" src="${esc(it.image)}" alt="">`
-      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : '▦'}</div>`;
+      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : (it.kit === 'voxel' ? '🧱' : '▦')}</div>`;
     return `<button class="homerow" data-id="${esc(it.id)}">${media}
       <div class="rh-body"><div class="rh-name">${esc(it.name)}</div>
       <div class="rh-sub">${esc(rowSub(it))}</div></div>
@@ -310,7 +329,12 @@ $('viewer').onclick = (e) => { if (e.target.id === 'viewer') $('viewer').classLi
 /* ---------- ask bar ---------- */
 function ask(q) {
   const res = call({ op: 'compile', request: q });
-  if (res) { $('ask').value = ''; refresh(); if (res.fallback && res.message) showNotice(res.message); }
+  if (res) {
+    $('ask').value = ''; refresh();
+    // The ask bar always says what it built: the honest fallback message,
+    // or the voxel "start building" message. Tracker summaries stay quiet.
+    if (res.message && (res.fallback || res.kit === 'voxel')) showNotice(res.message);
+  }
 }
 $('askbtn').onclick = () => ask($('ask').value);
 $('ask').onkeydown = (e) => { if (e.key === 'Enter') ask($('ask').value); };
@@ -503,6 +527,83 @@ function collectionPieceHTML(p, i) {
     <div style="margin-top:8px"><button data-addfield="${i}">Add field</button></div>`;
 }
 
+/* ---------- voxel canvas: a touch editor for the voxel skill ---------- */
+// Editor state survives re-renders so painting never loses your layer/color.
+const vx = { layer: 0, color: 0 }; // color = palette index, -1 = eraser
+
+function voxelPieceHTML(p, i) {
+  const dims = p.dims || [16, 16, 4];
+  const w = dims[0], h = dims[1], layers = dims[2];
+  const palette = p.palette || [];
+  const cells = p.cells || {};
+  vx.layer = Math.min(vx.layer, layers - 1);
+  let grid = '';
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const c = cells[`${vx.layer},${y},${x}`];
+      const bg = (c !== undefined && palette[c]) ? palette[c] : '';
+      grid += `<div class="vx-cell" data-vxcell data-x="${x}" data-y="${y}"${bg ? ` style="background:${bg}"` : ''}></div>`;
+    }
+  }
+  const layerBtns = Array.from({ length: layers }, (_, l) =>
+    `<button type="button" data-vxlayer="${l}" class="${l === vx.layer ? 'sel' : ''}">Layer ${l + 1}</button>`
+  ).join('');
+  const swatches = palette.map((col, s) =>
+    `<button type="button" class="vx-sw${s === vx.color ? ' sel' : ''}" data-vxsw="${s}" style="background:${esc(col)}" aria-label="color ${s + 1}"></button>`
+  ).join('') +
+    `<button type="button" class="vx-sw eraser${vx.color === -1 ? ' sel' : ''}" data-vxeraser>⌫</button>`;
+  return `
+    <h2 class="sect">Voxel canvas · layer ${vx.layer + 1} of ${layers}</h2>
+    <p class="sub">Tap squares to build. Switch layers to build upward.</p>
+    <div class="vx-layers" data-vxlayers="${i}">${layerBtns}</div>
+    <div class="vx-grid" data-vxgrid="${i}" style="grid-template-columns:repeat(${w},1fr)">${grid}</div>
+    <h2 class="sect">Colors</h2>
+    <div class="vx-pal" data-vxpal="${i}">${swatches}</div>
+    <div class="vx-tools">
+      <button class="ghost" data-vxclear="${i}">Clear this layer</button>
+    </div>
+    <h2 class="sect">Rename</h2>
+    <div class="rowline">
+      <input type="text" data-vxname="${i}" placeholder="Canvas name" autocomplete="off">
+      <button data-vxrename="${i}">Rename</button>
+    </div>`;
+}
+
+function wireVoxel(app, p, i) {
+  const grid = document.querySelector(`#focusbody [data-vxgrid="${i}"]`);
+  if (grid) {
+    grid.onclick = (e) => {
+      const cell = e.target.closest('[data-vxcell]');
+      if (!cell) return;
+      const r = call({
+        op: 'voxel_paint', id: app.id, piece: i,
+        layer: vx.layer, x: +cell.dataset.x, y: +cell.dataset.y, color: vx.color,
+      });
+      if (r) { refreshData(); renderPiecesFocus(app.id); }
+    };
+  }
+  document.querySelectorAll(`#focusbody [data-vxpal="${i}"] [data-vxsw]`).forEach(sw => {
+    sw.onclick = () => { vx.color = +sw.dataset.vxsw; renderPiecesFocus(app.id); };
+  });
+  const er = document.querySelector(`#focusbody [data-vxpal="${i}"] [data-vxeraser]`);
+  if (er) er.onclick = () => { vx.color = -1; renderPiecesFocus(app.id); };
+  document.querySelectorAll(`#focusbody [data-vxlayers="${i}"] [data-vxlayer]`).forEach(b => {
+    b.onclick = () => { vx.layer = +b.dataset.vxlayer; renderPiecesFocus(app.id); };
+  });
+  const clr = document.querySelector(`#focusbody [data-vxclear="${i}"]`);
+  if (clr) clr.onclick = () => {
+    const r = call({ op: 'voxel_clear', id: app.id, piece: i, layer: vx.layer });
+    if (r) { refreshData(); renderPiecesFocus(app.id); }
+  };
+  const rn = document.querySelector(`#focusbody [data-vxrename="${i}"]`);
+  if (rn) rn.onclick = () => {
+    const name = document.querySelector(`#focusbody [data-vxname="${i}"]`).value.trim();
+    if (!name) { showError('Give it a name first.'); return; }
+    const r = call({ op: 'rename', id: app.id, name });
+    if (r) { refreshData(); renderPiecesFocus(app.id); }
+  };
+}
+
 function renderPiecesFocus(id) {
   const res = call({ op: 'get', id });
   if (!res || !res.app) { refresh(); return; }
@@ -510,10 +611,13 @@ function renderPiecesFocus(id) {
   let html = `<h1 style="font-size:30px;margin:0 0 8px">${esc(app.name)}</h1>
     <div class="saved">Saved · version ${app.rev}</div>`;
   (app.pieces || []).forEach((p, i) => {
-    html += p.kind === 'notes' ? notesPieceHTML(p, i) : collectionPieceHTML(p, i);
+    html += p.kind === 'notes' ? notesPieceHTML(p, i)
+      : p.kind === 'voxel' ? voxelPieceHTML(p, i)
+      : collectionPieceHTML(p, i);
   });
   $('focusbody').innerHTML = html;
   wirePiecesFocus(app);
+  (app.pieces || []).forEach((p, i) => { if (p.kind === 'voxel') wireVoxel(app, p, i); });
 }
 
 function wirePiecesFocus(app) {
