@@ -248,6 +248,42 @@
   .gm-up button { width: auto; margin: 0; padding: 12px 18px; min-height: 52px; font-size: 15px; white-space: nowrap; }
   .gm-up button.cant { background: var(--surface-2); color: var(--faint); border: 1px solid var(--hairline); }
 
+  /* ---------- racing game ---------- */
+  .rc-hud {
+    display: flex; gap: 18px; margin: 4px 0 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .rc-hudrow { display: flex; flex-direction: column; }
+  .rc-lab {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--faint); font-weight: 600;
+  }
+  .rc-hudrow span:last-child { font-size: 22px; font-weight: 700; color: var(--ink); }
+  .rc-hudrow span:last-child.gold { color: var(--gold); }
+  .rc-cwrap { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--hairline); }
+  .rc-cwrap canvas { display: block; width: 100%; height: auto; touch-action: none; }
+  .rc-overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 84px; font-weight: 800; color: #fff; background: rgba(10,10,13,.55);
+    pointer-events: none;
+  }
+  .rc-overlay.go { color: var(--gold); }
+  .rc-overlay.hidden { display: none; }
+  .rc-controls { display: flex; gap: 10px; margin-top: 14px; }
+  .rc-steer, .rc-pedals { display: flex; gap: 10px; flex: 1; }
+  .rc-controls button {
+    flex: 1; margin: 0; min-height: 76px; font-size: 24px; font-weight: 700;
+    border-radius: 16px; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--hairline); touch-action: none; user-select: none;
+    -webkit-user-select: none;
+  }
+  .rc-controls button.on { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
+  .rc-controls .rc-gas { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); font-size: 18px; }
+  .rc-controls .rc-gas.on { filter: brightness(1.15); }
+  .rc-controls .rc-brake { font-size: 18px; }
+  .rc-tools { margin-top: 10px; }
+  .rc-tools button { width: auto; margin: 0; padding: 12px 20px; min-height: 52px; font-size: 16px; }
+
   /* ---------- gallery ---------- */
   .gal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
   .gal-thumb { aspect-ratio: 1; object-fit: cover; width: 100%; border-radius: 12px; background: var(--surface-2); }
@@ -374,7 +410,7 @@ const state = { items: [] };
 // Baked in at build time (the build script stamps the real version over
 // "dev"). The page compares this against version.txt so a stale tab can
 // never silently test an old build again.
-const BUILD_VERSION = "20261002T035518Z-e3384688";
+const BUILD_VERSION = "20261002T041620Z-191ca51d";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s)
@@ -584,7 +620,7 @@ function renderHome() {
   list.innerHTML = state.items.map(it => {
     const media = it.kind === 'moor.photo'
       ? `<img class="rh-thumb" src="${esc(it.image)}" alt="">`
-      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : (it.kit === 'voxel' ? '🧱' : (it.kit === 'notes' ? '📝' : (it.kit === 'game' ? '🎮' : (it.kit === 'gallery' ? '🖼️' : '▦'))))}</div>`;
+      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : (it.kit === 'voxel' ? '🧱' : (it.kit === 'notes' ? '📝' : (it.kit === 'game' ? (it.game_template === 'race' ? '🏎️' : '🎮') : (it.kit === 'gallery' ? '🖼️' : '▦'))))}</div>`;
     return `<button class="homerow" data-id="${esc(it.id)}">${media}
       <div class="rh-body"><div class="rh-kind">${esc(kindLabel(it))}</div>
       <div class="rh-name">${esc(it.name)}</div>
@@ -1109,6 +1145,327 @@ function wireGame(app, p, i) {
   });
 }
 
+/* ---------- racing game: the game skill's canvas template ----------
+   A top-down 2D racer. The track and car are simulated live on the page
+   (fixed-timestep physics, requestAnimationFrame render); only the
+   records — best lap, lap count — persist, via `race_sync` (throttled:
+   on lap complete + page hide). The loop registers in liveGames so
+   navigating away always stops it. */
+function fmtLap(ms) {
+  if (ms == null) return '--';
+  const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000), t = Math.floor((ms % 1000) / 100);
+  return m + ':' + String(s).padStart(2, '0') + '.' + t;
+}
+// The track: a closed loop sampled at N points. A gently wobbled
+// ellipse — organic, not a perfect oval — sampled densely enough that
+// nearest-sample distance is a good track lookup.
+function buildRaceTrack() {
+  const cx = 360, cy = 280, N = 140, halfW = 36, pts = [];
+  for (let k = 0; k < N; k++) {
+    const t = (k / N) * Math.PI * 2;
+    const rx = 235 + 22 * Math.sin(2 * t + 0.7);
+    const ry = 165 + 18 * Math.cos(3 * t + 0.3);
+    pts.push({ x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t) });
+  }
+  return { pts, N, halfW };
+}
+function racePieceHTML(p, i) {
+  return `<div class="piece race">
+    <div class="rc-hud">
+      <div class="rc-hudrow"><span class="rc-lab">Best lap</span><span class="gold" data-rc-best="${i}">${fmtLap(p.best_lap_ms)}</span></div>
+      <div class="rc-hudrow"><span class="rc-lab">Last lap</span><span data-rc-last="${i}">--</span></div>
+      <div class="rc-hudrow"><span class="rc-lab">Lap</span><span data-rc-lap="${i}">${(p.laps || 0) + 1}</span></div>
+      <div class="rc-hudrow"><span class="rc-lab">Time</span><span data-rc-time="${i}">0:00.0</span></div>
+    </div>
+    <div class="rc-cwrap">
+      <canvas data-rc-canvas="${i}" width="720" height="560"></canvas>
+      <div class="rc-overlay hidden" data-rc-overlay="${i}"></div>
+    </div>
+    <div class="rc-controls">
+      <div class="rc-steer">
+        <button data-rcbtn="left:${i}" aria-label="Steer left">&#9664;</button>
+        <button data-rcbtn="right:${i}" aria-label="Steer right">&#9654;</button>
+      </div>
+      <div class="rc-pedals">
+        <button class="rc-brake" data-rcbtn="brake:${i}">BRAKE</button>
+        <button class="rc-gas" data-rcbtn="gas:${i}">GAS</button>
+      </div>
+    </div>
+    <div class="rc-tools"><button class="ghost" data-rcrestart="${i}">&#8635; Restart race</button></div>
+  </div>`;
+}
+function wireRace(app, p, i) {
+  stopLiveGames();
+  const track = buildRaceTrack();
+  const cv = document.querySelector(`#focusbody [data-rc-canvas="${i}"]`);
+  const overlay = document.querySelector(`#focusbody [data-rc-overlay="${i}"]`);
+  const bestEl = document.querySelector(`#focusbody [data-rc-best="${i}"]`);
+  const lastEl = document.querySelector(`#focusbody [data-rc-last="${i}"]`);
+  const lapEl = document.querySelector(`#focusbody [data-rc-lap="${i}"]`);
+  const timeEl = document.querySelector(`#focusbody [data-rc-time="${i}"]`);
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const N = track.N, halfW = track.halfW, pts = track.pts;
+
+  const car = { x: 0, y: 0, h: 0, vx: 0, vy: 0 };
+  const input = { left: false, right: false, gas: false, brake: false };
+  const R = {
+    id: app.id, pieceIdx: i,
+    bestMs: (typeof p.best_lap_ms === 'number') ? p.best_lap_ms : null,
+    baseLaps: p.laps || 0, laps: 0,
+    travel: 0, lastProg: 0, lapStart: 0,
+    state: 'countdown', // countdown | racing | paused
+    dirty: false,
+  };
+
+  function tangentAt(k) {
+    const a = pts[k % N], b = pts[(k + 1) % N];
+    return Math.atan2(b.y - a.y, b.x - a.x);
+  }
+  function resetCar() {
+    car.x = pts[0].x; car.y = pts[0].y;
+    car.h = tangentAt(0); car.vx = 0; car.vy = 0;
+    R.travel = 0; R.lastProg = 0; R.lapStart = 0;
+  }
+  function nearest(x, y) {
+    let bi = 0, bd = Infinity;
+    for (let k = 0; k < N; k++) {
+      const dx = x - pts[k].x, dy = y - pts[k].y, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; bi = k; }
+    }
+    return { idx: bi, dist: Math.sqrt(bd) };
+  }
+  // Fixed-timestep arcade physics. Speeds are capped so one step can
+  // never cross the track wall (max 320px/s * 1/60s = 5.4px < 36px half
+  // width) — no tunneling, ever.
+  function step(dt) {
+    const fx = Math.cos(car.h), fy = Math.sin(car.h);
+    // Split velocity into forward speed + lateral slide (world frame).
+    let vf = car.vx * fx + car.vy * fy;
+    let lx = car.vx - fx * vf, ly = car.vy - fy * vf;
+    if (input.gas) vf += 300 * dt;
+    if (input.brake) vf -= (vf > 0 ? 420 : 120) * dt;
+    const steer = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+    const spd = Math.hypot(vf, lx, ly);
+    const grip = Math.min(1, Math.max(0.25, spd / 90));
+    car.h += steer * 2.8 * grip * dt * (vf >= 0 ? 1 : -1);
+    // Lateral grip: the slide decays fast — arcade feel, no ice physics.
+    const latKeep = Math.max(0, 1 - 9 * dt);
+    lx *= latKeep; ly *= latKeep;
+    const near = nearest(car.x, car.y);
+    const offTrack = near.dist > halfW + 4;
+    vf *= Math.max(0, 1 - (offTrack ? 2.4 : 0.5) * dt);
+    const maxSpd = offTrack ? 130 : 320;
+    if (vf > maxSpd) vf = maxSpd;
+    if (vf < -60) vf = -60;
+    // Recompose along the (possibly new) heading: gas/brake survive.
+    const nfx = Math.cos(car.h), nfy = Math.sin(car.h);
+    car.vx = nfx * vf + lx; car.vy = nfy * vf + ly;
+    car.x += car.vx * dt; car.y += car.vy * dt;
+    // Walls: push back inside, kill the outward velocity, scrub speed.
+    const w = nearest(car.x, car.y);
+    if (w.dist > halfW) {
+      const c = pts[w.idx];
+      let nx = car.x - c.x, ny = car.y - c.y;
+      const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+      car.x = c.x + nx * halfW; car.y = c.y + ny * halfW;
+      const vn = car.vx * nx + car.vy * ny;
+      if (vn > 0) { car.vx -= nx * vn * 1.4; car.vy -= ny * vn * 1.4; }
+      car.vx *= 0.94; car.vy *= 0.94;
+    }
+    // Lap tracking: accumulate signed travel around the loop. A lap
+    // counts only after 60% of the loop, so crossing the line backwards
+    // or wiggling on it never cheats.
+    let dProg = (w.idx - R.lastProg + N) % N;
+    if (dProg > N / 2) dProg -= N;
+    R.lastProg = w.idx;
+    R.travel += dProg;
+    if (R.travel >= N) {
+      R.travel -= N;
+      const lapMs = performance.now() - R.lapStart;
+      R.lapStart = performance.now();
+      R.laps++;
+      R.dirty = true;
+      if (lastEl) lastEl.textContent = fmtLap(lapMs);
+      if (lapEl) lapEl.textContent = String(R.baseLaps + R.laps + 1);
+      if (R.bestMs == null || lapMs < R.bestMs) {
+        R.bestMs = Math.round(lapMs);
+        if (bestEl) bestEl.textContent = fmtLap(R.bestMs);
+        toast('New best lap — ' + fmtLap(R.bestMs));
+      }
+      sync();
+    }
+  }
+  function draw() {
+    ctx.fillStyle = '#0e0e11';
+    ctx.fillRect(0, 0, 720, 560);
+    // Track: outer edge, asphalt, inner edge.
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let k = 1; k <= N; k++) ctx.lineTo(pts[k % N].x, pts[k % N].y);
+      ctx.closePath();
+    };
+    path(); ctx.strokeStyle = '#3a3a44'; ctx.lineWidth = halfW * 2 + 8; ctx.stroke();
+    path(); ctx.strokeStyle = '#1e1e25'; ctx.lineWidth = halfW * 2; ctx.stroke();
+    // Start/finish: checkered band across the track at sample 0.
+    const c0 = pts[0], ang = tangentAt(0);
+    const px = -Math.sin(ang), py = Math.cos(ang);
+    for (let r = -1; r <= 1; r += 2) {
+      for (let q = 0; q < 6; q++) {
+        const off = (q - 2.5) * (halfW / 3);
+        ctx.fillStyle = (q + (r > 0 ? 1 : 0)) % 2 ? '#d8d8de' : '#232328';
+        ctx.fillRect(c0.x + px * off - 3 + Math.cos(ang) * r * 4,
+                     c0.y + py * off - 3 + Math.sin(ang) * r * 4, 7, 7);
+      }
+    }
+    // Car: gold body, dark canopy — rotated to the heading.
+    ctx.save();
+    ctx.translate(car.x, car.y); ctx.rotate(car.h);
+    ctx.fillStyle = '#c9a06a';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-14, -8, 28, 16, 5); else ctx.rect(-14, -8, 28, 16);
+    ctx.fill();
+    ctx.fillStyle = '#2a2a30';
+    ctx.fillRect(-4, -5, 10, 10);
+    ctx.fillStyle = '#8ba7d4';
+    ctx.fillRect(10, -6, 3, 12);
+    ctx.restore();
+  }
+  function showOverlay(txt, go) {
+    if (!overlay) return;
+    if (txt == null) { overlay.classList.add('hidden'); return; }
+    overlay.textContent = txt;
+    overlay.classList.toggle('go', !!go);
+    overlay.classList.remove('hidden');
+  }
+  const sync = () => {
+    if (!R.dirty) return;
+    R.dirty = false;
+    call({ op: 'race_sync', id: R.id, piece: R.pieceIdx,
+      best_lap_ms: R.bestMs, laps: R.baseLaps + R.laps });
+    refreshData();
+  };
+  let raf = 0, acc = 0, lastT = 0;
+  const DT = 1 / 60;
+  function frame(t) {
+    if (R.state !== 'racing') return;
+    raf = requestAnimationFrame(frame);
+    if (!lastT) lastT = t;
+    acc += Math.min(0.1, (t - lastT) / 1000);
+    lastT = t;
+    let n = 0;
+    while (acc >= DT && n < 4) { step(DT); acc -= DT; n++; }
+    draw();
+    if (timeEl && R.lapStart) timeEl.textContent = fmtLap(performance.now() - R.lapStart);
+  }
+  function startCountdown() {
+    R.state = 'countdown';
+    resetCar(); draw();
+    const seq = ['3', '2', '1', 'GO'];
+    let k = 0;
+    showOverlay(seq[0], false);
+    const iv = setInterval(() => {
+      k++;
+      if (k >= seq.length) {
+        clearInterval(iv);
+        showOverlay(null);
+        R.state = 'racing';
+        R.lapStart = performance.now();
+        lastT = 0; acc = 0;
+        raf = requestAnimationFrame(frame);
+        return;
+      }
+      showOverlay(seq[k], seq[k] === 'GO');
+    }, 750);
+    R.countdownIv = iv;
+  }
+  function pause() {
+    if (R.state !== 'racing') return;
+    R.state = 'paused';
+    cancelAnimationFrame(raf);
+    sync();
+    if (overlay) {
+      overlay.innerHTML = '<span style="font-size:34px">Paused<br><span style="font-size:18px;color:#b9b9c2">tap to resume</span></span>';
+      overlay.classList.remove('hidden', 'go');
+      overlay.style.pointerEvents = 'auto';
+    }
+  }
+  function resume() {
+    if (R.state !== 'paused') return;
+    if (overlay) { overlay.style.pointerEvents = 'none'; overlay.classList.add('hidden'); }
+    R.state = 'racing';
+    R.lapStart = performance.now() - (R._pausedElapsed || 0);
+    lastT = 0; acc = 0;
+    raf = requestAnimationFrame(frame);
+  }
+  // Controls: pointer hold (touch + mouse) and keyboard.
+  document.querySelectorAll(`#focusbody [data-rcbtn^="left:${i}"], #focusbody [data-rcbtn^="right:${i}"], #focusbody [data-rcbtn^="brake:${i}"], #focusbody [data-rcbtn^="gas:${i}"]`).forEach(b => {
+    const kind = b.dataset.rcbtn.split(':')[0];
+    const on = (e) => { e.preventDefault(); input[kind] = true; b.classList.add('on'); };
+    const off = () => { input[kind] = false; b.classList.remove('on'); };
+    b.addEventListener('pointerdown', on);
+    b.addEventListener('pointerup', off);
+    b.addEventListener('pointercancel', off);
+    b.addEventListener('pointerleave', off);
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+  });
+  const keymap = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'gas', ArrowDown: 'brake' };
+  const keyDown = (e) => { const k = keymap[e.key]; if (k) { input[k] = true; e.preventDefault(); } };
+  const keyUp = (e) => { const k = keymap[e.key]; if (k) input[k] = false; };
+  window.addEventListener('keydown', keyDown);
+  window.addEventListener('keyup', keyUp);
+  const restartBtn = document.querySelector(`#focusbody [data-rcrestart="${i}"]`);
+  if (restartBtn) restartBtn.onclick = () => {
+    cancelAnimationFrame(raf);
+    if (R.countdownIv) clearInterval(R.countdownIv);
+    if (overlay) overlay.style.pointerEvents = 'none';
+    startCountdown();
+  };
+  if (overlay) overlay.onclick = () => resume();
+  const onVis = () => { if (document.hidden) pause(); };
+  document.addEventListener('visibilitychange', onVis);
+  const onHide = () => sync();
+  window.addEventListener('pagehide', onHide);
+  const stop = () => {
+    cancelAnimationFrame(raf);
+    if (R.countdownIv) clearInterval(R.countdownIv);
+    window.removeEventListener('keydown', keyDown);
+    window.removeEventListener('keyup', keyUp);
+    document.removeEventListener('visibilitychange', onVis);
+    window.removeEventListener('pagehide', onHide);
+    sync();
+  };
+  liveGames.push({ stop });
+  // Pause-time bookkeeping: keep the lap clock honest across resume.
+  const _pause = pause;
+  pause = function () {
+    if (R.state === 'racing' && R.lapStart) R._pausedElapsed = performance.now() - R.lapStart;
+    _pause();
+  };
+  startCountdown();
+  // Test hooks: file:// only (headless battery). Never wired to gameplay;
+  // production https builds never expose this.
+  if (location.protocol === 'file:') {
+    window.__raceDebug = {
+      state: () => ({ x: car.x, y: car.y, h: car.h, travel: R.travel, laps: R.laps, bestMs: R.bestMs, mode: R.state }),
+      track: () => ({ pts: pts.map(p => ({ x: p.x, y: p.y })), N, halfW }),
+      place: (x, y, h) => { car.x = x; car.y = y; car.h = h; car.vx = 0; car.vy = 0; draw(); },
+      markCheckpoint: () => { R.travel = N * 0.7; R.lastProg = Math.floor(N * 0.7); },
+      skipCountdown: () => {
+        if (R.state !== 'countdown') return;
+        if (R.countdownIv) clearInterval(R.countdownIv);
+        showOverlay(null);
+        R.state = 'racing'; R.lapStart = performance.now();
+        lastT = 0; acc = 0;
+        raf = requestAnimationFrame(frame);
+      },
+      input,
+    };
+  }
+}
+
 /* ---------- gallery: photo grid, fullscreen viewer, slideshow ---------- */
 function galleryPieceHTML(p, i) {
   const photos = p.items || [];
@@ -1162,7 +1519,7 @@ function renderPiecesFocus(id) {
     html += p.kind === 'notes' ? notesPieceHTML(p, i)
       : p.kind === 'voxel' ? voxelPieceHTML(p, i)
       : p.kind === 'collection' ? collectionPieceHTML(p, i)
-      : p.kind === 'game' ? gamePieceHTML(p, i)
+      : p.kind === 'game' ? (p.game === 'race' ? racePieceHTML(p, i) : gamePieceHTML(p, i))
       : p.kind === 'gallery' ? galleryPieceHTML(p, i)
       : unknownPieceHTML(p);
   });
@@ -1170,7 +1527,7 @@ function renderPiecesFocus(id) {
   wirePiecesFocus(app);
   (app.pieces || []).forEach((p, i) => {
     if (p.kind === 'voxel') wireVoxel(app, p, i);
-    if (p.kind === 'game') wireGame(app, p, i);
+    if (p.kind === 'game') { if (p.game === 'race') wireRace(app, p, i); else wireGame(app, p, i); }
     if (p.kind === 'gallery') wireGallery(app, p, i);
   });
 }
