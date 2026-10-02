@@ -331,9 +331,10 @@ function ask(q) {
   const res = call({ op: 'compile', request: q });
   if (res) {
     $('ask').value = ''; refresh();
-    // The ask bar always says what it built: the honest fallback message,
-    // or the voxel "start building" message. Tracker summaries stay quiet.
-    if (res.message && (res.fallback || res.kit === 'voxel')) showNotice(res.message);
+    // The ask bar always says what it built — the honest fallback message,
+    // the voxel "start building" message, or the plain summary naming the
+    // skills it composed ("Built a collection with date, exercise...").
+    if (res.message) showNotice(res.message);
   }
 }
 $('askbtn').onclick = () => ask($('ask').value);
@@ -430,7 +431,10 @@ function renderThreadFocus(id) {
 
 /* ---------- composed apps: one generic renderer for every skill ---------- */
 function cellHTML(f, v) {
-  v = v || '';
+  // Never throw, never print "[object Object]".
+  if (v == null) v = '';
+  else if (typeof v === 'object') { try { v = JSON.stringify(v); } catch (e) { v = ''; } }
+  v = String(v);
   if (f.type === 'photo' && /^data:image\//.test(v))
     return `<img src="${esc(v)}" alt="">`;
   if (f.type === 'link' && v) {
@@ -502,12 +506,18 @@ function unknownPieceHTML(p) {
 }
 
 function collectionPieceHTML(p, i) {
-  const fields = p.fields || [];
-  const cards = ((p.items || [])).map(r =>
-    `<div class="card">` + fields.map(f =>
-      `<div class="k">${esc(f.name)}</div><div class="v">${cellHTML(f, r[f.name])}</div>`
-    ).join('') + `</div>`
-  ).join('');
+  // Defensive: hand-crafted or corrupted objects must never throw here.
+  // Non-array fields get the honest placeholder; non-object rows render
+  // as empty cards rather than crashing the whole view.
+  if (!Array.isArray(p.fields)) return unknownPieceHTML(p);
+  const fields = p.fields.filter(f => f && typeof f === 'object');
+  const items = Array.isArray(p.items) ? p.items : [];
+  const cards = items.map(r => {
+    const row = (r && typeof r === 'object' && !Array.isArray(r)) ? r : {};
+    return `<div class="card">` + fields.map(f =>
+      `<div class="k">${esc(f.name)}</div><div class="v">${cellHTML(f, row[f.name])}</div>`
+    ).join('') + `</div>`;
+  }).join('');
   const chips = fields.map(f =>
     `<span class="chip">${esc(f.name)}${f.type !== 'text' ? ' · ' + esc(f.type) : ''}</span>`
   ).join('');
