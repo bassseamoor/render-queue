@@ -96,6 +96,30 @@
   footer { margin-top: 26px; color: #6e6e78; font-size: 13px; line-height: 1.6; }
   footer button { background: none; border: none; color: #6e6e78; font-size: 13px; font-weight: 400; min-height: 0; padding: 0; margin: 8px 0 0; width: auto; display: inline; text-decoration: underline; }
   #boot { color: #8e8e96; padding: 40px 0; text-align: center; }
+  select {
+    font-size: 17px; padding: 12px 14px; min-height: 54px; max-width: 150px;
+    border-radius: 14px; border: 1px solid #2c2c34; background: #1a1a21; color: #fff;
+  }
+  textarea {
+    width: 100%; font-size: 18px; padding: 14px 16px; font-family: inherit;
+    border-radius: 14px; border: 1px solid #2c2c34; background: #1a1a21; color: #fff;
+  }
+  textarea:focus { outline: none; border-color: #7c6cf0; }
+  input[type=date], input[type=number], input[type=url] {
+    width: 100%; font-size: 18px; padding: 14px 16px; min-height: 54px;
+    border-radius: 14px; border: 1px solid #2c2c34; background: #1a1a21; color: #fff;
+  }
+  input[type=date]:focus, input[type=number]:focus, input[type=url]:focus { outline: none; border-color: #7c6cf0; }
+  input[type=file] { margin-top: 6px; font-size: 16px; color: #b9b9c2; }
+  .choicechips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .choicechip {
+    width: auto; margin: 0; padding: 10px 18px; min-height: 44px;
+    font-size: 16px; font-weight: 500; background: #23232c; border: 1px solid #2c2c34;
+  }
+  .choicechip.sel { background: #7c6cf0; border-color: #7c6cf0; }
+  .card .v a { color: #9fb4ff; }
+  .card .v img { max-width: 100%; border-radius: 8px; }
+  .fldpreview { display: none; max-width: 140px; border-radius: 8px; margin-top: 8px; }
   #newthreadbox { display: none; margin-top: 12px; }
 </style>
 </head>
@@ -119,6 +143,7 @@
       </div>
       <div class="examples">
         <button data-ex="customer tracker with fields name, email, status">Customer tracker</button>
+        <button data-ex="track my workouts with date, exercise, sets, reps">Track my workouts</button>
         <button data-ex="reading list with fields title, author">Reading list</button>
         <button data-ex="notes">Notes</button>
       </div>
@@ -218,16 +243,6 @@ function call(cmd) {
   return out.result;
 }
 
-function kindNoun(kind) {
-  return kind === 'moor.photo' ? 'Photo' : kind === 'moor.thread' ? 'Thread' : 'Tracker';
-}
-function appNoun(it) {
-  // Fallback notes pages are notes, not trackers — label them honestly.
-  if (it.kit === 'notes') return 'Notes';
-  if (it.kit === 'list') return 'List';
-  return 'Tracker';
-}
-
 function rowSub(it) {
   if (it.kind === 'moor.photo') return 'Photo';
   if (it.kind === 'moor.thread') {
@@ -235,10 +250,9 @@ function rowSub(it) {
     const base = n === 0 ? 'No messages yet' : n + (n === 1 ? ' message' : ' messages');
     return it.preview ? base + ' — ' + it.preview : base;
   }
-  const n = it.row_count || 0;
-  const noun = appNoun(it);
-  const unit = noun === 'Notes' ? (n === 1 ? ' note' : ' notes') : (n === 1 ? ' row' : ' rows');
-  return noun + ' · ' + n + unit;
+  // The core labels each app from its composed skills ("Tracker · 3 rows",
+  // "Notes · 2 notes", "2 skills").
+  return it.sub || 'Tracker';
 }
 
 function renderHome() {
@@ -287,7 +301,7 @@ function openFocus(id) {
   $('view-focus').style.display = 'block';
   window.scrollTo(0, 0);
   if (it.kind === 'moor.thread') renderThreadFocus(id);
-  else renderAppFocus(id);
+  else renderPiecesFocus(id);
 }
 $('backbtn').onclick = refresh;
 $('viewerx').onclick = () => $('viewer').classList.remove('open');
@@ -390,44 +404,182 @@ function renderThreadFocus(id) {
   $('msgin').onkeydown = (e) => { if (e.key === 'Enter') send(); };
 }
 
-/* ---------- tracker ---------- */
-function renderAppFocus(id) {
+/* ---------- composed apps: one generic renderer for every skill ---------- */
+function cellHTML(f, v) {
+  v = v || '';
+  if (f.type === 'photo' && /^data:image\//.test(v))
+    return `<img src="${esc(v)}" alt="">`;
+  if (f.type === 'link' && v) {
+    const href = /^https?:\/\//i.test(v) ? v : 'https://' + v;
+    return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(v)}</a>`;
+  }
+  return esc(v);
+}
+
+function fieldInputHTML(f, i) {
+  const lbl = `<label>${esc(f.name)}${f.type !== 'text' ? ' <span style="color:#8e8e96">(' + esc(f.type) + ')</span>' : ''}`;
+  switch (f.type) {
+    case 'number':
+      return `${lbl}<input type="number" inputmode="decimal" data-p="${i}" data-field="${esc(f.name)}" data-ftype="number" autocomplete="off"></label>`;
+    case 'date':
+      return `${lbl}<input type="date" data-p="${i}" data-field="${esc(f.name)}" data-ftype="date" autocomplete="off"></label>`;
+    case 'link':
+      return `${lbl}<input type="url" inputmode="url" data-p="${i}" data-field="${esc(f.name)}" data-ftype="link" autocomplete="off" placeholder="https://"></label>`;
+    case 'photo':
+      return `${lbl}<input type="file" accept="image/*" data-p="${i}" data-field="${esc(f.name)}" data-ftype="photo">` +
+        `<img class="fldpreview" data-preview="${i}-${esc(f.name)}" alt=""></label>`;
+    case 'choice': {
+      const opts = f.options || [];
+      if (!opts.length)
+        return `${lbl}<input type="text" data-p="${i}" data-field="${esc(f.name)}" data-ftype="text" autocomplete="off"></label>`;
+      const chips = opts.map(o =>
+        `<button type="button" class="choicechip" data-p="${i}" data-field="${esc(f.name)}" data-val="${esc(o)}">${esc(o)}</button>`
+      ).join('');
+      return `${lbl}<div class="choicechips">${chips}</div>` +
+        `<input type="hidden" data-p="${i}" data-field="${esc(f.name)}" data-ftype="choice" value=""></label>`;
+    }
+    default:
+      return `${lbl}<input type="text" data-p="${i}" data-field="${esc(f.name)}" data-ftype="text" autocomplete="off"></label>`;
+  }
+}
+
+function collectRow(i, p) {
+  const row = {};
+  for (const f of p.fields) {
+    const el = document.querySelector(`#focusbody input[data-p="${i}"][data-field="${f.name}"]`);
+    if (!el) { row[f.name] = ''; continue; }
+    row[f.name] = f.type === 'photo' ? (el.dataset.dataurl || '') : (el.value || '');
+  }
+  return row;
+}
+
+function notesPieceHTML(p, i) {
+  const notes = (p.items || []).map(n =>
+    `<div class="card"><div class="k">${esc(n.title || 'Note')}</div><div class="v">${esc(n.body || '')}</div></div>`
+  ).join('');
+  return `
+    <h2 class="sect">${esc(p.name === 'notes' ? 'Notes' : p.name)} (${p.item_count})</h2>
+    <div>${notes || '<p class="sub">Nothing here yet — add your first note below.</p>'}</div>
+    <h2 class="sect">Add a note</h2>
+    <div>
+      <label>title<input type="text" data-p="${i}" data-nfield="title" autocomplete="off"></label>
+      <label>note<textarea data-p="${i}" data-nfield="body" rows="3"></textarea></label>
+    </div>
+    <button data-addnote="${i}">Add note</button>`;
+}
+
+function collectionPieceHTML(p, i) {
+  const cards = (p.items || []).map(r =>
+    `<div class="card">` + p.fields.map(f =>
+      `<div class="k">${esc(f.name)}</div><div class="v">${cellHTML(f, r[f.name])}</div>`
+    ).join('') + `</div>`
+  ).join('');
+  const chips = p.fields.map(f =>
+    `<span class="chip">${esc(f.name)}${f.type !== 'text' ? ' · ' + esc(f.type) : ''}</span>`
+  ).join('');
+  return `
+    <h2 class="sect">${esc(p.name)} (${p.item_count})</h2>
+    <div class="chips">${chips}</div>
+    <div>${cards || '<p class="sub">Nothing here yet — add your first row below.</p>'}</div>
+    <h2 class="sect">Add a row</h2>
+    <div>${p.fields.map(f => fieldInputHTML(f, i)).join('')}</div>
+    <button data-addrow="${i}">Add</button>
+    <h2 class="sect">Add a field</h2>
+    <p class="sub">Grows this collection without touching your existing rows.</p>
+    <div class="rowline">
+      <input type="text" data-newfield="${i}" placeholder="e.g. phone" autocomplete="off">
+      <select data-newtype="${i}">
+        <option value="text">Text</option>
+        <option value="number">Number</option>
+        <option value="date">Date</option>
+        <option value="photo">Photo</option>
+        <option value="choice">Choice</option>
+        <option value="link">Link</option>
+      </select>
+    </div>
+    <div class="rowline" data-optrow="${i}" style="display:none;margin-top:8px">
+      <input type="text" data-newopts="${i}" placeholder="choices, comma separated" autocomplete="off">
+    </div>
+    <div style="margin-top:8px"><button data-addfield="${i}">Add field</button></div>`;
+}
+
+function renderPiecesFocus(id) {
   const res = call({ op: 'get', id });
   if (!res || !res.app) { refresh(); return; }
   const app = res.app;
-  const cards = app.rows.map(r =>
-    `<div class="card">` + app.fields.map(f =>
-      `<div class="k">${esc(f)}</div><div class="v">${esc(r[f] || '')}</div>`
-    ).join('') + `</div>`
-  ).join('');
-  $('focusbody').innerHTML = `
-    <h1 style="font-size:30px;margin:0 0 8px">${esc(app.name)}</h1>
-    <div class="saved">Saved · version ${app.rev}</div>
-    <div class="chips">${app.fields.map(f => `<span class="chip">${esc(f)}</span>`).join('')}</div>
-    <h2 class="sect">Rows (${app.row_count})</h2>
-    <div>${cards || '<p class="sub">Nothing here yet — add your first row below.</p>'}</div>
-    <h2 class="sect">Add a row</h2>
-    <div>${app.fields.map(f => `<label>${esc(f)}<input type="text" data-field="${esc(f)}" autocomplete="off"></label>`).join('')}</div>
-    <button id="addbtn">Add</button>
-    <h2 class="sect">Add a field</h2>
-    <p class="sub">Grows the tracker without touching your existing rows.</p>
-    <div class="rowline">
-      <input type="text" id="newfield" placeholder="e.g. phone" autocomplete="off">
-      <button id="fieldbtn">Add field</button>
-    </div>
-  `;
-  $('addbtn').onclick = () => {
-    const row = {};
-    document.querySelectorAll('#focusbody [data-field]').forEach(i => { row[i.dataset.field] = i.value; });
-    const r = call({ op: 'add_row', id: app.id, row });
-    if (r) { refreshData(); renderAppFocus(id); }
-  };
-  $('fieldbtn').onclick = () => {
-    const field = $('newfield').value.trim();
-    if (!field) { showError('Give the new field a name first.'); return; }
-    const r = call({ op: 'add_field', id: app.id, field });
-    if (r) { refreshData(); renderAppFocus(id); }
-  };
+  let html = `<h1 style="font-size:30px;margin:0 0 8px">${esc(app.name)}</h1>
+    <div class="saved">Saved · version ${app.rev}</div>`;
+  (app.pieces || []).forEach((p, i) => {
+    html += p.kind === 'notes' ? notesPieceHTML(p, i) : collectionPieceHTML(p, i);
+  });
+  $('focusbody').innerHTML = html;
+  wirePiecesFocus(app);
+}
+
+function wirePiecesFocus(app) {
+  // Choice chips: single-select, writes into the hidden input.
+  $('focusbody').querySelectorAll('.choicechip').forEach(ch => {
+    ch.onclick = () => {
+      const p = ch.dataset.p, f = ch.dataset.field;
+      document.querySelectorAll(`#focusbody .choicechip[data-p="${p}"][data-field="${f}"]`)
+        .forEach(c => c.classList.remove('sel'));
+      ch.classList.add('sel');
+      document.querySelector(`#focusbody input[data-p="${p}"][data-field="${f}"]`).value = ch.dataset.val;
+    };
+  });
+  // Photo fields: pick → downscale → keep the data URL on the input.
+  $('focusbody').querySelectorAll('input[data-ftype="photo"]').forEach(inp => {
+    inp.onchange = async () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      try {
+        const d = await downscale(f);
+        inp.dataset.dataurl = d.dataUrl;
+        const prev = document.querySelector(`#focusbody img[data-preview="${inp.dataset.p}-${inp.dataset.field}"]`);
+        if (prev) { prev.src = d.dataUrl; prev.style.display = 'block'; }
+      } catch (e) { showError('Could not read that photo. Try another.'); }
+    };
+  });
+  // Add a row to a collection piece.
+  $('focusbody').querySelectorAll('[data-addrow]').forEach(btn => {
+    btn.onclick = () => {
+      const i = +btn.dataset.addrow;
+      const r = call({ op: 'add_row', id: app.id, piece: i, row: collectRow(i, app.pieces[i]) });
+      if (r) { refreshData(); renderPiecesFocus(app.id); }
+    };
+  });
+  // Add a note to a notes piece.
+  $('focusbody').querySelectorAll('[data-addnote]').forEach(btn => {
+    btn.onclick = () => {
+      const i = +btn.dataset.addnote;
+      const title = document.querySelector(`#focusbody [data-p="${i}"][data-nfield="title"]`).value;
+      const body = document.querySelector(`#focusbody [data-p="${i}"][data-nfield="body"]`).value;
+      if (!title.trim() && !body.trim()) { showError('Write something first.'); return; }
+      const r = call({ op: 'add_row', id: app.id, piece: i, row: { title, body } });
+      if (r) { refreshData(); renderPiecesFocus(app.id); }
+    };
+  });
+  // Add a typed field to a collection piece.
+  $('focusbody').querySelectorAll('[data-addfield]').forEach(btn => {
+    btn.onclick = () => {
+      const i = +btn.dataset.addfield;
+      const field = document.querySelector(`#focusbody [data-newfield="${i}"]`).value.trim();
+      const type = document.querySelector(`#focusbody [data-newtype="${i}"]`).value;
+      const options = document.querySelector(`#focusbody [data-newopts="${i}"]`).value
+        .split(',').map(s => s.trim()).filter(Boolean);
+      if (!field) { showError('Give the new field a name first.'); return; }
+      const r = call({ op: 'add_field', id: app.id, piece: i, field, type, options });
+      if (r) { refreshData(); renderPiecesFocus(app.id); }
+    };
+  });
+  // Show the choices box only when the type is choice.
+  $('focusbody').querySelectorAll('[data-newtype]').forEach(sel => {
+    sel.onchange = () => {
+      const i = sel.dataset.newtype;
+      document.querySelector(`#focusbody [data-optrow="${i}"]`).style.display =
+        sel.value === 'choice' ? 'block' : 'none';
+    };
+  });
 }
 
 $('startover').onclick = () => {
