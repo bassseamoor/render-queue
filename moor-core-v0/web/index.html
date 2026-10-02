@@ -285,7 +285,7 @@ function renderHome() {
   list.innerHTML = state.items.map(it => {
     const media = it.kind === 'moor.photo'
       ? `<img class="rh-thumb" src="${esc(it.image)}" alt="">`
-      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : (it.kit === 'voxel' ? '🧱' : '▦')}</div>`;
+      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : (it.kit === 'voxel' ? '🧱' : (it.kit === 'notes' ? '📝' : '▦'))}</div>`;
     return `<button class="homerow" data-id="${esc(it.id)}">${media}
       <div class="rh-body"><div class="rh-name">${esc(it.name)}</div>
       <div class="rh-sub">${esc(rowSub(it))}</div></div>
@@ -469,7 +469,7 @@ function fieldInputHTML(f, i) {
 
 function collectRow(i, p) {
   const row = {};
-  for (const f of p.fields) {
+  for (const f of (p && p.fields) || []) {
     const el = document.querySelector(`#focusbody input[data-p="${i}"][data-field="${f.name}"]`);
     if (!el) { row[f.name] = ''; continue; }
     row[f.name] = f.type === 'photo' ? (el.dataset.dataurl || '') : (el.value || '');
@@ -478,7 +478,7 @@ function collectRow(i, p) {
 }
 
 function notesPieceHTML(p, i) {
-  const notes = (p.items || []).map(n =>
+  const notes = ((p.items || [])).map(n =>
     `<div class="card"><div class="k">${esc(n.title || 'Note')}</div><div class="v">${esc(n.body || '')}</div></div>`
   ).join('');
   return `
@@ -492,21 +492,31 @@ function notesPieceHTML(p, i) {
     <button data-addnote="${i}">Add note</button>`;
 }
 
+function unknownPieceHTML(p) {
+  // The page only renders skills it knows. Anything else gets an honest
+  // placeholder — never a guess, never a blank screen.
+  return `
+    <h2 class="sect">${esc(p.name || 'Skill')}</h2>
+    <div class="card"><div class="v">This one's shaped oddly — here's what I could show.</div>
+    <div class="k">Its data is safe; a future skill will know how to render it.</div></div>`;
+}
+
 function collectionPieceHTML(p, i) {
-  const cards = (p.items || []).map(r =>
-    `<div class="card">` + p.fields.map(f =>
+  const fields = p.fields || [];
+  const cards = ((p.items || [])).map(r =>
+    `<div class="card">` + fields.map(f =>
       `<div class="k">${esc(f.name)}</div><div class="v">${cellHTML(f, r[f.name])}</div>`
     ).join('') + `</div>`
   ).join('');
-  const chips = p.fields.map(f =>
+  const chips = fields.map(f =>
     `<span class="chip">${esc(f.name)}${f.type !== 'text' ? ' · ' + esc(f.type) : ''}</span>`
   ).join('');
   return `
-    <h2 class="sect">${esc(p.name)} (${p.item_count})</h2>
+    <h2 class="sect">${esc(p.name)} (${p.item_count || 0})</h2>
     <div class="chips">${chips}</div>
     <div>${cards || '<p class="sub">Nothing here yet — add your first row below.</p>'}</div>
     <h2 class="sect">Add a row</h2>
-    <div>${p.fields.map(f => fieldInputHTML(f, i)).join('')}</div>
+    <div>${fields.map(f => fieldInputHTML(f, i)).join('')}</div>
     <button data-addrow="${i}">Add</button>
     <h2 class="sect">Add a field</h2>
     <p class="sub">Grows this collection without touching your existing rows.</p>
@@ -532,16 +542,21 @@ function collectionPieceHTML(p, i) {
 const vx = { layer: 0, color: 0 }; // color = palette index, -1 = eraser
 
 function voxelPieceHTML(p, i) {
+  // Belt and braces: the core clamps dims and defaults the palette, but a
+  // hand-crafted object must still never freeze the page with a giant grid.
   const dims = p.dims || [16, 16, 4];
-  const w = dims[0], h = dims[1], layers = dims[2];
-  const palette = p.palette || [];
-  const cells = p.cells || {};
+  const w = Math.min(Math.max(dims[0] | 0, 1), 32);
+  const h = Math.min(Math.max(dims[1] | 0, 1), 32);
+  const layers = Math.min(Math.max(dims[2] | 0, 1), 8);
+  const palette = (p.palette || []).filter(c => typeof c === 'string').slice(0, 16);
+  const cells = (p.cells && typeof p.cells === 'object' && !Array.isArray(p.cells)) ? p.cells : {};
+  if (!palette.length) return unknownPieceHTML(p);
   vx.layer = Math.min(vx.layer, layers - 1);
   let grid = '';
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const c = cells[`${vx.layer},${y},${x}`];
-      const bg = (c !== undefined && palette[c]) ? palette[c] : '';
+      const bg = (typeof c === 'number' && palette[c]) ? palette[c] : '';
       grid += `<div class="vx-cell" data-vxcell data-x="${x}" data-y="${y}"${bg ? ` style="background:${bg}"` : ''}></div>`;
     }
   }
@@ -613,7 +628,8 @@ function renderPiecesFocus(id) {
   (app.pieces || []).forEach((p, i) => {
     html += p.kind === 'notes' ? notesPieceHTML(p, i)
       : p.kind === 'voxel' ? voxelPieceHTML(p, i)
-      : collectionPieceHTML(p, i);
+      : p.kind === 'collection' ? collectionPieceHTML(p, i)
+      : unknownPieceHTML(p);
   });
   $('focusbody').innerHTML = html;
   wirePiecesFocus(app);
