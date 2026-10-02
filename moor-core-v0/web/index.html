@@ -139,6 +139,55 @@
   .vx-layers button.sel { background: #7c6cf0; }
   .vx-tools { display: flex; gap: 10px; margin-top: 14px; }
   .vx-tools button { margin-top: 0; min-height: 52px; font-size: 16px; }
+  /* ---------- idle game: the game skill's touch surface ---------- */
+  .gm-points { font-size: 56px; font-weight: 800; letter-spacing: -0.02em; margin: 6px 0 2px; }
+  .gm-rates { color: #8e8e96; font-size: 16px; margin-bottom: 14px; }
+  .gm-tap {
+    min-height: 96px; font-size: 26px; font-weight: 800; border-radius: 20px;
+    background: linear-gradient(180deg, #8a7bf5, #6a5ade);
+  }
+  .gm-tap:active { transform: scale(.98); }
+  .gm-up {
+    display: flex; align-items: center; gap: 12px;
+    background: #1a1a21; border: 1px solid #26262e; border-radius: 14px;
+    padding: 12px 14px; margin: 10px 0;
+  }
+  .gm-up .gm-body { flex: 1; min-width: 0; }
+  .gm-up .gm-name { font-size: 17px; font-weight: 600; }
+  .gm-up .gm-fx { color: #8e8e96; font-size: 14px; margin-top: 2px; }
+  .gm-up button { width: auto; margin: 0; padding: 12px 18px; min-height: 52px; font-size: 15px; white-space: nowrap; }
+  .gm-up button.cant { background: #23232c; color: #6e6e78; }
+  /* ---------- gallery: photo grid + slideshow ---------- */
+  .gal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+  .gal-thumb { aspect-ratio: 1; object-fit: cover; width: 100%; border-radius: 10px; background: #26262e; }
+  .gal-tools { display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+  .gal-tools button { width: auto; margin: 0; padding: 12px 20px; min-height: 52px; font-size: 16px; }
+  .gal-tools button.on { background: #2c7a2c; }
+  #viewer .vnav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,.12); border: none; color: #fff; font-size: 34px;
+    width: 64px; min-height: 64px; margin: 0; padding: 0; border-radius: 50%;
+  }
+  #viewer .vprev { left: 12px; } #viewer .vnext { right: 12px; }
+  #viewer .vplay {
+    position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+    width: auto; margin: 0; padding: 12px 26px; min-height: 52px; font-size: 16px;
+    background: rgba(255,255,255,.14);
+  }
+  #viewer .vplay.on { background: #2c7a2c; }
+  /* ---------- self-update banner: a stale tab must never test an old build silently ---------- */
+  #updatebar {
+    display: none; background: #1d2a1d; border: 1px solid #3a5a3a; color: #c9e6c9;
+    border-radius: 12px; padding: 14px; margin: 14px 0; font-size: 17px; font-weight: 600;
+    width: 100%; cursor: pointer; text-align: center;
+  }
+  /* ---------- "Rebuild this": manual recompose action on every page ---------- */
+  .rebuildbtn {
+    background: transparent; border: 1px solid #2e2e38; color: #8e8e96;
+    border-radius: 10px; padding: 8px 16px; margin: 8px 0 0;
+    font-size: 14px; font-weight: 500; width: auto; min-height: 44px; cursor: pointer;
+  }
+  .rebuildbtn:active { background: #1a1a21; }
 </style>
 </head>
 <body>
@@ -150,6 +199,7 @@
 
   <div id="error" role="alert"></div>
   <div id="notice" role="status"></div>
+  <button id="updatebar">A newer Moor is ready — tap to reload.</button>
   <div id="boot">Loading…</div>
 
   <div id="app" style="display:none">
@@ -203,6 +253,9 @@
   <button class="x" id="viewerx" aria-label="Close">×</button>
   <img id="viewerimg" alt="Your photo">
   <div class="cap" id="viewercap"></div>
+  <button class="vnav vprev" id="viewerprev" aria-label="Previous" style="display:none">‹</button>
+  <button class="vnav vnext" id="viewernext" aria-label="Next" style="display:none">›</button>
+  <button class="vplay" id="viewerplay" style="display:none">▶ Slideshow</button>
 </div>
 
 <script type="module">
@@ -211,6 +264,10 @@ import init, { handle } from './pkg/moor_web.js';
 const STORE_KEY = 'moor-core-v0-store';
 const mem = { store: '' };
 const state = { items: [] };
+// Baked in at build time (the build script stamps the real version over
+// "dev"). The page compares this against version.txt so a stale tab can
+// never silently test an old build again.
+const BUILD_VERSION = "20261002T032857Z-e3384688";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s)
@@ -231,6 +288,21 @@ function clearError() { const e = $('error'); e.style.display = 'none'; e.textCo
 function showNotice(msg) { const e = $('notice'); e.textContent = msg; e.style.display = 'block'; }
 function clearNotice() { const e = $('notice'); e.style.display = 'none'; e.textContent = ''; }
 function flashSaved() { const s = $('savedind'); s.classList.add('on'); }
+
+/* Self-update: the served version.txt is compared against the baked-in
+   build version on boot and every 5 minutes. On mismatch a banner offers
+   a reload — never auto-reloads (that could lose form state), and a
+   failed fetch (offline, file://) fails silent so boot never breaks. */
+function checkForUpdate() {
+  fetch('version.txt', { cache: 'no-store' })
+    .then(r => r.ok ? r.text() : Promise.reject(new Error('no version')))
+    .then(t => {
+      t = (t || '').trim();
+      if (t && t !== BUILD_VERSION) $('updatebar').style.display = 'block';
+    })
+    .catch(() => {});
+}
+$('updatebar').onclick = () => location.reload();
 
 /* Quiet variant: background data refreshes must never clear an error banner
    a user-facing command just raised (e.g. the photo-space guard refusal
@@ -285,7 +357,7 @@ function renderHome() {
   list.innerHTML = state.items.map(it => {
     const media = it.kind === 'moor.photo'
       ? `<img class="rh-thumb" src="${esc(it.image)}" alt="">`
-      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : (it.kit === 'voxel' ? '🧱' : (it.kit === 'notes' ? '📝' : '▦'))}</div>`;
+      : `<div class="rh-icon">${it.kind === 'moor.thread' ? '💬' : (it.kit === 'voxel' ? '🧱' : (it.kit === 'notes' ? '📝' : (it.kit === 'game' ? '🎮' : (it.kit === 'gallery' ? '🖼️' : '▦'))))}</div>`;
     return `<button class="homerow" data-id="${esc(it.id)}">${media}
       <div class="rh-body"><div class="rh-name">${esc(it.name)}</div>
       <div class="rh-sub">${esc(rowSub(it))}</div></div>
@@ -308,12 +380,11 @@ function refreshData() {
 }
 
 function openFocus(id) {
+  stopLiveGames(); closeViewer();
   const it = state.items.find(x => x.id === id);
   if (!it) return;
   if (it.kind === 'moor.photo') {
-    $('viewerimg').src = it.image;
-    $('viewercap').textContent = it.name;
-    $('viewer').classList.add('open');
+    openViewer([{ image: it.image, title: it.name }], 0, false);
     return;
   }
   $('view-home').style.display = 'none';
@@ -322,18 +393,69 @@ function openFocus(id) {
   if (it.kind === 'moor.thread') renderThreadFocus(id);
   else renderPiecesFocus(id);
 }
-$('backbtn').onclick = refresh;
-$('viewerx').onclick = () => $('viewer').classList.remove('open');
-$('viewer').onclick = (e) => { if (e.target.id === 'viewer') $('viewer').classList.remove('open'); };
+$('backbtn').onclick = () => { stopLiveGames(); closeViewer(); refresh(); };
+/* Fullscreen viewer with slideshow: prev/next arrows, auto-advance
+   toggle. Used by gallery pieces and standalone photos. */
+const viewer = { photos: [], idx: 0, timer: null };
+function openViewer(photos, idx, autoplay) {
+  viewer.photos = photos || [];
+  viewer.idx = Math.max(0, Math.min(idx || 0, viewer.photos.length - 1));
+  const many = viewer.photos.length > 1;
+  $('viewerprev').style.display = many ? 'block' : 'none';
+  $('viewernext').style.display = many ? 'block' : 'none';
+  $('viewerplay').style.display = many ? 'block' : 'none';
+  showViewerPhoto();
+  $('viewer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  if (autoplay) startSlideshow();
+}
+function showViewerPhoto() {
+  const ph = viewer.photos[viewer.idx] || {};
+  $('viewerimg').src = ph.image || '';
+  $('viewercap').textContent = ph.title || '';
+  $('viewerplay').classList.toggle('on', !!viewer.timer);
+  $('viewerplay').textContent = viewer.timer ? '⏸ Slideshow' : '▶ Slideshow';
+}
+function startSlideshow() {
+  if (viewer.timer || viewer.photos.length < 2) return;
+  viewer.timer = setInterval(() => {
+    viewer.idx = (viewer.idx + 1) % viewer.photos.length;
+    showViewerPhoto();
+  }, 3000);
+  showViewerPhoto();
+}
+function stopSlideshow() {
+  if (viewer.timer) { clearInterval(viewer.timer); viewer.timer = null; }
+  showViewerPhoto();
+}
+function closeViewer() {
+  stopSlideshow();
+  $('viewer').classList.remove('open');
+  document.body.style.overflow = '';
+}
+$('viewerx').onclick = closeViewer;
+$('viewerprev').onclick = () => {
+  if (viewer.photos.length < 2) return;
+  viewer.idx = (viewer.idx - 1 + viewer.photos.length) % viewer.photos.length;
+  showViewerPhoto();
+};
+$('viewernext').onclick = () => {
+  if (viewer.photos.length < 2) return;
+  viewer.idx = (viewer.idx + 1) % viewer.photos.length;
+  showViewerPhoto();
+};
+$('viewerplay').onclick = () => { viewer.timer ? stopSlideshow() : startSlideshow(); };
+$('viewer').onclick = (e) => { if (e.target.id === 'viewer') closeViewer(); };
 
 /* ---------- ask bar ---------- */
 function ask(q) {
   const res = call({ op: 'compile', request: q });
   if (res) {
     $('ask').value = ''; refresh();
-    // The ask bar always says what it built — the honest fallback message,
-    // the voxel "start building" message, or the plain summary naming the
-    // skills it composed ("Built a collection with date, exercise...").
+    // "rebuild my X" lands the user on the rebuilt page. The focus view
+    // fetches through call() which clears notices — so show the message
+    // AFTER opening, or the confirmation flashes and vanishes.
+    if (res.rebuilt && res.app && res.app.id) openFocus(res.app.id);
     if (res.message) showNotice(res.message);
   }
 }
@@ -629,24 +751,176 @@ function wireVoxel(app, p, i) {
   };
 }
 
+/* ---------- idle game: the game skill's touch surface ----------
+   Taps and the 1-second tick run locally for instant feel; the server
+   stays the authority on prices. State syncs back every 5 seconds and
+   on page hide, through the normal patch path. Reload-safe. */
+const liveGames = [];
+function stopLiveGames() {
+  while (liveGames.length) {
+    try { liveGames.pop().stop(); } catch (e) {}
+  }
+}
+// Same formula as the server: base cost × 1.6^owned, rounded.
+function upgradeCost(u) {
+  return Math.round((u.cost || 0) * Math.pow(1.6, u.owned || 0));
+}
+function gamePieceHTML(p, i) {
+  const ups = (p.upgrades || []).map((u, ui) => {
+    const cost = upgradeCost(u);
+    const fx = [u.tap ? `+${u.tap}/tap` : null, u.sec ? `+${u.sec}/sec` : null]
+      .filter(Boolean).join(' ');
+    const afford = cost <= (p.points || 0);
+    return `<div class="gm-up">
+      <div class="gm-body"><div class="gm-name">${esc(u.name)}${u.owned ? ` <span style="color:#8e8e96">×${u.owned}</span>` : ''}</div>
+      <div class="gm-fx">${esc(fx)} · ${cost} pts</div></div>
+      <button data-gamebuy="${i}:${ui}" class="${afford ? '' : 'cant'}">Buy</button>
+    </div>`;
+  }).join('');
+  return `<div class="piece">
+    <div class="gm-points" data-gm-points="${i}">${p.points || 0}</div>
+    <div class="gm-rates" data-gm-rates="${i}">+${p.per_tap || 1}/tap · +${p.per_second || 0}/sec</div>
+    <button class="gm-tap" data-gmtap="${i}">TAP +${p.per_tap || 1}</button>
+    <div class="cap" style="margin-top:14px">Upgrades</div>
+    ${ups || '<div class="empty">No upgrades here.</div>'}
+  </div>`;
+}
+function wireGame(app, p, i) {
+  stopLiveGames();
+  const g = {
+    id: app.id, pieceIdx: i,
+    points: p.points || 0, perTap: p.per_tap || 1, perSec: p.per_second || 0,
+    owned: (p.upgrades || []).map(u => u.owned || 0),
+    dirty: false,
+  };
+  const pointsEl = document.querySelector(`#focusbody [data-gm-points="${i}"]`);
+  const ratesEl = document.querySelector(`#focusbody [data-gm-rates="${i}"]`);
+  const tapBtn = document.querySelector(`#focusbody [data-gmtap="${i}"]`);
+  const render = () => {
+    if (pointsEl) pointsEl.textContent = g.points;
+    if (ratesEl) ratesEl.textContent = `+${g.perTap}/tap · +${g.perSec}/sec`;
+    if (tapBtn) tapBtn.textContent = `TAP +${g.perTap}`;
+  };
+  const sync = () => {
+    if (!g.dirty) return;
+    g.dirty = false;
+    call({ op: 'game_sync', id: g.id, piece: g.pieceIdx,
+      points: g.points, per_tap: g.perTap, per_second: g.perSec, owned: g.owned });
+    refreshData();
+  };
+  document.querySelectorAll(`#focusbody [data-gamebuy^="${i}:"]`).forEach(b => {
+    b.onclick = () => {
+      const ui = +b.dataset.gamebuy.split(':')[1];
+      // Flush local play first so the server prices against the true score.
+      sync();
+      const r = call({ op: 'game_buy', id: g.id, piece: i, upgrade: ui });
+      if (r && r.app) {
+        const np = (r.app.pieces || []).find(pp => pp.kind === 'game');
+        if (np) {
+          g.points = np.points || 0; g.perTap = np.per_tap || 1; g.perSec = np.per_second || 0;
+          g.owned = (np.upgrades || []).map(x => x.owned || 0);
+          g.dirty = false;
+        }
+        renderPiecesFocus(g.id); // refreshes prices + affordability
+      }
+    };
+  });
+  if (tapBtn) tapBtn.onclick = () => { g.points += g.perTap; g.dirty = true; render(); };
+  const tick = setInterval(() => {
+    if (g.perSec > 0) { g.points += g.perSec; g.dirty = true; render(); }
+  }, 1000);
+  const syncIv = setInterval(sync, 5000);
+  const onHide = () => sync();
+  document.addEventListener('visibilitychange', onHide);
+  window.addEventListener('pagehide', onHide);
+  liveGames.push({
+    stop() {
+      clearInterval(tick); clearInterval(syncIv);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onHide);
+      sync();
+    }
+  });
+}
+
+/* ---------- gallery: photo grid, fullscreen viewer, slideshow ---------- */
+function galleryPieceHTML(p, i) {
+  const photos = p.items || [];
+  const thumbs = photos.map((ph, ti) =>
+    `<img class="gal-thumb" data-galthumb="${i}:${ti}" src="${esc(ph.image)}" alt="${esc(ph.title || 'Photo')}">`).join('');
+  return `<div class="piece">
+    ${photos.length
+      ? `<div class="gal-grid">${thumbs}</div>`
+      : `<div class="empty">Add photos to start your slideshow.</div>`}
+    <div class="gal-tools">
+      <button data-galadd="${i}">＋ Add photos</button>
+      <input type="file" accept="image/*" multiple hidden data-galfile="${i}">
+      ${photos.length > 1 ? `<button data-galshow="${i}">▶ Slideshow</button>` : ''}
+    </div>
+  </div>`;
+}
+function wireGallery(app, p, i) {
+  const photos = p.items || [];
+  const addBtn = document.querySelector(`#focusbody [data-galadd="${i}"]`);
+  const fileInp = document.querySelector(`#focusbody [data-galfile="${i}"]`);
+  if (addBtn && fileInp) {
+    addBtn.onclick = () => fileInp.click();
+    fileInp.onchange = async () => {
+      const files = [...(fileInp.files || [])];
+      if (!files.length) return;
+      try {
+        for (const f of files) {
+          const d = await downscale(f);
+          call({ op: 'gallery_add_photo', id: app.id, piece: i,
+            name: (f.name || 'Photo').replace(/\.[^.]+$/, ''), dataUrl: d.dataUrl, w: d.w, h: d.h });
+        }
+        refreshData(); renderPiecesFocus(app.id);
+      } catch (e) { showError('Could not read that photo. Try another.'); }
+    };
+  }
+  document.querySelectorAll(`#focusbody [data-galthumb^="${i}:"]`).forEach(t => {
+    t.onclick = () => openViewer(photos, +t.dataset.galthumb.split(':')[1], false);
+  });
+  const showBtn = document.querySelector(`#focusbody [data-galshow="${i}"]`);
+  if (showBtn) showBtn.onclick = () => openViewer(photos, 0, true);
+}
+
 function renderPiecesFocus(id) {
   const res = call({ op: 'get', id });
   if (!res || !res.app) { refresh(); return; }
   const app = res.app;
   let html = `<h1 style="font-size:30px;margin:0 0 8px">${esc(app.name)}</h1>
-    <div class="saved">Saved · version ${app.rev}</div>`;
+    <div class="saved">Saved · version ${app.rev}</div>
+    <button class="rebuildbtn" data-rebuild="${app.id}">↻ Rebuild with the newest composer</button>`;
   (app.pieces || []).forEach((p, i) => {
     html += p.kind === 'notes' ? notesPieceHTML(p, i)
       : p.kind === 'voxel' ? voxelPieceHTML(p, i)
       : p.kind === 'collection' ? collectionPieceHTML(p, i)
+      : p.kind === 'game' ? gamePieceHTML(p, i)
+      : p.kind === 'gallery' ? galleryPieceHTML(p, i)
       : unknownPieceHTML(p);
   });
   $('focusbody').innerHTML = html;
   wirePiecesFocus(app);
-  (app.pieces || []).forEach((p, i) => { if (p.kind === 'voxel') wireVoxel(app, p, i); });
+  (app.pieces || []).forEach((p, i) => {
+    if (p.kind === 'voxel') wireVoxel(app, p, i);
+    if (p.kind === 'game') wireGame(app, p, i);
+    if (p.kind === 'gallery') wireGallery(app, p, i);
+  });
 }
 
 function wirePiecesFocus(app) {
+  // "Rebuild with the newest composer": recompose this page in place.
+  $('focusbody').querySelectorAll('[data-rebuild]').forEach(btn => {
+    btn.onclick = () => {
+      stopLiveGames(); closeViewer();
+      const r = call({ op: 'recompose', id: btn.dataset.rebuild });
+      if (r) {
+        refreshData(); renderPiecesFocus(app.id);
+        if (r.message) showNotice(r.message);
+      }
+    };
+  });
   // Choice chips: single-select, writes into the hidden input.
   $('focusbody').querySelectorAll('.choicechip').forEach(ch => {
     ch.onclick = () => {
@@ -727,7 +1001,18 @@ async function boot() {
   }
   $('boot').style.display = 'none';
   $('app').style.display = 'block';
+  // Auto-migrate: stale, pristine pages get rebuilt with the newer
+  // composer. One honest banner if anything changed; never blocks boot.
+  try {
+    const mig = callQuiet({ op: 'auto_migrate' });
+    if (mig && mig.count > 0) {
+      showNotice(`I rebuilt ${mig.count} of your pages with the newer composer — everything you had is still there.`);
+    }
+  } catch (e) {}
   refresh();
+  // Self-update watch: a stale tab announces the newer build.
+  checkForUpdate();
+  setInterval(checkForUpdate, 5 * 60 * 1000);
 }
 boot();
 </script>
