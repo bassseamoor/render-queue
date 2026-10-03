@@ -786,6 +786,8 @@ function createPlanetDemo(canvas,opts){
     uFogColor:{value:new THREE.Color(P().sky?P().sky[1]:'#0a0a12')},
     uFogRange:{value:new THREE.Vector2(400,60000)},
     uColA:{value:new THREE.Color('#ffffff')},uColB:{value:new THREE.Color('#ffffff')},
+    uBarkA:{value:new THREE.Color('#4a3520')},uBarkB:{value:new THREE.Color('#5a4530')},
+    uSnow:{value:0},
     uBend:{value:0}, // soft-plant player-proximity bend
     uOrigin:{value:new THREE.Vector2(0,0)},
     uRefDir:{value:new THREE.Vector3(0,1,0)},
@@ -834,14 +836,16 @@ function createPlanetDemo(canvas,opts){
       ${LDV}}
   `;
   const PROP_FRAG=LDFP+`
-    uniform vec3 uColA,uColB,uSun,uFogColor;uniform vec2 uFogRange;
+    uniform vec3 uColA,uColB,uBarkA,uBarkB,uSun,uFogColor;uniform vec2 uFogRange;uniform float uSnow;
     varying vec3 vN;varying float vDist;varying vec3 vCol;varying float vLand;
     void main(){
       ${LDF}
       if(vLand<0.5)discard;
-      vec3 base=mix(uColA,uColB,vCol.r);
-      base=mix(base,uColB*0.55,vCol.g);       /* g: shade parts (bark/soil) */
+      vec3 leafCol=mix(uColA,uColB,vCol.r);
+      vec3 barkCol=mix(uBarkA,uBarkB,vCol.r);
+      vec3 base=mix(leafCol,barkCol,vCol.g);  /* g=1: bark, g=0: leaf */
       vec3 Nn=normalize(vN);
+      base=mix(base,vec3(0.92,0.94,0.97),uSnow*clamp(Nn.y,0.0,1.0)*0.85);
       float ndl=max(dot(Nn,normalize(uSun)),0.0);
       float upFill=Nn.y*0.5+0.5;
       vec3 lit=base*(0.62+0.75*ndl+0.25*upFill);
@@ -890,17 +894,27 @@ function createPlanetDemo(canvas,opts){
     return geo;
   }
   /* --- geometry builders (procedural, seeded) --- */
-  function trunkGeo(){
-    const g=new THREE.CylinderGeometry(0.35,0.55,3.6,6);g.translate(0,1.8,0);
-    return tinted(g,0.5,1,0);
+  function coniferTreeGeo(){
+    // layered pine: short trunk + 3 stacked cones (wide, not obelisk)
+    const trunk=new THREE.CylinderGeometry(0.28,0.42,1.6,6);trunk.translate(0,0.8,0);
+    tinted(trunk,0.5,1,0);
+    let g=trunk;
+    const layers=[[2.6,3.2,2.2],[2.0,2.6,3.6],[1.3,2.0,4.8]];
+    for(const [r,h,y] of layers){
+      const c=new THREE.ConeGeometry(r,h,7);c.translate(0,y,0);
+      tinted(c,0.15,0,0);
+      g=merge2(g,c);
+    }
+    return g;
   }
-  function coniferGeo(){
-    const g=new THREE.ConeGeometry(2.8,7.8,8);g.translate(0,6.3,0);
-    return tinted(g,0.15,0,0);
-  }
-  function broadleafGeo(){
-    const g=jitterGeo(new THREE.IcosahedronGeometry(3.4,1),1.0,seed+9);g.translate(0,6.0,0);
-    return tinted(g,0.35,0,0);
+  function broadTreeGeo(){
+    // oak-like: short trunk + LARGE canopy (visible from distance)
+    const trunk=new THREE.CylinderGeometry(0.32,0.48,1.8,6);trunk.translate(0,0.9,0);
+    tinted(trunk,0.5,1,0);
+    const can=jitterGeo(new THREE.IcosahedronGeometry(3.8,1),1.0,seed+9);
+    can.scale(1,0.8,1);can.translate(0,3.4,0);
+    tinted(can,0.35,0,0);
+    return merge2(trunk,can);
   }
   function rockGeo(){
     const g=jitterGeo(new THREE.IcosahedronGeometry(1.5,1),0.55,seed+21);
@@ -969,10 +983,8 @@ function createPlanetDemo(canvas,opts){
 
   /* --- the living layer --- */
   const props={
-    trunkA:propMesh(trunkGeo(),'#4a3520','#5a4530',{count:170}),
-    conifer:propMesh(coniferGeo(),'#2e7a34','#3f8a3a',{count:110}),
-    trunkB:propMesh(trunkGeo(),'#4a3520','#5a4530',{count:120}),
-    broad:propMesh(broadleafGeo(),'#2e7a34','#4f9a3a',{count:90}),
+    conifer:propMesh(coniferTreeGeo(),'#2e7a34','#3f8a3a',{count:140}),
+    broad:propMesh(broadTreeGeo(),'#2e7a34','#4f9a3a',{count:110}),
     rock:propMesh(rockGeo(),'#6e6e72','#8e8e92',{count:130,wind:0}),
     grass:propMesh(grassGeo(),'#4a7a2e','#7a9a3a',{count:2600,wind:0.5}),
     flower:propMesh(flowerGeo(),'#e84a7a','#f0d040',{count:260,wind:0.3}),
@@ -1005,10 +1017,8 @@ function createPlanetDemo(canvas,opts){
     const key=Math.floor(player.dir.x*R/40)+':'+Math.floor(player.dir.y*R/40)+':'+Math.floor(player.dir.z*R/40);
     if(key===lastPropKey)return;lastPropKey=key;
     const s=seed;
-    scatter(props.trunkA,1,2,200,170,s+101,8);
-    scatter(props.conifer,1,2,200,110,s+102,8);
-    scatter(props.trunkB,3,4,200,120,s+103,8);
-    scatter(props.broad,3,4,200,90,s+104,8);
+    scatter(props.conifer,1,2,200,140,s+101,8);
+    scatter(props.broad,3,4,200,110,s+103,8);
     scatter(props.rock,5,6,320,130,s+105,8);
     scatter(props.grass,7,8,70,2600,s+106,2);
     scatter(props.flower,9,10,90,260,s+107,4);
@@ -1020,8 +1030,10 @@ function createPlanetDemo(canvas,opts){
     props.conifer.userData.uni.uColB.value.set(t.leaf[1]);
     props.broad.userData.uni.uColA.value.set(t.leaf[0]);
     props.broad.userData.uni.uColB.value.set(t.leaf[1]);
-    props.trunkA.userData.uni.uColA.value.set(t.bark);
-    props.trunkB.userData.uni.uColA.value.set(t.bark);
+    for(const k of ['conifer','broad']){
+      props[k].userData.uni.uBarkA.value.set(t.bark);
+      props[k].userData.uni.uBarkB.value.set(t.bark);
+    }
     props.rock.userData.uni.uColA.value.set(t.rock[0]);
     props.rock.userData.uni.uColB.value.set(t.rock[1]);
     props.grass.userData.uni.uColA.value.set(t.grass[0]);
@@ -1030,9 +1042,11 @@ function createPlanetDemo(canvas,opts){
     props.soft.userData.uni.uColB.value.set(t.leaf[1]);
     props.flower.userData.uni.uColA.value.set(t.flower[0]);
     props.flower.userData.uni.uColB.value.set(t.flower[1]);
+    const snowAmt=(type==='ICE')?1.0:(type==='TERRAN'||type==='BARREN')?0.25:0.0;
     for(const m of propList){
       m.userData.uni.uSea.value=P().sea;m.userData.uni.uMode.value=P().mode;
       m.userData.uni.uFogColor.value.set(P().sky?P().sky[1]:'#0a0a12');
+      if(m.userData.uni.uSnow)m.userData.uni.uSnow.value=snowAmt;
     }
     lastPropKey='';buildProps();
   }
