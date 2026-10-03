@@ -65,7 +65,7 @@ const t="160",e={LEFT:0,MIDDLE:1,RIGHT:2,ROTATE:0,DOLLY:1,PAN:2},n={ROTATE:0,PAN
 <div id="hero">
   <canvas id="heroCanvas"></canvas>
   <div id="heroHint">drag · scroll to zoom · double-tap a spot to descend</div>
-  <button id="dropInBtn">▼ DROP IN</button>
+  <button id="dropInBtn">◉ FIND SPOT</button>
   <button id="orbitBtn" style="display:none">▲ RETURN TO ORBIT</button>
   <div id="typeChips"></div>
   <div id="cloudCut"></div>
@@ -1126,36 +1126,27 @@ function createPlanetDemo(canvas,opts){
     backBtn.style.display=orbit?'none':'block';
     if(modeBtn)modeBtn.style.display=mode==='ground'?'block':'none';
   }
+  let faceTarget=null;
   function diveTo(dir){
     if(mode!=='orbit')return;
+    // no more auto-flight: turn to face a beautiful spot, you pinch the dive
     const target=dir?nudgeToLand(dir):nudgeToLand(_v1.copy(camera.position).normalize());
-    player.dir.copy(target);
-    anchorFrame(target);
-    placeGround();buildProps();
-    groundGroup.visible=true;
-    descent.t=0;descent.active=true;descent.up=false;
-    descent.fromDir.copy(camera.position).normalize();
-    descent.toDir.copy(target);
-    descent.fromAlt=camera.position.length()-R;
-    mode='descent';setModeUI();
+    faceTarget={th:Math.atan2(target.x,target.z),ph:Math.acos(THREE.MathUtils.clamp(target.y,-1,1))};
   }
   function returnToOrbit(){
     if(mode!=='ground')return;
-    descent.t=0;descent.active=true;descent.up=true;
-    descent.fromDir.copy(player.dir);
-    descent.toDir.copy(orbitHome.pos).normalize();
-    descent.fromAlt=EYE;
-    mode='return';setModeUI();
+    orbit.theta=Math.atan2(player.dir.x,player.dir.z);
+    orbit.phi=Math.acos(THREE.MathUtils.clamp(player.dir.y,-1,1));
+    orbit.radius=R+80000;
+    mode='orbit';setModeUI();
   }
   if(dropBtn)dropBtn.addEventListener('click',()=>diveTo(null));
   if(backBtn)backBtn.addEventListener('click',()=>{
-    if(mode==='descent'){ // abort back to orbit
-      descent.t=0;descent.active=true;descent.up=true;
-      descent.fromDir.copy(camera.position).normalize();
-      descent.toDir.copy(orbitHome.pos).normalize();
-      descent.fromAlt=camera.position.length()-R;
-      mode='return';setModeUI();
-    }else returnToOrbit();
+    if(mode!=='ground')return;
+    orbit.theta=Math.atan2(player.dir.x,player.dir.z);
+    orbit.phi=Math.acos(THREE.MathUtils.clamp(player.dir.y,-1,1));
+    orbit.radius=R+80000;
+    mode='orbit';setModeUI();
   });
   if(modeBtn)modeBtn.addEventListener('click',()=>{
     brushMode=!brushMode;
@@ -1164,7 +1155,7 @@ function createPlanetDemo(canvas,opts){
 
   /* ----- input ----- */
   const zoom=f=>{if(mode!=='orbit')return;
-    orbit.radius=THREE.MathUtils.clamp(orbit.radius*f,R*1.35,R*4);};
+    orbit.radius=THREE.MathUtils.clamp(orbit.radius*f,R+1.7,R*10);};
   canvas.addEventListener('pointerdown',e=>{
     try{canvas.setPointerCapture(e.pointerId);}catch(_){}
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -1173,6 +1164,23 @@ function createPlanetDemo(canvas,opts){
     else if(pointers.size===2){const p=[...pointers.values()];
       pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);dragging=false;}
   });
+  function groundPinch(){
+    const p=[...pointers.values()];
+    const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+    if(pinchD&&d>0){
+      const ratio=d/pinchD;
+      if(ratio>1.02){ // pinch out: ascend
+        orbit.radius=Math.min(R*10,orbit.radius*Math.pow(ratio,1.5));
+        if(orbit.radius>R+30){
+          // lift off: resume orbit from above this spot
+          orbit.theta=Math.atan2(player.dir.x,player.dir.z);
+          orbit.phi=Math.acos(THREE.MathUtils.clamp(player.dir.y,-1,1));
+          mode='orbit';setModeUI();
+        }
+      }
+    }
+    pinchD=d;
+  }
   const _plane=new THREE.Plane();
   function brushAt(cx,cy){
     const r=canvas.getBoundingClientRect();
@@ -1204,6 +1212,7 @@ function createPlanetDemo(canvas,opts){
     const dx=e.clientX-pt.x,dy=e.clientY-pt.y;
     pt.x=e.clientX;pt.y=e.clientY;
     if(mode==='ground'){
+      if(pointers.size===2){groundPinch();return;}
       if(brushMode){if(pointers.size===1)brushAt(e.clientX,e.clientY);}
       else if(pointers.size===1){
         const r=canvas.getBoundingClientRect();
@@ -1231,7 +1240,7 @@ function createPlanetDemo(canvas,opts){
     ndc.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
     ray.setFromCamera(ndc,camera);
     const hit=ray.intersectObject(planetMesh)[0];
-    if(hit)diveTo(_v1.copy(hit.point).normalize().clone());
+    if(hit)diveTo(hit.point.clone().normalize());
   });
 
   function setType(t){
@@ -1281,39 +1290,34 @@ function createPlanetDemo(canvas,opts){
 
     if(mode==='orbit'){
       if(!dragging&&!pointers.size)orbit.theta+=dt*0.03;
-      applyOrbit();
-      camera.up.set(0,1,0);
-      camera.lookAt(0,0,0);
-    }else if(mode==='descent'||mode==='return'){
-      // parametric continuous flight — same camera, same world, no cut
-      descent.t+=rawDt/descent.dur;
-      const t=Math.min(1,descent.t),e2=easeIO(t);
-      const targetAlt=descent.up?ORBIT_ALT:EYE;
-      const alt=Math.exp(THREE.MathUtils.lerp(Math.log(Math.max(1,descent.fromAlt)),Math.log(targetAlt),e2));
-      const dir=slerpDir(descent.fromDir,descent.toDir,easeIO(Math.min(1,t*1.12)),_v1);
-      camera.position.copy(dir).multiplyScalar(R+alt);
-      camera.up.copy(dir);
-      if(!descent.up){
-        // look: planet -> surface point -> horizon ahead
-        const surf=_v2.copy(descent.toDir).multiplyScalar(R);
-        const lookEarly=_v3.copy(surf).lerp(new THREE.Vector3(0,0,0),1-easeIO(Math.min(1,t*3)));
-        const f=frameOf(descent.toDir);
-        const ahead=_v1.clone().copy(camera.position)
-          .addScaledVector(f.e,Math.sin(player.yaw)*120)
-          .addScaledVector(f.n,Math.cos(player.yaw)*120)
-          .addScaledVector(f.u,4);
-        camera.lookAt(_v3.copy(lookEarly).lerp(ahead,easeIO(clampN((t-0.72)/0.28,0,1))));
-      }else{
-        camera.lookAt(0,0,0);
+      if(faceTarget){
+        const k=Math.min(1,dt*2.5);
+        let dth=faceTarget.th-orbit.theta;
+        while(dth>Math.PI)dth-=Math.PI*2;while(dth<-Math.PI)dth+=Math.PI*2;
+        orbit.theta+=dth*k;orbit.phi+=(faceTarget.ph-orbit.phi)*k;
+        if(Math.abs(dth)<0.01&&Math.abs(faceTarget.ph-orbit.phi)<0.01)faceTarget=null;
       }
-      camera.fov=40+15*Math.sin(t*Math.PI);camera.updateProjectionMatrix();
-      if(t>=1){
-        if(descent.up){mode='orbit';camera.up.set(0,1,0);camera.fov=40;camera.updateProjectionMatrix();setModeUI();}
-        else{
-          mode='ground';player.dir.copy(descent.toDir);
-          player.yaw=0;player.pitch=-0.04;
-          placeGround();buildProps();setModeUI();
-        }
+      applyOrbit();
+      const alt=orbit.radius-R;
+      // look at the surface point under the camera (== center when far)
+      _v1.copy(camera.position).normalize();
+      // ground follows when close enough to matter
+      if(orbit.radius<R+60000){
+        if(!groundGroup.visible){groundGroup.visible=true;}
+        player.dir.copy(_v1);
+        placeGround();buildProps();
+      }else if(groundGroup.visible){groundGroup.visible=false;}
+      // camera up blends from world-up to surface normal
+      const upK=THREE.MathUtils.smoothstep(alt,8000,120000);
+      camera.up.set(0,1,0).lerp(_v1,1-upK).normalize();
+      camera.lookAt(_v2.copy(_v1).multiplyScalar(R));
+      // touchdown: hand over to walking when the lens reaches the dirt
+      if(orbit.radius<=R+4){
+        mode='ground';player.dir.copy(_v1);
+        orbit.radius=R+1.7;
+        player.yaw=orbit.theta;player.pitch=-0.05;
+        anchorFrame(player.dir);
+        placeGround();buildProps();setModeUI();
       }
     }else if(mode==='ground'){
       const f=frameOf(player.dir);
@@ -1354,7 +1358,7 @@ function createPlanetDemo(canvas,opts){
       return{ic:g.instanceCount,ia:g.attributes.aDir.count,
         pos:propList[0].position.toArray(),vis:propList[0].visible,
         mat:!!propList[0].material};}};
-  window.__demo={player,mode:()=>mode,dive:()=>diveTo(null),orbit:()=>{mode='ground';returnToOrbit();},
+  window.__demo={player,mode:()=>mode,dive:()=>diveTo(null),orbit:()=>returnToOrbit(),
     warp(d){player.dir.copy(d).normalize();placeGround();buildProps();},
     dab(d){const sp=d.clone().normalize();
       edits.push({dx:sp.x,dy:sp.y,dz:sp.z,r:14/R,d:4});
