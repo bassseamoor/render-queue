@@ -8,7 +8,7 @@
   html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#040409;
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,Helvetica,Arial,sans-serif;
     -webkit-user-select:none;user-select:none;color:#e8e4da;}
-  #c{position:fixed;inset:0;display:block;}
+  #c{position:fixed;inset:0;display:block;touch-action:none;}
   /* nebula backdrop */
   #neb{position:fixed;inset:0;pointer-events:none;z-index:0;
     background:
@@ -157,6 +157,26 @@
   /* transition veil */
   #veil{position:fixed;inset:0;z-index:15;background:#040409;opacity:0;pointer-events:none;
     transition:opacity .45s ease;}
+
+#dropBtn{position:fixed;left:16px;bottom:176px;z-index:21;height:46px;padding:0 18px;
+  background:rgba(10,14,24,.85);border:1px solid rgba(125,249,255,.4);color:#7df9ff;
+  border-radius:23px;font-size:13px;letter-spacing:2px;cursor:pointer;display:none;}
+body.surfacing #labels,body.surfacing #hud,body.surfacing #crumb,body.surfacing #scale,
+body.surfacing #levelTitle,body.surfacing #chatBtn,body.surfacing #listBtn,
+body.surfacing #devBtn,body.surfacing #dropBtn,body.surfacing #insp,
+body.surfacing #drawer,body.surfacing #chatPanel,body.surfacing #devPanel,
+body.surfacing #hint{display:none!important;}
+#surfaceHud{display:none;}
+body.surfacing #surfaceHud{display:block;}
+#leaveBtn{position:fixed;top:14px;left:14px;z-index:26;height:44px;padding:0 16px;
+  background:rgba(10,14,24,.85);border:1px solid rgba(125,249,255,.4);color:#7df9ff;
+  border-radius:22px;font-size:13px;letter-spacing:1px;cursor:pointer;}
+#modeBtn{position:fixed;top:14px;right:14px;z-index:26;height:44px;padding:0 16px;
+  background:rgba(10,14,24,.85);border:1px solid rgba(255,210,125,.5);color:#ffd27d;
+  border-radius:22px;font-size:13px;letter-spacing:1px;cursor:pointer;}
+#surfaceHint{position:fixed;bottom:26px;left:0;right:0;z-index:26;text-align:center;
+  color:rgba(200,220,255,.75);font-size:13px;letter-spacing:1px;pointer-events:none;
+  text-shadow:0 1px 4px #000;}
 </style>
 </head>
 <body>
@@ -179,6 +199,7 @@
   <div id="drawerTree"></div>
 </div>
 <button id="chatBtn">💬</button>
+<button id="dropBtn">▼ DROP IN</button>
 <div id="chatPanel">
   <div id="chatHead"><span id="chatTitle">CHAT</span><button id="chatClose">✕</button></div>
   <div id="chatMsgs"></div>
@@ -197,6 +218,11 @@
 </div>
 <div id="hint">click to descend &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; scroll to zoom</div>
 <div id="veil"></div>
+<div id="surfaceHud">
+  <button id="leaveBtn">▲ LEAVE</button>
+  <button id="modeBtn">🚶 WALK</button>
+  <div id="surfaceHint"></div>
+</div>
 
 <script id="three-src" type="text/plain">/**
  * @license
@@ -519,7 +545,7 @@ function applyOrbit(){
 }
 (function(){
   const el=renderer.domElement;let drag=null;
-  el.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,b:e.button};el.setPointerCapture(e.pointerId);});
+  el.addEventListener('pointerdown',e=>{if(surfaceActive)return;drag={x:e.clientX,y:e.clientY,b:e.button};el.setPointerCapture(e.pointerId);});
   el.addEventListener('pointermove',e=>{
     if(!drag||!controls.enabled)return;
     const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;
@@ -562,7 +588,7 @@ let level=0; // 0 universe, 1 sector, 2 system, 3 planet, 4 personal
 let curSector=null,curSystem=null,curPlanet=null;
 let worldGroup=null, labelObjs=[];
 let camTween=null,planetSpin=null;
-let devMode=false, selected=null, portalObj=null;
+let devMode=false, selected=null, portalObj=null, surfaceActive=false;
 
 /* ================= LABELS ================= */
 const labelLayer=document.getElementById('labels');
@@ -622,6 +648,7 @@ function renderCrumb(){
     goLevel(+b.dataset.l);
   }));
   updateChatBtn();
+  updateDropBtn();
 }
 
 /* ================= LEVEL BUILDERS ================= */
@@ -872,9 +899,9 @@ function descend(nav){
 /* raycast clicks */
 const ray=new THREE.Raycaster(),mouse=new THREE.Vector2();
 let downPos=null;
-renderer.domElement.addEventListener('pointerdown',e=>{downPos=[e.clientX,e.clientY];});
+renderer.domElement.addEventListener('pointerdown',e=>{if(surfaceActive)return;downPos=[e.clientX,e.clientY];});
 renderer.domElement.addEventListener('pointerup',e=>{
-  if(!downPos)return;
+  if(surfaceActive||!downPos)return;
   const dx=e.clientX-downPos[0],dy=e.clientY-downPos[1];downPos=null;
   if(dx*dx+dy*dy>25)return; // was a drag
   mouse.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);
@@ -1132,11 +1159,261 @@ document.getElementById('devJump').addEventListener('keydown',e=>{
   }else alert('jump to levels 2/3 needs a system context — pick one from the list');
 });
 
+/* ================= SURFACE MODE (drop-in) =================
+   Walkable procedural terrain for one planet — the "one brush" proof.
+   The terrain is a RECIPE, never stored: base heightmap from the planet's
+   seed + the stored op list replayed in order. Same seed + same ops =
+   byte-identical terrain, every time.
+   Persistence: localStorage 'moor.terrain.<planetId>' holds ONLY the op
+   list [{x,z,radius,strength}]. Every stroke end also appends
+   {t,by,type:'terrain-edit',target,payload:{ops}} via MoorWorld.logEvent.
+   All world reads go through the MoorWorld query API. No parallel state. */
+const surface=(()=>{
+  const SEG=96, SIZE=240, MAXH=14, EYE=2.4;
+  const BRUSH_R=6, BRUSH_S=0.6, DAB_MIN=1.8, WALK_SPEED=16;
+
+  let planetId=null, mesh=null, cursor=null, heights=null;
+  let mode='walk';
+  const player={x:0,z:28,yaw:0,pitch:-0.08};
+  const pointers=new Map();
+  let stroke=[], lastDab=null;
+  const rayS=new THREE.Raycaster(), mouseS=new THREE.Vector2();
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+  const key=pid=>'moor.terrain.'+pid;
+  const loadOps=pid=>{try{return JSON.parse(localStorage.getItem(key(pid)))||[]}catch(e){return[]}};
+  const saveOps=(pid,ops)=>{try{localStorage.setItem(key(pid),JSON.stringify(ops))}catch(e){}};
+
+  function buildHeights(pid){
+    const seed=MoorWorld.hashStr(pid);
+    const n1=makeNoise(seed,24,24),n2=makeNoise(seed+7,48,48),n3=makeNoise(seed+13,96,96);
+    const N=SEG+1,h=new Float32Array(N*N);
+    for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+      const u=i/SEG,v=j/SEG;
+      h[j*N+i]=(n1(u,v)*0.55+n2(u,v)*0.3+n3(u,v)*0.15)*MAXH;
+    }
+    return h;
+  }
+
+  function applyOp(h,op){
+    const N=SEG+1,step=SIZE/SEG,half=SIZE/2,r=op.radius;
+    const i0=Math.max(0,Math.floor((op.x-r+half)/step)),i1=Math.min(SEG,Math.ceil((op.x+r+half)/step));
+    const j0=Math.max(0,Math.floor((op.z-r+half)/step)),j1=Math.min(SEG,Math.ceil((op.z+r+half)/step));
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){
+      const x=-half+i*step,z=-half+j*step;
+      const dx=x-op.x,dz=z-op.z,d=Math.sqrt(dx*dx+dz*dz);
+      if(d<r)h[j*N+i]+=op.strength*(0.5*(1+Math.cos(Math.PI*d/r)));
+    }
+  }
+
+  function regionBounds(op){
+    const N=SEG+1,step=SIZE/SEG,half=SIZE/2,r=op.radius;
+    return [
+      Math.max(0,Math.floor((op.x-r+half)/step)),Math.min(SEG,Math.ceil((op.x+r+half)/step)),
+      Math.max(0,Math.floor((op.z-r+half)/step)),Math.min(SEG,Math.ceil((op.z+r+half)/step)),
+    ];
+  }
+
+  function refreshRegion(op){
+    const pos=mesh.geometry.attributes.position,N=SEG+1;
+    const [i0,i1,j0,j1]=regionBounds(op);
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)pos.setY(j*N+i,heights[j*N+i]);
+    pos.needsUpdate=true;
+  }
+
+  function heightAt(x,z){
+    const N=SEG+1,half=SIZE/2,step=SIZE/SEG;
+    const fx=clamp((x+half)/step,0,SEG-0.001),fz=clamp((z+half)/step,0,SEG-0.001);
+    const i=Math.floor(fx),j=Math.floor(fz),tx=fx-i,tz=fz-j;
+    const a=heights[j*N+i],b=heights[j*N+i+1],c=heights[(j+1)*N+i],d=heights[(j+1)*N+i+1];
+    return (a*(1-tx)+b*tx)*(1-tz)+(c*(1-tx)+d*tx)*tz;
+  }
+
+  function paintColors(){
+    const T=MoorWorld.planetType(MoorWorld.getPlanet(planetId));
+    const c1=hexRGB(T.c1),c2=hexRGB(T.c2);
+    const col=mesh.geometry.attributes.color,N=SEG+1;
+    let mn=1e9,mx=-1e9;
+    for(let k=0;k<N*N;k++){const h=heights[k];if(h<mn)mn=h;if(h>mx)mx=h;}
+    const span=Math.max(0.001,mx-mn);
+    for(let k=0;k<N*N;k++){
+      const t=(heights[k]-mn)/span;
+      col.setXYZ(k,(c1[0]+(c2[0]-c1[0])*t)/255,(c1[1]+(c2[1]-c1[1])*t)/255,(c1[2]+(c2[2]-c1[2])*t)/255);
+    }
+    col.needsUpdate=true;
+  }
+
+  function buildMesh(){
+    const N=SEG+1,half=SIZE/2,step=SIZE/SEG;
+    const geo=new THREE.BufferGeometry();
+    const posArr=new Float32Array(N*N*3),colArr=new Float32Array(N*N*3);
+    for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+      const k=j*N+i;
+      posArr[k*3]=-half+i*step;posArr[k*3+1]=heights[k];posArr[k*3+2]=-half+j*step;
+    }
+    const idx=[];
+    for(let j=0;j<SEG;j++)for(let i=0;i<SEG;i++){
+      const a=j*N+i,b=a+1,c=a+N,d=c+1;
+      idx.push(a,c,b,b,c,d);
+    }
+    geo.setIndex(idx);
+    geo.setAttribute('position',new THREE.BufferAttribute(posArr,3));
+    geo.setAttribute('color',new THREE.BufferAttribute(colArr,3));
+    geo.computeVertexNormals();
+    mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95,metalness:0.02}));
+    worldGroup.add(mesh);
+    paintColors();
+    cursor=new THREE.Mesh(new THREE.RingGeometry(BRUSH_R-0.8,BRUSH_R,40),
+      new THREE.MeshBasicMaterial({color:0x7df9ff,transparent:true,opacity:0.7,side:THREE.DoubleSide}));
+    cursor.rotation.x=-Math.PI/2;cursor.visible=false;
+    worldGroup.add(cursor);
+  }
+
+  function paintAt(cx,cy){
+    if(!mesh)return;
+    mouseS.set(cx/innerWidth*2-1,-(cy/innerHeight)*2+1);
+    rayS.setFromCamera(mouseS,camera);
+    const hits=rayS.intersectObject(mesh);
+    if(!hits.length)return;
+    const p=hits[0].point;
+    if(lastDab){const dx=p.x-lastDab.x,dz=p.z-lastDab.z;if(dx*dx+dz*dz<DAB_MIN*DAB_MIN)return;}
+    const op={x:+p.x.toFixed(2),z:+p.z.toFixed(2),radius:BRUSH_R,strength:BRUSH_S};
+    applyOp(heights,op);
+    refreshRegion(op);
+    stroke.push(op);lastDab={x:p.x,z:p.z};
+    cursor.visible=true;
+    cursor.position.set(p.x,heightAt(p.x,p.z)+0.15,p.z);
+  }
+
+  function persistStroke(){
+    const ops=loadOps(planetId).concat(stroke);
+    saveOps(planetId,ops);
+    MoorWorld.logEvent('seabass','terrain-edit',planetId,{ops:stroke});
+    mesh.geometry.computeVertexNormals();
+    paintColors();
+  }
+
+  function onDown(e){
+    if(!surfaceActive)return;
+    try{e.target.setPointerCapture(e.pointerId);}catch(err){}
+    pointers.set(e.pointerId,{x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY,
+      half:e.clientX<innerWidth/2?'L':'R'});
+    if(mode==='brush'){stroke=[];lastDab=null;paintAt(e.clientX,e.clientY);}
+  }
+  function onMove(e){
+    if(!surfaceActive)return;
+    const pt=pointers.get(e.pointerId);if(!pt)return;
+    const dx=e.clientX-pt.x,dy=e.clientY-pt.y;
+    pt.x=e.clientX;pt.y=e.clientY;
+    if(mode==='brush')paintAt(e.clientX,e.clientY);
+    else if(pt.half==='R'){player.yaw-=dx*0.0035;player.pitch=clamp(player.pitch-dy*0.0035,-1.25,1.25);}
+  }
+  function onUp(e){
+    if(!surfaceActive)return;
+    pointers.delete(e.pointerId);
+    if(mode==='brush'&&stroke.length&&mesh)persistStroke();
+    stroke=[];lastDab=null;
+    if(cursor)cursor.visible=false;
+  }
+  renderer.domElement.addEventListener('pointerdown',onDown);
+  renderer.domElement.addEventListener('pointermove',onMove);
+  renderer.domElement.addEventListener('pointerup',onUp);
+  renderer.domElement.addEventListener('pointercancel',onUp);
+
+  function updateCamera(){
+    camera.position.set(player.x,heightAt(player.x,player.z)+EYE,player.z);
+    camera.quaternion.setFromEuler(new THREE.Euler(player.pitch,player.yaw,0,'YXZ'));
+  }
+
+  function tick(dt){
+    let mx=0,my=0;
+    for(const pt of pointers.values()){
+      if(mode!=='walk'||pt.half!=='L')continue;
+      mx+=pt.x-pt.x0;my+=pt.y-pt.y0;
+    }
+    if(mx||my){
+      const len=Math.hypot(mx,my),sp=WALK_SPEED*Math.min(1,len/90)*dt;
+      const nx=mx/len,ny=my/len;
+      const fx=-Math.sin(player.yaw),fz=-Math.cos(player.yaw);
+      const rx=Math.cos(player.yaw),rz=-Math.sin(player.yaw);
+      player.x+=(fx*(-ny)+rx*nx)*sp;
+      player.z+=(fz*(-ny)+rz*nx)*sp;
+      const b=SIZE/2-4;
+      player.x=clamp(player.x,-b,b);player.z=clamp(player.z,-b,b);
+    }
+    updateCamera();
+    renderer.render(scene,camera);
+  }
+
+  function setMode(m){
+    mode=m;
+    document.getElementById('modeBtn').textContent=m==='brush'?'⛰ BRUSH':'🚶 WALK';
+    document.getElementById('surfaceHint').textContent=m==='brush'
+      ?'drag on the ground to raise it'
+      :'left drag walks · right drag looks';
+    if(cursor)cursor.visible=false;
+    pointers.clear();stroke=[];lastDab=null;
+  }
+
+  function enter(p){
+    planetId=p.id;
+    closeDrawer();
+    document.getElementById('chatPanel').classList.remove('open');
+    setDev(false);
+    clearWorld();
+    document.body.classList.add('surfacing');
+    heights=buildHeights(planetId);
+    for(const op of loadOps(planetId))applyOp(heights,op);
+    buildMesh();
+    player.x=0;player.z=28;player.yaw=0;player.pitch=-0.08;
+    pointers.clear();stroke=[];lastDab=null;
+    setMode('walk');
+    controls.enabled=false;
+    surfaceActive=true;
+    updateCamera();
+    renderer.render(scene,camera);
+  }
+
+  function leave(){
+    surfaceActive=false;
+    controls.enabled=true;
+    document.body.classList.remove('surfacing');
+    const p=MoorWorld.getPlanet(planetId);
+    planetId=null;mesh=null;cursor=null;heights=null;
+    pointers.clear();stroke=[];lastDab=null;
+    buildPlanet(p);
+  }
+
+  document.getElementById('modeBtn').addEventListener('click',()=>setMode(mode==='brush'?'walk':'brush'));
+  document.getElementById('leaveBtn').addEventListener('click',leave);
+  document.getElementById('dropBtn').addEventListener('click',()=>{
+    if(level===3&&curPlanet&&!surfaceActive)enter(curPlanet);
+  });
+
+  const api={enter,leave,tick,
+    get active(){return surfaceActive},
+    mode:()=>mode,planet:()=>planetId,
+    opCount:()=>planetId?loadOps(planetId).length:0,
+    hash(){
+      if(!heights)return null;
+      let h1=0x811c9dc5;const d=new DataView(heights.buffer);
+      for(let i=0;i<heights.length;i++){h1^=d.getUint32(i*4);h1=Math.imul(h1,0x01000193);}
+      return(h1>>>0).toString(16);
+    }};
+  window.__surface=api; // DEV/test hook (same precedent as window.MoorWorld)
+  return api;
+})();
+
+function updateDropBtn(){
+  document.getElementById('dropBtn').style.display=(level===3&&curPlanet&&!surfaceActive)?'block':'none';
+}
+
 /* ================= MAIN LOOP ================= */
 const clock=new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
   const dt=Math.min(clock.getDelta(),0.05);
+  if(surfaceActive){surface.tick(dt);return;}
   updateTween(dt);
   // gentle portal spin
   if(portalObj)portalObj.rotation.z+=dt*0.4;
