@@ -17,7 +17,9 @@
   #heroText h1{font-size:34px;letter-spacing:2px;margin-bottom:8px;text-shadow:0 2px 24px #000}
   #heroText h1 .gold{color:#c9a227}
   #heroText p{font-size:15px;color:#b8b8c8;line-height:1.6;max-width:420px;text-shadow:0 1px 12px #000}
-  #heroHint{position:absolute;top:18px;right:20px;font-size:11px;letter-spacing:2px;color:#8a8a9a}
+  #heroHint{position:absolute;top:18px;right:20px;font-size:11px;letter-spacing:2px;color:#8a8a9a;z-index:3}
+  #vignette{position:absolute;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.5) 100%)}
   /* sections */
   section{padding:44px 0 10px}
   .card{background:rgba(255,255,255,.03);border:1px solid rgba(201,162,39,.22);
@@ -50,7 +52,8 @@ const t="160",e={LEFT:0,MIDDLE:1,RIGHT:2,ROTATE:0,DOLLY:1,PAN:2},n={ROTATE:0,PAN
 
 <div id="hero">
   <canvas id="heroCanvas"></canvas>
-  <div id="heroHint">drag me</div>
+  <div id="heroHint">drag · scroll to zoom · double-tap to dive in</div>
+  <div id="vignette"></div>
   <div id="heroText">
     <h1><span class="gold">FIELD</span> &amp; WINDOW</h1>
     <p>How the walkable globe works — without ever building a globe renderer.<br>One planet. Two views. This ball is live: <b style="color:#fff">drag it.</b></p>
@@ -218,9 +221,16 @@ setInterval(()=>{
 </script>
 
 <script type="module">
+/* ================================================================
+   PLANET RENDERER — canonical visual core.
+   Self-contained: needs THREE (inlined three-src) + a canvas.
+   When approved: lift this whole block into the Atlas (dossier,
+   then planet view). API: createPlanetRenderer(canvas, {type, seed}).
+   ================================================================ */
 const THREE = await import(URL.createObjectURL(new Blob(
   [document.getElementById('three-src').textContent], {type:'text/javascript'})));
-/* ---- hero: live planet, generated from a seed ---- */
+
+/* ---------- seeded noise ---------- */
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 function makeNoise(seed,gw,gh){
@@ -234,76 +244,262 @@ function makeNoise(seed,gw,gh){
     const a=grid[y0*gw+x0],b=grid[y0*gw+x1],c=grid[y1*gw+x0],d=grid[y1*gw+x1];
     return a+(b-a)*fx+(c-a)*fy+(a-b-c+d)*fx*fy;};
 }
-function planetCanvas(){
+function fbmFactory(seed){
+  const n1=makeNoise(seed,32,16),n2=makeNoise(seed+11,64,32),
+        n3=makeNoise(seed+23,128,64),n4=makeNoise(seed+37,256,128);
+  return (u,v)=>{
+    const wx=n1((u+0.13)%1,(v+0.71)%1)-0.5, wy=n1((u+0.47)%1,(v+0.29)%1)-0.5;
+    const uu=(u+wx*0.09+1)%1, vv=Math.min(0.999,Math.max(0,v+wy*0.09));
+    return n1(uu,vv)*0.5+n2(uu,vv)*0.28+n3(uu,vv)*0.15+n4(uu,vv)*0.07;
+  };
+}
+function hexRGB(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+
+/* ---------- palettes per planet type ---------- */
+const PTEX={
+  TERRAN:{land:['#2e6b3c','#8f9a55'],water:['#0a2a5e','#1f6fa3'],atmo:0x88bbff,sea:0.46,spec:1},
+  OCEAN:{land:['#3f7a4a','#a8a06a'],water:['#0a2a70','#2f8ac2'],atmo:0x66aaff,sea:0.62,spec:1},
+  DESERT:{land:['#8a5f30','#ecc890'],water:null,atmo:0xffd9a0,sea:null,spec:0},
+  ICE:{land:['#aec6e2','#eef4fa'],water:['#16344f','#3a6a8c'],atmo:0xaaddff,sea:0.40,spec:0.7},
+  LAVA:{land:['#1c0c06','#57230e'],water:null,atmo:0xff7a4a,sea:null,spec:0,lava:true},
+  JUNGLE:{land:['#0e4a1e','#3f8a3a'],water:['#0a3a4e','#1f6a7c'],atmo:0x88ffaa,sea:0.42,spec:0.8},
+  BARREN:{land:['#3a3a3e','#8e8e92'],water:null,atmo:0x999999,sea:null,spec:0},
+  GAS:{bands:['#8a5f3a','#f0d0a0'],atmo:0xffd9b0,sea:null,spec:0,gas:true},
+  CRYSTAL:{land:['#2a1a5e','#7e5ae8'],water:null,atmo:0xbb99ff,sea:null,spec:0.5},
+  TOXIC:{land:['#3a5a1a','#8ec23e'],water:['#16290e','#3a6a1c'],atmo:0xaaff66,sea:0.60,spec:0.9},
+};
+
+function buildSurface(type,seed){
+  const P=PTEX[type],W=1024,H=512;
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const g=c.getContext('2d'),img=g.createImageData(W,H),D=img.data;
+  const sc=document.createElement('canvas');sc.width=W;sc.height=H;
+  const sg=sc.getContext('2d'),simg=sg.createImageData(W,H),SD=simg.data;
+  const f=fbmFactory(seed),det=makeNoise(seed+91,256,128);
+  const l1=hexRGB(P.land?P.land[0]:'#888888'),l2=hexRGB(P.land?P.land[1]:'#aaaaaa');
+  const w1=P.water?hexRGB(P.water[0]):null,w2=P.water?hexRGB(P.water[1]):null;
+  for(let y=0;y<H;y++){
+    const v=y/H;
+    for(let x=0;x<W;x++){
+      const u=x/W,n=f(u,v),d=det(u,v);
+      let r,gg,b,sp=0;
+      if(P.gas){
+        const band=Math.sin(v*28+n*9)*0.5+0.5;
+        const t=Math.min(1,Math.max(0,band*0.75+n*0.35));
+        const c1=hexRGB(P.bands[0]),c2=hexRGB(P.bands[1]);
+        r=c1[0]+(c2[0]-c1[0])*t;gg=c1[1]+(c2[1]-c1[1])*t;b=c1[2]+(c2[2]-c1[2])*t;
+      }else if(P.lava){
+        if(n>0.52&&n<0.60){const t=Math.min(1,(n-0.52)*12);r=255;gg=110+t*120;b=20+t*60;}
+        else{const t=Math.min(1,Math.max(0,(n-0.3)*1.8));r=26+t*62;gg=12+t*28;b=6+t*12;}
+      }else if(P.sea!=null&&n<P.sea){
+        const t=Math.min(1,Math.max(0,n/P.sea));
+        r=w1[0]+(w2[0]-w1[0])*t;gg=w1[1]+(w2[1]-w1[1])*t;b=w1[2]+(w2[2]-w1[2])*t;
+        sp=255*P.spec;
+      }else{
+        const base=P.sea==null?n:Math.min(1,(n-P.sea)/(1-P.sea));
+        const t=Math.min(1,Math.max(0,base*1.15));
+        r=l1[0]+(l2[0]-l1[0])*t;gg=l1[1]+(l2[1]-l1[1])*t;b=l1[2]+(l2[2]-l1[2])*t;
+        sp=P.spec>0?36*P.spec:0;
+      }
+      const dk=0.86+d*0.28; // fine detail darkening — crevice feel
+      const i=(y*W+x)*4;
+      D[i]=r*dk;D[i+1]=gg*dk;D[i+2]=b*dk;D[i+3]=255;
+      SD[i]=SD[i+1]=SD[i+2]=sp;SD[i+3]=255;
+    }
+  }
+  g.putImageData(img,0,0);sg.putImageData(simg,0,0);
+  return {map:c,spec:sc};
+}
+function buildClouds(seed){
   const W=512,H=256,c=document.createElement('canvas');c.width=W;c.height=H;
-  const g=c.getContext('2d'),img=g.createImageData(W,H),Dd=img.data;
-  const n1=makeNoise(1337,32,16),n2=makeNoise(1344,64,32),n3=makeNoise(1350,128,64);
+  const g=c.getContext('2d'),img=g.createImageData(W,H),D=img.data;
+  const f=fbmFactory(seed);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-    const u=x/W,v=y/H;
-    const n=n1(u,v)*0.55+n2(u,v)*0.3+n3(u,v)*0.15;
-    let r,gg2,b;
-    if(n>0.60){r=26;gg2=52;b=18;}                    // poison pools
-    else{const t=Math.min(1,Math.max(0,(n-0.34)*2.4));
-      r=52+t*96;gg2=84+t*110;b=22+t*34;}              // olive -> acid green
-    const pol=Math.abs(v-0.5)*2,hk=pol*pol*0.45;      // haze caps
-    r+=(205-r)*hk;gg2+=(225-gg2)*hk;b+=(185-b)*hk;
-    const i=(y*W+x)*4;Dd[i]=r;Dd[i+1]=gg2;Dd[i+2]=b;Dd[i+3]=255;
+    const a=Math.min(1,Math.max(0,(f(x/W,y/H)-0.48)*3.2));
+    const i=(y*W+x)*4;
+    D[i]=D[i+1]=D[i+2]=255;D[i+3]=a*235;
   }
   g.putImageData(img,0,0);return c;
 }
-const cv=document.getElementById('heroCanvas');
-const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
-const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(42,1,0.1,100);
-camera.position.set(0,0.6,4.6);
-const group=new THREE.Group();scene.add(group);
-const tex=new THREE.CanvasTexture(planetCanvas());
-tex.colorSpace=THREE.SRGBColorSpace;
-const planet=new THREE.Mesh(
-  new THREE.SphereGeometry(1.55,72,72),
-  new THREE.MeshStandardMaterial({map:tex,roughness:0.95,metalness:0.02}));
-group.add(planet);
-const atm=new THREE.Mesh(
-  new THREE.SphereGeometry(1.55*1.07,48,48),
-  new THREE.MeshBasicMaterial({color:0xaaff66,transparent:true,opacity:0.13,
-    side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false}));
-group.add(atm);
-// stars
-{
-  const sg=new THREE.BufferGeometry(),sp=[];
-  const rnd=mulberry32(99);
-  for(let i=0;i<350;i++){
-    const a=rnd()*Math.PI*2,e=(rnd()-0.5)*Math.PI,r=14;
-    sp.push(r*Math.cos(e)*Math.cos(a),r*Math.sin(e),r*Math.cos(e)*Math.sin(a));
+function glowCanvas(){
+  const c=document.createElement('canvas');c.width=c.height=256;
+  const g=c.getContext('2d');
+  const gr=g.createRadialGradient(128,128,0,128,128,128);
+  gr.addColorStop(0,'rgba(255,250,235,1)');gr.addColorStop(0.22,'rgba(255,240,210,.55)');
+  gr.addColorStop(0.55,'rgba(255,230,190,.13)');gr.addColorStop(1,'rgba(255,230,190,0)');
+  g.fillStyle=gr;g.fillRect(0,0,256,256);
+  return c;
+}
+
+/* ---------- the renderer ---------- */
+function createPlanetRenderer(canvas,opts){
+  opts=opts||{};
+  let type=opts.type||'TOXIC';
+  const seed=opts.seed==null?1337:opts.seed;
+  const R=1.6;
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(40,1,0.1,220);
+  camera.position.set(0,0.35,6.6);
+  const group=new THREE.Group();scene.add(group);
+  const sunDir=new THREE.Vector3(5,2.2,4).normalize();
+
+  const planetUni={
+    map:{value:null},specMap:{value:null},
+    sunDir:{value:sunDir},atmoColor:{value:new THREE.Color(PTEX[type].atmo)},
+  };
+  const planetMat=new THREE.ShaderMaterial({uniforms:planetUni,
+    vertexShader:`
+      varying vec2 vUv;varying vec3 vN;varying vec3 vWp;
+      void main(){vUv=uv;vN=normalize(mat3(modelMatrix)*normal);
+        vec4 wp=modelMatrix*vec4(position,1.0);vWp=wp.xyz;
+        gl_Position=projectionMatrix*viewMatrix*wp;}`,
+    fragmentShader:`
+      uniform sampler2D map;uniform sampler2D specMap;
+      uniform vec3 sunDir;uniform vec3 atmoColor;
+      varying vec2 vUv;varying vec3 vN;varying vec3 vWp;
+      void main(){
+        vec3 n=normalize(vN);
+        vec3 sd=normalize(sunDir);
+        float ndl=dot(n,sd);
+        float day=smoothstep(-0.12,0.30,ndl);            // soft terminator
+        vec3 tex=texture2D(map,vUv).rgb;
+        vec3 viewDir=normalize(cameraPosition-vWp);
+        vec3 dayCol=tex*(0.22+1.18*max(ndl,0.0));        // warm diffuse
+        vec3 hv=normalize(sd+viewDir);                   // sun glint on water
+        float spec=pow(max(dot(n,hv),0.0),90.0)*texture2D(specMap,vUv).r;
+        dayCol+=vec3(1.0,0.96,0.86)*spec*1.25*day;
+        vec3 nightCol=tex*vec3(0.05,0.08,0.16)+vec3(0.008,0.015,0.035);
+        vec3 col=mix(nightCol,dayCol,day);
+        float band=smoothstep(0.0,0.35,day)*(1.0-smoothstep(0.35,0.75,day));
+        col+=vec3(0.9,0.45,0.15)*band*0.22;              // golden-hour band
+        float rim=pow(1.0-max(dot(n,viewDir),0.0),2.6);  // limb atmosphere
+        col+=atmoColor*rim*(0.30+0.70*day);
+        gl_FragColor=vec4(col,1.0);
+      }`});
+  const planet=new THREE.Mesh(new THREE.SphereGeometry(R,96,96),planetMat);
+  group.add(planet);
+
+  let cloudTex=new THREE.CanvasTexture(buildClouds(seed+7));
+  const clouds1=new THREE.Mesh(new THREE.SphereGeometry(R*1.022,64,64),
+    new THREE.MeshLambertMaterial({map:cloudTex,transparent:true,opacity:0.85,depthWrite:false}));
+  const clouds2=new THREE.Mesh(new THREE.SphereGeometry(R*1.048,48,48),
+    new THREE.MeshLambertMaterial({map:cloudTex,transparent:true,opacity:0.32,depthWrite:false}));
+  group.add(clouds1,clouds2);
+
+  const atmoMat=new THREE.ShaderMaterial({
+    uniforms:{c:{value:new THREE.Color(PTEX[type].atmo)}},
+    vertexShader:`varying vec3 vN;
+      void main(){vN=normalize(normalMatrix*normal);
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader:`uniform vec3 c;varying vec3 vN;
+      void main(){float i=pow(max(0.0,0.68-dot(normalize(vN),vec3(0.,0.,1.))),3.5);
+        gl_FragColor=vec4(c,1.0)*i*1.5;}`,
+    side:THREE.BackSide,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false});
+  group.add(new THREE.Mesh(new THREE.SphereGeometry(R*1.10,48,48),atmoMat));
+
+  const sun=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(glowCanvas()),
+    transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+  sun.position.copy(sunDir).multiplyScalar(34);sun.scale.set(17,17,1);scene.add(sun);
+
+  { // stars, two depths
+    const mk=(n2,s,op)=>{
+      const geo=new THREE.BufferGeometry(),sp=[],rnd=mulberry32(n2);
+      for(let i=0;i<n2;i++){const a=rnd()*Math.PI*2,e=(rnd()-0.5)*Math.PI,r=16+rnd()*30;
+        sp.push(r*Math.cos(e)*Math.cos(a),r*Math.sin(e),r*Math.cos(e)*Math.sin(a));}
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(sp,3));
+      scene.add(new THREE.Points(geo,new THREE.PointsMaterial({color:0xaaccff,size:s,
+        transparent:true,opacity:op})));};
+    mk(420,0.045,0.85);mk(200,0.07,0.5);
   }
-  sg.setAttribute('position',new THREE.Float32BufferAttribute(sp,3));
-  scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xaaccff,size:0.035,
-    transparent:true,opacity:0.8})));
+  scene.add(new THREE.AmbientLight(0x8899bb,0.75));
+  const dl=new THREE.DirectionalLight(0xfff2dd,1.7);
+  dl.position.copy(sunDir).multiplyScalar(10);scene.add(dl);
+  group.rotation.z=0.16;group.position.set(0.35,-1.55,0);
+
+  function applyType(){
+    const s=buildSurface(type,seed);
+    const mt=new THREE.CanvasTexture(s.map);mt.colorSpace=THREE.SRGBColorSpace;
+    const st=new THREE.CanvasTexture(s.spec);
+    if(planetUni.map.value)planetUni.map.value.dispose();
+    if(planetUni.specMap.value)planetUni.specMap.value.dispose();
+    planetUni.map.value=mt;planetUni.specMap.value=st;
+    planetUni.atmoColor.value.set(PTEX[type].atmo);
+    atmoMat.uniforms.c.value.set(PTEX[type].atmo);
+    clouds1.material.opacity=type==='GAS'?0.96:0.85;
+  }
+  applyType();
+
+  /* ----- interaction: drag orbits, wheel/pinch zooms, double-tap focuses ----- */
+  const tweens=[];
+  const tw=(o,p,to,dur)=>{tweens.push({o,p,from:o[p],to,t:0,dur:dur||1.1});};
+  const pointers=new Map();let pinchD=0,dragging=false;
+  const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
+  function zoom(f){camera.position.z=Math.min(9,Math.max(2.6,camera.position.z*f));}
+  canvas.addEventListener('pointerdown',e=>{
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size===1){dragging={x:e.clientX,y:e.clientY,ry:group.rotation.y,rx:group.rotation.x};}
+    else if(pointers.size===2){const p=[...pointers.values()];
+      pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);dragging=false;}
+  });
+  canvas.addEventListener('pointermove',e=>{
+    const pt=pointers.get(e.pointerId);if(!pt)return;
+    pt.x=e.clientX;pt.y=e.clientY;
+    if(pointers.size===2){const p=[...pointers.values()];
+      const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+      if(pinchD)zoom(pinchD/d);pinchD=d;return;}
+    if(dragging){
+      group.rotation.y=dragging.ry+(e.clientX-dragging.x)*0.008;
+      group.rotation.x=Math.max(-0.7,Math.min(0.7,dragging.rx+(e.clientY-dragging.y)*0.005));
+    }
+  });
+  const up=e=>{pointers.delete(e.pointerId);if(!pointers.size){dragging=false;pinchD=0;}};
+  canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+  canvas.addEventListener('wheel',e=>{e.preventDefault();zoom(1+e.deltaY*0.0011);},{passive:false});
+  canvas.addEventListener('dblclick',e=>{
+    const r=canvas.getBoundingClientRect();
+    ndc.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+    ray.setFromCamera(ndc,camera);
+    const hit=ray.intersectObject(planet)[0];
+    if(!hit)return;
+    const w=hit.point,yaw=Math.atan2(w.x,w.z);
+    tw(group.rotation,'y',group.rotation.y-yaw,1.2);
+    tw(camera.position,'z',2.8,1.2);
+  });
+
+  function size(){
+    const w=canvas.clientWidth,h=canvas.clientHeight;
+    if(!w||!h)return;
+    renderer.setSize(w,h,false);
+    camera.aspect=w/h;camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(size).observe(canvas);size();
+
+  let raf=0,last=performance.now(),dead=false;
+  (function loop(now){
+    if(dead)return;raf=requestAnimationFrame(loop);
+    const dt=Math.min(0.05,(now-last)/1000);last=now;
+    if(!dragging&&!pointers.size)group.rotation.y+=dt*0.03;
+    clouds1.rotation.y+=dt*0.010;clouds2.rotation.y-=dt*0.006;
+    for(let i=tweens.length-1;i>=0;i--){const t=tweens[i];t.t+=dt/t.dur;
+      const k=t.t>=1?1:1-Math.pow(1-t.t,3);
+      t.o[t.p]=t.from+(t.to-t.from)*k;
+      if(t.t>=1)tweens.splice(i,1);}
+    renderer.render(scene,camera);
+  })(last);
+
+  return {
+    setType(t){if(PTEX[t]){type=t;applyType();}},
+    focus(){tw(camera.position,'z',2.8,1.2);},
+    dispose(){dead=true;cancelAnimationFrame(raf);renderer.dispose();},
+  };
 }
-scene.add(new THREE.AmbientLight(0x8899bb,0.55));
-const key=new THREE.DirectionalLight(0xfff2dd,1.5);key.position.set(5,2,4);scene.add(key);
-group.rotation.z=0.18;group.position.y=-0.15;
-function size(){
-  const w=cv.clientWidth,h=cv.clientHeight;
-  renderer.setSize(w,h,false);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-  camera.aspect=w/h;camera.updateProjectionMatrix();
-}
-new ResizeObserver(size).observe(cv);size();
-// drag to rotate
-let drag=null;
-cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,ry:group.rotation.y,rx:group.rotation.x};
-  cv.setPointerCapture(e.pointerId);});
-cv.addEventListener('pointermove',e=>{
-  if(!drag)return;
-  group.rotation.y=drag.ry+(e.clientX-drag.x)*0.008;
-  group.rotation.x=Math.max(-0.6,Math.min(0.6,drag.rx+(e.clientY-drag.y)*0.005));
-});
-addEventListener('pointerup',()=>drag=null);
-(function loop(){
-  requestAnimationFrame(loop);
-  if(!drag)group.rotation.y+=0.0016;
-  renderer.render(scene,camera);
-})();
+
+/* ---------- boot the hero ---------- */
+createPlanetRenderer(document.getElementById('heroCanvas'),{type:'TOXIC',seed:1337});
+
 </script>
 </body>
 </html>
