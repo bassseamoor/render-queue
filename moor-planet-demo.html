@@ -557,6 +557,7 @@ function createPlanetDemo(canvas,opts){
   const orbit={theta:Math.atan2(orbitHome.pos.x,orbitHome.pos.z),
                phi:Math.acos(orbitHome.pos.y/orbitHome.pos.length()),
                radius:orbitHome.pos.length()};
+  orbit.targetR=orbit.radius;
   function applyOrbit(){
     camera.position.set(
       orbit.radius*Math.sin(orbit.phi)*Math.sin(orbit.theta),
@@ -1140,7 +1141,7 @@ function createPlanetDemo(canvas,opts){
     backBtn.style.display=orbit?'none':'block';
     if(modeBtn)modeBtn.style.display=mode==='ground'?'block':'none';
   }
-  let faceTarget=null;
+  let faceTarget=null,groundDirty=true,groundAnchor=null,lastGroundR=0;
   function diveTo(dir){
     if(mode!=='orbit')return;
     // no more auto-flight: turn to face a beautiful spot, you pinch the dive
@@ -1151,7 +1152,7 @@ function createPlanetDemo(canvas,opts){
     if(mode!=='ground')return;
     orbit.theta=Math.atan2(player.dir.x,player.dir.z);
     orbit.phi=Math.acos(THREE.MathUtils.clamp(player.dir.y,-1,1));
-    orbit.radius=R+80000;
+    orbit.radius=R+80000;orbit.targetR=R+80000;
     mode='orbit';setModeUI();
   }
   if(dropBtn)dropBtn.addEventListener('click',()=>diveTo(null));
@@ -1159,7 +1160,7 @@ function createPlanetDemo(canvas,opts){
     if(mode!=='ground')return;
     orbit.theta=Math.atan2(player.dir.x,player.dir.z);
     orbit.phi=Math.acos(THREE.MathUtils.clamp(player.dir.y,-1,1));
-    orbit.radius=R+80000;
+    orbit.radius=R+80000;orbit.targetR=R+80000;
     mode='orbit';setModeUI();
   });
   if(modeBtn)modeBtn.addEventListener('click',()=>{
@@ -1169,7 +1170,7 @@ function createPlanetDemo(canvas,opts){
 
   /* ----- input ----- */
   const zoom=f=>{if(mode!=='orbit')return;
-    orbit.radius=THREE.MathUtils.clamp(orbit.radius*f,R+1.7,R*10);};
+    orbit.targetR=THREE.MathUtils.clamp((orbit.targetR||orbit.radius)*f,R+1.7,R*10);};
   canvas.addEventListener('pointerdown',e=>{
     try{canvas.setPointerCapture(e.pointerId);}catch(_){}
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -1184,7 +1185,7 @@ function createPlanetDemo(canvas,opts){
     if(pinchD&&d>0){
       const ratio=d/pinchD;
       if(ratio>1.02){ // pinch out: ascend
-        orbit.radius=Math.min(R*10,orbit.radius*Math.pow(ratio,1.5));
+        orbit.targetR=Math.min(R*10,(orbit.targetR||orbit.radius)*Math.pow(ratio,1.5));
         if(orbit.radius>R+30){
           // lift off: resume orbit from above this spot
           orbit.theta=Math.atan2(player.dir.x,player.dir.z);
@@ -1311,15 +1312,27 @@ function createPlanetDemo(canvas,opts){
         orbit.theta+=dth*k;orbit.phi+=(faceTarget.ph-orbit.phi)*k;
         if(Math.abs(dth)<0.01&&Math.abs(faceTarget.ph-orbit.phi)<0.01)faceTarget=null;
       }
+      // smooth zoom: ease toward target
+      if(orbit.targetR!==undefined){
+        const dr=orbit.targetR-orbit.radius;
+        if(Math.abs(dr)>0.01)orbit.radius+=dr*Math.min(1,dt*7);
+        else orbit.radius=orbit.targetR;
+      }
       applyOrbit();
       const alt=orbit.radius-R;
       // look at the surface point under the camera (== center when far)
       _v1.copy(camera.position).normalize();
-      // ground follows when close enough to matter
+      // ground follows when close enough to matter — throttled, not per-frame
       if(orbit.radius<R+60000){
-        if(!groundGroup.visible){groundGroup.visible=true;}
+        if(!groundGroup.visible){groundGroup.visible=true;groundDirty=true;}
         player.dir.copy(_v1);
-        placeGround();buildProps();
+        if(!groundAnchor)groundAnchor=new THREE.Vector3();
+        const moved=groundAnchor.distanceToSquared(camera.position);
+        const rChanged=Math.abs((lastGroundR||0)-orbit.radius)/(orbit.radius||1);
+        if(groundDirty||moved>6400||rChanged>0.08){
+          placeGround();buildProps();
+          groundAnchor.copy(camera.position);lastGroundR=orbit.radius;groundDirty=false;
+        }
       }else if(groundGroup.visible){groundGroup.visible=false;}
       // camera up blends from world-up to surface normal
       const upK=THREE.MathUtils.smoothstep(alt,8000,120000);
