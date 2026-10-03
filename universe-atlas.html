@@ -191,74 +191,180 @@ const t="160",e={LEFT:0,MIDDLE:1,RIGHT:2,ROTATE:0,DOLLY:1,PAN:2},n={ROTATE:0,PAN
 const THREE = await import(URL.createObjectURL(new Blob(
   [document.getElementById('three-src').textContent], {type:'text/javascript'})));
 
-/* ================= SEEDED UNIVERSE DATA ================= */
-function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
-  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
-const R = mulberry32(1337);
-const rr=(a,b)=>a+R()*(b-a);
-const pick=a=>a[Math.floor(R()*a.length)];
+/* ================================================================
+   MOORWORLD — the canonical world model. ONE source of truth.
+   ----------------------------------------------------------------
+   Everything the renderer shows comes from here. The renderer may
+   READ through the query API at the bottom of this block; it must
+   never reach past the API into generation internals, and it must
+   never write world state except through logEvent().
 
-const SECTOR_NAMES=['Aurora Reach','Velmora Drift','Kaelen Expanse','Duskwither','Ostrellia','Nyx Hollow','Solenne Verge','Tarnished Crown'];
-const STAR_NAMES=['Helion','Vesper','Calyx','Dorne','Ilyra','Sarn','Ophir','Mirell','Tavros','Keth','Ulmar','Zev','Prysm','Halcyon','Vire','Nox'];
-const PLANET_NAMES=['Terranova','Cinder','Pelagia','Zephyria','Ferrum','Verdant','Kryos','Emberfall','Lumen','Dross','Halcyon Prime','Virelia','Ossia','Tarn',' Mire'];
-const ZONE_KINDS=['city','landmark','port','ruin','garden','spire'];
+   Pinned generative contract: UNIVERSE_SEED = 1337, GENERATOR_VERSION = 1.
+   Same seed + version = same world. Any change to the draw order,
+   name lists, or hierarchy bumps GENERATOR_VERSION.
 
-const universe={sectors:[]};
-for(let i=0;i<8;i++){
-  // spiral arm: r grows with angle
-  const th=i*(Math.PI*2/8)+0.4, rad=26+i*9+rr(-3,3);
-  const sx=Math.cos(th)*rad, sz=Math.sin(th)*rad, sy=rr(-8,8);
-  const sec={id:'S0'+(i+1),name:SECTOR_NAMES[i],u:[+sx.toFixed(1),+sy.toFixed(1),+sz.toFixed(1)],systems:[]};
-  const nSys=5+Math.floor(R()*4);
-  for(let j=0;j<nSys;j++){
-    const a=rr(0,Math.PI*2), d=rr(6,22);
-    const sys={id:sec.id+'-SYS0'+(j+1),name:pick(STAR_NAMES)+' '+String.fromCharCode(65+j),
-      s:[+(Math.cos(a)*d).toFixed(1),+rr(-4,4).toFixed(1),+(Math.sin(a)*d).toFixed(1)],
-      starClass:pick(['G','K','M','F']),planets:[]};
-    const nP=3+Math.floor(R()*4);
-    for(let k=0;k<nP;k++){
-      const orbit=8+k*7+rr(-1,1);
-      const pl={id:sys.id+'-P0'+(k+1),name:pick(PLANET_NAMES).trim(),
-        sys:[0,0,0],orbit:+orbit.toFixed(1),angle:rr(0,Math.PI*2),
-        size:rr(0.7,1.6),color:new THREE.Color().setHSL(rr(0,1),rr(0.25,0.55),rr(0.3,0.5)).getHex(),
-        zones:[]};
-      const nZ=2+Math.floor(R()*3);
-      for(let z=0;z<nZ;z++){
-        pl.zones.push({id:pl.id+'-Z'+(z+1),name:pick(ZONE_KINDS)+' '+(z+1),
-          lat:+rr(-60,60).toFixed(1),lon:+rr(-180,180).toFixed(1),alt:+rr(0,2).toFixed(1),
-          kind:pick(ZONE_KINDS)});
+   CANONICAL ID SCHEME (blessed — do not change without a version bump):
+     sector    S01                  e.g. S01 … S08
+     system    {sector}-SYS01       e.g. S01-SYS01
+     planet    {system}-P01         e.g. S01-SYS01-P01
+     zone      {planet}-Z1          e.g. S01-SYS01-P01-Z1
+     personal  PS-{OWNER}           e.g. PS-SEABASS
+   STABLE ADDRESSES (the lookup contract — the query API is keyed by these):
+     universe:prime
+     universe:prime/sector:S01
+     universe:prime/sector:S01/system:S01-SYS01
+     universe:prime/sector:S01/system:S01-SYS01/planet:S01-SYS01-P01
+     universe:prime/sector:S01/system:S01-SYS01/planet:S01-SYS01-P01/zone:S01-SYS01-P01-Z1
+     universe:prime/personal:PS-SEABASS
+   The address name component is the generator-stable hierarchical ID,
+   never the display name (planet names repeat — "many planets are named
+   Kryos; there is one S01-SYS01-P01").
+
+   This block takes no arguments, touches no DOM, imports no THREE —
+   it is structured so it can move to its own file later.
+   ================================================================ */
+const MoorWorld = (() => {
+  const UNIVERSE_SEED = 1337;
+  const GENERATOR_VERSION = 1;
+  const ROOT_ADDRESS = 'universe:prime';
+
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  const R = mulberry32(UNIVERSE_SEED);
+  const rr=(a,b)=>a+R()*(b-a);
+  const pick=a=>a[Math.floor(R()*a.length)];
+
+  const SECTOR_NAMES=['Aurora Reach','Velmora Drift','Kaelen Expanse','Duskwither','Ostrellia','Nyx Hollow','Solenne Verge','Tarnished Crown'];
+  const STAR_NAMES=['Helion','Vesper','Calyx','Dorne','Ilyra','Sarn','Ophir','Mirell','Tavros','Keth','Ulmar','Zev','Prysm','Halcyon','Vire','Nox'];
+  const PLANET_NAMES=['Terranova','Cinder','Pelagia','Zephyria','Ferrum','Verdant','Kryos','Emberfall','Lumen','Dross','Halcyon Prime','Virelia','Ossia','Tarn',' Mire'];
+  const ZONE_KINDS=['city','landmark','port','ruin','garden','spire'];
+
+  const PTYPES=[
+   {name:'TERRAN WORLD', c1:'#4a7a5a', c2:'#2a4a3a', atm:0x88bbff},
+   {name:'OCEAN WORLD',  c1:'#2a6a9a', c2:'#0a2a5a', atm:0x66aaff},
+   {name:'DESERT WORLD', c1:'#c8a06a', c2:'#8a6842', atm:0xffd9a0},
+   {name:'ICE WORLD',    c1:'#d0e4f4', c2:'#8ab0d0', atm:0xaaddff},
+   {name:'LAVA WORLD',   c1:'#4a1f0c', c2:'#180a05', atm:0xff7a4a},
+   {name:'JUNGLE WORLD', c1:'#1f6a30', c2:'#0c3a1a', atm:0x88ffaa},
+   {name:'BARREN ROCK',  c1:'#8a8a8a', c2:'#4a4a4a', atm:0x999999},
+   {name:'GAS GIANT',    c1:'#d8b08a', c2:'#96704e', atm:0xffd9b0},
+   {name:'CRYSTAL WORLD',c1:'#9a7ae8', c2:'#4a2e98', atm:0xbb99ff},
+   {name:'TOXIC WORLD',  c1:'#9ab83e', c2:'#4e6a14', atm:0xaaff66},
+  ];
+  function hashStr(x){let h=0;for(let i=0;i<x.length;i++)h=(h*31+x.charCodeAt(i))|0;return Math.abs(h);}
+  function ptypeOf(p){return PTYPES[hashStr(p.id)%PTYPES.length];}
+
+  /* ---- generation: identical draw order to Atlas v1, do not reorder ---- */
+  const sectors=[];
+  for(let i=0;i<8;i++){
+    // spiral arm: r grows with angle
+    const th=i*(Math.PI*2/8)+0.4, rad=26+i*9+rr(-3,3);
+    const sx=Math.cos(th)*rad, sz=Math.sin(th)*rad, sy=rr(-8,8);
+    const sid='S0'+(i+1);
+    const sec={kind:'sector',id:sid,addr:ROOT_ADDRESS+'/sector:'+sid,name:SECTOR_NAMES[i],
+      u:[+sx.toFixed(1),+sy.toFixed(1),+sz.toFixed(1)],systems:[]};
+    const nSys=5+Math.floor(R()*4);
+    for(let j=0;j<nSys;j++){
+      const a=rr(0,Math.PI*2), d=rr(6,22);
+      const sysid=sid+'-SYS0'+(j+1);
+      const sys={kind:'system',id:sysid,addr:sec.addr+'/system:'+sysid,
+        name:pick(STAR_NAMES)+' '+String.fromCharCode(65+j),
+        s:[+(Math.cos(a)*d).toFixed(1),+rr(-4,4).toFixed(1),+(Math.sin(a)*d).toFixed(1)],
+        starClass:pick(['G','K','M','F']),planets:[]};
+      const nP=3+Math.floor(R()*4);
+      for(let k=0;k<nP;k++){
+        const orbit=8+k*7+rr(-1,1);
+        const pid=sysid+'-P0'+(k+1);
+        // hue/sat/lit draws are the old planet color draws: same stream,
+        // stored as data — the renderer turns them into a color.
+        const pl={kind:'planet',id:pid,addr:sys.addr+'/planet:'+pid,name:pick(PLANET_NAMES).trim(),
+          orbit:+orbit.toFixed(1),angle:rr(0,Math.PI*2),
+          size:rr(0.7,1.6),hue:rr(0,1),sat:rr(0.25,0.55),lit:rr(0.3,0.5),
+          zones:[]};
+        const nZ=2+Math.floor(R()*3);
+        for(let z=0;z<nZ;z++){
+          const zid=pid+'-Z'+(z+1);
+          pl.zones.push({kind:'zone',id:zid,addr:pl.addr+'/zone:'+zid,name:pick(ZONE_KINDS)+' '+(z+1),
+            lat:+rr(-60,60).toFixed(1),lon:+rr(-180,180).toFixed(1),alt:+rr(0,2).toFixed(1),
+            kind:pick(ZONE_KINDS)});
+        }
+        sys.planets.push(pl);
       }
-      sys.planets.push(pl);
+      sec.systems.push(sys);
     }
-    sec.systems.push(sys);
+    sectors.push(sec);
   }
-  universe.sectors.push(sec);
-}
-// personal spaces (pocket dimensions)
-const personalSpaces=[
-  {id:'PS-SEABASS',owner:'seabass',name:"Seabass's Space Room",coord:'PX(0,0,0)',size:'standard'},
-  {id:'PS-GUEST1',owner:'guest-1',name:"Guest Space",coord:'PX(12,0,4)',size:'standard'},
-];
+  // personal spaces (pocket dimensions)
+  const personalSpaces=[
+    {kind:'personal',id:'PS-SEABASS',addr:ROOT_ADDRESS+'/personal:PS-SEABASS',owner:'seabass',name:"Seabass's Space Room",coord:'PX(0,0,0)',size:'standard'},
+    {kind:'personal',id:'PS-GUEST1',addr:ROOT_ADDRESS+'/personal:PS-GUEST1',owner:'guest-1',name:"Guest Space",coord:'PX(12,0,4)',size:'standard'},
+  ];
 
-/* ================= PLANET TYPES ================= */
-const PTYPES=[
- {name:'TERRAN WORLD', c1:'#4a7a5a', c2:'#2a4a3a', atm:0x88bbff},
- {name:'OCEAN WORLD',  c1:'#2a6a9a', c2:'#0a2a5a', atm:0x66aaff},
- {name:'DESERT WORLD', c1:'#c8a06a', c2:'#8a6842', atm:0xffd9a0},
- {name:'ICE WORLD',    c1:'#d0e4f4', c2:'#8ab0d0', atm:0xaaddff},
- {name:'LAVA WORLD',   c1:'#4a1f0c', c2:'#180a05', atm:0xff7a4a},
- {name:'JUNGLE WORLD', c1:'#1f6a30', c2:'#0c3a1a', atm:0x88ffaa},
- {name:'BARREN ROCK',  c1:'#8a8a8a', c2:'#4a4a4a', atm:0x999999},
- {name:'GAS GIANT',    c1:'#d8b08a', c2:'#96704e', atm:0xffd9b0},
- {name:'CRYSTAL WORLD',c1:'#9a7ae8', c2:'#4a2e98', atm:0xbb99ff},
- {name:'TOXIC WORLD',  c1:'#9ab83e', c2:'#4e6a14', atm:0xaaff66},
-];
-function hashStr(x){let h=0;for(let i=0;i<x.length;i++)h=(h*31+x.charCodeAt(i))|0;return Math.abs(h);}
-function ptypeOf(p){return PTYPES[hashStr(p.id)%PTYPES.length];}
+  /* ---- indexes: the lookup contract ---- */
+  const byId=new Map(), byAddr=new Map();
+  byAddr.set(ROOT_ADDRESS,{kind:'universe',id:'prime',addr:ROOT_ADDRESS,name:'Prime Universe'});
+  for(const sec of sectors){
+    byId.set(sec.id,sec);byAddr.set(sec.addr,sec);
+    for(const sys of sec.systems){
+      byId.set(sys.id,sys);byAddr.set(sys.addr,sys);
+      for(const p of sys.planets){
+        byId.set(p.id,p);byAddr.set(p.addr,p);
+        for(const z of p.zones){byId.set(z.id,z);byAddr.set(z.addr,z);}
+      }
+    }
+  }
+  for(const ps of personalSpaces){byId.set(ps.id,ps);byAddr.set(ps.addr,ps);}
+
+  function addressOf(kind,id){
+    const n=byId.get(id);
+    if(n&&n.kind===kind)return n.addr;
+    return null;
+  }
+
+  /* ---- event log: every mutation appends here. No event, no mutation.
+        Campfire S.log pattern: append-only, cap 5000, localStorage. ---- */
+  const EVENTS_KEY='moorworld.events.v1';
+  let _events=[];
+  try{_events=JSON.parse(localStorage.getItem(EVENTS_KEY))||[];}catch(e){_events=[];}
+  function logEvent(by,type,target,payload){
+    const ev={t:Date.now(),by:by,type:type,target:target,payload:payload||{}};
+    _events.push(ev);
+    if(_events.length>5000)_events=_events.slice(-5000);
+    try{localStorage.setItem(EVENTS_KEY,JSON.stringify(_events));}catch(e){}
+    return ev;
+  }
+
+  /* ---- query API: the ONLY way the renderer touches world data ---- */
+  let nSys=0,nPl=0,nZ=0;
+  for(const sec of sectors){nSys+=sec.systems.length;
+    for(const sys of sec.systems){nPl+=sys.planets.length;
+      for(const p of sys.planets)nZ+=p.zones.length;}}
+  return {
+    UNIVERSE_SEED, GENERATOR_VERSION, ROOT_ADDRESS, PTYPES,
+    mulberry32, hashStr,
+    sectors:()=>sectors,
+    counts:()=>({sectors:sectors.length,systems:nSys,planets:nPl,zones:nZ}),
+    getSector:id=>byId.get(id)||null,
+    getSystem:id=>byId.get(id)||null,
+    getPlanet:id=>byId.get(id)||null,
+    getZone:id=>byId.get(id)||null,
+    getZones:planetId=>{const p=byId.get(planetId);return p&&p.zones?p.zones:[];},
+    personalSpaces:()=>personalSpaces,
+    getPersonalSpace:id=>byId.get(id)||null,
+    findById:id=>byId.get(id)||null,
+    findByAddress:addr=>byAddr.get(addr)||null,
+    addressOf,
+    planetType:p=>ptypeOf(p),
+    planetTypeIndex:p=>PTYPES.indexOf(ptypeOf(p)),
+    logEvent,
+    events:()=>_events.slice(),
+  };
+})();
+
 /* real procedural surface: per-pixel value noise, seeded per planet */
 function hexRGB(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
 function makeNoise(seed,gw,gh){
-  const rnd=mulberry32(seed),grid=new Float32Array(gw*gh);
+  const rnd=MoorWorld.mulberry32(seed),grid=new Float32Array(gw*gh);
   for(let i=0;i<gw*gh;i++)grid[i]=rnd();
   const sm=t=>t*t*(3-2*t);
   return (u,v)=>{
@@ -269,7 +375,7 @@ function makeNoise(seed,gw,gh){
     return a+(b-a)*fx+(cc-a)*fy+(a-b-cc+d)*fx*fy;};
 }
 function planetTexture(p){
-  const T=ptypeOf(p),ti=PTYPES.indexOf(T),h=hashStr(p.id+'tex');
+  const T=MoorWorld.planetType(p),ti=MoorWorld.planetTypeIndex(p),h=MoorWorld.hashStr(p.id+'tex');
   const n1=makeNoise(h,32,16),n2=makeNoise(h+7,64,32),n3=makeNoise(h+13,128,64);
   const W=512,H=256,c=document.createElement('canvas');c.width=W;c.height=H;
   const g=c.getContext('2d'),img=g.createImageData(W,H),D=img.data;
@@ -337,7 +443,7 @@ function planetTexture(p){
   return {map:tex,bump:tex};
 }
 function cloudTexture(p){
-  const h=hashStr(p.id+'cloud');
+  const h=MoorWorld.hashStr(p.id+'cloud');
   const n1=makeNoise(h,16,8),n2=makeNoise(h+3,32,16);
   const W=256,H=128,c=document.createElement('canvas');c.width=W;c.height=H;
   const g=c.getContext('2d'),img=g.createImageData(W,H),D=img.data;
@@ -419,7 +525,7 @@ let level=0; // 0 universe, 1 sector, 2 system, 3 planet, 4 personal
 let curSector=null,curSystem=null,curPlanet=null;
 let worldGroup=null, labelObjs=[];
 let camTween=null,planetSpin=null;
-let devMode=false, selected=null;
+let devMode=false, selected=null, portalObj=null;
 
 /* ================= LABELS ================= */
 const labelLayer=document.getElementById('labels');
@@ -502,7 +608,7 @@ function buildUniverse(){
   worldGroup.add(arm);
   const arm2=arm.clone();arm2.rotation.y=Math.PI;worldGroup.add(arm2);
   // sectors
-  for(const s of universe.sectors){
+  for(const s of MoorWorld.sectors()){
     const g=new THREE.Group();g.position.set(...s.u);
     const dot=new THREE.Mesh(new THREE.SphereGeometry(1.6,20,20),
       new THREE.MeshBasicMaterial({color:0xc9a227}));
@@ -513,18 +619,17 @@ function buildUniverse(){
     g.add(dot,halo);g.userData.nav={kind:'sector',ref:s};
     worldGroup.add(g);
     addLabel(s.name,'',g,4);
-    s._obj=g;
   }
   // personal space portal
   const portal=new THREE.Group();portal.position.set(0,26,-40);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(4,0.35,12,48),
     new THREE.MeshBasicMaterial({color:0x7df9ff,transparent:true,opacity:0.9}));
-  ring.userData.nav={kind:'personal',ref:personalSpaces[0]};
-  portal.add(ring);portal.userData.nav={kind:'personal',ref:personalSpaces[0]};
+  ring.userData.nav={kind:'personal',ref:MoorWorld.getPersonalSpace('PS-SEABASS')};
+  portal.add(ring);portal.userData.nav={kind:'personal',ref:MoorWorld.getPersonalSpace('PS-SEABASS')};
   worldGroup.add(portal);
   addLabel('⌂ SPACE ROOM','portal',portal,7);
-  universe._portal=portal;
-  setTitle('UNIVERSE','8 SECTORS · SPIRAL ARMS');
+  portalObj=portal;
+  setTitle('UNIVERSE',MoorWorld.counts().sectors+' SECTORS · SPIRAL ARMS');
   setScale('scale — 1 unit ≈ 1 kpc · depth fog active');
   setCoords('U',[0,0,0]);
   renderCrumb();
@@ -550,7 +655,6 @@ function buildSector(sec){
     g.add(star,halo);g.userData.nav={kind:'system',ref:sys};
     worldGroup.add(g);
     addLabel(sys.name,'sys',g,3);
-    sys._obj=g;
   }
   setTitle(sec.name.toUpperCase(),sec.systems.length+' SYSTEMS · '+sec.id);
   setScale('scale — 1 unit ≈ 10 ly · sector '+sec.id);
@@ -585,15 +689,13 @@ function buildSystem(sys){
     const pg=new THREE.Group();
     const px=Math.cos(p.angle)*p.orbit,pz=Math.sin(p.angle)*p.orbit;
     pg.position.set(px,0,pz);
-    const TC=ptypeOf(p);
+    const TC=MoorWorld.planetType(p);
     const mesh=new THREE.Mesh(new THREE.SphereGeometry(p.size,28,28),
       new THREE.MeshStandardMaterial({color:new THREE.Color(TC.c2),roughness:0.92,metalness:0.05}));
     mesh.userData.nav={kind:'planet',ref:p};
     pg.add(mesh);pg.userData.nav={kind:'planet',ref:p};
-    p.sys=[+px.toFixed(1),0,+pz.toFixed(1)];
     worldGroup.add(pg);
     addLabel(p.name,'pl',pg,p.size+2.5);
-    p._obj=pg;
   }
   setTitle(sys.name.toUpperCase(),sys.planets.length+' PLANETS · CLASS '+sys.starClass);
   setScale('scale — 1 unit ≈ 1 AU · orbits to scale');
@@ -605,7 +707,7 @@ function buildSystem(sys){
 /* ---- LEVEL 3: PLANET ---- */
 function buildPlanet(p){
   clearWorld();level=3;curPlanet=p;
-  const R_P=14, T=ptypeOf(p), ti=PTYPES.indexOf(T);
+  const R_P=14, T=MoorWorld.planetType(p), ti=MoorWorld.planetTypeIndex(p);
   const tex=planetTexture(p);
   const matOpts={map:tex.map,bumpMap:tex.bump,bumpScale:0.7,roughness:0.95,metalness:0.03};
   if(ti===1){matOpts.roughness=0.55;}
@@ -658,7 +760,6 @@ function buildPlanet(p){
     const holder=new THREE.Group();holder.position.set(x,y,zz);
     spinGroup.add(holder);
     addLabel(z.name,'zone',holder,1.4);
-    z._obj=holder;
   }
   setTitle(p.name.toUpperCase(),T.name+' · '+p.zones.length+' ZONES · ORBIT '+p.orbit+' AU');
   setScale('scale — surface detail · radius 14 units');
@@ -757,18 +858,19 @@ renderer.domElement.addEventListener('pointerup',e=>{
 /* ================= INSPECTOR ================= */
 function metaFor(ref,kind){
   if(!ref)return 'nothing selected';
-  if(kind==='sector')return ref.id+' · '+ref.name+'\nU('+ref.u.join(', ')+')\n'+ref.systems.length+' systems';
-  if(kind==='system')return ref.id+' · '+ref.name+'\nS('+ref.s.join(', ')+')\nclass '+ref.starClass+' · '+ref.planets.length+' planets';
-  if(kind==='planet')return ref.id+' · '+ref.name+'\nSYS('+ref.sys.join(', ')+') · orbit '+ref.orbit+' AU\n'+ref.zones.length+' zones';
-  if(kind==='zone')return ref.id+' · '+ref.name+'\nP('+ref.lat+', '+ref.lon+', '+ref.alt+')\nkind: '+ref.kind;
-  if(kind==='personal'||ref.id&&ref.id.startsWith('PS-'))return ref.id+' · '+ref.name+'\nowner: '+ref.owner+'\n'+ref.coord+' · '+ref.size;
+  if(kind==='sector')return ref.id+' · '+ref.name+'\nU('+ref.u.join(', ')+')\n'+ref.systems.length+' systems\n'+ref.addr;
+  if(kind==='system')return ref.id+' · '+ref.name+'\nS('+ref.s.join(', ')+')\nclass '+ref.starClass+' · '+ref.planets.length+' planets\n'+ref.addr;
+  if(kind==='planet'){const px2=(Math.cos(ref.angle)*ref.orbit).toFixed(1),pz2=(Math.sin(ref.angle)*ref.orbit).toFixed(1);
+    return ref.id+' · '+ref.name+'\nSYS('+px2+', 0, '+pz2+') · orbit '+ref.orbit+' AU\n'+ref.zones.length+' zones\n'+ref.addr;}
+  if(kind==='zone')return ref.id+' · '+ref.name+'\nP('+ref.lat+', '+ref.lon+', '+ref.alt+')\nkind: '+ref.kind+'\n'+ref.addr;
+  if(kind==='personal'||ref.id&&ref.id.startsWith('PS-'))return ref.id+' · '+ref.name+'\nowner: '+ref.owner+'\n'+ref.coord+' · '+ref.size+'\n'+ref.addr;
   return JSON.stringify(ref,null,1).slice(0,400);
 }
 function inspect(ref,kind){
   selected=ref?{ref,kind}:null;
   const insp=document.getElementById('insp');
   if(!ref){insp.classList.remove('open');
-    document.getElementById('devMeta').textContent='Click any object.';return;}
+    document.getElementById('devMeta').textContent='Click any object.\n'+MoorWorld.events().length+' events logged.';return;}
   const name=ref.name||ref.id||kind;
   document.getElementById('inspTitle').textContent=name;
   document.getElementById('inspMeta').textContent=metaFor(ref,kind);
@@ -831,6 +933,7 @@ function sendChat(){
   const msgs=ChatBackend.load(room.id);
   msgs.push({by:CHAT_NAME,text:t,t:Date.now()});
   ChatBackend.save(room.id,msgs);
+  MoorWorld.logEvent(CHAT_NAME,'chat',room.id,{text:t});
   inp.value='';renderChat();
 }
 document.getElementById('chatSend').addEventListener('click',sendChat);
@@ -851,11 +954,11 @@ function buildTree(){
       (count!=null?'<span class="ct">'+count+'</span>':'');
     return r;};
   // space room on top
-  const ps=personalSpaces[0];
+  const ps=MoorWorld.getPersonalSpace('PS-SEABASS');
   const psr=mkRow('⌂','<span style="color:#7df9ff">'+ps.name+'</span>');
   psr.addEventListener('click',()=>{closeDrawer();enterPersonal(ps);});
   t.appendChild(psr);
-  for(const sec of universe.sectors){
+  for(const sec of MoorWorld.sectors()){
     const secKids=document.createElement('div');secKids.className='fkids fsec';
     const secRow=mkRow('▶','◆ '+sec.name,sec.systems.length+' systems');
     secRow.querySelector('.arrow').addEventListener('click',e=>{e.stopPropagation();
@@ -899,13 +1002,13 @@ function buildDevLists(){
   const mk=(label,fn)=>{const d=document.createElement('div');d.className='ditem';
     d.textContent=label;d.addEventListener('click',fn);return d;};
   dt.appendChild(mk('⌂ Universe',()=>goLevel(0)));
-  for(const s of universe.sectors){
+  for(const s of MoorWorld.sectors()){
     dt.appendChild(mk('◆ '+s.id+' '+s.name+'  U('+s.u.join(',')+')',()=>enterSector(s)));
     for(const sys of s.systems)
       dt.appendChild(mk('  ★ '+sys.id+'  S('+sys.s.join(',')+')',()=>{curSector=s;enterSystem(sys);}));
   }
   const ds=document.getElementById('devSpaces');ds.innerHTML='';
-  for(const ps of personalSpaces)
+  for(const ps of MoorWorld.personalSpaces())
     ds.appendChild(mk('⌂ '+ps.name+' · '+ps.coord,()=>enterPersonal(ps)));
 }
 document.getElementById('devJump').addEventListener('keydown',e=>{
@@ -917,7 +1020,7 @@ document.getElementById('devJump').addEventListener('keydown',e=>{
   if(l===0)goLevel(0);
   else if(l===1){
     let best=null,bd=1e9;
-    for(const s of universe.sectors){const d=(s.u[0]-c[0])**2+(s.u[1]-c[1])**2+(s.u[2]-c[2])**2;
+    for(const s of MoorWorld.sectors()){const d=(s.u[0]-c[0])**2+(s.u[1]-c[1])**2+(s.u[2]-c[2])**2;
       if(d<bd){bd=d;best=s;}}
     if(best)enterSector(best);
   }else alert('jump to levels 2/3 needs a system context — pick one from the list');
@@ -930,7 +1033,7 @@ function animate(){
   const dt=Math.min(clock.getDelta(),0.05);
   updateTween(dt);
   // gentle portal spin
-  if(universe._portal)universe._portal.rotation.z+=dt*0.4;
+  if(portalObj)portalObj.rotation.z+=dt*0.4;
   // planet + cloud rotation
   if(level===3&&planetSpin){
     planetSpin.group.rotation.y+=dt*0.05;
