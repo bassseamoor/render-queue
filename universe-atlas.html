@@ -138,6 +138,22 @@
   .fkids.open{display:block;}
   .fsec{border-left:1px solid rgba(201,162,39,.25);margin-left:19px;}
   .fsys{border-left:1px solid rgba(159,216,255,.2);margin-left:19px;}
+  /* drawer search */
+  #drawerSearch{padding:10px 12px 4px;flex-shrink:0;}
+  #drawerSearch input{width:100%;background:rgba(255,255,255,.05);
+    border:1px solid rgba(201,162,39,.3);color:#fff;border-radius:10px;
+    padding:11px 12px;font-size:16px;box-sizing:border-box;
+    -webkit-user-select:text;user-select:text;}
+  #drawerSearch input:focus{outline:none;border-color:#c9a227;}
+  #drawerResults{overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;}
+  .shead{font-size:10px;letter-spacing:2px;color:#c9a227;padding:10px 14px 2px;
+    text-transform:uppercase;}
+  .srow{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;font-size:14px;}
+  .srow:active{background:rgba(201,162,39,.12);}
+  .srow .k{font-size:10px;letter-spacing:1px;color:#8a8a9a;width:52px;flex-shrink:0;text-transform:uppercase;}
+  .srow .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .srow .id{font-size:10px;color:#5a5a6a;font-family:ui-monospace,monospace;flex-shrink:0;}
+  .snone{padding:16px;color:#6a6a7a;font-size:13px;text-align:center;}
   /* transition veil */
   #veil{position:fixed;inset:0;z-index:15;background:#040409;opacity:0;pointer-events:none;
     transition:opacity .45s ease;}
@@ -158,6 +174,8 @@
 <button id="listBtn">☰</button>
 <div id="drawer">
   <div id="drawerHead"><span>UNIVERSE INDEX</span><button id="drawerClose">✕</button></div>
+  <div id="drawerSearch"><input id="dSearch" placeholder="🔍 Search worlds..." autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+  <div id="drawerResults" style="display:none"></div>
   <div id="drawerTree"></div>
 </div>
 <button id="chatBtn">💬</button>
@@ -989,6 +1007,75 @@ function buildTree(){
     t.appendChild(secWrap);
   }
 }
+/* ================= DRAWER SEARCH ================= */
+const searchIndex=(()=>{
+  const idx=[];
+  for(const sec of MoorWorld.sectors()){
+    idx.push({kind:'sector',ref:sec,name:sec.name,id:sec.id,sec});
+    for(const sys of sec.systems){
+      idx.push({kind:'system',ref:sys,name:sys.name,id:sys.id,sec,sys});
+      for(const p of sys.planets){
+        idx.push({kind:'planet',ref:p,name:p.name,id:p.id,sec,sys});
+        for(const z of p.zones)
+          idx.push({kind:'zone',ref:z,parent:p,name:z.name,id:z.id,sec,sys});
+      }
+    }
+  }
+  for(const ps of MoorWorld.personalSpaces())
+    idx.push({kind:'personal',ref:ps,name:ps.name,id:ps.id});
+  return idx;
+})();
+function searchWorlds(q){
+  q=q.trim().toLowerCase();
+  if(q.length<2)return[];
+  const scored=[];
+  for(const e of searchIndex){
+    const nm=e.name.toLowerCase(),id=e.id.toLowerCase();
+    let s=-1;
+    if(nm.startsWith(q))s=0;
+    else if(nm.includes(q))s=1;
+    else if(id.includes(q))s=2;
+    if(s>=0)scored.push([s,e]);
+  }
+  scored.sort((a,b)=>a[0]-b[0]||a[1].name.localeCompare(b[1].name));
+  return scored.slice(0,40).map(x=>x[1]);
+}
+const KIND_LABEL={personal:'Personal',sector:'Sectors',system:'Systems',planet:'Planets',zone:'Zones'};
+const KIND_ORDER=['personal','sector','system','planet','zone'];
+function renderSearch(q){
+  const box=document.getElementById('drawerResults'),tree=document.getElementById('drawerTree');
+  if(!q.trim()){box.innerHTML='';box.style.display='none';tree.style.display='';return;}
+  tree.style.display='none';box.style.display='';
+  const res=searchWorlds(q);
+  if(!res.length){box.innerHTML='<div class="snone">No worlds found.</div>';return;}
+  let h='';
+  for(const k of KIND_ORDER){
+    const g=res.filter(e=>e.kind===k);
+    if(!g.length)continue;
+    h+='<div class="shead">'+KIND_LABEL[k]+'</div>';
+    for(const e of g)
+      h+='<div class="srow" data-id="'+e.id+'" data-kind="'+e.kind+'"><span class="k">'+e.kind+
+        '</span><span class="nm">'+escH(e.name)+'</span><span class="id">'+e.id+'</span></div>';
+  }
+  box.innerHTML=h;
+  box.querySelectorAll('.srow').forEach(r=>r.addEventListener('click',()=>{
+    const e=searchIndex.find(x=>x.id===r.dataset.id&&x.kind===r.dataset.kind);
+    if(!e)return;
+    closeDrawer();
+    if(e.kind==='sector')enterSector(e.ref);
+    else if(e.kind==='system'){curSector=e.sec;enterSystem(e.ref);}
+    else if(e.kind==='planet'){curSector=e.sec;curSystem=e.sys;enterPlanet(e.ref);}
+    else if(e.kind==='zone'){curSector=e.sec;curSystem=e.sys;enterPlanet(e.parent);}
+    else if(e.kind==='personal')enterPersonal(e.ref);
+  }));
+}
+const dSearch=document.getElementById('dSearch');
+dSearch.addEventListener('input',()=>renderSearch(dSearch.value));
+dSearch.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const f=document.querySelector('#drawerResults .srow');if(f)f.click();}
+});
+const _closeDrawer=closeDrawer;
+closeDrawer=function(){dSearch.value='';renderSearch('');_closeDrawer();};
 /* ================= DEV MODE ================= */
 const devBtn=document.getElementById('devBtn'),devPanel=document.getElementById('devPanel');
 function setDev(on){
