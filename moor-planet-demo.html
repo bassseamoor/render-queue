@@ -1058,7 +1058,7 @@ function createPlanetDemo(canvas,opts){
   let brushMode=false;
   const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
   const pointers=new Map();let dragging=false,pinchD=0;
-  const _v1=new THREE.Vector3(),_v2=new THREE.Vector3(),_v3=new THREE.Vector3();
+  const _v1=new THREE.Vector3(),_v2=new THREE.Vector3(),_v3=new THREE.Vector3(),_v4=new THREE.Vector3();
   const clampN=THREE.MathUtils.clamp;
 
   /* land probe for DROP IN */
@@ -1341,7 +1341,7 @@ function createPlanetDemo(canvas,opts){
           _down.copy(_v1).negate();
           _ray.set(camera.position,_down);
           _ray.far=orbit.radius-R+500;
-          const hit=_ray.intersectObject(groundGroup,true)[0];
+          const hit=_ray.intersectObjects([nearPatch.m,farPatch.m],false)[0];
           if(hit){
             const groundR=hit.point.length();
             terrainMinR=groundR+2.5;
@@ -1351,10 +1351,20 @@ function createPlanetDemo(canvas,opts){
           terrainMinR=R+5;
         }
       }else if(groundGroup.visible){groundGroup.visible=false;}
-      // camera up blends from world-up to surface normal
-      const upK=THREE.MathUtils.smoothstep(alt,8000,120000);
-      camera.up.set(0,1,0).lerp(_v1,1-upK).normalize();
-      camera.lookAt(_v2.copy(_v1).multiplyScalar(R));
+      // keep world-up: blending to surface normal makes view parallel to up (degenerate)
+      camera.up.set(0,1,0);
+      // look slightly ahead of nadir when close, not straight down (avoids spin)
+      if(alt<20000){
+        const aheadK=Math.min(1,(20000-alt)/20000);
+        _v2.copy(_v1).multiplyScalar(R);
+        // offset the look target toward the horizon by aheadK
+        _v3.copy(camera.position).sub(_v2).normalize(); // view dir (down)
+        _v4.crossVectors(_v3,new THREE.Vector3(0,1,0)).normalize(); // right
+        _v2.addScaledVector(_v4,alt*0.35*aheadK); // shift target sideways
+        camera.lookAt(_v2);
+      }else{
+        camera.lookAt(_v2.copy(_v1).multiplyScalar(R));
+      }
       // touchdown: hand over to walking when the lens reaches the real dirt
       if(orbit.radius<=terrainMinR+1.5){
         mode='ground';player.dir.copy(_v1);
