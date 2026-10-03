@@ -52,11 +52,6 @@
   .lbl.pl{color:#c8e6c8;font-size:10px;}
   .lbl.zone{color:#e8c890;font-size:9px;letter-spacing:1px;}
   .lbl.portal{color:#7df9ff;font-size:12px;letter-spacing:3px;}
-  /* teleport nodes */
-  #tele{position:fixed;top:64px;right:16px;z-index:10;display:flex;flex-direction:column;gap:6px;}
-  #tele button{background:rgba(10,14,24,.72);border:1px solid rgba(125,249,255,.3);
-    color:#7df9ff;border-radius:8px;padding:7px 12px;font-size:11px;letter-spacing:1px;cursor:pointer;}
-  #tele button:hover{border-color:#7df9ff;background:rgba(125,249,255,.1);}
   /* dev */
   #devBtn{position:fixed;bottom:64px;right:16px;z-index:20;background:rgba(20,10,10,.8);
     border:1px solid rgba(255,80,80,.4);color:#ff8080;border-radius:8px;
@@ -127,7 +122,6 @@
   <div id="coords"><span class="cl">U</span> <span id="coordVal">0, 0, 0</span></div>
 </div>
 <div id="crumb"></div>
-<div id="tele"></div>
 <div id="scale"></div>
 <div id="levelTitle"><div class="lt" id="ltName">UNIVERSE</div><div class="ls" id="ltSub"></div></div>
 <div id="insp"><div class="it" id="inspTitle"></div><div class="im" id="inspMeta"></div><button id="inspGo">Teleport here</button></div>
@@ -336,25 +330,6 @@ function renderCrumb(){
     goLevel(+b.dataset.l);
   }));
 }
-function renderTele(){
-  const t=document.getElementById('tele');t.innerHTML='';
-  const mk=(label,fn)=>{const b=document.createElement('button');b.textContent='◈ '+label;
-    b.addEventListener('click',fn);t.appendChild(b);};
-  if(level===0){
-    universe.sectors.forEach(s=>mk(s.name,()=>enterSector(s)));
-    mk('Space Room ⌂',()=>enterPersonal(personalSpaces[0]));
-  }else if(level===1&&curSector){
-    curSector.systems.forEach(s=>mk(s.name,()=>enterSystem(s)));
-    mk('← Universe',()=>goLevel(0));
-  }else if(level===2&&curSystem){
-    curSystem.planets.forEach(p=>mk(p.name,()=>enterPlanet(p)));
-    mk('← '+curSector.name,()=>goLevel(1));
-  }else if(level===3&&curPlanet){
-    mk('← '+curSystem.name,()=>goLevel(2));
-  }else if(level===4){
-    mk('← Universe',()=>goLevel(0));
-  }
-}
 
 /* ================= LEVEL BUILDERS ================= */
 function clearWorld(){
@@ -401,7 +376,7 @@ function buildUniverse(){
   setTitle('UNIVERSE','8 SECTORS · SPIRAL ARMS');
   setScale('scale — 1 unit ≈ 1 kpc · depth fog active');
   setCoords('U',[0,0,0]);
-  renderCrumb();renderTele();
+  renderCrumb();
   flyTo(new THREE.Vector3(0,95,175),new THREE.Vector3(0,0,0));
 }
 
@@ -429,7 +404,7 @@ function buildSector(sec){
   setTitle(sec.name.toUpperCase(),sec.systems.length+' SYSTEMS · '+sec.id);
   setScale('scale — 1 unit ≈ 10 ly · sector '+sec.id);
   setCoords('S',sec.u);
-  renderCrumb();renderTele();
+  renderCrumb();
   const c=new THREE.Vector3(...sec.u);
   flyTo(c.clone().add(new THREE.Vector3(0,34,52)),c);
 }
@@ -471,7 +446,7 @@ function buildSystem(sys){
   setTitle(sys.name.toUpperCase(),sys.planets.length+' PLANETS · CLASS '+sys.starClass);
   setScale('scale — 1 unit ≈ 1 AU · orbits to scale');
   setCoords('SYS',[0,0,0]);
-  renderCrumb();renderTele();
+  renderCrumb();
   flyTo(new THREE.Vector3(0,42,66),new THREE.Vector3(0,0,0));
 }
 
@@ -510,7 +485,7 @@ function buildPlanet(p){
   setTitle(p.name.toUpperCase(),p.zones.length+' ZONES · ORBIT '+p.orbit+' AU');
   setScale('scale — surface detail · radius 14 units');
   setCoords('P',[p.zones[0]?p.zones[0].lat:0,p.zones[0]?p.zones[0].lon:0,0]);
-  renderCrumb();renderTele();
+  renderCrumb();
   flyTo(new THREE.Vector3(0,18,46),new THREE.Vector3(0,0,0));
 }
 
@@ -546,7 +521,7 @@ function buildPersonal(ps){
   setTitle('SPACE ROOM',ps.owner.toUpperCase()+' · POCKET DIMENSION · '+ps.size.toUpperCase());
   setScale('personal space — limited size · upgradeable');
   setCoords('PX',[0,0,0]);
-  renderCrumb();renderTele();
+  renderCrumb();
   flyTo(new THREE.Vector3(0,7,20),new THREE.Vector3(0,4,0));
 }
 
