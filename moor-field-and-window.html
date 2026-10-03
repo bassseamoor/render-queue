@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Field &amp; Window — how the globe works</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#040409;color:#e8e4da;font-family:-apple-system,system-ui,sans-serif;
+    padding:28px 18px 70px;max-width:560px;margin:0 auto}
+  h1{font-size:24px;letter-spacing:1px;margin-bottom:6px}
+  h1 .gold{color:#c9a227}
+  .sub{color:#8a8a9a;font-size:14px;margin-bottom:30px;line-height:1.5}
+  .card{background:rgba(255,255,255,.03);border:1px solid rgba(201,162,39,.22);
+    border-radius:16px;padding:20px 16px;margin-bottom:22px}
+  .card h2{font-size:12px;letter-spacing:3px;color:#c9a227;margin-bottom:4px}
+  .card .tag{font-size:13px;color:#8a8a9a;margin-bottom:14px;line-height:1.5}
+  .card p{font-size:14px;line-height:1.65;color:#c8c8d8;margin-top:14px}
+  .card p b{color:#fff}
+  svg{display:block;width:100%;height:auto}
+  .lbl{font-size:11px;letter-spacing:2px;fill:#8a8a9a;text-transform:uppercase}
+  .glbl{font-size:11px;letter-spacing:2px;fill:#c9a227;text-transform:uppercase}
+  .clbl{font-size:11px;letter-spacing:2px;fill:#7df9ff;text-transform:uppercase}
+  .fast{display:flex;gap:12px;align-items:center;padding:12px 0;
+    border-top:1px solid rgba(255,255,255,.07);font-size:14px;color:#c8c8d8}
+  .fast:first-of-type{border-top:none}
+  .fast .ic{font-size:22px;width:34px;text-align:center;flex-shrink:0}
+  .foot{margin-top:26px;text-align:center;color:#5a5a6a;font-size:13px;line-height:1.7}
+  .foot .gold{color:#c9a227}
+</style>
+</head>
+<body>
+
+<h1><span class="gold">FIELD</span> &amp; WINDOW</h1>
+<div class="sub">How the walkable globe works — without ever building a globe renderer.<br>One planet. Two views. No globe mesh.</div>
+
+<div class="card">
+  <h2>1 · THE PLANET IS A FIELD</h2>
+  <div class="tag">Not a mesh. Not chunks. A function.</div>
+  <svg viewBox="0 0 340 300" id="d1">
+    <defs>
+      <radialGradient id="pg1" cx="38%" cy="32%" r="80%">
+        <stop offset="0%" stop-color="#2a6a8a"/><stop offset="55%" stop-color="#174a68"/>
+        <stop offset="100%" stop-color="#0a2038"/>
+      </radialGradient>
+    </defs>
+    <circle cx="170" cy="145" r="112" fill="none" stroke="#7df9ff" stroke-opacity=".18" stroke-width="10"/>
+    <path id="planetBlob" fill="url(#pg1)" stroke="#9fd8ff" stroke-opacity=".5" stroke-width="1.5"/>
+    <g id="samples"></g>
+    <text x="170" y="278" text-anchor="middle" class="lbl">terrain = f(seed, lat, lon) — defined everywhere</text>
+  </svg>
+  <p>The whole planet is <b>one continuous function</b>: give it a seed and a spot on the ball, it answers how high the ground is there. Same spot, same answer, forever. No chunks to stitch, no seams, no poles problem — because there's no mesh at all, just math.</p>
+</div>
+
+<div class="card">
+  <h2>2 · TWO VIEWS, ONE PLANET</h2>
+  <div class="tag">Far and near are the same field, drawn two ways.</div>
+  <svg viewBox="0 0 340 330">
+    <defs>
+      <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+        <stop offset="60%" stop-color="#7df9ff" stop-opacity=".28"/>
+        <stop offset="100%" stop-color="#7df9ff" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="pg2" cx="38%" cy="30%" r="85%">
+        <stop offset="0%" stop-color="#3a7a9a"/><stop offset="100%" stop-color="#0e2c48"/>
+      </radialGradient>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#0a1428"/><stop offset="100%" stop-color="#1a3a5a"/>
+      </linearGradient>
+      <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8" fill="none" stroke="#c9a227" stroke-width="1.6"/>
+      </marker>
+      <marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8" fill="none" stroke="#7df9ff" stroke-width="1.6"/>
+      </marker>
+    </defs>
+    <!-- orbit view -->
+    <circle cx="80" cy="105" r="72" fill="url(#halo)"/>
+    <circle cx="80" cy="105" r="50" fill="url(#pg2)"/>
+    <ellipse cx="65" cy="92" rx="30" ry="8" fill="#fff" opacity=".22"/>
+    <ellipse cx="95" cy="118" rx="26" ry="7" fill="#fff" opacity=".16"/>
+    <text x="80" y="185" text-anchor="middle" class="clbl">orbit · the far view</text>
+    <!-- surface view -->
+    <rect x="196" y="40" width="132" height="110" rx="10" fill="url(#sky)" opacity=".55"/>
+    <circle cx="300" cy="62" r="10" fill="#ffe9a8"/>
+    <path d="M196,150 Q228,108 262,132 T328,124 L328,150 Z" fill="#1f5a34"/>
+    <path d="M196,150 Q240,122 280,138 T328,132 L328,150 Z" fill="#2a7a44" opacity=".8"/>
+    <g fill="#0e3a1e">
+      <path d="M238,132 l7,-18 7,18 Z"/><rect x="243.5" y="130" width="3" height="8"/>
+      <path d="M282,128 l7,-18 7,18 Z"/><rect x="287.5" y="126" width="3" height="8"/>
+    </g>
+    <circle cx="258" cy="118" r="5" fill="#c9a227"/>
+    <text x="258" y="112" text-anchor="middle" class="glbl" font-size="9">you</text>
+    <text x="262" y="185" text-anchor="middle" class="clbl">surface · the window</text>
+    <!-- same field arrow -->
+    <line x1="140" y1="105" x2="188" y2="105" stroke="#c9a227" stroke-width="1.4"
+      marker-start="url(#arr)" marker-end="url(#arr)"/>
+    <text x="164" y="92" text-anchor="middle" class="glbl" font-size="9">same field</text>
+    <text x="164" y="122" text-anchor="middle" class="glbl" font-size="9">same seed</text>
+    <!-- descent -->
+    <path d="M80,190 C110,250 190,250 236,196" fill="none" stroke="#7df9ff"
+      stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#arr2)"/>
+    <text x="150" y="272" text-anchor="middle" class="clbl" font-size="10">the descent — a crossfade.</text>
+    <text x="150" y="288" text-anchor="middle" class="lbl" font-size="10">the mountains you saw from orbit</text>
+    <text x="150" y="303" text-anchor="middle" class="lbl" font-size="10">are the mountains you land on</text>
+  </svg>
+  <p>From orbit you see the <b>far view</b> — the sphere you already have, with atmosphere, clouds, water. On the ground you see the <b>window</b> — one sharp patch. Both sample the same field, so they always agree. Dropping in is just a crossfade between them.</p>
+</div>
+
+<div class="card">
+  <h2>3 · THE WINDOW FOLLOWS YOU</h2>
+  <div class="tag">Walk around the world. There is no world mesh.</div>
+  <svg viewBox="0 0 340 320" id="d3">
+    <defs>
+      <radialGradient id="pg3" cx="40%" cy="32%" r="80%">
+        <stop offset="0%" stop-color="#1c4a68"/><stop offset="100%" stop-color="#081a30"/>
+      </radialGradient>
+    </defs>
+    <circle cx="170" cy="150" r="98" fill="url(#pg3)" stroke="#2a4a6a" stroke-width="1"/>
+    <circle cx="170" cy="150" r="98" fill="none" stroke="#fff" stroke-opacity=".14"
+      stroke-width="1.4" stroke-dasharray="5 6"/>
+    <g id="ghosts"></g>
+    <path id="patchArc" fill="none" stroke="#c9a227" stroke-width="13" stroke-linecap="round"/>
+    <circle id="youDot" r="7" fill="#c9a227" stroke="#040409" stroke-width="2"/>
+    <text x="170" y="292" text-anchor="middle" class="lbl">the window re-centers under your feet as you walk</text>
+  </svg>
+  <p>Your position is tracked on the <b>true sphere</b>. The patch is a window that slides along under you, regenerated from the field — identical every time, so nothing ever pops. Walk in a straight line long enough and <b>you come back around</b>. That's walking around the globe, with no globe mesh existing anywhere.</p>
+</div>
+
+<div class="card">
+  <h2>4 · WHY IT'S FAST</h2>
+  <div class="tag">The phone barely wakes up.</div>
+  <div class="fast"><span class="ic">▦</span><span><b>One patch mesh.</b> Every triangle of detail goes here — under your feet, where the eyes are.</span></div>
+  <div class="fast"><span class="ic">○</span><span><b>One orbit sphere.</b> The far view you already have. It never changes.</span></div>
+  <div class="fast"><span class="ic">♣</span><span><b>Props are instanced copies.</b> Thousands of trees and rocks, drawn in a handful of calls.</span></div>
+  <div class="fast"><span class="ic">∿</span><span><b>A planet is a seed.</b> Nothing stored, everything generated. Tiny download, infinite worlds.</span></div>
+</div>
+
+<div class="foot">
+  <span class="gold">field</span> — what the planet is · <span class="gold">window</span> — what you stand on<br>
+  a planet is a seed · the rest is math
+</div>
+
+<script>
+function wavy(cx,cy,r,amp,seed,n){
+  n=n||140;let d='';
+  for(let i=0;i<=n;i++){
+    const a=i/n*Math.PI*2;
+    const w=Math.sin(a*3+seed)*.5+Math.sin(a*7+seed*1.7)*.3+Math.sin(a*13+seed*2.3)*.2;
+    const rr=r+w*amp,x=(cx+Math.cos(a)*rr).toFixed(1),y=(cy+Math.sin(a)*rr).toFixed(1);
+    d+=(i?'L':'M')+x+' '+y;
+  }
+  return d+'Z';
+}
+document.getElementById('planetBlob').setAttribute('d',wavy(170,145,98,13,2.1));
+// sample dots: same field, same answer
+const sg=document.getElementById('samples');
+[[248,86],[104,196],[232,196]].forEach(pt=>{
+  const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  c.setAttribute('cx',pt[0]);c.setAttribute('cy',pt[1]);c.setAttribute('r',4);
+  c.setAttribute('fill','#7df9ff');
+  sg.appendChild(c);
+});
+// diagram 3: patch arc + ghosts
+const NS='http://www.w3.org/2000/svg';
+function arc(cx,cy,r,a0,a1){
+  const p0=[cx+r*Math.cos(a0),cy+r*Math.sin(a0)],p1=[cx+r*Math.cos(a1),cy+r*Math.sin(a1)];
+  return `M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} A${r} ${r} 0 0 1 ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}`;
+}
+const D=Math.PI/180;
+document.getElementById('patchArc').setAttribute('d',arc(170,150,98,-28*D,28*D));
+const yd=document.getElementById('youDot');
+yd.setAttribute('cx',170+98*Math.cos(0));yd.setAttribute('cy',150+98*Math.sin(0));
+const gg=document.getElementById('ghosts');
+[[100,152],[208,260]].forEach(c=>{
+  const p=document.createElementNS(NS,'path');
+  p.setAttribute('d',arc(170,150,98,(c[0]-26)*D,(c[0]+26)*D));
+  p.setAttribute('fill','none');p.setAttribute('stroke','#c9a227');
+  p.setAttribute('stroke-opacity','.28');p.setAttribute('stroke-width','13');
+  p.setAttribute('stroke-linecap','round');
+  gg.appendChild(p);
+});
+// gentle drift animation on the patch, to show it traveling
+let t=0;
+setInterval(()=>{
+  t+=0.006;
+  const a0=t*57.3-28,a1=t*57.3+28;
+  document.getElementById('patchArc').setAttribute('d',arc(170,150,98,a0*D,a1*D));
+  yd.setAttribute('cx',170+98*Math.cos(t));yd.setAttribute('cy',150+98*Math.sin(t));
+},50);
+</script>
+</body>
+</html>
