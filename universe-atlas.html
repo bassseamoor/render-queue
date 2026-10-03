@@ -286,6 +286,12 @@ function planetTexture(p){
       const pool=mix([220,255,120],[160,200,60],Math.max(0,Math.min(1,(n-0.62)*4)));
       col=mix(land,pool,pt*pt*(3-2*pt));
     }
+    const poleF=Math.pow(Math.abs(v-0.5)*2,6);
+    if(poleF>0.001){
+      const mid=[(c1[0]+c2[0])/2,(c1[1]+c2[1])/2,(c1[2]+c2[2])/2];
+      const k=Math.min(1,poleF*0.9);
+      col=[col[0]+(mid[0]-col[0])*k,col[1]+(mid[1]-col[1])*k,col[2]+(mid[2]-col[2])*k];
+    }
     const i=(y*W+x)*4;
     D[i]=col[0];D[i+1]=col[1];D[i+2]=col[2];D[i+3]=255;
   }
@@ -567,16 +573,18 @@ function buildPlanet(p){
   if(ti===4){matOpts.emissive=new THREE.Color(0xff5a1a);matOpts.emissiveMap=tex.map;matOpts.emissiveIntensity=0.7;}
   const mesh=new THREE.Mesh(new THREE.SphereGeometry(R_P,64,64),
     new THREE.MeshStandardMaterial(matOpts));
-  worldGroup.add(mesh);
+  const spinGroup=new THREE.Group();
+  worldGroup.add(spinGroup);
+  spinGroup.add(mesh);
   // cloud layer (not for gas giants / barren / lava)
   let clouds=null;
   if(ti!==7&&ti!==6&&ti!==4){
     clouds=new THREE.Mesh(new THREE.SphereGeometry(R_P*1.025,48,48),
       new THREE.MeshStandardMaterial({map:cloudTexture(p),transparent:true,
         opacity:0.85,depthWrite:false,roughness:1}));
-    worldGroup.add(clouds);
+    spinGroup.add(clouds);
   }
-  planetSpin={mesh,clouds,ti};
+  planetSpin={group:spinGroup,clouds,ti};
   // gas giant rings — thin, elegant
   if(ti===7){
     const rings=new THREE.Mesh(new THREE.RingGeometry(R_P*1.35,R_P*2.1,72),
@@ -605,9 +613,9 @@ function buildPlanet(p){
     const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:GLOW,color:zc,
       transparent:true,opacity:0.6,depthWrite:false}));
     halo.scale.set(2.4,2.4,1);halo.position.set(x,y,zz);
-    worldGroup.add(dot,halo);
+    spinGroup.add(dot,halo);
     const holder=new THREE.Group();holder.position.set(x,y,zz);
-    worldGroup.add(holder);
+    spinGroup.add(holder);
     addLabel(z.name,'zone',holder,1.4);
     z._obj=holder;
   }
@@ -831,8 +839,8 @@ function animate(){
   if(universe._portal)universe._portal.rotation.z+=dt*0.4;
   // planet + cloud rotation
   if(level===3&&planetSpin){
-    planetSpin.mesh.rotation.y+=dt*0.05;
-    if(planetSpin.clouds)planetSpin.clouds.rotation.y+=dt*0.075;
+    planetSpin.group.rotation.y+=dt*0.05;
+    if(planetSpin.clouds)planetSpin.clouds.rotation.y+=dt*0.025;
   }
   // star shimmer
   const t=clock.elapsedTime;
