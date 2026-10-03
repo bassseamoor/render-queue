@@ -242,8 +242,13 @@ function planetTexture(p){
   const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
     const u=x/W,v=y/H;
-    const n=n1(u,v)*0.55+n2(u,v)*0.3+n3(u,v)*0.15;
-    const nB=n1((u+0.37)%1,(v+0.61)%1)*0.6+n2(u,v)*0.4;
+    const nRaw=n1(u,v)*0.55+n2(u,v)*0.3+n3(u,v)*0.15;
+    const nBRaw=n1((u+0.37)%1,(v+0.61)%1)*0.6+n2(u,v)*0.4;
+    // poles: UV collapses to a point, so flatten noise to neutral — no thresholds
+    // can be crossed, no radial streaks. Clean cap, like real planets.
+    const pb=Math.min(1,Math.max(0,(Math.abs(v-0.5)-0.22)/0.12));
+    const pk=1-pb*pb*(3-2*pb);
+    const n=0.5+(nRaw-0.5)*pk, nB=0.5+(nBRaw-0.5)*pk;
     let col;
     if(ti===0){ // terran: oceans + continents + ice caps
       const polar=Math.abs(v-0.5)>0.4-n*0.06;
@@ -262,8 +267,10 @@ function planetTexture(p){
       const d=n*0.7+Math.sin(v*28+n*6)*0.12+0.15;
       col=mix(hexRGB('#8a5f30'),hexRGB('#e8c088'),Math.max(0,Math.min(1,d)));
     }else if(ti===3){ // ice: sheets + cracks
-      const crack=Math.abs(n-0.5)<0.035;
-      col=crack?[110,150,190]:mix([200,224,242],[150,190,220],n);
+      const crack=Math.abs(n-0.5)<0.028;
+      col=crack?[90,130,175]:mix([190,216,236],[130,175,210],n);
+      if(pb>0){const w=[228,240,250],k=pb*pb*(3-2*pb);
+        col=[col[0]+(w[0]-col[0])*k,col[1]+(w[1]-col[1])*k,col[2]+(w[2]-col[2])*k];}
     }else if(ti===4){ // lava: dark crust + glowing cracks
       if(n>0.58){const t=Math.min(1,(n-0.58)*6);col=mix([255,110,20],[255,230,120],t);}
       else col=mix([24,10,6],[74,26,12],n*1.5);
@@ -286,12 +293,6 @@ function planetTexture(p){
       const pool=mix([220,255,120],[160,200,60],Math.max(0,Math.min(1,(n-0.62)*4)));
       col=mix(land,pool,pt*pt*(3-2*pt));
     }
-    const poleF=Math.pow(Math.abs(v-0.5)*2,6);
-    if(poleF>0.001){
-      const mid=[(c1[0]+c2[0])/2,(c1[1]+c2[1])/2,(c1[2]+c2[2])/2];
-      const k=Math.min(1,poleF*0.9);
-      col=[col[0]+(mid[0]-col[0])*k,col[1]+(mid[1]-col[1])*k,col[2]+(mid[2]-col[2])*k];
-    }
     const i=(y*W+x)*4;
     D[i]=col[0];D[i+1]=col[1];D[i+2]=col[2];D[i+3]=255;
   }
@@ -307,7 +308,9 @@ function cloudTexture(p){
   const g=c.getContext('2d'),img=g.createImageData(W,H),D=img.data;
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){
     const u=x/W,v=y/H;
-    const n=n1(u,v)*0.65+n2(u,v)*0.35;
+    const nR=n1(u,v)*0.65+n2(u,v)*0.35;
+    const pb=Math.min(1,Math.max(0,(Math.abs(v-0.5)-0.22)/0.12));
+    const n=0.5+(nR-0.5)*(1-pb*pb*(3-2*pb));
     const a=Math.max(0,Math.min(1,(n-0.56)*3.2))*0.75;
     const i=(y*W+x)*4;
     D[i]=D[i+1]=D[i+2]=255;D[i+3]=a*255;
@@ -601,6 +604,8 @@ function buildPlanet(p){
   worldGroup.add(atm);
   const dir=new THREE.DirectionalLight(0xfff2dd,1.4);dir.position.set(40,20,30);
   worldGroup.add(dir);
+  const fill=new THREE.DirectionalLight(0x8aa4cc,0.45);fill.position.set(-20,-35,10);
+  worldGroup.add(fill);
   // zones → lat/long to 3D
   for(const z of p.zones){
     const la=z.lat*Math.PI/180, lo=z.lon*Math.PI/180;
