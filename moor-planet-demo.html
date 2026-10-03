@@ -1142,6 +1142,8 @@ function createPlanetDemo(canvas,opts){
     if(modeBtn)modeBtn.style.display=mode==='ground'?'block':'none';
   }
   let faceTarget=null,groundDirty=true,groundAnchor=null,lastGroundR=0;
+  const _ray=new THREE.Raycaster(),_down=new THREE.Vector3();
+  let terrainMinR=R+5; // dynamic floor: never zoom below real ground + margin
   function diveTo(dir){
     if(mode!=='orbit')return;
     // no more auto-flight: turn to face a beautiful spot, you pinch the dive
@@ -1170,7 +1172,8 @@ function createPlanetDemo(canvas,opts){
 
   /* ----- input ----- */
   const zoom=f=>{if(mode!=='orbit')return;
-    orbit.targetR=THREE.MathUtils.clamp((orbit.targetR||orbit.radius)*f,R+1.7,R*10);};
+    const minR=(typeof terrainMinR!=='undefined')?terrainMinR:R+1.7;
+    orbit.targetR=THREE.MathUtils.clamp((orbit.targetR||orbit.radius)*f,minR,R*10);};
   canvas.addEventListener('pointerdown',e=>{
     try{canvas.setPointerCapture(e.pointerId);}catch(_){}
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -1333,15 +1336,29 @@ function createPlanetDemo(canvas,opts){
           placeGround();buildProps();
           groundAnchor.copy(camera.position);lastGroundR=orbit.radius;groundDirty=false;
         }
+        // when close, raycast the real terrain: never let the lens go under the dirt
+        if(orbit.radius<R+3000&&groundGroup.visible){
+          _down.copy(_v1).negate();
+          _ray.set(camera.position,_down);
+          _ray.far=orbit.radius-R+500;
+          const hit=_ray.intersectObject(groundGroup,true)[0];
+          if(hit){
+            const groundR=hit.point.length();
+            terrainMinR=groundR+2.5;
+            if(orbit.targetR<terrainMinR)orbit.targetR=terrainMinR;
+          }
+        }else{
+          terrainMinR=R+5;
+        }
       }else if(groundGroup.visible){groundGroup.visible=false;}
       // camera up blends from world-up to surface normal
       const upK=THREE.MathUtils.smoothstep(alt,8000,120000);
       camera.up.set(0,1,0).lerp(_v1,1-upK).normalize();
       camera.lookAt(_v2.copy(_v1).multiplyScalar(R));
-      // touchdown: hand over to walking when the lens reaches the dirt
-      if(orbit.radius<=R+4){
+      // touchdown: hand over to walking when the lens reaches the real dirt
+      if(orbit.radius<=terrainMinR+1.5){
         mode='ground';player.dir.copy(_v1);
-        orbit.radius=R+1.7;
+        orbit.radius=terrainMinR;orbit.targetR=terrainMinR;
         player.yaw=orbit.theta;player.pitch=-0.05;
         anchorFrame(player.dir);
         placeGround();buildProps();setModeUI();
