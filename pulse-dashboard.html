@@ -245,6 +245,38 @@
   body.m-sheet #view-home #right{background:#070c15}
 }
 
+/* =====================================================================
+   14. DIMENSIONAL DEPTH — hologram-room feel. Static tilt for planes,
+   pointer-follow tilt for cards (fine pointers only, never under
+   reduced motion). Text never moves on its own.
+   ===================================================================== */
+.holo-scope{
+  background-image:
+    radial-gradient(1200px 620px at 50% -10%,rgba(31,111,235,.10),transparent 60%),
+    linear-gradient(rgba(95,212,255,.028) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(95,212,255,.028) 1px,transparent 1px);
+  background-size:auto,44px 44px,44px 44px;
+}
+/* hologram plane: floats at a slight angle with a soft light-pool beneath */
+.holo-holoplane{position:relative;transform:perspective(1400px) rotateX(7deg);transform-origin:50% 0;
+  filter:drop-shadow(0 20px 30px rgba(0,0,0,.55))}
+.holo-holoplane::after{content:"";position:absolute;left:6%;right:6%;bottom:-30px;height:44px;pointer-events:none;
+  background:radial-gradient(50% 50% at 50% 50%,rgba(95,212,255,.13),transparent 70%)}
+/* pointer tilt: applied via JS, subtle, springs back */
+.holo-tilt{transition:transform 200ms ease-out;transform-style:preserve-3d;will-change:transform}
+@media (prefers-reduced-motion:reduce){
+  .holo-holoplane{transform:none;filter:none}
+  .holo-holoplane::after{display:none}
+  .holo-tilt{transition:none}
+}
+@media(max-width:900px){
+  .holo-holoplane{transform:perspective(1000px) rotateX(4deg)}
+}
+/* region depth: sides recessed, center lifted */
+#view-home #tree{background:rgba(3,6,11,.55)}
+#view-home #right{background:rgba(3,6,11,.55)}
+#view-home #center{background:linear-gradient(180deg,rgba(22,34,56,.38),transparent 260px)}
+
 </style>
 <style>
 /* Pulse layout skeleton — structure and positioning only.
@@ -513,7 +545,7 @@ function relDiagramHTML(c){
   if(!L.length)s+='<text class="holo-node__sub" x="'+PAD+'" y="'+(TOP+24)+'">nothing recorded</text>';
   if(!R.length)s+='<text class="holo-node__sub" x="'+(PAD+2*(NW+GX))+'" y="'+(TOP+24)+'">nothing recorded</text>';
   s+=node(cx,cy,{label:c.name,sub:c.role+' \u00b7 '+c.status,known:true},true);
-  return s+'</svg>';
+  return '<div class="holo-holoplane">'+s+'</svg></div>';
 }
 function taskStatusBadge(s){return s==='blocked'?'b-blocked':s==='completed'?'b-complete':s==='planned'?'b-unknown':'b-active'}
 function taskRow(t){
@@ -584,7 +616,7 @@ function cProject(){
   var t=treeData();
   h+='<h4 class="sech">Subsystems</h4><div class="tiles">'
     +t.kids.map(function(g){
-      return '<div class="tile" tabindex="0" role="button" onkeydown="tileKey(event,\'group\',\''+g.id+'\')" onclick="treeSel(\'group\',\''+g.id+'\')"><div class="t">'+esc(g.name)+'</div><div class="s">'+(g.st&&g.st!==String((g.kids||[]).length)?esc(g.st)+' \u00b7 ':'')+(g.kids||[]).length+' items</div></div>'}).join('')+'</div>';
+      return '<div class="tile holo-tilt" tabindex="0" role="button" onkeydown="tileKey(event,\'group\',\''+g.id+'\')" onclick="treeSel(\'group\',\''+g.id+'\')"><div class="t">'+esc(g.name)+'</div><div class="s">'+(g.st&&g.st!==String((g.kids||[]).length)?esc(g.st)+' \u00b7 ':'')+(g.kids||[]).length+' items</div></div>'}).join('')+'</div>';
   h+='<h4 class="sech">Tasks</h4>'+tasksHTML(tasks);
   h+=needsDecisionHTML(null,null);
   return h;
@@ -593,7 +625,7 @@ function cGroup(id){
   var g=findNode(id);if(!g)return '<div class="empty">Not found.</div>';
   var h=chead(g.name,[['b-unknown',g.st||'group']]);
   h+='<div class="tiles">'+(g.kids||[]).map(function(k){
-    return '<div class="tile" tabindex="0" role="button" onkeydown="tileKey(event,\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')" onclick="treeSel(\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')"><div class="t">'+esc(k.name)+'</div>'+(k.st?'<div class="s">'+esc(k.st)+'</div>':'')+'</div>'}).join('')+'</div>';
+    return '<div class="tile holo-tilt" tabindex="0" role="button" onkeydown="tileKey(event,\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')" onclick="treeSel(\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')"><div class="t">'+esc(k.name)+'</div>'+(k.st?'<div class="s">'+esc(k.st)+'</div>':'')+'</div>'}).join('')+'</div>';
   return h;
 }
 function cComponent(id){
@@ -649,6 +681,27 @@ function renderCenter(){
   else h=cLinked(n);
   document.getElementById('center').innerHTML=h;
 }
+/* holo pointer tilt: subtle 3D follow on cards. Fine pointers only, never under
+   reduced motion. Re-render safe: transforms live on replaced nodes. */
+(function(){
+  var fine=false; try{fine=window.matchMedia('(pointer:fine)').matches&&!REDUCED}catch(e){}
+  if(!fine)return;
+  function clear(except){
+    document.querySelectorAll('.holo-tilt.holo-tilting').forEach(function(el){
+      if(el!==except){el.classList.remove('holo-tilting');el.style.transform=''}});
+  }
+  document.addEventListener('pointermove',function(e){
+    var t=(e.target&&e.target.closest)?e.target.closest('.holo-tilt'):null;
+    clear(t);
+    if(!t)return;
+    var r=t.getBoundingClientRect();
+    if(r.width<2)return;
+    var px=(e.clientX-r.left)/r.width-.5, py=(e.clientY-r.top)/r.height-.5;
+    t.classList.add('holo-tilting');
+    t.style.transform='perspective(900px) rotateX('+(-py*7).toFixed(2)+'deg) rotateY('+(px*7).toFixed(2)+'deg) translateZ(6px)';
+  },{passive:true});
+  document.addEventListener('pointerleave',function(){clear(null)},true);
+})();
 /* ---- right: activity timeline / detail / log ---- */
 function timelineHTML(){
   var evs=(S.activity||[]).filter(function(e){return e.type!=='question'}),h='',i=evs.length-1,shown=0;
