@@ -161,9 +161,29 @@
 #dropBtn{position:fixed;left:16px;bottom:176px;z-index:21;height:46px;padding:0 18px;
   background:rgba(10,14,24,.85);border:1px solid rgba(125,249,255,.4);color:#7df9ff;
   border-radius:23px;font-size:13px;letter-spacing:2px;cursor:pointer;display:none;}
+#dosBtn{position:fixed;left:16px;bottom:232px;z-index:21;height:46px;padding:0 18px;
+  background:rgba(10,14,24,.85);border:1px solid rgba(201,162,39,.45);color:#e8e4da;
+  border-radius:23px;font-size:13px;letter-spacing:2px;cursor:pointer;display:none;}
+#dossier{position:fixed;inset:0;z-index:40;background:rgba(6,8,14,.98);display:none;flex-direction:column;}
+#dossier.open{display:flex;}
+#dosHead{display:flex;justify-content:space-between;align-items:center;padding:16px;
+  font-size:12px;letter-spacing:3px;color:#c9a227;flex-shrink:0;
+  border-bottom:1px solid rgba(201,162,39,.25);}
+#dosHead button{background:none;border:none;color:#8a8a9a;font-size:18px;cursor:pointer;}
+#dosBody{overflow-y:auto;padding:18px 18px 70px;-webkit-overflow-scrolling:touch;}
+#dosBody .dsec{margin-bottom:20px;}
+#dosBody .dlab{font-size:10px;letter-spacing:2px;color:#c9a227;text-transform:uppercase;margin-bottom:6px;}
+#dosBody .dsum{font-size:15px;line-height:1.55;color:#e8e4da;}
+#dosBody .drow{font-size:14px;color:#c8c8d8;padding:7px 0;border-top:1px solid rgba(255,255,255,.06);}
+#dosBody .daddr{font-size:11px;color:#5a5a6a;font-family:ui-monospace,monospace;word-break:break-all;line-height:1.6;}
+#dosBody .sig{border:1px solid rgba(201,162,39,.4);border-radius:10px;padding:10px 12px;
+  margin-bottom:8px;background:rgba(201,162,39,.06);}
+#dosBody .tb{display:inline-block;width:26px;height:8px;border-radius:2px;background:#2a2a38;margin-right:3px;}
+#dosBody .tb.f{background:#8fd694;}
+#dosBody .dmut{color:#8a8a9a;font-size:12px;}
 body.surfacing #labels,body.surfacing #hud,body.surfacing #crumb,body.surfacing #scale,
 body.surfacing #levelTitle,body.surfacing #chatBtn,body.surfacing #listBtn,
-body.surfacing #devBtn,body.surfacing #dropBtn,body.surfacing #insp,
+body.surfacing #devBtn,body.surfacing #dropBtn,body.surfacing #dosBtn,body.surfacing #insp,
 body.surfacing #drawer,body.surfacing #chatPanel,body.surfacing #devPanel,
 body.surfacing #hint{display:none!important;}
 #surfaceHud{display:none;}
@@ -200,6 +220,11 @@ body.surfacing #surfaceHud{display:block;}
 </div>
 <button id="chatBtn">💬</button>
 <button id="dropBtn">▼ DROP IN</button>
+<button id="dosBtn">▤ DOSSIER</button>
+<div id="dossier">
+  <div id="dosHead"><span>PLANET DOSSIER</span><button id="dosClose">✕</button></div>
+  <div id="dosBody"></div>
+</div>
 <div id="chatPanel">
   <div id="chatHead"><span id="chatTitle">CHAT</span><button id="chatClose">✕</button></div>
   <div id="chatMsgs"></div>
@@ -315,6 +340,142 @@ const MoorWorld = (() => {
     return nm;
   }
 
+  /* ---- dossier data: materials, species, climate, summary.
+        Deterministic from the planet id — same planet, same sheet, every time.
+        Materials ported from the planet-materials prototype (this is now its
+        one canonical home; the prototype file is retired). ---- */
+  const MAT_CATS=['wood','stone','metal','glass','fiber','clay'];
+  const MAT_TIERS=['trace','scarce','common','rich'];
+  const MAT_SIG={TERRAN:'amber',OCEAN:'pearl',DESERT:'spice',ICE:'frost crystal',
+    LAVA:'obsidian',JUNGLE:'vine silk',BARREN:'titanium',GAS:'aether',
+    CRYSTAL:'prism shard',TOXIC:'venom'};
+  const MAT_VARIANTS={
+    wood:{ICE:['frostwood','icepine','snowbark'],LAVA:['charwood','emberoak','cinderpine'],
+      JUNGLE:['vinewood','canopy oak','jungleheart'],OCEAN:['driftwood','saltcedar','tidewood'],
+      DESERT:['ironwood','sunbark','dune acacia'],TERRAN:['oak','pine','birch'],
+      X:['scrubwood','petrified wood','thornwood']},
+    stone:{ICE:['glacier granite','blueslate','permafrost stone'],LAVA:['basalt','cinderstone','magma rock'],
+      JUNGLE:['mossstone','laterite','jungle marble'],OCEAN:['coralstone','abyssal rock','shell limestone'],
+      DESERT:['sandstone','sunbaked rock','dune slate'],TERRAN:['granite','limestone','fieldstone'],
+      X:['regolith','scree','dullrock']},
+    glass:{ICE:['frostglass','snowglass','ice-glass'],LAVA:['volcanic glass','ashglass','emberglass'],
+      JUNGLE:['canopy glass','vineglass','dewglass'],OCEAN:['seaglass','abyssal glass','foamglass'],
+      DESERT:['sunglass','duneglass','heatglass'],TERRAN:['clear glass','river glass','bottle glass'],
+      X:['crude glass','smoky glass','ash glass']},
+    fiber:{ICE:['mossfiber','tundra grass','iceflax'],LAVA:['ashfiber','ember reed','cinderflax'],
+      JUNGLE:['vine fiber','canopy floss','jungle hemp'],OCEAN:['kelp fiber','reed','tideflax'],
+      DESERT:['dune grass','sunhemp','cactus fiber'],TERRAN:['hemp','flax','cotton'],
+      X:['scrub fiber','wiremoss','dryflax']},
+    clay:{ICE:['grey clay','permafrost clay','blue clay'],LAVA:['red clay','volcanic clay','ash clay'],
+      JUNGLE:['red clay','river clay','jungle porcelain'],OCEAN:['sea clay','abyssal clay','shell clay'],
+      DESERT:['red clay','dune clay','sun clay'],TERRAN:['red clay','grey clay','porcelain'],
+      X:['dust clay','grey clay','regolith clay']}
+  };
+  const MAT_EXOTICS=['void essence','starfall','emberheart','tideglass'];
+  const TKEYS=['TERRAN','OCEAN','DESERT','ICE','LAVA','JUNGLE','BARREN','GAS','CRYSTAL','TOXIC'];
+  function tkeyOf(pid){return TKEYS[hashStr(pid)%PTYPES.length];}
+  function _matAb(rng){const r=rng();return r<0.15?3:r<0.70?2:r<0.95?1:0;}
+  function materials(pid){
+    const type=tkeyOf(pid);
+    const rng=mulberry32(hashStr(pid));
+    const gas=type==='GAS',rows=[];
+    for(const c of MAT_CATS){
+      if(c==='metal'){
+        const metals=[{v:'iron',t:_matAb(rng)}];
+        for(const [nm,pr] of [['copper',.45],['tin',.30],['silver',.15],['gold',.08]]){
+          if(rng()<pr&&metals.length<3)metals.push({v:nm,t:_matAb(rng)});}
+        if(gas)metals.forEach(m=>{m.t=Math.max(0,m.t-1);});
+        rows.push({c,metals});
+      }else{
+        const pool=MAT_VARIANTS[c][type]||MAT_VARIANTS[c].X;
+        let t=_matAb(rng);
+        if(gas&&(c==='wood'||c==='stone'||c==='clay'))t=Math.max(0,t-1);
+        rows.push({c,v:pool[Math.floor(rng()*pool.length)],t});
+      }
+    }
+    const sig={v:MAT_SIG[type],t:_matAb(rng)};
+    let exo=null;
+    if(rng()<0.08)exo={v:MAT_EXOTICS[Math.floor(rng()*MAT_EXOTICS.length)],t:0};
+    return {type,sig,rows,exo,tiers:MAT_TIERS};
+  }
+  const CLIMATE={
+    TERRAN:{temp:'mild',air:'breathable and crisp',wx:['clear skies and long calm stretches','scattered storms rolling through','long gentle rains']},
+    OCEAN:{temp:'warm',air:'salty and heavy',wx:['sea squalls that come out of nowhere','glass-calm mornings and rough afternoons','endless drizzle over the water']},
+    DESERT:{temp:'scorching days, freezing nights',air:'thin and dry',wx:['dust storms that blot out the sun','weeks of heat shimmer','rare, violent flash rains']},
+    ICE:{temp:'deep freeze',air:'thin and sharp',wx:['whiteouts that last for days','diamond-dust skies and deadly calm','howling katabatic winds']},
+    LAVA:{temp:'searing',air:'sulfur — do not breathe',wx:['ashfall that buries footprints','rivers of fire shifting course','heat lightning every night']},
+    JUNGLE:{temp:'hot and wet',air:'thick enough to chew',wx:['daily downpours at dusk','steaming mornings and drumming rain by noon','weeks of unbroken monsoon']},
+    BARREN:{temp:'cold to the bone',air:'barely there',wx:['micrometeorite patter','dust devils in the flats','a sky that never changes']},
+    GAS:{temp:'storm-wracked',air:'unbreathable soup',wx:['supercell storms wider than continents','updrafts that could swallow a ship','bands of rain that never end']},
+    CRYSTAL:{temp:'cool',air:'still, with a mineral tang',wx:['shardfall in the deep fields','singing winds through the spires','light storms at the terminator']},
+    TOXIC:{temp:'hot',air:'a lung-burning haze',wx:['acid rain most afternoons','a haze that never fully lifts','caustic fog banks rolling in low']}
+  };
+  function climate(pid){
+    const type=tkeyOf(pid),base=CLIMATE[type];
+    const rng=mulberry32(hashStr(pid+'climate'));
+    return {type,temp:base.temp,air:base.air,
+      weather:base.wx[Math.floor(rng()*base.wx.length)]};
+  }
+  const SPEC_A=['Mire','Haze','Thorn','Gloom','Pale','Dusk','Ash','Bog','Crag','Vex',
+    'Murk','Silt','Frost','Ember','Kelp','Dune','Moss','Shriek','Gravel','Wisp'];
+  const SPEC_B=['crawler','wing','skitter','maw','grazer','stalker','bloom','howler',
+    'mite','mother','dart','lurker','sifter','piper'];
+  const SPEC_TEMP=['docile','skittish','territorial','curious','dangerous','elusive','placid','aggressive'];
+  const SPEC_HAB={
+    TERRAN:['in the meadows','near fresh water','at the treeline'],
+    OCEAN:['in the shallows','around the reefs','in open water'],
+    DESERT:['in the dune seas','near the rare oases','in the rocky badlands'],
+    ICE:['on the ice sheets','near the pressure cracks','in the snowfields'],
+    LAVA:['near the cooling flows','in the ash wastes','around the fire founts'],
+    JUNGLE:['in the canopy','on the forest floor','near the rivers'],
+    BARREN:['in the dust flats','among the rocks','in the crater shadows'],
+    GAS:['in the upper bands','riding the storm edges','in the calm belts'],
+    CRYSTAL:['among the shards','in the resonance fields','near the spires'],
+    TOXIC:['near the pools','in the haze flats','at the sludge marshes']
+  };
+  function species(pid){
+    const type=tkeyOf(pid);
+    const rng=mulberry32(hashStr(pid+'species'));
+    const habs=SPEC_HAB[type],n=2+Math.floor(rng()*4),out=[],used=new Set();
+    for(let i=0;i<n;i++){
+      const nm=(SPEC_A[Math.floor(rng()*SPEC_A.length)]+' '+
+        SPEC_B[Math.floor(rng()*SPEC_B.length)]).toLowerCase();
+      if(used.has(nm)){i--;continue;}
+      used.add(nm);
+      out.push({name:nm,temp:SPEC_TEMP[Math.floor(rng()*SPEC_TEMP.length)],
+        habitat:habs[Math.floor(rng()*habs.length)]});
+    }
+    return out;
+  }
+  const SUM_S1={
+    TERRAN:n=>`${n} is a living world — blue water, green land, air you can breathe. The kind of place people want to stay.`,
+    OCEAN:n=>`${n} is almost entirely ocean, broken only by scattered islands. Everything here happens on or under the water.`,
+    DESERT:n=>`${n} is a desert world — dune seas, sun-baked rock, and water worth fighting over.`,
+    ICE:n=>`${n} is locked in ice. What little moves here moves carefully, and the cold does not forgive.`,
+    LAVA:n=>`${n} is a furnace — cooling crust over liquid fire, ash in the air, ground that can kill you standing still.`,
+    JUNGLE:n=>`${n} is a jungle world, green stacked on green, loud with life and heavy with rain.`,
+    BARREN:n=>`${n} is a barren rock — airless, silent, and honest about it. Nothing grows here; everything is brought.`,
+    GAS:n=>`${n} is a gas giant — no ground to stand on, only storms the size of continents and skies that never end.`,
+    CRYSTAL:n=>`${n} is a crystal world, where the ground itself is grown, not made. It hums if you listen.`,
+    TOXIC:n=>`${n} is a toxic world wrapped in yellow-green haze. The air burns and the pools poison — but what it sweats is prized off-world.`
+  };
+  function summary(pid){
+    const p=byId.get(pid);
+    if(!p||p.kind!=='planet')return '';
+    const type=tkeyOf(pid),M=materials(pid),C=climate(pid),S=species(pid);
+    const s1=SUM_S1[type](p.name);
+    const s2=`The air is ${C.air}. Expect ${C.weather}.`;
+    const s3=`Its signature resource is ${M.sig.v} — ${MAT_TIERS[M.sig.t]} here`+
+      (M.sig.t>=2?', and prized off-world.':'.')+
+      ` ${S.length} known species, including the ${S[0].temp} ${S[0].name}.`;
+    const zs=p.zones;
+    const s4=zs.length
+      ?`${zs.length} ${zs.length===1?'zone breaks':'zones break'} up the wilds: `+
+       zs.map(z=>z.name).join(', ')+'.'
+      :'No settled zones — pure wilderness.';
+    return s1+' '+s2+' '+s3+' '+s4;
+  }
+
   /* ---- generation: identical draw order to Atlas v1, do not reorder ---- */
   const sectors=[];
   for(let i=0;i<8;i++){
@@ -418,6 +579,7 @@ const MoorWorld = (() => {
     addressOf,
     planetType:p=>ptypeOf(p),
     planetTypeIndex:p=>PTYPES.indexOf(ptypeOf(p)),
+    materials,species,climate,summary,
     logEvent,
     events:()=>_events.slice(),
   };
@@ -870,6 +1032,7 @@ function buildPersonal(ps){
 
 /* ================= NAVIGATION ================= */
 function veil(cb){
+  closeDossier();
   const v=document.getElementById('veil');
   v.style.opacity=1;setTimeout(()=>{cb();setTimeout(()=>v.style.opacity=0,120);},480);
 }
@@ -1387,7 +1550,7 @@ const surface=(()=>{
   document.getElementById('modeBtn').addEventListener('click',()=>setMode(mode==='brush'?'walk':'brush'));
   document.getElementById('leaveBtn').addEventListener('click',leave);
   document.getElementById('dropBtn').addEventListener('click',()=>{
-    if(level===3&&curPlanet&&!surfaceActive)enter(curPlanet);
+    if(level===3&&curPlanet&&!surfaceActive){closeDossier();enter(curPlanet);}
   });
 
   const api={enter,leave,tick,
@@ -1405,8 +1568,73 @@ const surface=(()=>{
 })();
 
 function updateDropBtn(){
-  document.getElementById('dropBtn').style.display=(level===3&&curPlanet&&!surfaceActive)?'block':'none';
+  const vis=(level===3&&curPlanet&&!surfaceActive);
+  document.getElementById('dropBtn').style.display=vis?'block':'none';
+  document.getElementById('dosBtn').style.display=vis?'block':'none';
 }
+
+/* ================= DOSSIER ================= */
+function terrainStats(pid){
+  const seed=MoorWorld.hashStr(pid);
+  const n1=makeNoise(seed,24,24),n2=makeNoise(seed+7,48,48),n3=makeNoise(seed+13,96,96);
+  let mn=1e9,mx=-1e9,sum=0,sum2=0,n=0;
+  for(let j=0;j<24;j++)for(let i=0;i<24;i++){
+    const h=n1(i/24,j/24)*0.55+n2(i/24,j/24)*0.3+n3(i/24,j/24)*0.15;
+    if(h<mn)mn=h;if(h>mx)mx=h;sum+=h;sum2+=h*h;n++;
+  }
+  const mean=sum/n,sd=Math.sqrt(Math.max(0,sum2/n-mean*mean));
+  const desc=sd<0.045?'mostly flat plains':sd<0.075?'rolling lowlands':
+    sd<0.105?'rugged highlands':'jagged, broken terrain';
+  return {desc,relief:Math.round((mx-mn)*100)};
+}
+function tierBars(t){let h='';for(let i=0;i<4;i++)h+='<span class="tb'+(i<=t?' f':'')+'"></span>';return h;}
+function openDossier(){
+  if(level!==3||!curPlanet)return;
+  const p=curPlanet,T=MoorWorld.planetType(p),M=MoorWorld.materials(p.id),
+        C=MoorWorld.climate(p.id),S=MoorWorld.species(p.id),TS=terrainStats(p.id),
+        addr=MoorWorld.addressOf('planet',p.id);
+  let h='<div class="dsec"><div class="dlab">'+escH(T.name)+'</div>'+
+    '<div style="font-size:24px;color:#fff;margin-bottom:2px">'+escH(p.name)+'</div>'+
+    '<div class="daddr">'+escH(p.id)+' · '+escH(addr||'')+'</div></div>';
+  h+='<div class="dsec"><div class="dlab">Briefing</div><div class="dsum">'+escH(MoorWorld.summary(p.id))+'</div></div>';
+  h+='<div class="dsec"><div class="dlab">Terrain</div><div class="drow">'+escH(TS.desc)+
+    ' <span class="dmut">· relief '+TS.relief+'%</span></div></div>';
+  h+='<div class="dsec"><div class="dlab">Climate</div>'+
+    '<div class="drow">Temperature — '+escH(C.temp)+'</div>'+
+    '<div class="drow">Air — '+escH(C.air)+'</div>'+
+    '<div class="drow">Weather — '+escH(C.weather)+'</div></div>';
+  h+='<div class="dsec"><div class="dlab">Materials</div>'+
+    '<div class="sig"><div class="dlab">Signature</div>'+
+    '<div style="font-size:16px">'+escH(M.sig.v)+' <span class="dmut">· '+M.tiers[M.sig.t]+'</span></div></div>';
+  for(const r of M.rows){
+    if(r.metals){
+      const inner=r.metals.map(m=>escH(m.v)+' <span class="dmut">· '+M.tiers[m.t]+'</span>').join('<br>');
+      const best=Math.max(...r.metals.map(m=>m.t));
+      h+='<div class="drow"><span class="dmut">METAL</span><br>'+inner+'<br>'+tierBars(best)+'</div>';
+    }else{
+      h+='<div class="drow"><span class="dmut">'+escH(r.c.toUpperCase())+'</span> '+escH(r.v)+
+        ' <span class="dmut">· '+M.tiers[r.t]+'</span><br>'+tierBars(r.t)+'</div>';
+    }
+  }
+  if(M.exo)h+='<div class="sig" style="border-color:rgba(160,120,255,.4);background:rgba(120,80,255,.06)">'+
+    '<div class="dlab" style="color:#c9a7ff">Exotic trace</div><div style="font-size:16px">'+escH(M.exo.v)+
+    ' <span class="dmut">· trace — extremely rare</span></div></div>';
+  h+='</div>';
+  h+='<div class="dsec"><div class="dlab">Life — '+S.length+' known species</div>';
+  for(const s of S)h+='<div class="drow">'+escH(s.name)+' <span class="dmut">· '+escH(s.temp)+' · '+escH(s.habitat)+'</span></div>';
+  h+='</div>';
+  h+='<div class="dsec"><div class="dlab">Zones — '+p.zones.length+'</div>';
+  for(const z of p.zones)h+='<div class="drow">'+escH(z.name)+' <span class="dmut">· '+escH(z.kind)+'</span></div>';
+  h+='</div>';
+  h+='<div class="dsec"><div class="dlab">Provenance</div>'+
+    '<div class="daddr">seed '+MoorWorld.UNIVERSE_SEED+' · generator v'+MoorWorld.GENERATOR_VERSION+'<br>'+escH(addr||'')+'</div></div>';
+  document.getElementById('dosBody').innerHTML=h;
+  document.getElementById('dosBody').scrollTop=0;
+  document.getElementById('dossier').classList.add('open');
+}
+function closeDossier(){document.getElementById('dossier').classList.remove('open');}
+document.getElementById('dosBtn').addEventListener('click',openDossier);
+document.getElementById('dosClose').addEventListener('click',closeDossier);
 
 /* ================= MAIN LOOP ================= */
 const clock=new THREE.Clock();
