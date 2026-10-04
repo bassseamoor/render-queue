@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Struct Prefabs — seeded procedural buildings</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#c7e0f2;
+ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+ -webkit-user-select:none;user-select:none}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.chip{background:rgba(18,24,32,.72);color:#f2f5f7;border-radius:14px;
+ backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+ box-shadow:0 4px 18px rgba(20,30,40,.25)}
+#topbar{position:fixed;top:10px;left:10px;right:10px;display:flex;gap:8px;
+ align-items:center;z-index:5;pointer-events:none}
+#topbar .chip{pointer-events:auto}
+#title{padding:10px 14px;font-weight:800;letter-spacing:.12em;font-size:13px;flex:0 0 auto}
+#title small{display:block;font-weight:500;letter-spacing:.02em;font-size:10px;opacity:.65;white-space:nowrap}
+#street{padding:10px 12px;font-size:12px;font-weight:600;white-space:nowrap}
+#spacer{flex:1}
+.btn{pointer-events:auto;border:0;cursor:pointer;font-size:17px;line-height:1;
+ width:44px;height:44px;border-radius:14px;background:rgba(18,24,32,.72);color:#fff;
+ backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+ box-shadow:0 4px 18px rgba(20,30,40,.25)}
+.btn:active{transform:scale(.93)}
+.btn.on{background:rgba(30,120,200,.85)}
+#seeds{position:fixed;left:10px;right:10px;bottom:44px;display:flex;gap:6px;
+ overflow-x:auto;z-index:5;padding:2px;-webkit-overflow-scrolling:touch}
+.seedchip{flex:0 0 auto;border:0;cursor:pointer;text-align:left;
+ background:rgba(18,24,32,.62);color:#eef3f6;border-radius:10px;padding:7px 10px;
+ backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.seedchip b{display:block;font-size:10px;font-weight:700;letter-spacing:.03em}
+.seedchip span{font-size:10px;opacity:.6;font-family:ui-monospace,monospace}
+.seedchip.sel{background:rgba(30,120,200,.9)}
+#note{position:fixed;left:0;right:0;bottom:12px;text-align:center;z-index:5;
+ font-size:10.5px;color:rgba(25,35,45,.75);font-weight:600;pointer-events:none;
+ text-shadow:0 1px 2px rgba(255,255,255,.6)}
+#card{position:fixed;left:10px;right:10px;bottom:104px;z-index:6;display:none;
+ padding:12px 14px;color:#f2f5f7}
+#cardName{font-size:15px;font-weight:800;letter-spacing:.02em;margin-bottom:4px}
+#cardMeta{font-size:12px;line-height:1.65;opacity:.92}
+#cardMeta b{color:#9fd0ff;font-weight:700}
+#cardX{position:absolute;top:8px;right:10px;border:0;background:none;color:#fff;
+ font-size:16px;cursor:pointer;opacity:.7;padding:4px}
+#nogl{display:none;position:fixed;inset:0;align-items:center;justify-content:center;
+ background:#203040;color:#fff;font-size:15px;padding:30px;text-align:center;z-index:50}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="topbar">
+ <div class="chip" id="title">STRUCT PREFABS<small>6 seeded buildings</small></div>
+ <div class="chip" id="street">street #-----</div>
+ <div id="spacer"></div>
+ <button class="btn" id="tourBtn" title="auto tour">&#9654;</button>
+ <button class="btn" id="shuffleBtn" title="re-seed all">&#127922;</button>
+</div>
+<div id="card" class="chip">
+ <button id="cardX">&#10005;</button>
+ <div id="cardName"></div>
+ <div id="cardMeta"></div>
+</div>
+<div id="seeds"></div>
+<div id="note">same seed = same street &nbsp;&middot;&nbsp; roof shingles: merged instancing &nbsp;&middot;&nbsp; drag to orbit &middot; pinch to zoom &middot; tap a building</div>
+<div id="nogl">This demo needs WebGL.<br>Please open it in a browser with WebGL enabled.</div>
+
+<script>
+/* ===== mesh-builder.js (verbatim) ===== */
+/* mesh-builder — immediate-mode procedural 3D mesh builder.
+ * CityMesh class extracted verbatim from canal-metropolis.html:648-661.
+ * Helpers extracted verbatim: TAU (:41), mix (:43), color (:319),
+ * dot3/norm3/cross3 (:582-584). No logic changes.
+ * NOTE: upload()/dispose() need a WebGL context as global 'gl',
+ * exactly as in the original page. Everything else is pure JS.
+ */
+const TAU = Math.PI * 2;
+const mix=(a,b,t)=>a+(b-a)*t;
+const color=(c,m=1,a=1)=>[c[0]*m,c[1]*m,c[2]*m,a];
+const dot3=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const norm3=a=>{const l=Math.hypot(...a)||1;return a.map(v=>v/l)};
+const cross3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+class CityMesh{
+ constructor(){this.data=[];this.indices=[];this.construction=[0,0,0,0];this.material=0;this.phase=0;this.kind=0;this.anchor=0;this.lots=[];this.turn=0;this.pivot=[0,0];this.route=[0,0,0,0]}
+ vertex(p,n,c,uv){let route=this.route;if(this.turn){const co=Math.cos(this.turn),si=Math.sin(this.turn),x=p[0]-this.pivot[0],z=p[2]-this.pivot[1];p=[this.pivot[0]+co*x+si*z,p[1],this.pivot[1]-si*x+co*z];n=[co*n[0]+si*n[2],n[1],-si*n[0]+co*n[2]];if(this.kind===2){const xx=route[0]-this.pivot[0],zz=route[1]-this.pivot[1];route=[this.pivot[0]+co*xx+si*zz,this.pivot[1]-si*xx+co*zz,route[2],route[3]];}if(this.kind===3&&route[3]>.5)uv=[co*uv[0]+si*uv[1],-si*uv[0]+co*uv[1]];}this.data.push(...p,...n,c[0],c[1],c[2],...this.construction,...uv,this.material,this.phase,this.kind,this.anchor,...route)}
+ face(a,b,c,d,color,normal,uvScale=1,uvOrigin=[0,0]){const ab=b.map((v,i)=>v-a[i]),ac=c.map((v,i)=>v-a[i]),ad=d.map((v,i)=>v-a[i]),geometric=cross3(ab,ac),fallback=cross3(ac,ad),raw=norm3(Math.hypot(...geometric)>1e-9?geometric:fallback),n=normal&&dot3(raw,normal)<0?raw.map(v=>-v):raw,w=Math.hypot(...ab)*uvScale,h=Math.hypot(...ad)*uvScale,base=this.data.length/23;this.vertex(a,n,color,uvOrigin);this.vertex(b,n,color,[uvOrigin[0]+w,uvOrigin[1]]);this.vertex(c,n,color,[uvOrigin[0]+w,uvOrigin[1]+h]);this.vertex(d,n,color,[uvOrigin[0],uvOrigin[1]+h]);const reverse=dot3(cross3(ab,ac),n)<0;if(Math.hypot(...ab)>1e-8&&Math.hypot(...ac)>1e-8)this.indices.push(base,base+(reverse?2:1),base+(reverse?1:2));if(Math.hypot(...ad)>1e-8)this.indices.push(base,base+(reverse?3:2),base+(reverse?2:3));}
+
+ box(x,y,z,w,h,d,c,mat=this.material){if(w<=0||h<=0||d<=0)return;if(this.solids&&this.kind<1.5){this.solids.push({lo:[x,y,z],hi:[x+w,y+h,z+d],c,mat,kind:this.kind,anchor:this.anchor});return;}const old=this.material;this.material=mat;const a=[x,y,z],b=[x+w,y,z],e=[x,y+h,z],f=[x+w,y+h,z],j=[x,y,z+d],k=[x+w,y,z+d],l=[x,y+h,z+d],q=[x+w,y+h,z+d];this.face(a,b,f,e,c,[0,0,-1]);this.face(k,j,l,q,c,[0,0,1]);this.face(j,a,e,l,c,[-1,0,0]);this.face(b,k,q,f,c,[1,0,0]);this.face(e,f,q,l,c,[0,1,0]);this.material=old;}
+ bevelBox(x,y,z,w,h,d,c,mat=2){if(w<.3||h<.3||d<.3){this.box(x,y,z,w,h,d,c,mat);return;}const old=this.material;this.material=mat;const b=Math.min(w,d,h)*.045,top=y+h,ring=[[x+b,z],[x+w-b,z],[x+w,z+b],[x+w,z+d-b],[x+w-b,z+d],[x+b,z+d],[x,z+d-b],[x,z+b]];for(let k=0;k<8;k++){const a=ring[k],q=ring[(k+1)%8],dx=q[0]-a[0],dz=q[1]-a[1],n=norm3([dz,0,-dx]);this.face([a[0],y,a[1]],[q[0],y,q[1]],[q[0],top-b,q[1]],[a[0],top-b,a[1]],c,n);const aa=[mix(a[0],x+w/2,b/Math.max(w,d)),mix(a[1],z+d/2,b/Math.max(w,d))],qq=[mix(q[0],x+w/2,b/Math.max(w,d)),mix(q[1],z+d/2,b/Math.max(w,d))];this.material=0;this.face([a[0],top-b,a[1]],[q[0],top-b,q[1]],[qq[0],top,qq[1]],[aa[0],top,aa[1]],color(c,1.13),norm3([n[0],1,n[2]]));this.face([x+w/2,top,z+d/2],[aa[0],top,aa[1]],[qq[0],top,qq[1]],[x+w/2,top,z+d/2],color(c,.92),[0,1,0]);this.material=mat;}this.material=old;}
+ dome(x,y,z,rx,ry,rz,c,segments=16,rings=4){const saved=this.kind;for(let j=0;j<rings;j++)for(let i=0;i<segments;i++){const point=(a,b)=>[x+Math.cos(a)*Math.sin(b)*rx,y+Math.cos(b)*ry,z+Math.sin(a)*Math.sin(b)*rz],a=i/segments*TAU,b=(i+1)/segments*TAU,c0=j/rings*Math.PI*.5,d=(j+1)/rings*Math.PI*.5,n=norm3([Math.cos((a+b)/2)*Math.sin((c0+d)/2),Math.cos((c0+d)/2),Math.sin((a+b)/2)*Math.sin((c0+d)/2)]);this.face(point(a,c0),point(b,c0),point(b,d),point(a,d),c,n);}const start=this.data.length;this.roundCap(x,y-ry,z,rx,rz,ry*2,0,segments,rings*2);for(let k=start;k<this.data.length;k+=23)this.data[k+18]=y;this.kind=saved;}
+ roundCap(x,y,z,rx,rz,h,taper,segments,rings=1){if(this.construction[0]<0||this.construction[1]<=0||this.kind!==0)return;const old={kind:this.kind,material:this.material,route:this.route};this.kind=3;this.material=19;this.route=[y,y+h,taper,rings];for(let i=0;i<segments;i++){const a=i/segments*TAU,b=(i+1)/segments*TAU,base=this.data.length/23;this.vertex([x,0,z],[0,1,0],[.49,.50,.46],[0,0]);this.vertex([x+Math.cos(b)*rx,0,z+Math.sin(b)*rz],[0,1,0],[.49,.50,.46],[Math.cos(b)*rx,Math.sin(b)*rz]);this.vertex([x+Math.cos(a)*rx,0,z+Math.sin(a)*rz],[0,1,0],[.49,.50,.46],[Math.cos(a)*rx,Math.sin(a)*rz]);this.indices.push(base,base+1,base+2);}Object.assign(this,old);}
+ cylinder(x,y,z,rx,rz,h,c,segments=24,taper=1){for(let i=0;i<segments;i++){const a=i/segments*TAU,b=(i+1)/segments*TAU;const p=[x+Math.cos(a)*rx,y,z+Math.sin(a)*rz],q=[x+Math.cos(b)*rx,y,z+Math.sin(b)*rz],t=[x+Math.cos(b)*rx*taper,y+h,z+Math.sin(b)*rz*taper],s=[x+Math.cos(a)*rx*taper,y+h,z+Math.sin(a)*rz*taper];this.face(p,q,t,s,c,[Math.cos((a+b)/2),0,Math.sin((a+b)/2)]);this.face([x,y+h,z],s,t,[x,y+h,z],color(c,.9),[0,1,0]);}this.roundCap(x,y,z,rx,rz,h,taper,segments);}
+ sphere(x,y,z,rx,ry,rz,c,segments=10,rings=6){for(let j=0;j<rings;j++)for(let i=0;i<segments;i++){const p=(a,b)=>[x+Math.cos(a)*Math.sin(b)*rx,y+Math.cos(b)*ry,z+Math.sin(a)*Math.sin(b)*rz];const a=i/segments*TAU,b=(i+1)/segments*TAU,c0=j/rings*Math.PI,d=(j+1)/rings*Math.PI;const n=norm3([Math.cos((a+b)/2)*Math.sin((c0+d)/2),Math.cos((c0+d)/2),Math.sin((a+b)/2)*Math.sin((c0+d)/2)]);this.face(p(a,c0),p(b,c0),p(b,d),p(a,d),c,n)}if(this.material===8)this.roundCap(x,y-ry,z,rx,rz,ry*2,0,segments,rings);}
+ upload(){this.vertexCount=this.data.length/23;this.count=this.indices.length;this.buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);if(this.vertexCount<=65535){gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(this.data),gl.STATIC_DRAW);this.indexBuffer=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.indexBuffer);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(this.indices),gl.STATIC_DRAW);}else{const expanded=new Float32Array(this.count*23);for(let j=0;j<this.count;j++)for(let k=0;k<23;k++)expanded[j*23+k]=this.data[this.indices[j]*23+k];gl.bufferData(gl.ARRAY_BUFFER,expanded,gl.STATIC_DRAW);this.vertexCount=this.count;}this.data=null;this.indices=null;return this}
+ dispose(){gl.deleteBuffer(this.buffer);if(this.indexBuffer)gl.deleteBuffer(this.indexBuffer)}
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { CityMesh, TAU, mix, color, dot3, norm3, cross3 };
+
+</script>
+<script>
+/* ===== struct.js STRUCT v1 (verbatim) ===== */
+/* STRUCT v1 — layered structural system for MOOR.
+ * Spec: components/struct/SPEC.md (law).
+ * Zero dependencies except CityMesh from ../mesh-builder/mesh-builder.js.
+ * Pure logic + geometry math: no `window`/`document` references, node-testable.
+ * Units meters. Wall thickness 0.15. Grid snap 0.5. Y-up, ground y=0.
+ *
+ * DUAL-MODE: emit(mesh, building) fills mesh.data/indices (triangles).
+ * emitCollision(building) makes a CityMesh with mesh.solids=[], runs the SAME
+ * emission, returns the AABB array. Every box() call yields exactly one AABB.
+ * (CityMesh.box pushes one {lo,hi,c,mat,kind,anchor} record per call when
+ *  mesh.solids is set; degenerate boxes emit nothing in either mode.)
+ */
+
+/* CityMesh loader — works in node (require) and browser (script tag first).
+ * NOTE: mesh-builder.js declares `class CityMesh` at top level. In a classic
+ * browser script that creates a global LEXICAL binding (NOT window.CityMesh),
+ * and a `var CityMesh` here would throw "already declared". So we never
+ * declare that name: `typeof CityMesh` safely resolves the lexical binding. */
+var CityMeshCtor = (function () {
+  try { if (typeof CityMesh !== 'undefined' && CityMesh) return CityMesh; } catch (e) {}
+  if (typeof require === 'function') {
+    try { return require('../mesh-builder/mesh-builder.js').CityMesh; } catch (e) {}
+  }
+  return null;
+})();
+
+/* ---------------- constants ---------------- */
+var WALL_T = 0.15;          // wall thickness (frame core)
+var SKIN_T = 0.02;          // face skin proud offset
+var GRID = 0.5;             // grid snap
+var WALL_H = 2.7;           // default story height
+var SLAB_T = 0.12;          // floor slab thickness
+var JUNCTION_TOL = 0.08;    // endpoint clustering distance
+var PERIM_TOL = 0.01;       // room perimeter membership tolerance
+var MIN_WALL_LEN = 1.0;
+
+/* ---------------- seeded RNG (mulberry32 + FNV-1a) ---------------- */
+function hashSeed(str) {
+  var h = 0x811c9dc5; // FNV-1a 32-bit
+  str = String(str);
+  for (var i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/* RNG(seed) -> {f, i, pick, chance, range} */
+function RNG(seed) {
+  var next = mulberry32(hashSeed(seed));
+  return {
+    f: function () { return next(); },
+    range: function (lo, hi) { return lo + next() * (hi - lo); },
+    i: function (lo, hi) { return lo + Math.floor(next() * (hi - lo + 1)); },
+    pick: function (arr) { return arr[Math.floor(next() * arr.length)]; },
+    chance: function (p) { return next() < p; },
+    _next: next
+  };
+}
+
+/* ---------------- materials pool v1 ---------------- */
+var MATERIALS = [
+  { id: 'wood-frame',  name: 'Framing lumber',   kind: 'frame',  color: '#8a6b45' },
+  { id: 'metal-frame', name: 'Steel studs',      kind: 'frame',  color: '#7d8590' },
+  { id: 'drywall',     name: 'Painted drywall',  kind: 'inner',  color: '#e8e4da' },
+  { id: 'wallpaper',   name: 'Pattern wallpaper',kind: 'inner',  color: '#c9b8a3' },
+  { id: 'plaster',     name: 'Lime plaster',     kind: 'inner',  color: '#ded5c4' },
+  { id: 'brick',       name: 'Fired brick',       kind: 'outer',  color: '#9a4f38' },
+  { id: 'siding',      name: 'Lap siding',        kind: 'outer',  color: '#b8c4cc' },
+  { id: 'concrete',    name: 'Poured concrete',   kind: 'both',   color: '#a3a5a8' },
+  { id: 'stone',       name: 'Fieldstone',        kind: 'outer',  color: '#8d867a' },
+  { id: 'glass-pane',  name: 'Glazing',           kind: 'socket', color: '#bfe0ea' },
+  { id: 'shingle',     name: 'Asphalt shingle',   kind: 'roof',   color: '#4a4d52' },
+  { id: 'metal-roof',  name: 'Standing seam',     kind: 'roof',   color: '#6b7280' },
+  { id: 'hardwood',    name: 'Oak floor',         kind: 'floor',  color: '#a97e4f' },
+  { id: 'tile',        name: 'Ceramic tile',      kind: 'floor',  color: '#c9c2b4' },
+  { id: 'carpet',      name: 'Cut pile',         kind: 'floor',  color: '#7a6a8f' }
+];
+var MAT_BY_ID = {};
+MATERIALS.forEach(function (m) { MAT_BY_ID[m.id] = m; });
+
+function hexRgb(hex) {
+  var n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+/* mat(id, role='inner') -> material record. Never throws.
+ * Unknown id (or wrong kind for role) falls back per spec: drywall for inner,
+ * brick for outer. role 'frame'->wood-frame, 'roof'->shingle, 'floor'->hardwood. */
+function mat(id, role) {
+  role = role || 'inner';
+  var m = MAT_BY_ID[id];
+  var ok = m && (role === 'inner' ? (m.kind === 'inner' || m.kind === 'both')
+              : role === 'outer' ? (m.kind === 'outer' || m.kind === 'both')
+              : true);
+  if (ok) return m;
+  if (role === 'outer') return MAT_BY_ID.brick;
+  if (role === 'frame') return MAT_BY_ID['wood-frame'];
+  if (role === 'roof') return MAT_BY_ID.shingle;
+  if (role === 'floor') return MAT_BY_ID.hardwood;
+  return MAT_BY_ID.drywall;
+}
+function matColor(id, role) { return hexRgb(mat(id, role).color); }
+
+/* ---------------- window / door styles v1 ---------------- */
+var WINDOW_STYLES = {
+  'double-hung': { w: 1.2, h: 1.4, sill: 0.9 },
+  'slider':      { w: 1.8, h: 1.2, sill: 1.0 },
+  'picture':     { w: 2.4, h: 1.5, sill: 0.8 },
+  'round':       { w: 0.9, h: 0.9, sill: 1.25 }  // ø0.9, center 1.7 → sill 1.25
+};
+var DOOR_STYLES = {
+  'panel':  { w: 0.9, h: 2.1, sill: 0 },
+  'double': { w: 1.6, h: 2.1, sill: 0 },
+  'sliding':{ w: 1.8, h: 2.1, sill: 0 }
+};
+function socketDims(sock) {
+  var table = sock.kind === 'door' ? DOOR_STYLES : WINDOW_STYLES;
+  return table[sock.style] || table[sock.kind === 'door' ? 'panel' : 'double-hung'];
+}
+
+/* ---------------- room types v1 ---------------- */
+var ROOM_TYPES = {
+  living:  { floor: 'hardwood', min: 9 },
+  bed:     { floor: 'hardwood', min: 6 },
+  bath:    { floor: 'tile',     min: 2 },
+  kitchen: { floor: 'tile',     min: 6 },
+  hall:    { floor: 'hardwood', min: 2 },
+  garage:  { floor: 'concrete', min: 12 },
+  civic:   { floor: 'tile',     min: 16 }
+};
+
+/* ---------------- themes v1 ---------------- */
+var THEMES = {
+  craftsman: { frame: 'wood-frame',  outer: 'siding',   roof: 'gable', win: ['double-hung', 'double-hung', 'picture'] },
+  modern:    { frame: 'metal-frame', outer: 'concrete', roof: 'flat',  win: ['picture', 'slider', 'picture'] },
+  'brick-row':{ frame: 'wood-frame', outer: 'brick',    roof: 'gable', win: ['double-hung'] },
+  civic:     { frame: 'metal-frame', outer: 'stone',    roof: 'hip',   win: ['picture', 'picture', 'slider'] }
+};
+function themeOf(name) { return THEMES[name] || THEMES.craftsman; }
+
+/* ---------------- small math ---------------- */
+function snap(v) { return Math.round(v / GRID) * GRID; }
+function dist2(ax, az, bx, bz) { var dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
+function wallLen(w) { return Math.hypot(w.b.x - w.a.x, w.b.z - w.a.z); }
+function isXWall(w) { return Math.abs(w.b.z - w.a.z) < 1e-9; }
+function isZWall(w) { return Math.abs(w.b.x - w.a.x) < 1e-9; }
+function isAxisAligned(w) { return isXWall(w) || isZWall(w); }
+/* interior normal for a wall: left of a→b direction (plan view, +x right, +z up).
+ * For room walls wound CCW, interior is on the left — no flip needed. */
+function leftNormal(w) {
+  var dx = w.b.x - w.a.x, dz = w.b.z - w.a.z, l = Math.hypot(dx, dz) || 1;
+  return { x: -dz / l, z: dx / l };
+}
+
+/* ---------------- junction resolution ---------------- */
+/* resolveJunctions(walls) -> new walls with endpoints clustered within
+ * 0.08m merged to their centroid (union-find, so chains merge). BEFORE emission. */
+function resolveJunctions(walls) {
+  var pts = [];
+  walls.forEach(function (w, i) {
+    pts.push({ x: w.a.x, z: w.a.z, wi: i, end: 'a' });
+    pts.push({ x: w.b.x, z: w.b.z, wi: i, end: 'b' });
+  });
+  var parent = pts.map(function (_, i) { return i; });
+  function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+  function union(i, j) { parent[find(i)] = find(j); }
+  var tol2 = JUNCTION_TOL * JUNCTION_TOL;
+  for (var i = 0; i < pts.length; i++)
+    for (var j = i + 1; j < pts.length; j++)
+      if (dist2(pts[i].x, pts[i].z, pts[j].x, pts[j].z) <= tol2) union(i, j);
+  var sums = {};
+  pts.forEach(function (p, i) {
+    var r = find(i), s = sums[r] || (sums[r] = { x: 0, z: 0, n: 0 });
+    s.x += p.x; s.z += p.z; s.n++;
+  });
+  var centroid = {};
+  Object.keys(sums).forEach(function (r) {
+    centroid[r] = { x: sums[r].x / sums[r].n, z: sums[r].z / sums[r].n };
+  });
+  return walls.map(function (w, i) {
+    var c = JSON.parse(JSON.stringify(w));
+    var ca = centroid[find(i * 2)], cb = centroid[find(i * 2 + 1)];
+    c.a = { x: ca.x, z: ca.z }; c.b = { x: cb.x, z: cb.z };
+    return c;
+  });
+}
+
+/* ---------------- wall emission ---------------- */
+/* A wall emits as LAYERED boxes: frame core (0.15 full height), inner skin
+ * (0.02 proud, interior side), outer skin (0.02 proud, exterior side).
+ * opts: {y0} base height (default 0), {inward} interior normal {x,z}
+ * (default: left of a→b). Sockets split the wall into runs around openings. */
+function emitRun(mesh, wall, t0, t1, yLo, yHi, n) {
+  var h = yHi - yLo;
+  if (h <= 0 || t1 - t0 <= 0) return;
+  function pt(t) { return { x: wall.a.x + (wall.b.x - wall.a.x) * t, z: wall.a.z + (wall.b.z - wall.a.z) * t }; }
+  var p0 = pt(t0), p1 = pt(t1);
+  var frameC = matColor(wall.frame, 'frame');
+  var innerC = matColor(wall.inner, 'inner');
+  // partitions (exterior===false) are interior on both faces
+  var outerC = matColor(wall.outer, wall.exterior === false ? 'inner' : 'outer');
+  var xWall = Math.abs(p1.z - p0.z) < Math.abs(p1.x - p0.x); // dominant axis
+  if (xWall) {
+    var xa = Math.min(p0.x, p1.x), len = Math.abs(p1.x - p0.x), zc = (p0.z + p1.z) / 2;
+    var s = n.z >= 0 ? 1 : -1; // interior side sign along z
+    mesh.box(xa, yLo, zc - WALL_T / 2, len, h, WALL_T, frameC);
+    mesh.box(xa, yLo, s > 0 ? zc + WALL_T / 2 : zc - WALL_T / 2 - SKIN_T, len, h, SKIN_T, innerC);
+    mesh.box(xa, yLo, s > 0 ? zc - WALL_T / 2 - SKIN_T : zc + WALL_T / 2, len, h, SKIN_T, outerC);
+  } else {
+    var za = Math.min(p0.z, p1.z), len2 = Math.abs(p1.z - p0.z), xc = (p0.x + p1.x) / 2;
+    var s2 = n.x >= 0 ? 1 : -1;
+    mesh.box(xc - WALL_T / 2, yLo, za, WALL_T, h, len2, frameC);
+    mesh.box(s2 > 0 ? xc + WALL_T / 2 : xc - WALL_T / 2 - SKIN_T, yLo, za, SKIN_T, h, len2, innerC);
+    mesh.box(s2 > 0 ? xc - WALL_T / 2 - SKIN_T : xc + WALL_T / 2, yLo, za, SKIN_T, h, len2, outerC);
+  }
+}
+
+/* Cut runs around sockets. Returns array of {t0,t1,yLo,yHi} full-height runs
+ * plus opening descriptors for trim/glazing. */
+function cutRuns(wall) {
+  var L = wallLen(wall), H = wall.h || WALL_H;
+  var ops = (wall.sockets || []).map(function (s) {
+    var d = socketDims(s);
+    var hw = (d.w / 2) / L;
+    return { t0: s.t - hw, t1: s.t + hw, kind: s.kind, w: d.w, h: d.h, sill: d.sill };
+  }).sort(function (p, q) { return p.t0 - q.t0; });
+  var runs = [], cur = 0;
+  ops.forEach(function (o) {
+    if (o.t0 > cur) runs.push({ t0: cur, t1: o.t0, yLo: 0, yHi: H });
+    runs.push({ t0: o.t0, t1: o.t1, yLo: o.sill + o.h, yHi: H });       // header
+    if (o.kind === 'window' && o.sill > 0)
+      runs.push({ t0: o.t0, t1: o.t1, yLo: 0, yHi: o.sill });           // sill
+    cur = o.t1;
+  });
+  if (cur < 1) runs.push({ t0: cur, t1: 1, yLo: 0, yHi: H });
+  return { runs: runs, openings: ops, H: H };
+}
+
+function ptAt(wall, t) {
+  return { x: wall.a.x + (wall.b.x - wall.a.x) * t, z: wall.a.z + (wall.b.z - wall.a.z) * t };
+}
+
+/* Emit trim frame + glazing for one opening. Trim boxes in frame material;
+ * windows get a thin glass-pane glazing box. */
+function emitOpening(mesh, wall, o, y0, n) {
+  var frameC = matColor(wall.frame, 'frame');
+  var c0 = ptAt(wall, o.t0), c1 = ptAt(wall, o.t1);
+  var xWall = Math.abs(c1.z - c0.z) < Math.abs(c1.x - c0.x);
+  var base = y0 + o.sill, top = y0 + o.sill + o.h, tw = 0.08; // trim width
+  function hbox(cx, cz, w, d, yA, yB) { mesh.box(cx - w / 2, yA, cz - d / 2, w, yB - yA, d, frameC); }
+  if (xWall) {
+    var zc = (c0.z + c1.z) / 2, xa = Math.min(c0.x, c1.x), xb = Math.max(c0.x, c1.x);
+    var td = WALL_T + 0.04;
+    hbox(xa, zc, tw, td, base, top);            // jamb L
+    hbox(xb, zc, tw, td, base, top);            // jamb R
+    hbox((xa + xb) / 2, zc, (xb - xa) + tw, td, top, top + tw); // head
+    if (o.kind === 'window')
+      hbox((xa + xb) / 2, zc, (xb - xa) + tw, td, base - tw, base); // sill trim
+    else
+      hbox((xa + xb) / 2, zc, (xb - xa) + tw, td, base, base + 0.02); // threshold
+    if (o.kind === 'window')
+      mesh.box(xa, base, zc - 0.01, xb - xa, o.h, 0.02, matColor('glass-pane', 'socket'));
+  } else {
+    var xc = (c0.x + c1.x) / 2, za = Math.min(c0.z, c1.z), zb = Math.max(c0.z, c1.z);
+    var td2 = WALL_T + 0.04;
+    hbox(xc, za, td2, tw, base, top);
+    hbox(xc, zb, td2, tw, base, top);
+    hbox(xc, (za + zb) / 2, td2, (zb - za) + tw, top, top + tw);
+    if (o.kind === 'window')
+      hbox(xc, (za + zb) / 2, td2, (zb - za) + tw, base - tw, base);
+    else
+      hbox(xc, (za + zb) / 2, td2, (zb - za) + tw, base, base + 0.02);
+    if (o.kind === 'window')
+      mesh.box(xc - 0.01, base, za, 0.02, o.h, zb - za, matColor('glass-pane', 'socket'));
+  }
+}
+
+/* Non-axis-aligned walls: approximate with stepped axis-aligned boxes along
+ * the dominant axis (documented approximation; generator only makes axis
+ * walls). Sockets are ignored on diagonal walls (validate warns). */
+function emitDiagonal(mesh, wall, y0) {
+  var steps = Math.max(2, Math.ceil(wallLen(wall) / GRID));
+  var frameC = matColor(wall.frame, 'frame');
+  for (var i = 0; i < steps; i++) {
+    var p0 = ptAt(wall, i / steps), p1 = ptAt(wall, (i + 1) / steps);
+    var xa = Math.min(p0.x, p1.x), za = Math.min(p0.z, p1.z);
+    var w = Math.max(Math.abs(p1.x - p0.x), 0.05), d = Math.max(Math.abs(p1.z - p0.z), 0.05);
+    mesh.box(xa - WALL_T / 4, y0, za - WALL_T / 4, w + WALL_T / 2, wall.h || WALL_H, d + WALL_T / 2, frameC);
+  }
+}
+
+/* emitWall(mesh, wall, opts) — full layered wall with sockets. */
+function emitWall(mesh, wall, opts) {
+  opts = opts || {};
+  var y0 = wall.y0 || opts.y0 || 0;
+  if (!isAxisAligned(wall)) { emitDiagonal(mesh, wall, y0); return; }
+  var n = opts.inward || leftNormal(wall);
+  var cut = cutRuns(wall);
+  cut.runs.forEach(function (r) { emitRun(mesh, wall, r.t0, r.t1, y0 + r.yLo, y0 + r.yHi, n); });
+  cut.openings.forEach(function (o) { emitOpening(mesh, wall, o, y0, n); });
+}
+
+/* ---------------- floor slabs ---------------- */
+/* Slab per room rect: 0.12 thick, top at room floor level (y0). */
+function emitSlab(mesh, room) {
+  var y0 = room.y0 || 0;
+  var r = room.rect;
+  mesh.box(r.x, y0 - SLAB_T, r.z, r.w, SLAB_T, r.d, matColor(room.floor, 'floor'));
+}
+
+/* ---------------- roofs v1 ---------------- */
+/* Helper: push one AABB record directly (collision mode for non-box geometry). */
+function pushAABB(mesh, lo, hi, c) {
+  mesh.solids.push({ lo: lo, hi: hi, c: c, mat: mesh.material, kind: 0, anchor: 0 });
+}
+/* Sloped quad via explicit corners (triangle mode). In collision mode the
+ * caller pushes a manual AABB instead; face() writes only to mesh.data. */
+function quad(mesh, a, b, c, d, col) {
+  mesh.face(a, b, c, d, col, null);
+}
+function tri(mesh, a, b, c, col) {
+  var n = null, base = mesh.data.length / 23;
+  mesh.vertex(a, [0, 1, 0], col, [0, 0]);
+  mesh.vertex(b, [0, 1, 0], col, [1, 0]);
+  mesh.vertex(c, [0, 1, 0], col, [0, 1]);
+  mesh.indices.push(base, base + 1, base + 2);
+}
+function aabbOf(points) {
+  var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  points.forEach(function (p) {
+    for (var i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i]); hi[i] = Math.max(hi[i], p[i]); }
+  });
+  return { lo: lo, hi: hi };
+}
+
+function lerp3(a, b, f) { return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]; }
+/* Stepped slope: quad A,B = eave edge, D,C = ridge edge (D↔A, C↔B; C==D for a
+ * triangle face). Emits N thin axis-aligned boxes staircasing up the slope —
+ * IDENTICAL box() calls in triangle and collision mode, so dual-mode parity
+ * holds exactly. In triangle mode a smooth quad face is ALSO emitted for looks
+ * (render-only: face() never touches mesh.solids, never calls box()). */
+function emitSlope(mesh, A, B, C, D, color) {
+  var N = 6, th = 0.12, collision = !!mesh.solids;
+  for (var i = 0; i < N; i++) {
+    var f0 = i / N, f1 = (i + 1) / N;
+    var pA0 = lerp3(A, D, f0), pB0 = lerp3(B, C, f0);
+    var pA1 = lerp3(A, D, f1), pB1 = lerp3(B, C, f1);
+    var xs = [pA0[0], pB0[0], pA1[0], pB1[0]], zs = [pA0[2], pB0[2], pA1[2], pB1[2]];
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
+    if (x1 - x0 < 0.05) { var cx = (x0 + x1) / 2; x0 = cx - 0.025; x1 = cx + 0.025; }
+    if (z1 - z0 < 0.05) { var cz = (z0 + z1) / 2; z0 = cz - 0.025; z1 = cz + 0.025; }
+    var yLo = Math.min(pA0[1], pB0[1]) - th, yHi = Math.max(pA1[1], pB1[1]);
+    mesh.box(x0, yLo, z0, x1 - x0, yHi - yLo, z1 - z0, color);
+  }
+  if (!collision) quad(mesh, A, B, C, D, color);
+}
+
+function emitRoof(mesh, building) {
+  var fp = building.footprint, top = building.stories * WALL_H;
+  var x0 = -fp.w / 2, x1 = fp.w / 2, z0 = -fp.d / 2, z1 = fp.d / 2;
+  var oh = 0.3, col = matColor(building.roof.mat, 'roof');
+  var collision = !!mesh.solids;
+  var type = building.roof.type;
+  if (type === 'flat') {
+    mesh.box(x0 - oh, top, z0 - oh, fp.w + 2 * oh, 0.15, fp.d + 2 * oh, col);
+    var ph = 0.4, pt = 0.12, py = top + 0.15; // parapet
+    mesh.box(x0 - oh, py, z0 - oh, fp.w + 2 * oh, ph, pt, col);
+    mesh.box(x0 - oh, py, z1 + oh - pt, fp.w + 2 * oh, ph, pt, col);
+    mesh.box(x0 - oh, py, z0 - oh, pt, ph, fp.d + 2 * oh, col);
+    mesh.box(x1 + oh - pt, py, z0 - oh, pt, ph, fp.d + 2 * oh, col);
+    return;
+  }
+  if (type === 'gable') {
+    // Ridge along longest axis, 30° pitch. Sloped panels go through emitSlope
+    // (stepped boxes in BOTH modes + a smooth face in triangle mode only).
+    // Gable end triangles are true triangles via vertex()+indices — render-only
+    // in collision mode (walls carry the collision); they never call box(),
+    // so parity is unaffected.
+    var alongX = fp.w >= fp.d;
+    var half = (alongX ? fp.d : fp.w) / 2 + oh;
+    var rise = Math.tan(Math.PI / 6) * half; // 30°
+    if (alongX) {
+      var zc = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x1 + oh, top, z0 - oh],
+                      [x1 + oh, top + rise, zc], [x0 - oh, top + rise, zc], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x0 - oh, top, z1 + oh],
+                      [x0 - oh, top + rise, zc], [x1 + oh, top + rise, zc], col);
+      if (!collision) {
+        tri(mesh, [x0, top, z0], [x0, top, z1], [x0, top + rise, zc], col);
+        tri(mesh, [x1, top, z1], [x1, top, z0], [x1, top + rise, zc], col);
+      }
+    } else {
+      var xc = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x0 - oh, top, z1 + oh],
+                      [xc, top + rise, z1 + oh], [xc, top + rise, z0 - oh], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x1 + oh, top, z0 - oh],
+                      [xc, top + rise, z0 - oh], [xc, top + rise, z1 + oh], col);
+      if (!collision) {
+        tri(mesh, [x0, top, z0], [x1, top, z0], [xc, top + rise, z0], col);
+        tri(mesh, [x1, top, z1], [x0, top, z1], [xc, top + rise, z1], col);
+      }
+    }
+    return;
+  }
+  if (type === 'hip') {
+    // 28° pitch, all sides slope. Ridge centered along longest axis.
+    // Each face (2 trapezoids + 2 triangles, C==D for triangles) via
+    // emitSlope — stepped boxes in both modes, dual-mode clean.
+    var inset = Math.min(fp.w, fp.d) / 2 + oh;
+    var rise2 = Math.tan(28 * Math.PI / 180) * inset;
+    var alongX2 = fp.w >= fp.d;
+    if (alongX2) {
+      var r0 = x0 + inset, r1 = x1 - inset, zc2 = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x1 + oh, top, z0 - oh],
+                      [r1, top + rise2, zc2], [r0, top + rise2, zc2], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x0 - oh, top, z1 + oh],
+                      [r0, top + rise2, zc2], [r1, top + rise2, zc2], col);
+      emitSlope(mesh, [x0 - oh, top, z1 + oh], [x0 - oh, top, z0 - oh],
+                      [r0, top + rise2, zc2], [r0, top + rise2, zc2], col);
+      emitSlope(mesh, [x1 + oh, top, z0 - oh], [x1 + oh, top, z1 + oh],
+                      [r1, top + rise2, zc2], [r1, top + rise2, zc2], col);
+    } else {
+      var s0 = z0 + inset, s1 = z1 - inset, xc2 = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x0 - oh, top, z1 + oh],
+                      [xc2, top + rise2, s1], [xc2, top + rise2, s0], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x1 + oh, top, z0 - oh],
+                      [xc2, top + rise2, s0], [xc2, top + rise2, s1], col);
+      emitSlope(mesh, [x1 + oh, top, z0 - oh], [x0 - oh, top, z0 - oh],
+                      [xc2, top + rise2, s0], [xc2, top + rise2, s0], col);
+      emitSlope(mesh, [x0 - oh, top, z1 + oh], [x1 + oh, top, z1 + oh],
+                      [xc2, top + rise2, s1], [xc2, top + rise2, s1], col);
+    }
+    return;
+  }
+}
+
+/* ---------------- room assembly ---------------- */
+/* roomsFromWalls(walls) — detect axis-aligned rectangular rooms: candidate
+ * rects from wall coordinate lines; a rect is a room when wall segments cover
+ * each of its 4 edges within 0.01. Largest-first, no interior overlap.
+ * Type heuristic (documented): aspect > 2.5 → hall; area < 6 → bath;
+ * area < 14 → bed; else living. */
+function roomsFromWalls(walls) {
+  var xs = {}, zs = {};
+  var hWalls = [], vWalls = []; // h: constant z (x-span), v: constant x (z-span)
+  walls.forEach(function (w, i) {
+    if (isXWall(w)) { hWalls.push({ c: w.a.z, a: Math.min(w.a.x, w.b.x), b: Math.max(w.a.x, w.b.x), i: i }); xs[w.a.x] = 1; xs[w.b.x] = 1; }
+    else if (isZWall(w)) { vWalls.push({ c: w.a.x, a: Math.min(w.a.z, w.b.z), b: Math.max(w.a.z, w.b.z), i: i }); zs[w.a.z] = 1; zs[w.b.z] = 1; }
+  });
+  var X = Object.keys(xs).map(Number).sort(function (a, b) { return a - b; });
+  var Z = Object.keys(zs).map(Number).sort(function (a, b) { return a - b; });
+  function coversEdge(segs, at, lo, hi) {
+    var runs = segs.filter(function (s) { return Math.abs(s.c - at) <= PERIM_TOL; })
+      .map(function (s) { return [Math.max(s.a, lo), Math.min(s.b, hi)]; })
+      .filter(function (r) { return r[1] > r[0]; })
+      .sort(function (p, q) { return p[0] - q[0]; });
+    var cur = lo;
+    for (var k = 0; k < runs.length; k++) {
+      if (runs[k][0] > cur + PERIM_TOL) return false;
+      cur = Math.max(cur, runs[k][1]);
+    }
+    return cur >= hi - PERIM_TOL;
+  }
+  var cands = [];
+  for (var xi = 0; xi < X.length; xi++) for (var xj = xi + 1; xj < X.length; xj++)
+    for (var zi = 0; zi < Z.length; zi++) for (var zj = zi + 1; zj < Z.length; zj++) {
+      var x0 = X[xi], x1 = X[xj], z0 = Z[zi], z1 = Z[zj];
+      if (x1 - x0 < 1 || z1 - z0 < 1) continue;
+      if (!coversEdge(hWalls, z0, x0, x1)) continue;
+      if (!coversEdge(hWalls, z1, x0, x1)) continue;
+      if (!coversEdge(vWalls, x0, z0, z1)) continue;
+      if (!coversEdge(vWalls, x1, z0, z1)) continue;
+      // reject rects with wall segments strictly inside (e.g. the whole
+      // footprint shell when partitions subdivide it): midpoint-inside test
+      var hasInterior = walls.some(function (w) {
+        var mx = (w.a.x + w.b.x) / 2, mz = (w.a.z + w.b.z) / 2;
+        return mx > x0 + 0.05 && mx < x1 - 0.05 && mz > z0 + 0.05 && mz < z1 - 0.05;
+      });
+      if (hasInterior) continue;
+      cands.push({ x: x0, z: z0, w: x1 - x0, d: z1 - z0 });
+    }
+  cands.sort(function (a, b) { return (b.w * b.d) - (a.w * a.d); });
+  var rooms = [], n = 0;
+  cands.forEach(function (r) {
+    var overlap = rooms.some(function (o) {
+      return r.x < o.rect.x + o.rect.w - 1e-9 && o.rect.x < r.x + r.w - 1e-9 &&
+             r.z < o.rect.z + o.rect.d - 1e-9 && o.rect.z < r.z + r.d - 1e-9;
+    });
+    if (overlap) return;
+    var area = r.w * r.d, aspect = Math.max(r.w, r.d) / Math.min(r.w, r.d);
+    var type = aspect > 2.5 ? 'hall' : area < 6 ? 'bath' : area < 14 ? 'bed' : 'living';
+    var wallIds = [];
+    walls.forEach(function (w, i) {
+      var onPerim = false;
+      if (isXWall(w) && (Math.abs(w.a.z - r.z) <= PERIM_TOL || Math.abs(w.a.z - (r.z + r.d)) <= PERIM_TOL)) {
+        var a = Math.min(w.a.x, w.b.x), b = Math.max(w.a.x, w.b.x);
+        onPerim = b > r.x + PERIM_TOL && a < r.x + r.w - PERIM_TOL;
+      } else if (isZWall(w) && (Math.abs(w.a.x - r.x) <= PERIM_TOL || Math.abs(w.a.x - (r.x + r.w)) <= PERIM_TOL)) {
+        var a2 = Math.min(w.a.z, w.b.z), b2 = Math.max(w.a.z, w.b.z);
+        onPerim = b2 > r.z + PERIM_TOL && a2 < r.z + r.d - PERIM_TOL;
+      }
+      if (onPerim) wallIds.push(i);
+    });
+    rooms.push({ id: 'room-' + (n++), type: type, rect: r, floor: ROOM_TYPES[type].floor, wallIds: wallIds });
+  });
+  return rooms;
+}
+
+function wkey(a, b, y0) {
+  var p = [a.x, a.z], q = [b.x, b.z];
+  if (p[0] > q[0] || (p[0] === q[0] && p[1] > q[1])) { var t = p; p = q; q = t; }
+  return y0 + '|' + p[0] + ',' + p[1] + '|' + q[0] + ',' + q[1];
+}
+/* Split walls at T-junctions: any other wall's endpoint lying on this wall's
+ * segment (within 0.01, not near its own ends) becomes a split point.
+ * After this, every endpoint coincides with another wall's endpoint —
+ * no orphan ends, no mid-wall T stems. Sockets must be added AFTER. */
+function pointOnWallT(w, p) {
+  if (isXWall(w)) {
+    if (Math.abs(p.z - w.a.z) > PERIM_TOL) return -1;
+    var t = (p.x - w.a.x) / (w.b.x - w.a.x);
+    return (t > 0.001 && t < 0.999) ? t : -1;
+  }
+  if (isZWall(w)) {
+    if (Math.abs(p.x - w.a.x) > PERIM_TOL) return -1;
+    var t2 = (p.z - w.a.z) / (w.b.z - w.a.z);
+    return (t2 > 0.001 && t2 < 0.999) ? t2 : -1;
+  }
+  return -1;
+}
+function splitWalls(walls) {
+  var out = [];
+  walls.forEach(function (w, wi) {
+    var ts = [0, 1];
+    walls.forEach(function (v, vi) {
+      if (vi === wi) return;
+      [v.a, v.b].forEach(function (p) {
+        var t = pointOnWallT(w, p);
+        if (t > 0) ts.push(t);
+      });
+    });
+    ts.sort(function (a, b) { return a - b; });
+    var uniq = ts.filter(function (t, i) { return i === 0 || t - ts[i - 1] > 1e-6; });
+    for (var i = 0; i < uniq.length - 1; i++) {
+      var sub = {
+        a: ptAt(w, uniq[i]), b: ptAt(w, uniq[i + 1]),
+        h: w.h, y0: w.y0, frame: w.frame, inner: w.inner, outer: w.outer,
+        sockets: [], rooms: w.rooms.slice(), exterior: true
+      };
+      out.push(sub);
+    }
+  });
+  // dedupe by endpoint pair: coincident segments are shared partitions
+  var map = {};
+  out.forEach(function (w) {
+    var k = wkey(w.a, w.b, w.y0);
+    if (!map[k]) { map[k] = w; return; }
+    var keep = map[k];
+    w.rooms.forEach(function (ri) { if (keep.rooms.indexOf(ri) < 0) keep.rooms.push(ri); });
+    keep.inner = 'drywall'; keep.outer = 'drywall'; keep.exterior = false;
+  });
+  return Object.keys(map).map(function (k) { return map[k]; });
+}
+
+/* ---------------- procedural generator ---------------- */
+/* makeBuilding(seed, theme, footprint{w,d}, stories) -> Building.
+ * Robust for footprints 6×6..14×10, stories 1–2. ALL from the seeded RNG.
+ * Layout: split footprint along the long axis into 2–4 rooms (each ≥2.5m);
+ * if the short axis ≥ 7, carve a 1.5m hall strip first. Walls wound CCW per
+ * room (interior = left of a→b), shared partitions deduped by endpoint pair
+ * and emitted once (both faces interior). Windows on exterior walls ~2.5m
+ * apart; one exterior door + one door per partition. */
+function makeBuilding(seed, theme, footprint, stories) {
+  var th = themeOf(theme);
+  var rng = RNG(seed + '|' + theme);
+  stories = stories === 2 ? 2 : 1;
+  var W = Math.max(6, snap(footprint.w)), D = Math.max(6, snap(footprint.d));
+  var x0 = -W / 2, z0 = -D / 2;
+
+  // --- room rects ---
+  var rects = []; // {x,z,w,d,type}
+  var hallDepth = 1.5;
+  var deep = Math.min(W, D) >= 7;
+  var field = { x: x0, z: z0, w: W, d: D }; // area rooms fill
+  var hallRect = null;
+  if (deep) {
+    // carve hall along the -z side of the footprint
+    hallRect = { x: x0, z: z0, w: W, d: hallDepth, type: 'hall' };
+    field = { x: x0, z: z0 + hallDepth, w: W, d: D - hallDepth };
+    rects.push(hallRect);
+  }
+  var longAxis = field.w >= field.d ? 'x' : 'z';
+  var longLen = longAxis === 'x' ? field.w : field.d;
+  var maxN = Math.max(2, Math.floor(longLen / 3));
+  var n = Math.min(2 + rng.i(0, 2), maxN); // 2..4 rooms
+  // split points, each room ≥ 2.5m, snapped
+  var cuts = [0];
+  for (var c = 1; c < n; c++) {
+    var lo = cuts[c - 1] + 2.5, hi = longLen - (n - c) * 2.5;
+    cuts.push(snap(lo + rng.f() * Math.max(0, hi - lo)));
+  }
+  cuts.push(longLen);
+  for (var r = 0; r < n; r++) {
+    var a = cuts[r], b = cuts[r + 1];
+    var rect = longAxis === 'x'
+      ? { x: snap(field.x + a), z: field.z, w: snap(b - a), d: field.d }
+      : { x: field.x, z: snap(field.z + a), w: field.w, d: snap(b - a) };
+    rects.push(rect);
+  }
+  // type assignment: largest→living, smallest→bath, second-largest→kitchen, rest→bed
+  var order = rects.filter(function (rc) { return rc !== hallRect; })
+    .sort(function (p, q) { return (q.w * q.d) - (p.w * p.d); });
+  order.forEach(function (rc, i) {
+    rc.type = i === 0 ? 'living' : i === order.length - 1 ? 'bath' : (i === 1 && order.length >= 4 ? 'kitchen' : 'bed');
+  });
+
+  // --- walls: CCW per room (interior = left of a→b), whole edges first ---
+  var whole = [];
+  var innerMats = ['drywall', 'drywall', 'wallpaper', 'plaster'];
+  rects.forEach(function (rc, ri) {
+    var inner = rc.type === 'bath' || rc.type === 'kitchen' ? 'plaster' : rng.pick(innerMats);
+    for (var s = 0; s < stories; s++) {
+      var y0 = s * WALL_H;
+      var edges = [
+        [{ x: rc.x, z: rc.z }, { x: rc.x + rc.w, z: rc.z }],
+        [{ x: rc.x + rc.w, z: rc.z }, { x: rc.x + rc.w, z: rc.z + rc.d }],
+        [{ x: rc.x + rc.w, z: rc.z + rc.d }, { x: rc.x, z: rc.z + rc.d }],
+        [{ x: rc.x, z: rc.z + rc.d }, { x: rc.x, z: rc.z }]
+      ];
+      edges.forEach(function (e) {
+        whole.push({
+          a: { x: snap(e[0].x), z: snap(e[0].z) }, b: { x: snap(e[1].x), z: snap(e[1].z) },
+          h: WALL_H, y0: y0, frame: th.frame, inner: inner, outer: th.outer,
+          sockets: [], rooms: [ri], exterior: true
+        });
+      });
+    }
+  });
+  // split at T-junctions, then dedupe coincident segments into partitions
+  var walls = splitWalls(whole);
+
+  // --- sockets ---
+  function addSocket(wall, t, kind, style) {
+    var d = socketDims({ kind: kind, style: style });
+    var L = wallLen(wall);
+    var half = (d.w / 2 + 0.3) / L; // keep 0.3m clear of corners/edges
+    if (t - half < 0.02 || t + half > 0.98) return false;
+    var clash = wall.sockets.some(function (s) {
+      var d2 = socketDims(s);
+      return Math.abs(s.t - t) * L < (d.w + d2.w) / 2 + 0.4;
+    });
+    if (clash) return false;
+    wall.sockets.push({ t: t, kind: kind, style: style });
+    wall.sockets.sort(function (p, q) { return p.t - q.t; });
+    return true;
+  }
+  // exterior door: front wall (z == z0) of ground story, longest one
+  var frontWalls = walls.filter(function (w) {
+    return w.y0 === 0 && w.exterior && isXWall(w) && Math.abs(w.a.z - z0) < 1e-9;
+  }).sort(function (a, b) { return wallLen(b) - wallLen(a); });
+  if (frontWalls.length) addSocket(frontWalls[0], 0.5, 'door', rng.pick(['panel', 'panel', 'double']));
+  // interior doors: one per partition wall (ground + upper)
+  walls.forEach(function (w) {
+    if (!w.exterior && wallLen(w) >= 2.0) addSocket(w, 0.5, 'door', 'panel');
+  });
+  // windows on exterior walls every ~2.5m
+  walls.forEach(function (w) {
+    if (!w.exterior) return;
+    var L = wallLen(w);
+    var nWin = Math.max(1, Math.round(L / 2.5));
+    var style = rng.pick(th.win);
+    var dw = socketDims({ kind: 'window', style: style }).w;
+    while (nWin > 0 && (L - 1.2) / nWin < dw + 0.4) nWin--;
+    for (var i = 0; i < nWin; i++) addSocket(w, (i + 0.5) / nWin, 'window', style);
+  });
+
+  // --- rooms ---
+  var rooms = rects.map(function (rc, i) {
+    var fl = ROOM_TYPES[rc.type].floor;
+    if (fl === 'hardwood' && rng.chance(0.35)) fl = 'carpet';
+    return {
+      id: 'room-' + i, type: rc.type,
+      rect: { x: rc.x, z: rc.z, w: rc.w, d: rc.d },
+      floor: fl, wallIds: []
+    };
+  });
+  // rooms for upper story (same plan)
+  if (stories === 2) {
+    var base = rooms.length;
+    rects.forEach(function (rc, i) {
+      rooms.push({
+        id: 'room-' + (base + i), type: rc.type,
+        rect: { x: rc.x, z: rc.z, w: rc.w, d: rc.d }, y0: WALL_H,
+        floor: rooms[i].floor, wallIds: []
+      });
+    });
+  }
+  // link wallIds by index
+  var wallIndex = {};
+  walls.forEach(function (w, i) { wallIndex[wkey(w.a, w.b, w.y0)] = i; });
+  walls.forEach(function (w, i) {
+    (w.rooms || []).forEach(function (ri) {
+      var room = rooms[ri + (w.y0 > 0 ? rects.length : 0)];
+      if (room && room.wallIds.indexOf(i) < 0) room.wallIds.push(i);
+    });
+  });
+
+  // --- roof ---
+  var roofMat = th.roof === 'flat' ? 'metal-roof' : th.roof === 'hip' ? 'metal-roof' : 'shingle';
+  var building = {
+    seed: seed, theme: theme in THEMES ? theme : 'craftsman',
+    frame: th.frame, rooms: rooms, walls: walls,
+    roof: { type: th.roof, mat: roofMat }, stories: stories,
+    footprint: { w: W, d: D }
+  };
+  return building;
+}
+
+/* ---------------- emission entry points ---------------- */
+function emitInto(mesh, building) {
+  if (!CityMeshCtor) throw new Error('STRUCT: CityMesh not loaded (need mesh-builder.js first, or node require).');
+  var walls = resolveJunctions(building.walls || []);
+  walls.forEach(function (w) { emitWall(mesh, w); });
+  (building.rooms || []).forEach(function (r) { emitSlab(mesh, r); });
+  emitRoof(mesh, building);
+  return mesh;
+}
+/* emit(mesh, building) — triangles into mesh.data/indices. */
+function emit(mesh, building) {
+  mesh.solids = undefined; // force triangle mode
+  return emitInto(mesh, building);
+}
+/* emitCollision(building) — same emission, AABBs. Returns mesh.solids. */
+function emitCollision(building) {
+  if (!CityMeshCtor) throw new Error('STRUCT: CityMesh not loaded (need mesh-builder.js first, or node require).');
+  var mesh = new CityMeshCtor();
+  mesh.solids = [];
+  emitInto(mesh, building);
+  return mesh.solids;
+}
+
+/* ---------------- validation (never throws) ---------------- */
+function validate(building) {
+  var errs = [];
+  function E(s) { errs.push(s); }
+  if (!building || typeof building !== 'object') return ['building is not an object'];
+  var walls = building.walls instanceof Array ? building.walls : [];
+  var rooms = building.rooms instanceof Array ? building.rooms : [];
+  if (!(building.walls instanceof Array)) E('walls missing/not an array');
+  if (!(building.rooms instanceof Array)) E('rooms missing/not an array');
+  var themes = Object.keys(THEMES);
+  if (themes.indexOf(building.theme) < 0) E('unknown theme: ' + building.theme);
+  if (building.stories !== 1 && building.stories !== 2) E('stories must be 1 or 2, got ' + building.stories);
+  var rt = building.roof || {};
+  if (['flat', 'gable', 'hip'].indexOf(rt.type) < 0) E('unknown roof type: ' + rt.type);
+  if (!MAT_BY_ID[rt.mat]) E('unknown roof material: ' + rt.mat);
+  else if (!(MAT_BY_ID[rt.mat].kind === 'roof' || MAT_BY_ID[rt.mat].kind === 'both')) E('roof material wrong kind: ' + rt.mat);
+  walls.forEach(function (w, i) {
+    var tag = 'wall[' + i + ']';
+    ['a', 'b'].forEach(function (e) {
+      if (!w[e] || typeof w[e].x !== 'number' || typeof w[e].z !== 'number') E(tag + '.' + e + ' not a point');
+    });
+    if (w.a && w.b) {
+      var L = wallLen(w);
+      if (!(L >= MIN_WALL_LEN)) E(tag + ' length ' + L.toFixed(2) + ' < 1.0');
+      [w.a, w.b].forEach(function (p, k) {
+        ['x', 'z'].forEach(function (ax) {
+          var g = p[ax] / GRID;
+          if (Math.abs(g - Math.round(g)) > 1e-6) E(tag + ' endpoint ' + (k ? 'b' : 'a') + '.' + ax + '=' + p[ax] + ' off 0.5 grid');
+        });
+      });
+      if (!isAxisAligned(w)) E(tag + ' not axis-aligned (diagonal approx, sockets ignored)');
+    }
+    if (!(w.h > 0)) E(tag + ' bad height ' + w.h);
+    if (!MAT_BY_ID[w.frame]) E(tag + ' unknown frame material ' + w.frame);
+    if (mat(w.inner, 'inner').id !== w.inner) E(tag + ' inner material falls back: ' + w.inner);
+    // partitions (exterior===false) are interior on both faces: outer follows inner rule
+    var oRole = w.exterior === false ? 'inner' : 'outer';
+    if (mat(w.outer, oRole).id !== w.outer) E(tag + ' outer material falls back: ' + w.outer);
+    (w.sockets || []).forEach(function (s, si) {
+      var st = tag + '.sockets[' + si + ']';
+      if (typeof s.t !== 'number' || s.t < 0 || s.t > 1) E(st + ' t out of range');
+      if (s.kind !== 'window' && s.kind !== 'door') E(st + ' bad kind ' + s.kind);
+      var table = s.kind === 'door' ? DOOR_STYLES : WINDOW_STYLES;
+      if (!table[s.style]) E(st + ' unknown style ' + s.style);
+      else if (w.a && w.b) {
+        var d = table[s.style], L2 = wallLen(w);
+        if (d.w > L2 - 0.6) E(st + ' opening wider than wall');
+        if (s.t * L2 < d.w / 2 + 0.3 || (1 - s.t) * L2 < d.w / 2 + 0.3) E(st + ' opening too close to wall end');
+        if (d.sill + d.h > (w.h || WALL_H)) E(st + ' opening taller than wall');
+      }
+    });
+  });
+  (rooms).forEach(function (r, i) {
+    var tag = 'room[' + i + ']';
+    var rc = r.rect || {};
+    if (!(rc.w > 0 && rc.d > 0)) E(tag + ' bad rect');
+    if (!ROOM_TYPES[r.type]) E(tag + ' unknown type ' + r.type);
+    if (!MAT_BY_ID[r.floor]) E(tag + ' unknown floor material ' + r.floor);
+  });
+  return errs;
+}
+
+/* ---------------- exports ---------------- */
+var Struct = {
+  // constants
+  WALL_T: WALL_T, SKIN_T: SKIN_T, GRID: GRID, WALL_H: WALL_H, SLAB_T: SLAB_T,
+  JUNCTION_TOL: JUNCTION_TOL, PERIM_TOL: PERIM_TOL,
+  // rng
+  hashSeed: hashSeed, mulberry32: mulberry32, RNG: RNG,
+  // materials / styles / themes
+  MATERIALS: MATERIALS, mat: mat, matColor: matColor,
+  WINDOW_STYLES: WINDOW_STYLES, DOOR_STYLES: DOOR_STYLES,
+  ROOM_TYPES: ROOM_TYPES, THEMES: THEMES,
+  // core
+  makeBuilding: makeBuilding,
+  roomsFromWalls: roomsFromWalls,
+  resolveJunctions: resolveJunctions,
+  emit: emit, emitCollision: emitCollision,
+  emitWall: emitWall, emitSlab: emitSlab, emitRoof: emitRoof,
+  validate: validate,
+  // utils
+  snap: snap, wallLen: wallLen, socketDims: socketDims,
+  CityMesh: function () { return CityMeshCtor; }
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = Struct;
+
+</script>
+<script>
+/* ===== struct-prefabs demo app ===== */
+/* STRUCT-PREFABS demo app — seeded procedural prefab lot.
+ * Loads after mesh-builder.js (CityMesh) and struct.js (Struct).
+ * All geometry is real 3D WebGL; orbit camera; no 2D fallback.
+ */
+(function () {
+'use strict';
+
+/* ---------------- lot definitions ---------------- */
+var LOTS = [
+  { id: 'craftsman',    name: 'Craftsman house', theme: 'craftsman', fp: { w: 10, d: 8 },  stories: 2, kind: 'building' },
+  { id: 'modern',       name: 'Modern house',    theme: 'modern',    fp: { w: 10, d: 8 },  stories: 2, kind: 'building' },
+  { id: 'brick-row',    name: 'Brick rowhouse',  theme: 'brick-row', fp: { w: 6,  d: 11 }, stories: 1, kind: 'building' },
+  { id: 'town-hall',    name: 'Town hall',       theme: 'civic',     fp: { w: 14, d: 10 }, stories: 2, kind: 'building', portico: true },
+  { id: 'train-station',name: 'Train station',   theme: 'civic',     fp: { w: 16, d: 7 },  stories: 2, kind: 'building', platformCanopy: true },
+  { id: 'bus-station',  name: 'Bus station',     theme: 'civic',     fp: { w: 5.2, d: 2.4 }, stories: 1, kind: 'shelter' }
+];
+// pad layout: 2 cols x 3 rows (portrait-friendly; all six visible at load)
+var PAD_X = [-18, 18], PAD_Z = [-19, 0, 19];
+LOTS.forEach(function (lot, i) {
+  lot.ox = PAD_X[i % 2]; lot.oz = PAD_Z[Math.floor(i / 2)];
+});
+
+/* ---------------- small utils ---------------- */
+function $(id) { return document.getElementById(id); }
+function shortSeed() {
+  var s = '0123456789abcdefghjkmnpqrstuvwxyz';
+  var r = Struct.RNG('ui|' + Math.random() + '|' + Date.now());
+  var out = '';
+  for (var i = 0; i < 5; i++) out += s[r.i(0, s.length - 1)];
+  return out;
+}
+function translateData(mesh, dx, dz) {
+  for (var i = 0; i < mesh.data.length; i += 23) {
+    mesh.data[i] += dx; mesh.data[i + 2] += dz;
+  }
+}
+function translateSolids(solids, dx, dz) {
+  solids.forEach(function (s) {
+    s.lo[0] += dx; s.lo[2] += dz; s.hi[0] += dx; s.hi[2] += dz;
+  });
+}
+
+/* ---------------- instanced detail: roof shingles (merged instancing) ----------------
+ * One instancing path: every shingle is a small box whose per-instance
+ * transform (position along the slope, row stagger) is baked at emit time
+ * into a single merged mesh. Labeled honestly in the UI as "merged instancing". */
+function emitShingles(mesh, b, seed) {
+  if (mesh.solids) return; // triangle mode only; shingles are render detail
+  if (!b || !b.roof || b.roof.type !== 'gable') return;
+  var fp = b.footprint, top = b.stories * Struct.WALL_H, oh = 0.3;
+  var tones = [[0.30, 0.31, 0.34], [0.27, 0.28, 0.31], [0.33, 0.34, 0.37]];
+  var rng = Struct.RNG(seed + '|shingle');
+  var alongX = fp.w >= fp.d;
+  var cross = (alongX ? fp.d : fp.w) / 2 + oh;   // eave-to-ridge horizontal run
+  var span = (alongX ? fp.w : fp.d) + 2 * oh;    // ridge length
+  var rise = Math.tan(Math.PI / 6) * cross;      // 30 deg pitch, matches struct.js
+  var slopeLen = Math.hypot(cross, rise);
+  var nRows = Math.max(4, Math.floor(slopeLen / 0.42));
+  var sw = 0.34, gap = 0.03, sh = 0.32, th = 0.035;
+  var lift = 0.035; // sit just above the smooth slope face
+  for (var side = 0; side < 2; side++) {
+    for (var i = 0; i < nRows; i++) {
+      var f = (i + 0.5) / nRows;
+      var y = top + f * rise + lift;
+      var off = side === 0 ? (-cross + f * cross) : (cross - f * cross);
+      var tone = tones[rng.i(0, 2)];
+      var x0 = -span / 2 + 0.25 + (i % 2) * (sw + gap) / 2;
+      for (var x = x0; x < span / 2 - 0.25; x += sw + gap) {
+        if (alongX) mesh.box(x, y, off - sh / 2, sw, th, sh, tone);
+        else mesh.box(off - sh / 2, y, x, sh, th, sw, tone);
+      }
+    }
+  }
+}
+
+/* ---------------- demo composition extras (portico / canopy / shelter) ---------------- */
+function emitPortico(mesh, lot) {
+  // 4 stone columns + entablature + stepped pediment in front of town hall
+  var stone = Struct.matColor('stone', 'outer');
+  var cz = -lot.fp.d / 2; // front face (local coords, building centered)
+  [-3.6, -1.2, 1.2, 3.6].forEach(function (x) {
+    mesh.box(x - 0.2, 0, cz - 1.8, 0.4, 3.4, 0.4, stone);
+  });
+  mesh.box(-4.4, 0, cz - 2.6, 8.8, 0.12, 2.6, Struct.matColor('concrete', 'outer')); // portico floor
+  mesh.box(-4.4, 3.4, cz - 2.6, 8.8, 0.35, 2.0, stone);                              // entablature
+  mesh.box(-3.6, 3.75, cz - 2.4, 7.2, 0.35, 1.6, stone);                             // pediment steps
+  mesh.box(-2.8, 4.10, cz - 2.2, 5.6, 0.35, 1.2, stone);
+  mesh.box(-2.0, 4.45, cz - 2.0, 4.0, 0.30, 0.8, stone);
+}
+function emitPlatformCanopy(mesh, lot) {
+  // platform slab + column row + thin canopy roof alongside the station
+  var metal = Struct.matColor('metal-roof', 'roof');
+  var conc = Struct.matColor('concrete', 'outer');
+  var cz = -lot.fp.d / 2; // front face
+  var px0 = -lot.fp.w / 2 - 0.5, pw = lot.fp.w + 1; // platform strip
+  var pz0 = cz - 3.8, pd = 3.6;
+  mesh.box(px0, 0.02, pz0, pw, 0.12, pd, conc);                       // platform
+  for (var x = px0 + 0.6; x < px0 + pw - 0.4; x += 2.4) {             // columns
+    mesh.box(x - 0.09, 0.14, pz0 + pd - 0.7, 0.18, 3.3, 0.18, metal);
+  }
+  mesh.box(px0, 3.44, pz0, pw, 0.14, pd, metal);                     // canopy roof
+  mesh.box(px0, 3.30, pz0, pw, 0.10, 0.12, conc);                    // fascia front
+  mesh.box(px0, 3.30, pz0 + pd - 0.12, pw, 0.10, 0.12, conc);
+}
+var SHELTER_WALL = {
+  a: { x: -2.3, z: 0 }, b: { x: 2.3, z: 0 },
+  h: 2.6, y0: 0, frame: 'metal-frame', inner: 'drywall', outer: 'stone',
+  sockets: [], exterior: true
+};
+function emitShelter(mesh, lot) {
+  // bus station: back wall + flat canopy on 2 columns + bench
+  Struct.emitWall(mesh, SHELTER_WALL);
+  var metal = Struct.matColor('metal-roof', 'roof');
+  var wood = Struct.matColor('hardwood', 'floor');
+  mesh.box(-2.6, 2.6, -0.4, 5.2, 0.12, 2.4, metal);        // canopy
+  mesh.box(-2.49, 0, 1.62, 0.18, 2.6, 0.18, metal);         // columns
+  mesh.box(2.31, 0, 1.62, 0.18, 2.6, 0.18, metal);
+  mesh.box(-1.5, 0.45, 0.15, 3.0, 0.08, 0.5, wood);         // bench seat
+  mesh.box(-1.4, 0, 0.22, 0.1, 0.45, 0.36, metal);          // bench legs
+  mesh.box(1.3, 0, 0.22, 0.1, 0.45, 0.36, metal);
+}
+
+/* Emit one lot into mesh (works in both triangle and collision mode —
+ * extras use mesh.box, which is dual-mode; shingles are render-only). */
+function emitLotInto(mesh, lot, seed) {
+  if (lot.kind === 'shelter') {
+    emitShelter(mesh, lot);
+    return;
+  }
+  var b = Struct.makeBuilding(seed, lot.theme, lot.fp, lot.stories);
+  lot.building = b;
+  if (mesh.solids) {
+    // collision mode: same calls, AABBs instead of triangles
+    var walls = Struct.resolveJunctions(b.walls || []);
+    walls.forEach(function (w) { Struct.emitWall(mesh, w); });
+    (b.rooms || []).forEach(function (r) { Struct.emitSlab(mesh, r); });
+    Struct.emitRoof(mesh, b);
+  } else {
+    Struct.emit(mesh, b);
+  }
+  if (lot.portico) emitPortico(mesh, lot);
+  if (lot.platformCanopy) emitPlatformCanopy(mesh, lot);
+  if (!mesh.solids) emitShingles(mesh, b, seed);
+}
+function shelterBuilding(lot, seed) {
+  return {
+    seed: seed, theme: lot.theme, frame: 'metal-frame',
+    rooms: [], walls: [SHELTER_WALL],
+    roof: { type: 'flat', mat: 'metal-roof' }, stories: 1,
+    footprint: lot.fp
+  };
+}
+
+/* ---------------- WebGL setup ---------------- */
+var canvas = $('scene');
+var gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+if (!gl) { $('nogl').style.display = 'flex'; throw new Error('no webgl'); }
+window.gl = gl; // mesh-builder upload() needs global gl
+
+var VSHADER = [
+  'attribute vec3 aPos; attribute vec3 aNrm; attribute vec3 aCol;',
+  'uniform mat4 uProj; uniform mat4 uView;',
+  'uniform vec3 uSunDir; uniform vec3 uSunCol; uniform vec3 uSkyCol; uniform vec3 uGndCol; uniform vec3 uFogCol;',
+  'varying vec3 vCol; varying float vFog;',
+  'void main(){',
+  ' vec4 wp = uView * vec4(aPos,1.0);',
+  ' gl_Position = uProj * wp;',
+  ' float nd = max(dot(aNrm, uSunDir), 0.0);',
+  ' float hemi = aNrm.y * 0.5 + 0.5;',
+  ' vec3 amb = mix(uGndCol, uSkyCol, hemi);',
+  ' vCol = aCol * (amb + uSunCol * nd);',
+  ' vFog = smoothstep(120.0, 240.0, -wp.z);',
+  '}'
+].join('\n');
+var FSHADER = [
+  'precision mediump float;',
+  'varying vec3 vCol; varying float vFog; uniform vec3 uFogCol;',
+  'void main(){ gl_FragColor = vec4(mix(vCol, uFogCol, vFog), 1.0); }'
+].join('\n');
+var SSH_V = [
+  'attribute vec3 aPos; attribute vec2 aUV;',
+  'uniform mat4 uProj; uniform mat4 uView; varying vec2 vUv;',
+  'void main(){ vUv = aUV; gl_Position = uProj * uView * vec4(aPos,1.0); }'
+].join('\n');
+var SSH_F = [
+  'precision mediump float; varying vec2 vUv; uniform vec4 uColor;',
+  'void main(){ float d = length(vUv - 0.5) * 2.0;',
+  ' float a = uColor.a * smoothstep(1.0, 0.3, d);',
+  ' gl_FragColor = vec4(uColor.rgb, a); }'
+].join('\n');
+
+function compile(type, src) {
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs, attribs) {
+  var p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  attribs.forEach(function (a, i) { gl.bindAttribLocation(p, i, a); });
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+var prog = program(VSHADER, FSHADER, ['aPos', 'aNrm', 'aCol']);
+var sProg = program(SSH_V, SSH_F, ['aPos', 'aUV']);
+var U = {};
+['uProj', 'uView', 'uSunDir', 'uSunCol', 'uSkyCol', 'uGndCol', 'uFogCol'].forEach(function (n) {
+  U[n] = gl.getUniformLocation(prog, n);
+});
+var SU = {
+  uProj: gl.getUniformLocation(sProg, 'uProj'),
+  uView: gl.getUniformLocation(sProg, 'uView'),
+  uColor: gl.getUniformLocation(sProg, 'uColor')
+};
+var STRIDE = 23 * 4;
+function bindMesh(mesh) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.buffer);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, STRIDE, 0);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, STRIDE, 12);
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, STRIDE, 24);
+  gl.enableVertexAttribArray(0); gl.enableVertexAttribArray(1); gl.enableVertexAttribArray(2);
+  if (mesh.indexBuffer) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.indexBuffer);
+}
+function drawMesh(mesh) {
+  bindMesh(mesh);
+  if (mesh.indexBuffer) gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+  else gl.drawArrays(gl.TRIANGLES, 0, mesh.vertexCount);
+}
+
+/* ---------------- mat4 (minimal) ---------------- */
+function m4ident() { return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; }
+function m4persp(fovy, aspect, near, far) {
+  var f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  return [f / aspect,0,0,0, 0,f,0,0, 0,0,(far + near) * nf,-1, 0,0,2 * far * near * nf,0];
+}
+function m4lookAt(eye, c, up) {
+  var z = [eye[0]-c[0], eye[1]-c[1], eye[2]-c[2]];
+  var l = Math.hypot(z[0],z[1],z[2]) || 1; z = [z[0]/l, z[1]/l, z[2]/l];
+  var x = [up[1]*z[2]-up[2]*z[1], up[2]*z[0]-up[0]*z[2], up[0]*z[1]-up[1]*z[0]];
+  l = Math.hypot(x[0],x[1],x[2]) || 1; x = [x[0]/l, x[1]/l, x[2]/l];
+  var y = [z[1]*x[2]-z[2]*x[1], z[2]*x[0]-z[0]*x[2], z[0]*x[1]-z[1]*x[0]];
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+    -(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),
+    -(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),
+    -(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]), 1];
+}
+function m4mul(a, b) {
+  var o = new Array(16);
+  for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) {
+    o[c*4+r] = a[r]*b[c*4] + a[4+r]*b[c*4+1] + a[8+r]*b[c*4+2] + a[12+r]*b[c*4+3];
+  }
+  return o;
+}
+function m4invert(m) { // gl-matrix style
+  var a00=m[0],a01=m[1],a02=m[2],a03=m[3],a10=m[4],a11=m[5],a12=m[6],a13=m[7],
+      a20=m[8],a21=m[9],a22=m[10],a23=m[11],a30=m[12],a31=m[13],a32=m[14],a33=m[15];
+  var b00=a00*a11-a01*a10, b01=a00*a12-a02*a10, b02=a00*a13-a03*a10,
+      b03=a01*a12-a02*a11, b04=a01*a13-a03*a11, b05=a02*a13-a03*a12,
+      b06=a20*a31-a21*a30, b07=a20*a32-a22*a30, b08=a20*a33-a23*a30,
+      b09=a21*a32-a22*a31, b10=a21*a33-a23*a31, b11=a22*a33-a23*a32;
+  var det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
+  if (!det) return m4ident();
+  det = 1 / det;
+  return [
+    (a11*b11-a12*b10+a13*b09)*det, (a02*b10-a01*b11-a03*b09)*det,
+    (a31*b05-a32*b04+a33*b03)*det, (a22*b04-a21*b05-a23*b03)*det,
+    (a12*b08-a10*b11-a13*b07)*det, (a00*b11-a02*b08+a03*b07)*det,
+    (a32*b02-a30*b05-a33*b01)*det, (a20*b05-a22*b02+a23*b01)*det,
+    (a10*b10-a11*b08+a13*b06)*det, (a01*b08-a00*b10-a03*b06)*det,
+    (a30*b04-a31*b02+a33*b00)*det, (a21*b02-a20*b04-a23*b00)*det,
+    (a11*b07-a10*b09-a12*b06)*det, (a00*b09-a01*b07+a02*b06)*det,
+    (a31*b01-a30*b03-a32*b00)*det, (a20*b03-a21*b01+a22*b00)*det];
+}
+function m4point(m, x, y, z, w) {
+  return [
+    m[0]*x + m[4]*y + m[8]*z + m[12]*w,
+    m[1]*x + m[5]*y + m[9]*z + m[13]*w,
+    m[2]*x + m[6]*y + m[10]*z + m[14]*w,
+    m[3]*x + m[7]*y + m[11]*z + m[15]*w];
+}
+
+/* ---------------- camera ---------------- */
+var cam = { tx: 0, ty: 2, tz: 0, yaw: 0.35, pitch: 0.85, dist: 125 };
+var camGoal = null; // {tx,ty,tz,dist} eased toward when set
+var projM = m4ident(), viewM = m4ident();
+function camEye() {
+  var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  return [cam.tx + cam.dist * cp * Math.sin(cam.yaw),
+          cam.ty + cam.dist * sp,
+          cam.tz + cam.dist * cp * Math.cos(cam.yaw)];
+}
+function updateMats() {
+  var eye = camEye();
+  viewM = m4lookAt(eye, [cam.tx, cam.ty, cam.tz], [0, 1, 0]);
+  var aspect = canvas.width / canvas.height;
+  projM = m4persp(0.9, aspect, 0.5, 400);
+}
+function easeCam(dt) {
+  if (!camGoal) return;
+  var k = 1 - Math.pow(0.001, dt); // frame-rate independent ease
+  cam.tx += (camGoal.tx - cam.tx) * k;
+  cam.ty += (camGoal.ty - cam.ty) * k;
+  cam.tz += (camGoal.tz - cam.tz) * k;
+  cam.dist += (camGoal.dist - cam.dist) * k;
+  if (Math.abs(camGoal.tx - cam.tx) < 0.05 && Math.abs(camGoal.dist - cam.dist) < 0.1) camGoal = null;
+}
+function frameLot(lot) {
+  var w = lot.fp.w, d = lot.fp.d;
+  if (lot.platformCanopy) d += 4;
+  if (lot.portico) { d += 2.6; }
+  var fit = Math.max(w, d) * 2.1 + 8;
+  camGoal = { tx: lot.ox, ty: 2.2, tz: lot.oz + (lot.portico ? -1.3 : 0), dist: fit };
+}
+
+/* ---------------- picking (ray vs per-lot AABB) ---------------- */
+function pickRay(ndcX, ndcY) {
+  var inv = m4invert(m4mul(projM, viewM));
+  var p0 = m4point(inv, ndcX, ndcY, -1, 1);
+  var p1 = m4point(inv, ndcX, ndcY, 1, 1);
+  p0 = [p0[0]/p0[3], p0[1]/p0[3], p0[2]/p0[3]];
+  p1 = [p1[0]/p1[3], p1[1]/p1[3], p1[2]/p1[3]];
+  var d = [p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]];
+  var l = Math.hypot(d[0],d[1],d[2]) || 1;
+  return { o: p0, d: [d[0]/l, d[1]/l, d[2]/l] };
+}
+function rayAABB(ray, lo, hi) {
+  var tmin = 0, tmax = 1e9;
+  for (var i = 0; i < 3; i++) {
+    var inv = 1 / (ray.d[i] || 1e-12);
+    var t0 = (lo[i] - ray.o[i]) * inv, t1 = (hi[i] - ray.o[i]) * inv;
+    if (t0 > t1) { var t = t0; t0 = t1; t1 = t; }
+    tmin = Math.max(tmin, t0); tmax = Math.min(tmax, t1);
+    if (tmax < tmin) return -1;
+  }
+  return tmin;
+}
+function pickLot(ndcX, ndcY) {
+  var ray = pickRay(ndcX, ndcY), best = -1, bestT = 1e9;
+  LOTS.forEach(function (lot, i) {
+    if (!lot.aabb) return;
+    var t = rayAABB(ray, lot.aabb.lo, lot.aabb.hi);
+    if (t >= 0 && t < bestT) { bestT = t; best = i; }
+  });
+  return best;
+}
+function projectCenter(lot) {
+  var p = m4point(m4mul(projM, viewM), lot.ox, 3, lot.oz, 1);
+  return { x: (p[0]/p[3]*0.5+0.5) * canvas.clientWidth,
+           y: (1 - (p[1]/p[3]*0.5+0.5)) * canvas.clientHeight };
+}
+
+/* ---------------- ground ---------------- */
+var groundMesh = null, shadowMesh = null;
+var SHADOWS = []; // {x,z,w,d}
+function buildGround() {
+  var m = new CityMesh();
+  var grass = [0.62, 0.70, 0.52], pad = [0.74, 0.75, 0.76],
+      padEdge = [0.42, 0.44, 0.46], road = [0.36, 0.37, 0.40], line = [0.85, 0.85, 0.80];
+  m.box(-110, -0.12, -80, 220, 0.12, 160, grass);          // grass
+  [-11, 11].forEach(function (rz) {                          // roads between rows
+    m.box(-50, 0.0, rz - 2, 100, 0.05, 4, road);
+    for (var x = -48; x < 48; x += 4) m.box(x, 0.05, rz - 0.15, 2, 0.012, 0.3, line);
+  });
+  LOTS.forEach(function (lot) {
+    var px = lot.ox - 10, pz = lot.oz - 8.5;
+    m.box(px, 0.0, pz, 20, 0.08, 17, pad);                // pad slab
+    m.box(px, 0.08, pz, 20, 0.06, 0.25, padEdge);         // borders
+    m.box(px, 0.08, pz + 16.75, 20, 0.06, 0.25, padEdge);
+    m.box(px, 0.08, pz, 0.25, 0.06, 17, padEdge);
+    m.box(px + 19.75, 0.08, pz, 0.25, 0.06, 17, padEdge);
+    // blob shadow footprint (building + extras + margin)
+    var sw = lot.fp.w + 4, sd = lot.fp.d + 4, sz = lot.oz;
+    if (lot.portico) { sd += 2.6; sz -= 1.3; }
+    if (lot.platformCanopy) { sd += 4.2; sz -= 2.1; }
+    SHADOWS.push({ x: lot.ox, z: sz, w: sw, d: sd });
+  });
+  translateData(m, 0, 0);
+  m.upload();
+  groundMesh = m;
+  // soft blob shadows: one merged mesh of camera-facing-up quads w/ radial alpha
+  var sm = new CityMesh();
+  SHADOWS.forEach(function (s) {
+    var base = sm.data.length / 23, y = 0.115, hw = s.w / 2, hd = s.d / 2;
+    var col = [0.08, 0.10, 0.12];
+    function v(x, z, u, vv) {
+      sm.data.push(x, y, z, 0,1,0, col[0],col[1],col[2], 0,0,0,0, u,vv, 0,0,0,0, 0,0,0,0);
+    }
+    v(s.x - hw, s.z - hd, 0, 0); v(s.x + hw, s.z - hd, 1, 0);
+    v(s.x + hw, s.z + hd, 1, 1); v(s.x - hw, s.z + hd, 0, 1);
+    sm.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  });
+  sm.upload();
+  shadowMesh = sm;
+}
+function bindShadowMesh() {
+  gl.bindBuffer(gl.ARRAY_BUFFER, shadowMesh.buffer);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, STRIDE, 0);
+  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, STRIDE, 13 * 4);
+  gl.enableVertexAttribArray(0); gl.enableVertexAttribArray(1);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, shadowMesh.indexBuffer);
+}
+
+/* ---------------- lot build / rebuild ---------------- */
+var streetSeed = '';
+function buildLotMeshes(lot, seed) {
+  lot.seed = seed;
+  // triangle mode
+  var mesh = new CityMesh();
+  if (lot.kind === 'shelter') lot.building = shelterBuilding(lot, seed);
+  emitLotInto(mesh, lot, seed);
+  if (lot.kind === 'shelter' && !lot.building) lot.building = shelterBuilding(lot, seed);
+  translateData(mesh, lot.ox, lot.oz);
+  mesh.upload();
+  // collision mode (same emission path, AABBs)
+  var cm = new CityMesh();
+  cm.solids = [];
+  emitLotInto(cm, lot, seed);
+  var solids = cm.solids;
+  translateSolids(solids, lot.ox, lot.oz);
+  // per-lot AABB for picking
+  var lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+  solids.forEach(function (s) {
+    for (var i = 0; i < 3; i++) {
+      lo[i] = Math.min(lo[i], s.lo[i]); hi[i] = Math.max(hi[i], s.hi[i]);
+    }
+  });
+  if (lot.mesh) lot.mesh.dispose();
+  lot.mesh = mesh;
+  lot.solids = solids;
+  lot.vertCount = mesh.vertexCount;
+  lot.aabb = solids.length ? { lo: lo, hi: hi } : null;
+}
+function rebuildLot(i, seed) {
+  buildLotMeshes(LOTS[i], seed);
+  if (selected === i) showCard(i);
+  renderSeeds();
+}
+function doShuffle() {
+  streetSeed = shortSeed();
+  LOTS.forEach(function (lot, i) { rebuildLot(i, streetSeed + '-' + lot.id); });
+  $('street').textContent = 'street #' + streetSeed;
+  selected = -1; hideCard();
+}
+
+/* ---------------- UI ---------------- */
+var selected = -1;
+function renderSeeds() {
+  var el = $('seeds');
+  el.innerHTML = '';
+  LOTS.forEach(function (lot, i) {
+    var c = document.createElement('button');
+    c.className = 'seedchip' + (i === selected ? ' sel' : '');
+    c.innerHTML = '<b>' + lot.name + '</b><span>#' + lot.seed + '</span>';
+    c.onclick = function () { selectLot(i); };
+    el.appendChild(c);
+  });
+}
+function showCard(i) {
+  var lot = LOTS[i], b = lot.building;
+  $('card').style.display = 'block';
+  $('cardName').textContent = lot.name;
+  $('cardMeta').innerHTML =
+    'theme <b>' + b.theme + '</b> · seed <b>#' + lot.seed + '</b><br>' +
+    'stories <b>' + b.stories + '</b> · rooms <b>' + b.rooms.length + '</b> · ' +
+    'walls <b>' + b.walls.length + '</b> · verts <b>' + lot.vertCount.toLocaleString() + '</b>';
+  renderSeeds();
+}
+function hideCard() { $('card').style.display = 'none'; renderSeeds(); }
+function selectLot(i) {
+  selected = i;
+  stopTour();
+  frameLot(LOTS[i]);
+  showCard(i);
+}
+
+/* ---------------- auto tour ---------------- */
+var tour = { on: false, idx: 0, t: 0 };
+function startTour() {
+  tour.on = true; tour.idx = 0; tour.t = 0;
+  $('tourBtn').textContent = '⏸';
+  $('tourBtn').classList.add('on');
+  selected = -1; hideCard();
+  frameLot(LOTS[0]);
+}
+function stopTour() {
+  if (!tour.on) return;
+  tour.on = false;
+  $('tourBtn').textContent = '▶';
+  $('tourBtn').classList.remove('on');
+}
+function tourTick(dt) {
+  if (!tour.on) return;
+  tour.t += dt;
+  if (tour.t > 5) {
+    tour.t = 0;
+    tour.idx = (tour.idx + 1) % LOTS.length;
+    frameLot(LOTS[tour.idx]);
+  }
+}
+
+/* ---------------- input: orbit / pinch / tap ---------------- */
+var pointers = {};
+var pinchD0 = 0, camD0 = 0;
+var downAt = 0, downX = 0, downY = 0, moved = false;
+function ndc(e) {
+  var r = canvas.getBoundingClientRect();
+  return { x: ((e.clientX - r.left) / r.width) * 2 - 1,
+           y: -(((e.clientY - r.top) / r.height) * 2 - 1) };
+}
+canvas.addEventListener('pointerdown', function (e) {
+  canvas.setPointerCapture(e.pointerId);
+  pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+  if (Object.keys(pointers).length === 2) {
+    var ks = Object.keys(pointers);
+    pinchD0 = Math.hypot(pointers[ks[0]].x - pointers[ks[1]].x,
+                         pointers[ks[0]].y - pointers[ks[1]].y);
+    camD0 = cam.dist;
+  }
+  downAt = performance.now(); downX = e.clientX; downY = e.clientY; moved = false;
+});
+canvas.addEventListener('pointermove', function (e) {
+  if (!pointers[e.pointerId]) return;
+  var prev = pointers[e.pointerId];
+  var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+  if (Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 8) moved = true;
+  var n = Object.keys(pointers).length;
+  if (n === 1) {
+    stopTour(); camGoal = null;
+    cam.yaw -= dx * 0.005;
+    cam.pitch = Math.min(1.35, Math.max(0.12, cam.pitch + dy * 0.004));
+  } else if (n === 2) {
+    var ks = Object.keys(pointers);
+    var d = Math.hypot(pointers[ks[0]].x - pointers[ks[1]].x,
+                       pointers[ks[0]].y - pointers[ks[1]].y);
+    if (pinchD0 > 0) cam.dist = Math.min(130, Math.max(12, camD0 * pinchD0 / Math.max(20, d)));
+  }
+});
+function pointerUp(e) {
+  delete pointers[e.pointerId];
+  if (Object.keys(pointers).length < 2) pinchD0 = 0;
+  if (!moved && performance.now() - downAt < 400 && e.isPrimary !== false) {
+    var p = ndc(e);
+    var i = pickLot(p.x, p.y);
+    if (i >= 0) selectLot(i);
+  }
+}
+canvas.addEventListener('pointerup', pointerUp);
+canvas.addEventListener('pointercancel', function (e) { delete pointers[e.pointerId]; });
+canvas.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  cam.dist = Math.min(130, Math.max(12, cam.dist * (1 + e.deltaY * 0.001)));
+}, { passive: false });
+
+$('shuffleBtn').onclick = doShuffle;
+$('tourBtn').onclick = function () { tour.on ? stopTour() : startTour(); };
+$('cardX').onclick = function () { selected = -1; hideCard(); };
+
+/* ---------------- resize ---------------- */
+function resize() {
+  var dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.floor(canvas.clientWidth * dpr);
+  canvas.height = Math.floor(canvas.clientHeight * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+
+/* ---------------- render loop ---------------- */
+gl.clearColor(0.78, 0.88, 0.95, 1.0); // clean sky
+gl.enable(gl.DEPTH_TEST);
+gl.enable(gl.CULL_FACE);
+var lastT = performance.now();
+function frame() {
+  var now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  tourTick(dt);
+  easeCam(dt);
+  updateMats();
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // opaque pass
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(U.uProj, false, new Float32Array(projM));
+  gl.uniformMatrix4fv(U.uView, false, new Float32Array(viewM));
+  var sd = [0.45, 0.62, 0.80], sl = Math.hypot(sd[0], sd[1], sd[2]);
+  gl.uniform3f(U.uSunDir, sd[0]/sl, sd[1]/sl, sd[2]/sl);
+  gl.uniform3f(U.uSunCol, 0.95, 0.92, 0.85);
+  gl.uniform3f(U.uSkyCol, 0.62, 0.68, 0.74);
+  gl.uniform3f(U.uGndCol, 0.42, 0.44, 0.42);
+  gl.uniform3f(U.uFogCol, 0.78, 0.88, 0.95);
+  drawMesh(groundMesh);
+  LOTS.forEach(function (lot) { drawMesh(lot.mesh); });
+  // blob shadows (alpha pass)
+  gl.useProgram(sProg);
+  gl.uniformMatrix4fv(SU.uProj, false, new Float32Array(projM));
+  gl.uniformMatrix4fv(SU.uView, false, new Float32Array(viewM));
+  gl.uniform4f(SU.uColor, 0.10, 0.12, 0.15, 0.38);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  bindShadowMesh();
+  gl.drawElements(gl.TRIANGLES, shadowMesh.count, gl.UNSIGNED_SHORT, 0);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  gl.disableVertexAttribArray(0); gl.disableVertexAttribArray(1); gl.disableVertexAttribArray(2);
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- boot ---------------- */
+buildGround();
+doShuffle();
+resize();
+requestAnimationFrame(frame);
+
+/* ---------------- test hooks (headless verification) ---------------- */
+window.__spTest = {
+  ready: true,
+  lotCount: function () { return LOTS.length; },
+  lotIds: function () { return LOTS.map(function (l) { return l.id; }); },
+  verts: function (i) { return LOTS[i].vertCount; },
+  wallCount: function (i) { return LOTS[i].building.walls.length; },
+  roomCount: function (i) { return LOTS[i].building.rooms.length; },
+  seed: function (i) { return LOTS[i].seed; },
+  theme: function (i) { return LOTS[i].building.theme; },
+  stories: function (i) { return LOTS[i].building.stories; },
+  shuffle: function () { doShuffle(); },
+  rebuildSame: function (i) { rebuildLot(i, LOTS[i].seed); },
+  aabbCount: function (id) {
+    var lot = LOTS.filter(function (l) { return l.id === id; })[0];
+    return lot.solids.length;
+  },
+  tapLot: function (i) { selectLot(i); },
+  cardVisible: function () { return $('card').style.display === 'block'; },
+  cardText: function () { return $('cardMeta').textContent; },
+  projectCenter: function (i) { updateMats(); return projectCenter(LOTS[i]); },
+  setCam: function (yaw, pitch, dist) {
+    cam.yaw = yaw; cam.pitch = pitch; cam.dist = dist; camGoal = null; stopTour();
+    updateMats();
+  },
+  debugPick: function (cx, cy) { // client px -> ndc -> lot index
+    var r = canvas.getBoundingClientRect();
+    var nx = ((cx - r.left) / r.width) * 2 - 1;
+    var ny = -(((cy - r.top) / r.height) * 2 - 1);
+    updateMats();
+    return pickLot(nx, ny);
+  },
+  debugRay: function (cx, cy) {
+    var r = canvas.getBoundingClientRect();
+    var nx = ((cx - r.left) / r.width) * 2 - 1;
+    var ny = -(((cy - r.top) / r.height) * 2 - 1);
+    updateMats();
+    var M = m4mul(projM, viewM), I = m4invert(M), C = m4mul(M, I);
+    var ray = pickRay(nx, ny);
+    return {
+      ndc: [nx, ny],
+      ray: ray,
+      eye: camEye(),
+      aabb0: LOTS[0].aabb,
+      identDiag: [C[0], C[5], C[10], C[15]],
+      identOff: Math.abs(C[1]) + Math.abs(C[2]) + Math.abs(C[3]) + Math.abs(C[4]) +
+                Math.abs(C[6]) + Math.abs(C[7]) + Math.abs(C[8]) + Math.abs(C[9]) +
+                Math.abs(C[11]) + Math.abs(C[12]) + Math.abs(C[13]) + Math.abs(C[14])
+    };
+  }
+};
+
+})();
+
+</script>
+</body>
+</html>
