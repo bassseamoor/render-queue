@@ -149,7 +149,11 @@ var RANGES = {
   hue:[0,360,0], layers:[5,9,1], hue2:[0,120,0],
   mode:[0,2,1], semi:[0,11,1], name:[0,3,1],
   waves:[3,7,1],
-  rings:[6,12,1], intensity:[1,5,1], flow:[0,2,1]
+  rings:[6,12,1], intensity:[1,5,1], flow:[0,2,1],
+  blobs:[3,8,1], goo:[0.3,1,0], curtains:[4,9,1], speed:[0.2,2,0],
+  voices:[2,4,1], rate:[0.3,1.5,0], glyphs:[14,40,1],
+  petalsA:[4,12,1], petalsB:[4,12,1], count:[150,600,1], swirl:[0.5,2,0],
+  spin:[0.2,1.5,0], walkers:[300,900,1], blend:[0,1,0], bmode:[0,4,1]
 };
 function clampJit(v, key, rng){
   var r = RANGES[key]; if (!r) return v;
@@ -169,6 +173,21 @@ function mutateGenome(g, rng){
     var t = TYPES[(rng()*TYPES.length)|0];
     return {type:t.kind, seed:g.seed, p:t.params(rng)};
   }
+  if (g.type==='evolver'){
+    /* evolver mutation: 40% swap one parent for a mutated copy, else jitter the mix */
+    if (rng() < 0.4){
+      var np = JSON.parse(JSON.stringify(g.p));
+      var which = rng()<0.5 ? 'pa' : 'pb';
+      np[which] = mutateGenome(sanitizeGenome(g.p[which]), rng);
+      return {type:'evolver', seed:g.seed, p:np};
+    }
+    return {type:'evolver', seed:g.seed, p:{
+      blend: clampJit(g.p.blend, 'blend', rng),
+      bmode: clampJit(g.p.bmode, 'bmode', rng),
+      speed: clampJit(g.p.speed, 'speed', rng),
+      pa: g.p.pa, pb: g.p.pb
+    }};
+  }
   var p = {}, keys = Object.keys(g.p), mutated = 0;
   for (var i=0;i<keys.length;i++) p[keys[i]] = g.p[keys[i]];
   var n = 1 + ((rng()*2)|0);           /* jitter 1–2 params */
@@ -180,6 +199,14 @@ function mutateGenome(g, rng){
   return {type:g.type, seed:g.seed, p:p};
 }
 function crossoverGenomes(a, b, rng){
+  if (a.type==='evolver' || b.type==='evolver'){
+    /* hybrid crossover: one parent genome from each side */
+    function par(g){ return g.type==='evolver' ? sanitizeGenome(rng()<0.5?g.p.pa:g.p.pb) : sanitizeGenome(g); }
+    var cpa = par(a), cpb = par(b);
+    if (genomeKey(cpa)===genomeKey(cpb)) cpb = randNonEvolver(rng);
+    return {type:'evolver', seed:((rng()<0.5?a.seed:b.seed)|0)>>>0,
+      p:{blend:rng(), bmode:(rng()*5)|0, speed:0.3+rng()*1.2, pa:cpa, pb:cpb}};
+  }
   /* child takes its type from one parent, each param from either */
   var type = rng()<0.5 ? a.type : b.type;
   var p = {}, seen = {};
@@ -202,14 +229,50 @@ function typeExists(t){
   for (var i=0;i<TYPES.length;i++) if (TYPES[i].kind===t) return true;
   return false;
 }
+function validNonEvolver(g){
+  return validGenome(g) && g.type!=='evolver';
+}
 function validGenome(g){
   if (!g || typeof g!=='object') return false;
   if (!typeExists(g.type)) return false;
   if (typeof g.seed!=='number' || !isFinite(g.seed)) return false;
   if (!g.p || typeof g.p!=='object') return false;
+  if (g.type==='evolver'){
+    /* depth-1 cap: parents must be real (non-evolver) genomes */
+    if (!g.p.pa || !g.p.pb) return false;
+    return validNonEvolver(g.p.pa) && validNonEvolver(g.p.pb);
+  }
   return true;
 }
+function randNonEvolver(r){
+  var pool = [];
+  for (var i=0;i<TYPES.length;i++) if (TYPES[i].kind!=='evolver') pool.push(TYPES[i]);
+  var t = pool[(r()*pool.length)|0];
+  return {type:t.kind, seed:(r()*1000000000)|0, p:t.params(r)};
+}
+function typeLabel(kind){
+  for (var i=0;i<TYPES.length;i++) if (TYPES[i].kind===kind) return TYPES[i].label;
+  return kind;
+}
+function sanitizeEvolver(g){
+  var p = g.p||{};
+  var r = mulberry32(((g.seed^0x51ab)>>>0));
+  function num(v, dflt, mn, mx){
+    v = (typeof v==='number' && isFinite(v)) ? v : dflt;
+    return Math.max(mn, Math.min(mx, v));
+  }
+  var pa = p.pa, pb = p.pb;
+  if (!validNonEvolver(pa)) pa = randNonEvolver(r); else pa = sanitizeGenome(pa);
+  if (!validNonEvolver(pb)) pb = randNonEvolver(r); else pb = sanitizeGenome(pb);
+  return {type:'evolver', seed:g.seed>>>0, p:{
+    blend: num(p.blend, 0.5, 0, 1),
+    bmode: Math.round(num(p.bmode, 0, 0, 4)),
+    speed: num(p.speed, 0.8, 0.2, 2),
+    pa: pa, pb: pb
+  }};
+}
 function sanitizeGenome(g){
+  if (g.type==='evolver') return sanitizeEvolver(g);
   /* rebuild p in canonical key order, keeping only finite numerics */
   var fresh = null;
   for (var i=0;i<TYPES.length;i++)
@@ -221,6 +284,10 @@ function sanitizeGenome(g){
   return {type:g.type, seed:g.seed>>>0, p:p};
 }
 function genomeKey(g){
+  if (g.type==='evolver'){
+    return 'evolver|'+g.seed+'|'+(+g.p.blend).toFixed(3)+'|'+g.p.bmode+'|'+
+      genomeKey(g.p.pa)+'|'+genomeKey(g.p.pb);
+  }
   var ks = Object.keys(g.p).sort();
   return g.type+'|'+g.seed+'|'+ks.map(function(k){ return k+':'+g.p[k]; }).join(',');
 }
@@ -1221,6 +1288,723 @@ function toast(msg){
  * Renders the wonder invisibly, starts it, waits ~700ms, snapshots its
  * canvas into a small canvas. Always paints a hue gradient first so a
  * failed snapshot still looks intentional. */
+/* ---------- 11. METABALL — SDF smooth-union goo ----------
+ * from: softbody-creatures smin — distilled capability 561917818684:
+ * "polynomial smooth-min for SDF smooth union"
+ * genome.p: {hue:0-360, blobs:3-8, goo:0.3-1} */
+TYPES.push({kind:'metaball', icon:'\u{1FAE7}', label:'Metaball',
+ params: function(r){ return {hue:r()*360, blobs:3+((r()*6)|0), goo:0.3+r()*0.7}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Metaball '+((seed%900)+100), sub = 'smooth-union goo — from the creature skinner';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var NB = Math.round(P.blobs), hue = P.hue, goo = P.goo;
+  var blobs = [];
+  for (var i=0;i<NB;i++){
+    blobs.push({
+      fx: 0.9+rng()*1.6, fy: 0.9+rng()*1.6,
+      px: rng()*6.28, py: rng()*6.28,
+      sx: 0.25+rng()*0.45, sy: 0.25+rng()*0.45,
+      r: (0.10+rng()*0.13)*Math.min(Wd,Ht)*goo,
+      dh: rng()*60-30
+    });
+  }
+  var t = rng()*100, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(Wd/2,Ht/2,10,Wd/2,Ht/2,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'#060a14'); bg.addColorStop(1,'#020308');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=0;i<NB;i++){
+      var b = blobs[i];
+      var x = Wd/2 + Math.sin(t*b.sx*b.fx + b.px)*Wd*0.30;
+      var y = Ht/2 + Math.sin(t*b.sy*b.fy + b.py)*Ht*0.30;
+      var rr = b.r*(1+0.18*Math.sin(t*1.7+b.px*2));
+      var hh = (((hue+b.dh)%360)+360)%360;
+      var g2 = ctx.createRadialGradient(x,y,rr*0.05,x,y,rr*2.6);
+      g2.addColorStop(0,'hsla('+hh+',90%,74%,.9)');
+      g2.addColorStop(0.45,'hsla('+hh+',90%,60%,.35)');
+      g2.addColorStop(1,'hsla('+hh+',90%,55%,0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(x,y,rr*2.6,0,6.2832); ctx.fill();
+    }
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 12. AURORA — breathing light curtains ----------
+ * from: ambience-engine ambWash — distilled capability 6328d6ef117e:
+ * "filtered noise wash with LFO (bandpass/lowpass)"
+ * genome.p: {hue:0-360, curtains:4-9, speed:0.2-2} */
+TYPES.push({kind:'aurora', icon:'\u{1F30C}', label:'Aurora',
+ params: function(r){ return {hue:r()*360, curtains:4+((r()*6)|0), speed:0.2+r()*1.8}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Aurora '+((seed%900)+100), sub = 'breathing light wash — from the ambience engine';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var NC = Math.round(P.curtains), hue = P.hue, speed = P.speed;
+  var stars = [];
+  for (var si=0;si<90;si++) stars.push({x:rng()*Wd, y:rng()*Ht*0.7, r:0.6+rng()*1.6, tw:1+rng()*3, ph:rng()*6.28});
+  var cur = [];
+  for (var i=0;i<NC;i++){
+    cur.push({
+      x0: Wd*(0.08+0.84*i/Math.max(1,NC-1)) + (rng()-0.5)*60,
+      w: 26+rng()*64, ph: rng()*6.28, lfo: 0.8+rng()*2.2,
+      dh: i*11+rng()*8
+    });
+  }
+  var t = rng()*100, raf = 0;
+  function band(c, alpha, lw){
+    ctx.beginPath();
+    for (var y=0;y<=Ht;y+=8){
+      var x = c.x0 + Math.sin(y*0.008 + t*speed + c.ph)*62 + Math.sin(y*0.021 - t*speed*0.7)*24;
+      if (y===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    var hh = (((hue+c.dh)%360)+360)%360;
+    ctx.strokeStyle = 'hsla('+hh+',85%,64%,'+alpha+')';
+    ctx.lineWidth = lw;
+    ctx.shadowColor = 'hsla('+hh+',90%,60%,.9)';
+    ctx.shadowBlur = 22;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    ctx.fillStyle = '#030610'; ctx.fillRect(0,0,Wd,Ht);
+    for (var s2=0;s2<stars.length;s2++){
+      var st = stars[s2];
+      var tw = 0.25+0.75*Math.abs(Math.sin(t*st.tw+st.ph));
+      ctx.fillStyle = 'rgba(200,220,255,'+(0.5*tw)+')';
+      ctx.beginPath(); ctx.arc(st.x,st.y,st.r,0,6.2832); ctx.fill();
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=0;i<NC;i++){
+      var c = cur[i];
+      var a = 0.10+0.09*Math.sin(t*c.lfo+c.ph);
+      if (a<0.02) continue;
+      band(c, a*0.5, c.w);
+      band(c, a, c.w*0.35);
+    }
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 13. CHOIR — harmonic ratios, made visible ----------
+ * from: ambience-engine ambPad — distilled capability aca18b74d3a7:
+ * "chord pad from base frequency + ratios"
+ * genome.p: {hue:0-360, voices:2-4} */
+TYPES.push({kind:'choir', icon:'\u{1F3B5}', label:'Choir',
+ params: function(r){ return {hue:r()*360, voices:2+((r()*3)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Choir '+((seed%900)+100), sub = 'harmonic ratios, made visible — from the pad synth';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var cx = Wd/2, cy = Ht/2, base = Math.min(Wd,Ht)*0.16;
+  var RATIOS = [1, 1.5, 2.02, 2.98];
+  var NV = Math.round(P.voices), hue = P.hue;
+  var t = rng()*100, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(cx,cy,10,cx,cy,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'#070a16'); bg.addColorStop(1,'#020308');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=0;i<NV;i++){
+      var R = base*RATIOS[i];
+      var pulse = 0.72+0.28*Math.sin(t*(1+i*0.37)+i*2.1);
+      var hh = (((hue+i*22)%360)+360)%360;
+      ctx.strokeStyle = 'hsla('+hh+',85%,64%,'+(0.28+0.5*pulse)+')';
+      ctx.lineWidth = 1.5+3.5*pulse;
+      ctx.shadowColor = 'hsla('+hh+',90%,62%,.9)';
+      ctx.shadowBlur = 18;
+      ctx.beginPath(); ctx.arc(cx,cy,R,0,6.2832); ctx.stroke();
+      ctx.shadowBlur = 0;
+      var da = t*(0.35+i*0.16)+i*1.7;
+      var dx = cx+Math.cos(da)*R, dy = cy+Math.sin(da)*R;
+      var dg = ctx.createRadialGradient(dx,dy,0.5,dx,dy,14);
+      dg.addColorStop(0,'hsla('+hh+',95%,80%,.95)');
+      dg.addColorStop(1,'hsla('+hh+',95%,70%,0)');
+      ctx.fillStyle = dg;
+      ctx.beginPath(); ctx.arc(dx,dy,14,0,6.2832); ctx.fill();
+    }
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 14. DROPS — percussive ripples ----------
+ * from: ambience-engine ambDrop — distilled capability 193617f46732:
+ * "percussive drop event"
+ * genome.p: {hue:0-360, rate:0.3-1.5} */
+TYPES.push({kind:'drops', icon:'\u{1F4A7}', label:'Drops',
+ params: function(r){ return {hue:r()*360, rate:0.3+r()*1.2}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Drops '+((seed%900)+100), sub = 'percussive ripples — from the drop synth';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, rate = P.rate;
+  var drops = [], acc = 0;
+  var motes = [];
+  for (var mi=0;mi<40;mi++) motes.push({x:rng()*Wd, y:rng()*Ht, r:0.6+rng()*1.8, ph:rng()*6.28});
+  var t = 0, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    acc += 0.016;
+    if (acc > 1/rate){
+      acc = 0;
+      drops.push({x:Wd*0.1+rng()*Wd*0.8, y:Ht*0.15+rng()*Ht*0.7, t:0});
+      if (drops.length>24) drops.shift();
+    }
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createLinearGradient(0,0,0,Ht);
+    bg.addColorStop(0,'#04101e'); bg.addColorStop(1,'#02060e');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    for (var m2=0;m2<motes.length;m2++){
+      var mo = motes[m2];
+      var tw = 0.2+0.5*Math.abs(Math.sin(t*0.8+mo.ph));
+      ctx.fillStyle = 'rgba(150,200,255,'+(0.25*tw)+')';
+      ctx.beginPath(); ctx.arc(mo.x,mo.y,mo.r,0,6.2832); ctx.fill();
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=0;i<drops.length;i++){
+      var d = drops[i]; d.t += 0.016;
+      var life = 2.4, k = d.t/life;
+      if (k>=1) continue;
+      for (var ring=0;ring<3;ring++){
+        var rr = (d.t*95)*(1+ring*0.38);
+        var a = (1-k)*0.5/(1+ring);
+        ctx.strokeStyle = 'hsla('+(((hue+ring*14)%360)+360)%360+',85%,66%,'+a+')';
+        ctx.lineWidth = 2.2-ring*0.5;
+        ctx.shadowColor = 'hsla('+hue+',90%,65%,.8)';
+        ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.arc(d.x,d.y,rr,0,6.2832); ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+      var cg = ctx.createRadialGradient(d.x,d.y,0.5,d.x,d.y,10);
+      cg.addColorStop(0,'hsla('+hue+',95%,80%,'+(0.9*(1-k))+')');
+      cg.addColorStop(1,'hsla('+hue+',95%,70%,0)');
+      ctx.fillStyle = cg;
+      ctx.beginPath(); ctx.arc(d.x,d.y,10,0,6.2832); ctx.fill();
+    }
+    ctx.restore();
+    drops = drops.filter(function(d){ return d.t<2.4; });
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 15. GRAIN — video static field ----------
+ * from: seed-console video recorder — distilled capability b06e3b6e3316:
+ * "video capture of any canvas (MediaRecorder + captureStream)"
+ * genome.p: {hue:0-360, intensity:1-5} */
+TYPES.push({kind:'grain', icon:'\u{1F4FC}', label:'Grain',
+ params: function(r){ return {hue:r()*360, intensity:1+((r()*4)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Grain '+((seed%900)+100), sub = 'video static field — from the screen recorder';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, inten = Math.round(P.intensity);
+  var tiles = [];
+  for (var gi=0;gi<3;gi++){
+    var tc = document.createElement('canvas'); tc.width=170; tc.height=115;
+    var tx = tc.getContext('2d');
+    var im = tx.createImageData(170,115);
+    for (var px=0;px<im.data.length;px+=4){
+      var v = (rng()*255)|0;
+      im.data[px]=v; im.data[px+1]=v; im.data[px+2]=v; im.data[px+3]=255;
+    }
+    tx.putImageData(im,0,0);
+    tiles.push(tc);
+  }
+  var drift = [{ph:rng()*6.28, sp:0.2+rng()*0.3, dh:0},{ph:rng()*6.28, sp:0.15+rng()*0.25, dh:70}];
+  var t = rng()*100, raf = 0, fi = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016; fi++;
+    ctx.clearRect(0,0,Wd,Ht);
+    ctx.fillStyle = '#04060c'; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var d2=0;d2<drift.length;d2++){
+      var dr = drift[d2];
+      var gx = Wd/2+Math.sin(t*dr.sp+dr.ph)*Wd*0.3;
+      var gy = Ht/2+Math.cos(t*dr.sp*0.8+dr.ph)*Ht*0.3;
+      var hh = (((hue+dr.dh)%360)+360)%360;
+      var g2 = ctx.createRadialGradient(gx,gy,10,gx,gy,Math.max(Wd,Ht)*0.6);
+      g2.addColorStop(0,'hsla('+hh+',70%,32%,.5)');
+      g2.addColorStop(1,'hsla('+hh+',70%,30%,0)');
+      ctx.fillStyle = g2; ctx.fillRect(0,0,Wd,Ht);
+    }
+    ctx.restore();
+    var tile = tiles[(fi>>1)%3];
+    ctx.save();
+    ctx.globalAlpha = 0.030*inten;
+    ctx.drawImage(tile, -8+rng()*16, -8+rng()*16, Wd+16, Ht+16);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    for (var y=0;y<Ht;y+=4) ctx.fillRect(0,y,Wd,1);
+    var vg = ctx.createRadialGradient(Wd/2,Ht/2,Math.min(Wd,Ht)*0.35,Wd/2,Ht/2,Math.max(Wd,Ht)*0.75);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,Wd,Ht);
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 16. GLYPHS — a text-spec, dreaming ----------
+ * from: stream parseInput — distilled capability 429fdc9762b3:
+ * "text -> intent spec parser (seed, mood, comps)"
+ * genome.p: {hue:0-360, glyphs:14-40} */
+TYPES.push({kind:'glyphs', icon:'\u{1F524}', label:'Glyphs',
+ params: function(r){ return {hue:r()*360, glyphs:14+((r()*27)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Glyphs '+((seed%900)+100), sub = 'a text-spec, dreaming — from the intent parser';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, NG = Math.round(P.glyphs);
+  var CH = ['▲','△','●','○','◆','◇','■','□','✕','◈','⌖','⟁','◐','◑','⋈','⟡'];
+  var items = [];
+  for (var i=0;i<NG;i++){
+    items.push({
+      ch: CH[(rng()*CH.length)|0],
+      cx: Wd*0.15+rng()*Wd*0.7, cy: Ht*0.15+rng()*Ht*0.7,
+      rx: 20+rng()*120, ry: 20+rng()*90,
+      sp: 0.15+rng()*0.6, ph: rng()*6.28,
+      size: 14+rng()*30, tw: 0.6+rng()*2.2, dh: rng()*40-20
+    });
+  }
+  var t = rng()*100, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(Wd/2,Ht/2,10,Wd/2,Ht/2,Math.max(Wd,Ht)*0.72);
+    bg.addColorStop(0,'#05070f'); bg.addColorStop(1,'#020308');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (var i=0;i<NG;i++){
+      var it = items[i];
+      var x = it.cx + Math.cos(t*it.sp+it.ph)*it.rx;
+      var y = it.cy + Math.sin(t*it.sp*1.31+it.ph)*it.ry;
+      var a = 0.22+0.6*Math.abs(Math.sin(t*it.tw+it.ph));
+      var hh = (((hue+it.dh)%360)+360)%360;
+      ctx.font = '600 '+it.size+'px system-ui, sans-serif';
+      ctx.fillStyle = 'hsla('+hh+',72%,70%,'+a+')';
+      ctx.shadowColor = 'hsla('+hh+',85%,65%,.8)';
+      ctx.shadowBlur = 14;
+      ctx.fillText(it.ch, x, y);
+    }
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 17. BLOOM — breeding in progress ----------
+ * from: seed-codec remixConfig — distilled capability 7a3f03422f64:
+ * "config breeding: keeps realm+layout, jitters the rest"
+ * genome.p: {hue:0-360, petalsA:4-12, petalsB:4-12} */
+TYPES.push({kind:'bloom', icon:'\u{1F338}', label:'Bloom',
+ params: function(r){ return {hue:r()*360, petalsA:4+((r()*9)|0), petalsB:4+((r()*9)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Bloom '+((seed%900)+100), sub = 'breeding in progress — from the remix operator';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.40;
+  var hue = P.hue, pA = P.petalsA, pB = P.petalsB;
+  var t = rng()*100, raf = 0;
+  function layer(petals, hh, rr, rot, alpha){
+    ctx.beginPath();
+    var steps = 160;
+    for (var s2=0;s2<=steps;s2++){
+      var a = (s2/steps)*6.2832;
+      var rad = rr*(0.52+0.48*Math.abs(Math.sin(petals*a/2)));
+      var x = cx+Math.cos(a+rot)*rad, y = cy+Math.sin(a+rot)*rad;
+      if (s2===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'hsla('+hh+',80%,60%,'+alpha+')';
+    ctx.fill();
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(cx,cy,10,cx,cy,R*1.6);
+    bg.addColorStop(0,'#0a0812'); bg.addColorStop(1,'#030208');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    var m = 0.5+0.5*Math.sin(t*0.32);
+    var petals = pA+(pB-pA)*m;
+    var rot = t*0.12;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowColor = 'hsla('+hue+',85%,62%,.8)';
+    ctx.shadowBlur = 26;
+    layer(petals, (((hue)%360)+360)%360, R, rot, 0.30);
+    layer(petals*1.7, (((hue+42)%360)+360)%360, R*0.62, -rot*1.4, 0.30);
+    ctx.shadowBlur = 0;
+    var cg = ctx.createRadialGradient(cx,cy,1,cx,cy,26);
+    cg.addColorStop(0,'hsla('+(((hue+80)%360)+360)%360+',95%,82%,.95)');
+    cg.addColorStop(1,'hsla('+(((hue+80)%360)+360)%360+',95%,70%,0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.arc(cx,cy,26,0,6.2832); ctx.fill();
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 18. VORTEX — flow over a heightfield ----------
+ * from: terrain-core heightfield — distilled capability e854166f722f:
+ * "seeded 2D heightfield (81x81) + biome map from string seed"
+ * genome.p: {hue:0-360, count:150-600, swirl:0.5-2} */
+TYPES.push({kind:'vortex', icon:'\u{1F32A}', label:'Vortex',
+ params: function(r){ return {hue:r()*360, count:150+((r()*451)|0), swirl:0.5+r()*1.5}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Vortex '+((seed%900)+100), sub = 'flow over a heightfield — from the terrain core';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, NP = Math.round(P.count), swirl = P.swirl;
+  var cx = Wd/2, cy = Ht/2;
+  var parts = [];
+  for (var i=0;i<NP;i++){
+    var x = rng()*Wd, y = rng()*Ht;
+    parts.push({x:x, y:y, px:x, py:y, sp:1.2+rng()*2.6});
+  }
+  var t = 0, raf = 0;
+  ctx.fillStyle = '#030510'; ctx.fillRect(0,0,Wd,Ht);
+  function respawn(p){
+    if (rng()<0.3){ var a=rng()*6.2832, r2=rng()*60; p.x=cx+Math.cos(a)*r2; p.y=cy+Math.sin(a)*r2; }
+    else { p.x=rng()*Wd; p.y=rng()*Ht; }
+    p.px=p.x; p.py=p.y;
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.fillStyle = 'rgba(3,5,16,0.09)';
+    ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 1.6;
+    for (var i=0;i<NP;i++){
+      var p = parts[i];
+      p.px = p.x; p.py = p.y;
+      var dx = p.x-cx, dy = p.y-cy;
+      var ang = Math.sin(p.y*0.008+t*0.6)*swirl + Math.cos(p.x*0.006-t*0.4)*swirl
+              + Math.atan2(dy,dx) + 1.25;
+      p.x += Math.cos(ang)*p.sp*2.2;
+      p.y += Math.sin(ang)*p.sp*2.2;
+      if (p.x<-10||p.x>Wd+10||p.y<-10||p.y>Ht+10) respawn(p);
+      var hh = (((hue+p.sp*36)%360)+360)%360;
+      ctx.strokeStyle = 'hsla('+hh+',85%,62%,.65)';
+      ctx.beginPath(); ctx.moveTo(p.px,p.py); ctx.lineTo(p.x,p.y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 19. LATTICE — zero-dep 3D math ----------
+ * from: stream matrix kit — distilled capability 367a6df13bbd:
+ * "zero-dependency 4x4 matrix kit for scene graphs"
+ * genome.p: {hue:0-360, spin:0.2-1.5} */
+TYPES.push({kind:'lattice', icon:'\u{1F578}', label:'Lattice',
+ params: function(r){ return {hue:r()*360, spin:0.2+r()*1.3}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Lattice '+((seed%900)+100), sub = 'zero-dep 3D math — from the matrix kit';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.34;
+  var hue = P.hue, spin = P.spin;
+  var N = 4, pts = [], edges = [];
+  function idx(i,j,k){ return (i*N+j)*N+k; }
+  for (var i=0;i<N;i++) for (var j=0;j<N;j++) for (var k=0;k<N;k++)
+    pts.push([i/(N-1)*2-1, j/(N-1)*2-1, k/(N-1)*2-1]);
+  for (var a=0;a<N;a++) for (var b=0;b<N;b++) for (var c=0;c<N;c++){
+    if (a<N-1) edges.push([idx(a,b,c),idx(a+1,b,c)]);
+    if (b<N-1) edges.push([idx(a,b,c),idx(a,b+1,c)]);
+    if (c<N-1) edges.push([idx(a,b,c),idx(a,b,c+1)]);
+  }
+  var t = rng()*100, raf = 0;
+  function proj(p, ax, ay){
+    var c1=Math.cos(ay), s1=Math.sin(ay);
+    var x1 = p[0]*c1 + p[2]*s1, z1 = -p[0]*s1 + p[2]*c1;
+    var c2=Math.cos(ax), s2=Math.sin(ax);
+    var y1 = p[1]*c2 - z1*s2, z2 = p[1]*s2 + z1*c2;
+    var s3 = 1/(2.8-z2*0.9);
+    return [cx+x1*R*s3, cy+y1*R*s3, z2];
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(cx,cy,10,cx,cy,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'#060a18'); bg.addColorStop(1,'#020308');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    var ay = t*spin, ax = t*spin*0.62;
+    var pr = [];
+    for (var i=0;i<pts.length;i++) pr.push(proj(pts[i],ax,ay));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 1.4;
+    for (var e=0;e<edges.length;e++){
+      var A = pr[edges[e][0]], B = pr[edges[e][1]];
+      var depth = (A[2]+B[2])/2;
+      var al = 0.12+0.5*(1-(depth+1.4)/2.8);
+      ctx.strokeStyle = 'hsla('+(((hue+depth*30)%360)+360)%360+',80%,66%,'+al+')';
+      ctx.beginPath(); ctx.moveTo(A[0],A[1]); ctx.lineTo(B[0],B[1]); ctx.stroke();
+    }
+    for (var p2=0;p2<pr.length;p2++){
+      var q = pr[p2];
+      ctx.fillStyle = 'hsla('+hue+',90%,76%,.9)';
+      ctx.beginPath(); ctx.arc(q[0],q[1],2.4,0,6.2832); ctx.fill();
+    }
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 20. CRYSTAL — seeded growth ----------
+ * from: comp-maze growth — distilled capability d6a3c4406c9d:
+ * "seeded polar-grid maze (365x24) + endless coordinate extension"
+ * genome.p: {hue:0-360, walkers:300-900} */
+TYPES.push({kind:'crystal', icon:'\u{1F48E}', label:'Crystal',
+ params: function(r){ return {hue:r()*360, walkers:300+((r()*601)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Crystal '+((seed%900)+100), sub = 'seeded growth — from the maze carver';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, budget = Math.round(P.walkers);
+  var GW = 150, GH = 100;
+  var grid = new Uint8Array(GW*GH);
+  function at(x,y){ return (x<0||y<0||x>=GW||y>=GH) ? 0 : grid[y*GW+x]; }
+  var oc = document.createElement('canvas'); oc.width = GW; oc.height = GH;
+  var ox = oc.getContext('2d');
+  ox.fillStyle = '#04060c'; ox.fillRect(0,0,GW,GH);
+  var sx = GW>>1, sy = GH>>1;
+  grid[sy*GW+sx] = 1;
+  ox.fillStyle = 'hsl('+hue+',90%,70%)'; ox.fillRect(sx,sy,1,1);
+  var active = [], stuck = 0;
+  function spawn(){
+    var side = (rng()*4)|0, x, y;
+    if (side===0){ x=(rng()*GW)|0; y=0; }
+    else if (side===1){ x=(rng()*GW)|0; y=GH-1; }
+    else if (side===2){ x=0; y=(rng()*GH)|0; }
+    else { x=GW-1; y=(rng()*GH)|0; }
+    return {x:x, y:y};
+  }
+  for (var w0=0;w0<10;w0++) active.push(spawn());
+  function adjacent(x,y){
+    for (var dy=-1;dy<=1;dy++) for (var dx=-1;dx<=1;dx++){
+      if (!dx && !dy) continue;
+      if (at(x+dx,y+dy)) return true;
+    }
+    return false;
+  }
+  var t = 0, raf = 0, done = false;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    if (!done){
+      var steps = 0;
+      while (steps < 500 && stuck < budget){
+        steps++;
+        for (var wi=0;wi<active.length;wi++){
+          var w = active[wi];
+          w.x += ((rng()*3)|0)-1; w.y += ((rng()*3)|0)-1;
+          if (w.x<0||w.y<0||w.x>=GW||w.y>=GH){ active[wi]=spawn(); continue; }
+          if (adjacent(w.x,w.y)){
+            grid[w.y*GW+w.x] = 1;
+            var dist = Math.sqrt((w.x-sx)*(w.x-sx)+(w.y-sy)*(w.y-sy));
+            var hh = (((hue+dist*1.4)%360)+360)%360;
+            ox.fillStyle = 'hsl('+hh+',88%,'+(58+ (dist%14))+'%)';
+            ox.fillRect(w.x,w.y,1,1);
+            stuck++;
+            active[wi] = stuck<budget ? spawn() : null;
+          }
+        }
+        active = active.filter(function(w){ return !!w; });
+        if (!active.length) break;
+      }
+      if (stuck>=budget) done = true;
+    }
+    ctx.clearRect(0,0,Wd,Ht);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(oc, 0, 0, Wd, Ht);
+    /* shimmer sweep */
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    var sx2 = ((t*0.12)%1.6-0.3)*Wd;
+    var sg = ctx.createLinearGradient(sx2-90,0,sx2+90,0);
+    sg.addColorStop(0,'rgba(255,255,255,0)');
+    sg.addColorStop(0.5,'hsla('+(((hue+50)%360)+360)%360+',90%,75%,.10)');
+    sg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle = sg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.restore();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 21. EVOLVER — wonders made of wonders ----------
+ * genome.p: {blend:0-1, bmode:0-4, speed, pa:genome, pb:genome}
+ * Parents are full genomes of any two non-evolver types (depth-1 cap).
+ * Renders each parent offscreen at reduced res, composites with a seeded
+ * blend mode; the mix ratio drifts over time so the wonder visibly evolves.
+ * Mutation: jitter the mix, or swap one parent for a mutated copy.
+ * Crossover: one parent genome from each side. The type space is unbounded:
+ * every evolver is a unique hybrid, and hybrids parent new hybrids. */
+TYPES.push({kind:'evolver', icon:'\u{1F9EC}', label:'Evolver',
+ params: function(r){
+  return {blend:r(), bmode:(r()*5)|0, speed:0.3+r()*1.2,
+          pa:randNonEvolver(r), pb:randNonEvolver(r)};
+ },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var pa = sanitizeGenome(P.pa), pb = sanitizeGenome(P.pb);
+  var title = typeLabel(pa.type)+' × '+typeLabel(pb.type);
+  var sub = 'evolving hybrid — from the evolver';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var MODES = ['screen','overlay','multiply','difference','lighten'];
+  var SW = 340, SH = 230;
+  var tmpA = document.createElement('canvas'); tmpA.width = SW; tmpA.height = SH;
+  var tmpB = document.createElement('canvas'); tmpB.width = SW; tmpB.height = SH;
+  var tA = tmpA.getContext('2d'), tB = tmpB.getContext('2d');
+  var wA = null, wB = null, cvA = null, cvB = null;
+  var holdA = null, holdB = null, live = false;
+  var t = ((seed%1000)/1000)*10, raf = 0;
+  function setup(){
+    if (live) return;
+    live = true;
+    var css = 'position:fixed;left:-9999px;top:0;width:700px;pointer-events:none;';
+    try{
+      holdA = document.createElement('div'); holdA.style.cssText = css;
+      wA = makeWonder(pa); holdA.appendChild(wA.el);
+      document.body.appendChild(holdA); wA.start();
+      cvA = wA.el.querySelector('.wd-visual canvas');
+    }catch(e){ cvA = null; }
+    try{
+      holdB = document.createElement('div'); holdB.style.cssText = css;
+      wB = makeWonder(pb); holdB.appendChild(wB.el);
+      document.body.appendChild(holdB); wB.start();
+      cvB = wB.el.querySelector('.wd-visual canvas');
+    }catch(e){ cvB = null; }
+  }
+  function teardown(){
+    live = false;
+    try{ if (wA) wA.stop(); }catch(e){}
+    try{ if (wB) wB.stop(); }catch(e){}
+    try{ if (holdA && holdA.parentNode) holdA.parentNode.removeChild(holdA); }catch(e){}
+    try{ if (holdB && holdB.parentNode) holdB.parentNode.removeChild(holdB); }catch(e){}
+    wA = wB = null; cvA = cvB = null; holdA = holdB = null;
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    var ev = 0.5+0.5*Math.sin(t*P.speed);
+    ctx.clearRect(0,0,Wd,Ht);
+    ctx.fillStyle = '#04060c'; ctx.fillRect(0,0,Wd,Ht);
+    var okA = false, okB = false;
+    try{
+      if (cvA && cvA.width>0){ tA.clearRect(0,0,SW,SH); tA.drawImage(cvA,0,0,SW,SH); okA = true; }
+      if (cvB && cvB.width>0){ tB.clearRect(0,0,SW,SH); tB.drawImage(cvB,0,0,SW,SH); okB = true; }
+    }catch(e){}
+    if (okA){
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.drawImage(tmpA, 0, 0, Wd, Ht);
+    }
+    if (okB){
+      ctx.globalCompositeOperation = MODES[P.bmode] || 'screen';
+      ctx.globalAlpha = 0.25+0.75*((1-P.blend)*0.5+P.blend*ev+ (1-P.blend)*0.5*(1-ev));
+      ctx.drawImage(tmpB, 0, 0, Wd, Ht);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    if (!okA && !okB){
+      ctx.fillStyle = 'rgba(140,160,200,.55)';
+      ctx.font = '15px system-ui, sans-serif';
+      ctx.fillText('parents still forming…', 24, 42);
+    }
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ setup(); if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } teardown(); } };
+}});
+
 function thumbnail(genome, W2, H2, cb){
   var holder = document.createElement('div');
   holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:'+W2+'px;pointer-events:none;overflow:hidden;';
