@@ -283,59 +283,164 @@ function compile(a){
   var skin=hx(M.skin), skinB=hx(M.skinB), bellyC=hx(M.belly),
       padC=hx(M.pad), eyeC=hx(M.eye);
   var torsoY=g.legLen*0.92;
-  // static body parts (built once in creature-local space; torso at origin)
-  var body=new Geo();
-  var segL=g.bodyLen/3;
-  for (var s=0;s<3;s++){
-    var w=g.bodyW*(1-0.18*Math.abs(s-1)), h=g.bodyH*(1-0.15*Math.abs(s-1));
-    var c = s===1?skin:skinB;
-    // ellipsoid-ish: use ball scaled
-    var bg=new Geo();
-    ball(bg, 1, 0,0,0, c, 12, 9);
-    // scale ball into ellipsoid segment
-    for (var i=0;i<bg.pos.length;i+=3){
-      bg.pos[i]=(bg.pos[i])*(segL*0.62)+(s-1)*segL;
-      bg.pos[i+1]=bg.pos[i+1]*(h*0.5);
-      bg.pos[i+2]=bg.pos[i+2]*(w*0.5);
+
+  /* Countershading color: dorsal slightly darker -> ventral light, plus markings */
+  function skinColor(u, v, pos, base, dark){
+    // v=0 at top (+Y). topness=1 at top, 0 at bottom.
+    var topness=Math.cos(v*Math.PI*2)*0.5+0.5;
+    // Gentle gradient: top uses dark, bottom uses base (lighter)
+    var c=[
+      dark[0]+(base[0]-dark[0])*(1-topness*0.5),
+      dark[1]+(base[1]-dark[1])*(1-topness*0.5),
+      dark[2]+(base[2]-dark[2])*(1-topness*0.5)
+    ];
+    // markings: stripes along body based on genome
+    if (g.markingAmt>0.05){
+      var stripe=Math.sin(u*20+g.marking*10)>0.6 ? 1 : 0;
+      var spot=Math.sin(u*37+v*20+g.marking*20)>0.75 ? 1 : 0;
+      var mk=g.marking<0.5?stripe:spot;
+      if (mk && topness>0.4){
+        var amt=g.markingAmt*0.5;
+        c=[c[0]*(1-amt)+bellyC[0]*amt, c[1]*(1-amt)+bellyC[1]*amt, c[2]*(1-amt)+bellyC[2]*amt];
+      }
     }
-    var base=body.pos.length/3;
-    for (var k=0;k<bg.pos.length;k++){ body.pos.push(bg.pos[k]); body.nrm.push(bg.nrm[k]); body.col.push(bg.col[k]); }
-    bg.idx.forEach(function(ix){ body.idx.push(ix+base); });
+    return c;
   }
-  // head
-  var hg=new Geo();
-  box(hg, 0.55*g.headScale, 0.5*g.headScale, 0.5*g.headScale, g.bodyLen*0.5+0.35*g.headScale, g.bodyH*0.1, 0, skin);
-  box(hg, 0.3*g.headScale, 0.28*g.headScale, 0.34*g.headScale, g.bodyLen*0.5+0.7*g.headScale, g.bodyH*0.02, 0, skinB);
-  // eyes
-  ball(hg, 0.07, g.bodyLen*0.5+0.55*g.headScale, g.bodyH*0.22, 0.2*g.headScale, eyeC, 8, 6);
-  ball(hg, 0.07, g.bodyLen*0.5+0.55*g.headScale, g.bodyH*0.22, -0.2*g.headScale, eyeC, 8, 6);
-  appendGeo(body,hg);
-  // tail segments (separate geos for articulation)
+  var darkSkin=[Math.min(1,skin[0]*0.75+0.08), Math.min(1,skin[1]*0.75+0.08), Math.min(1,skin[2]*0.75+0.08)];
+
+  /* ---- torso + neck + head: proper quadruped ---- */
+  var body=new Geo();
+  var L=g.bodyLen, W=g.bodyW, H=g.bodyH;
+  var stations=[];
+  var N=22;
+  for (var si=0;si<N;si++){
+    var u=si/(N-1); // 0=tail base, 1=nose
+    var x=(u-0.5)*L*1.1;
+    var rx, ry, y;
+    if (u<0.62){
+      // torso: tail base -> chest
+      // Quadruped: hindquarters rounded, belly tucked, chest deep
+      var tu=u/0.62;
+      var hindQ=Math.exp(-Math.pow((tu-0.15)/0.25,2)); // hindquarter mass at rear
+      var chestD=Math.exp(-Math.pow((tu-0.85)/0.2,2));  // chest depth at front
+      rx=W*0.5*(0.45+0.35*hindQ+0.25*chestD);
+      ry=H*0.5*(0.5+0.3*hindQ+0.35*chestD);
+      // topline: level, belly tucked up (not hanging)
+      y=hindQ*H*0.08 - (1-hindQ-chestD)*H*0.05 + chestD*H*0.02;
+    } else {
+      // neck -> head: RISES UP (not in line with body)
+      var hu=(u-0.62)/0.38;
+      if (hu<0.4){
+        // neck: rises and narrows
+        var nu=hu/0.4;
+        rx=W*0.5*(0.5-0.18*nu);
+        ry=H*0.5*(0.55-0.15*nu);
+        y=H*0.1 + nu*H*0.35; // neck rises!
+      } else if (hu<0.75){
+        // skull: distinct, boxy-ish
+        var su=(hu-0.4)/0.35;
+        var skull=Math.sin(su*Math.PI);
+        rx=W*0.5*(0.32+0.12*skull);
+        ry=H*0.5*(0.4+0.12*skull);
+        y=H*0.45 + su*H*0.08;
+      } else {
+        // muzzle: tapers, slightly down
+        var mu=(hu-0.75)/0.25;
+        rx=W*0.5*0.32*(1-mu*0.65);
+        ry=H*0.5*0.4*(1-mu*0.55);
+        y=H*0.53 - mu*H*0.12;
+      }
+    }
+    if (u>=0.62){ rx*=g.headScale; ry*=g.headScale; }
+    stations.push({x:x, y:y, z:0, rx:Math.max(0.03,rx), ry:Math.max(0.03,ry)});
+  }
+  tube(body, stations, 14, function(u,v,pos){
+    return skinColor(u, v, pos, skin, darkSkin);
+  });
+  // haunch masses: spheres at rear hips for powerful hindquarters
+  var haunchX=-L*0.32, haunchY=H*0.05, haunchZ=W*0.38;
+  var hg2=new Geo();
+  ball(hg2, 1, 0,0,0, skin, 10, 8);
+  for (var hi=0;hi<hg2.pos.length;hi+=3){
+    hg2.pos[hi]*=W*0.32; hg2.pos[hi+1]*=H*0.42; hg2.pos[hi+2]*=W*0.28;
+  }
+  // left haunch
+  var hgL=new Geo(); appendGeo(hgL, hg2);
+  for (var hli=0;hli<hgL.pos.length;hli+=3){
+    hgL.pos[hli]+=haunchX; hgL.pos[hli+1]+=haunchY; hgL.pos[hli+2]+=haunchZ;
+  }
+  appendGeo(body, hgL);
+  // right haunch
+  var hgR=new Geo(); appendGeo(hgR, hg2);
+  for (var hri=0;hri<hgR.pos.length;hri+=3){
+    hgR.pos[hri]+=haunchX; hgR.pos[hri+1]+=haunchY; hgR.pos[hri+2]-=haunchZ;
+  }
+  appendGeo(body, hgR);
+  // eyes: on the sides of the elevated skull
+  var eyeX=L*0.5*1.1*0.88, eyeY=H*0.52*g.headScale, eyeZ=W*0.30*g.headScale;
+  var eg=new Geo();
+  ball(eg, 0.08*g.headScale, eyeX, eyeY, eyeZ, eyeC, 10, 8);
+  ball(eg, 0.08*g.headScale, eyeX, eyeY, -eyeZ, eyeC, 10, 8);
+  // eye shine
+  var shineC=[0.9,0.9,0.9];
+  ball(eg, 0.028*g.headScale, eyeX+0.055*g.headScale, eyeY+0.03, eyeZ*0.95, shineC, 6, 5);
+  ball(eg, 0.028*g.headScale, eyeX+0.055*g.headScale, eyeY+0.03, -eyeZ*0.95, shineC, 6, 5);
+  appendGeo(body, eg);
+  // nose tip
+  var noseC=[0.15,0.12,0.1];
+  ball(eg, 0.05*g.headScale, L*0.5*1.1*0.98, H*0.46*g.headScale, 0, noseC, 8, 6);
+  appendGeo(body, eg);
+
+  /* ---- tail: tapered tube with natural curve ---- */
   var tail=[];
   for (var t=0;t<g.tailSegs;t++){
     var tg=new Geo();
-    var tl=0.5*(1-t/(g.tailSegs+0.5)), tr=0.15*(1-t/g.tailSegs)+0.03;
-    cyl(tg, tr, tr*0.7, tl, 7, 0,0,0, skin, 'x');
+    var tl=0.55*(1-t/(g.tailSegs+0.5));
+    var r0=0.14*(1-t/g.tailSegs)+0.025, r1=0.14*(1-(t+1)/g.tailSegs)+0.02;
+    var tst=[];
+    for (var k=0;k<5;k++){
+      var ku=k/4;
+      tst.push({x:-ku*tl, y:Math.sin(ku*Math.PI)*0.03, z:0,
+        rx:r0+(r1-r0)*ku, ry:r0+(r1-r0)*ku});
+    }
+    tube(tg, tst, 8, function(u,v,pos){ return skinColor(u*0.3, v, pos, skinB, darkSkin); });
     tail.push({geo:tg, len:tl});
   }
-  // leg segment templates (unit, scaled at runtime by joint angles)
-  function legGeo(len, r0, r1, c){
+
+  /* ---- legs: simple tapered (reverted for stability; organic tube was breaking IK) ---- */
+  function legGeo(len, cTop, cBot){
     var lg=new Geo();
-    cyl(lg, r0, r1, len, 7, 0,-len/2,0, c, 'y'); // hangs down -Y from hip
-    ball(lg, r1*1.4, 0,-len,0, padC, 8, 6);
+    // upper segment: thicker tapered cylinder along -Y (muscular)
+    var r0=0.19, r1=0.11;
+    cyl(lg, r0, r1, len, 9, 0, -len/2, 0, cTop, 'y');
+    // foot: flattened sphere + toes
+    var fg=new Geo();
+    ball(fg, 1, 0,0,0, padC, 9, 7);
+    for (var i=0;i<fg.pos.length;i+=3){
+      fg.pos[i]*=0.11; fg.pos[i+1]*=0.07; fg.pos[i+2]*=0.13;
+      fg.pos[i+1]-=len+0.02;
+    }
+    appendGeo(lg, fg);
+    for (var toe=-1;toe<=1;toe++){
+      var tg2=new Geo();
+      ball(tg2, 0.045, toe*0.07, -len-0.03, 0.1, padC, 7, 5);
+      appendGeo(lg, tg2);
+    }
     return lg;
   }
-  var upperR=g.bodyW*0.11;
-  var legUpper=legGeo(g.legLen*g.upperFrac, upperR, upperR*0.7, skin);
-  var legLower=legGeo(g.legLen*(1-g.upperFrac), upperR*0.65, upperR*0.4, skinB);
-  // belly cloth (soft region): grid in creature-local XZ under torso
+  var legUpper=legGeo(g.legLen*g.upperFrac, skin, skinB);
+  var legLower=legGeo(g.legLen*(1-g.upperFrac), skinB, skinB);
+
+  /* ---- soft belly: subtle, under chest only ---- */
   var belly={ nx:8, nz:4, pts:[], };
   for (var bz=0;bz<=belly.nz;bz++) for (var bx=0;bx<=belly.nx;bx++){
     var fx=bx/belly.nx-0.5, fz=bz/belly.nz-0.5;
-    belly.pts.push({ x:fx*g.bodyLen*0.8, y:-g.bodyH*0.42, z:fz*g.bodyW*0.7,
+    // small region under the chest, not the whole underside
+    belly.pts.push({ x:fx*g.bodyLen*0.4 + g.bodyLen*0.15, y:-g.bodyH*0.42, z:fz*g.bodyW*0.5,
       px:0, py:0, pz:0, pin:(bx===0||bx===belly.nx||bz===0||bz===belly.nz) });
   }
   belly.pts.forEach(function(p){ p.px=p.x; p.py=p.y; p.pz=p.z; });
+
   return {
     anatomy:a, body:body, tail:tail, legUpper:legUpper, legLower:legLower,
     belly:belly, torsoY:torsoY,
@@ -346,6 +451,62 @@ function appendGeo(dst, src){
   var base=dst.pos.length/3;
   for (var k=0;k<src.pos.length;k++){ dst.pos.push(src.pos[k]); dst.nrm.push(src.nrm[k]); dst.col.push(src.col[k]); }
   src.idx.forEach(function(ix){ dst.idx.push(ix+base); });
+}
+
+/* ============ organic tube builder (Stage A refinement) ============ */
+/* Builds smooth tapered tubes along a spine — torso, neck, head, legs.
+ * stations: [{x,y,z, rx,ry}] rings along the spine. colorFn(u, v, pos) -> [r,g,b]
+ * where u is along-length (0..1), v is around (0..1, 0=top).
+ * axis: 'x' for horizontal tubes (torso), 'y' for vertical tubes (legs). */
+function tube(geo, stations, radial, colorFn, axis){
+  axis=axis||'x';
+  var rings=[];
+  for (var s=0;s<stations.length;s++){
+    var st=stations[s], ring=[];
+    var u=s/(stations.length-1);
+    for (var i=0;i<radial;i++){
+      var v=i/radial, a=v*Math.PI*2;
+      var cy=Math.cos(a), sz=Math.sin(a);
+      var px, py, pz, nx, ny, nz;
+      if (axis==='x'){
+        // tube along X: rings in Y-Z plane, v=0 at top (+Y)
+        px=st.x; py=st.y+cy*st.ry; pz=st.z+sz*st.rx;
+        var nl=Math.hypot(cy*st.rx, sz*st.ry)||1;
+        nx=0; ny=cy*st.rx/nl; nz=sz*st.ry/nl;
+      } else {
+        // tube along Y: rings in X-Z plane
+        // v=0 at +Z (front), v=0.25 at +X, etc. — colorFn topness uses v differently
+        px=st.x+cy*st.rx; py=st.y; pz=st.z+sz*st.rx;
+        var nl2=Math.hypot(cy, sz)||1;
+        nx=cy/nl2; ny=0; nz=sz/nl2;
+      }
+      var c=colorFn(u, v, [px,py,pz]);
+      ring.push(geo.v(px,py,pz, nx,ny,nz, c[0],c[1],c[2]));
+    }
+    rings.push(ring);
+  }
+  for (var s2=0;s2<stations.length-1;s2++){
+    for (var i2=0;i2<radial;i2++){
+      var a2=rings[s2][i2], b2=rings[s2][(i2+1)%radial];
+      var c2=rings[s2+1][i2], d2=rings[s2+1][(i2+1)%radial];
+      geo.idx.push(a2,c2,b2, b2,c2,d2);
+    }
+  }
+  // cap the ends
+  function cap(ring, flip, c){
+    var cx=0, cy2=0, cz2=0;
+    ring.forEach(function(vi){ cx+=geo.pos[vi*3]; cy2+=geo.pos[vi*3+1]; cz2+=geo.pos[vi*3+2]; });
+    var n=ring.length; cx/=n; cy2/=n; cz2/=n;
+    var ci=geo.v(cx,cy2,cz2, flip?-1:1,0,0, c[0],c[1],c[2]);
+    for (var i=0;i<n;i++){
+      var a3=ring[i], b3=ring[(i+1)%n];
+      if (flip) geo.idx.push(ci,a3,b3); else geo.idx.push(ci,b3,a3);
+    }
+  }
+  var endC=colorFn(1,0.5,[0,0,0]);
+  var startC=colorFn(0,0.5,[0,0,0]);
+  cap(rings[rings.length-1], false, endC);
+  cap(rings[0], true, startC);
 }
 
 /* ================= the Lab ================= */
@@ -590,17 +751,28 @@ TOOLS.creatures = { mount: function(host){
     var wantHeading=Math.atan2(dz,dx);
     var dh=wantHeading-S.heading;
     while (dh>Math.PI)dh-=Math.PI*2; while (dh<-Math.PI)dh+=Math.PI*2;
+    var turnRate=Math.max(-1.5,Math.min(1.5,dh*3));
     S.heading+=Math.max(-1.5*dt,Math.min(1.5*dt,dh));
     S.targetSpeed = dist>0.6 ? 1.1 : 0;
+    var prevSpeed=S.speed;
     S.speed += (S.targetSpeed-S.speed)*Math.min(1,dt*2.5);
+    S.accel=((S.speed-prevSpeed)/Math.max(dt,1e-4));
     var stride=0.55*g.strideF*(0.4+S.speed);
     var cycleT=Math.max(0.5, 1.15-S.speed*0.35);
     S.phase+=dt/cycleT*(S.speed>0.05?1:0);
     var ch=Math.cos(S.heading), sh=Math.sin(S.heading);
-    // body follows terrain
+    // body follows terrain + gait bob
+    // (roll removed: body mesh rolling without hips following looks like tipping over)
     var bs=terrain.sampleSurface(S.x,S.z);
-    var targetY=bs.position[1]+compiled.torsoY;
-    S.y=(S.y==null?targetY:S.y+(targetY-S.y)*Math.min(1,dt*5));
+    // bob at 2x stride frequency, amplitude scales with speed
+    var bobA=0.06*Math.min(1,S.speed);
+    var bob=Math.sin(S.phase*Math.PI*2*2)*bobA;
+    var targetY=bs.position[1]+compiled.torsoY+bob;
+    S.y=(S.y==null?targetY:S.y+(targetY-S.y)*Math.min(1,dt*6));
+    // pitch with acceleration (subtle lean)
+    var targetPitch=Math.max(-0.12,Math.min(0.12,-S.accel*0.05));
+    S.pitch=(S.pitch==null?targetPitch:S.pitch+(targetPitch-S.pitch)*Math.min(1,dt*4));
+    S.roll=0;
     S.x+=Math.cos(S.heading)*S.speed*dt;
     S.z+=Math.sin(S.heading)*S.speed*dt;
     // keep in bounds
@@ -634,17 +806,20 @@ TOOLS.creatures = { mount: function(host){
         if (k>=1){ f.swinging=false; f.plant=f.to.slice(); }
       }
     });
-    // soft belly verlet
-    var b=compiled.belly, damp=0.96-(1-softness)*0.1;
-    var bodyPitch=0; // belly hangs under torso; torso accel drives lag
+    // soft belly verlet — exaggerated for visibility, scaled by softness
+    var b=compiled.belly, damp=0.965-(1-softness)*0.06;
+    var jiggle=softness; // 0.2..1.5
+    // track body acceleration for flesh lag (in creature-local frame approx)
     b.pts.forEach(function(p){
       if (p.pin){
-        // pinned to torso bottom edge (creature-local -> world)
         p.x=p.px; p.y=p.py; p.z=p.pz; return;
       }
       var vx=(p.x-p.px)*damp, vy=(p.y-p.py)*damp, vz=(p.z-p.pz)*damp;
       p.px=p.x; p.py=p.y; p.pz=p.z;
-      p.x+=vx; p.y+=vy-9.8*dt*dt*8*softness; p.z+=vz;
+      // gravity + lateral slosh from turning/acceleration
+      p.x+=vx - S.accel*dt*dt*30*jiggle*ch - turnRate*dt*dt*40*jiggle*sh;
+      p.y+=vy - 9.8*dt*dt*10*jiggle;
+      p.z+=vz - S.accel*dt*dt*30*jiggle*sh + turnRate*dt*dt*40*jiggle*ch;
     });
     for (var it=0;it<3;it++){
       // distance constraints to neighbors
@@ -654,9 +829,9 @@ TOOLS.creatures = { mount: function(host){
           var xj=xi+d[0], zj=zi+d[1];
           if (xj>b.nx||zj>b.nz) return;
           var p1=b.pts[zj*(b.nx+1)+xj];
-          // rest length from initial layout
-          var rx=(d[0]? (anatomy.genome.bodyLen*0.8/b.nx):0),
-              rz=(d[1]? (anatomy.genome.bodyW*0.7/b.nz):0);
+          // rest length from initial layout (small chest belly)
+          var rx=(d[0]? (anatomy.genome.bodyLen*0.4/b.nx):0),
+              rz=(d[1]? (anatomy.genome.bodyW*0.5/b.nz):0);
           var rest=Math.hypot(rx,rz);
           var dx=p1.x-p0.x, dy=p1.y-p0.y, dz=p1.z-p0.z;
           var dd=Math.hypot(dx,dy,dz)||1e-6, diff=(dd-rest)/dd*0.5;
@@ -771,6 +946,9 @@ TOOLS.creatures = { mount: function(host){
     if (!compiled) return;
     var g=anatomy.genome, ch=Math.cos(S.heading), sh=Math.sin(S.heading);
     var bodyM=matMul(matTrans(S.x,S.y,S.z), matRotY(-S.heading));
+    // apply roll (bank into turns) and pitch (acceleration lean)
+    if (S.roll) bodyM=matMul(bodyM, matRotX(S.roll));
+    if (S.pitch) bodyM=matMul(bodyM, matRotZ(S.pitch));
     // body (torso+head, creature-local with torso at y=0)
     drawGeo(compiled.body, matMul(bodyM, matTrans(0,0,0)));
     // legs
@@ -779,7 +957,10 @@ TOOLS.creatures = { mount: function(host){
       var lp=ld.restPose.p;
       var hipW=[S.x+ch*lp[0]-sh*lp[2], S.y+lp[1], S.z+sh*lp[0]+ch*lp[2]];
       var f=feet[i];
-      var poleW=[hipW[0]+(lp[2]>0?1:-1)*0.8, hipW[1]+0.2, hipW[2]]; // knees point outward
+      // pole: knees point outward (away from body) and slightly forward
+      var sideSign=(lp[2]>0?1:-1);
+      var outX=-sh*sideSign, outZ=ch*sideSign; // local +Z transformed to world
+      var poleW=[hipW[0]+outX*0.4+ch*0.2, hipW[1]-0.2, hipW[2]+outZ*0.4+sh*0.2];
       var sol=solveLeg(hipW, f.plant, upperL, lowerL, poleW);
       // upper: hip->knee ; lower: knee->foot
       drawGeo(compiled.legUpper, segModel(hipW, sol.knee));
@@ -807,7 +988,9 @@ TOOLS.creatures = { mount: function(host){
     function bw(p){ return [S.x+ch*p.x-sh*p.z, S.y+p.y, S.z+sh*p.x+ch*p.z]; }
     var db=getDynBelly(b.pts.length);
     var bpos=new Float32Array(b.pts.length*3), bnrm=new Float32Array(b.pts.length*3), bcol=new Float32Array(b.pts.length*3);
-    var bc=hx(anatomy.materials.belly);
+    // use skin color (not green) for the belly, slightly lighter
+    var bc=hx(anatomy.materials.skin);
+    bc=[Math.min(1,bc[0]*1.15), Math.min(1,bc[1]*1.15), Math.min(1,bc[2]*1.15)];
     b.pts.forEach(function(p,vi){
       var w=bw(p);
       bpos[vi*3]=w[0]; bpos[vi*3+1]=w[1]; bpos[vi*3+2]=w[2];
