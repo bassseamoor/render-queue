@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>micro-relief — terrain-field</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overflow:hidden; background:#0b0d12; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  #top { position:fixed; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 0;
+    pointer-events:none; z-index:5; }
+  #top h1 { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  #top h1 .amber { color:#e8a33d; }
+  #top p { font-size:13px; color:#9aa0ae; margin-top:4px; max-width:340px; line-height:1.45; }
+  #top p b { color:#cfd4e0; }
+  #hud { position:fixed; top:calc(env(safe-area-inset-top,0px) + 14px); right:16px; z-index:5;
+    font-size:11px; color:#8a90a0; text-align:right; line-height:1.7; pointer-events:none;
+    font-variant-numeric:tabular-nums; }
+  #hud b { color:#e8a33d; font-weight:700; }
+  #panel { position:fixed; left:0; right:0; bottom:0; z-index:5;
+    padding:12px 16px calc(env(safe-area-inset-bottom,0px) + 14px);
+    background:linear-gradient(180deg, transparent, rgba(5,6,10,.85) 40%); }
+  #drow { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  #drow label { font-size:12px; font-weight:700; letter-spacing:.08em; color:#9aa0ae; white-space:nowrap; }
+  #dval { font-size:13px; color:#e8a33d; font-weight:700; min-width:38px; text-align:right;
+    font-variant-numeric:tabular-nums; }
+  input[type=range] { flex:1; -webkit-appearance:none; appearance:none; height:34px; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:6px; border-radius:3px;
+    background:linear-gradient(90deg,#3a3f4d,#e8a33d); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:28px; height:28px;
+    border-radius:50%; background:#f0c884; border:3px solid #14100a; margin-top:-11px;
+    box-shadow:0 2px 10px rgba(0,0,0,.5); }
+  input[type=range]::-moz-range-track { height:6px; border-radius:3px; background:#3a3f4d; }
+  input[type=range]::-moz-range-thumb { width:22px; height:22px; border-radius:50%;
+    background:#f0c884; border:3px solid #14100a; }
+  #chips { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  .chip { border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.06); color:#9aa0ae;
+    font-size:13px; font-weight:700; padding:10px 16px; border-radius:999px; cursor:pointer; }
+  .chip.on { border-color:rgba(232,163,61,.6); background:rgba(232,163,61,.14); color:#f0c884; }
+  .chip:active { transform:scale(.95); }
+  #seed { border-color:rgba(255,255,255,.16); background:rgba(255,255,255,.06); color:#9aa0ae; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="top">
+  <h1>micro-<span class="amber">relief</span></h1>
+  <p>terrain-field's <b>microH()</b>: three octaves of displacement <b>36m / 9m / 2.4m</b>
+  plus a <b>ridged spine</b> for real ridgelines. One uniform — <b>uMicroK</b> — scales it all to zero.</p>
+</div>
+<div id="hud">detail <b id="h-k">1.00</b><br><span id="h-l">4</span>/4 layers</div>
+<div id="panel">
+  <div id="drow">
+    <label>DETAIL</label>
+    <input type="range" id="detail" min="0" max="1.5" step="0.01" value="1">
+    <span id="dval">1.00</span>
+  </div>
+  <div id="chips">
+    <button class="chip on" data-l="uL36">36m</button>
+    <button class="chip on" data-l="uL9">9m</button>
+    <button class="chip on" data-l="uL24">2.4m</button>
+    <button class="chip on" data-l="uRidge">ridge</button>
+    <button class="chip" id="seed">⟳ seed</button>
+  </div>
+</div>
+<script>
+'use strict';
+/* ================= terrain-field GLSL (verbatim hash/vnoise/fbm + microH structure) ================= */
+const NOISE = `
+uniform vec3 seedOff;
+float hash(vec3 p){ p=fract(p*0.3183099+seedOff); p*=17.0;
+  return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float vnoise(vec3 p){
+  vec3 i=floor(p),f=fract(p); vec3 u=f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash(i),hash(i+vec3(1.,0.,0.)),u.x),
+                 mix(hash(i+vec3(0.,1.,0.)),hash(i+vec3(1.,1.,0.)),u.x),u.y),
+             mix(mix(hash(i+vec3(0.,0.,1.)),hash(i+vec3(1.,0.,1.)),u.x),
+                 mix(hash(i+vec3(0.,1.,1.)),hash(i+vec3(1.,1.,1.)),u.x),u.y),u.z);
+}
+float fbm4(vec3 p){ float v=0.0,a=0.5;
+  for(int i=0;i<4;i++){ v+=a*vnoise(p); p=p*2.03+vec3(1.7); a*=0.5; } return v; }
+float fbm2(vec3 p){ float v=0.0,a=0.5;
+  for(int i=0;i<2;i++){ v+=a*vnoise(p); p=p*2.11+vec3(3.1); a*=0.5; } return v; }
+uniform float uMicroK;
+uniform float uL36, uL9, uL24, uRidge;
+float microH(vec2 mp, out float ridgeOut){
+  float h=(fbm4(vec3(mp*0.025,3.7))-0.5)*36.0*uL36;
+  h+=(fbm2(vec3(mp*0.11,9.1))-0.5)*9.0*uL9;
+  h+=(vnoise(vec3(mp*0.45,4.2))-0.5)*2.4*uL24;
+  /* ridged spine: sharp crests at ~25m wavelength for real ridgelines */
+  float r=0.0,a=0.5;vec2 rp=mp*0.04;
+  for(int i=0;i<3;i++){ float n=vnoise(vec3(rp,7.7)); n=1.0-abs(n*2.0-1.0);
+    r+=a*n*n; rp=rp*2.17+vec2(3.1,7.7); a*=0.5; }
+  float rg=(r-0.29)*34.0;
+  ridgeOut = rg;
+  h+=rg*uRidge;
+  return h*uMicroK;
+}
+float macroH(vec2 mp){ return (fbm4(vec3(mp*0.004,1.3))-0.5)*130.0; }
+float heightAt(vec2 mp, out float rg){ return macroH(mp)+microH(mp,rg); }
+`;
+const VS = `
+attribute vec3 p;
+uniform mat4 uMVP;
+varying vec3 vN; varying float vH; varying float vRg;
+${NOISE}
+void main(){
+  float rg, r1, r2; float e=0.8;
+  float hC=heightAt(p.xz,rg);
+  float hX=heightAt(p.xz+vec2(e,0.),r1);
+  float hZ=heightAt(p.xz+vec2(0.,e),r2);
+  vN=normalize(vec3(hC-hX, e, hC-hZ));
+  vH=hC; vRg=rg;
+  gl_Position=uMVP*vec4(p.x,hC,p.z,1.);
+}`;
+const FS = `
+precision mediump float;
+varying vec3 vN; varying float vH; varying float vRg;
+void main(){
+  vec3 N=normalize(vN);
+  vec3 L=normalize(vec3(.5,.75,.55));
+  float d=max(dot(N,L),0.);
+  float slope=1.-N.y;
+  vec3 rock=vec3(.30,.27,.25);
+  vec3 grass=vec3(.24,.36,.21);
+  vec3 snow=vec3(.87,.89,.93);
+  vec3 col=mix(rock, grass, smoothstep(.38,.10,slope)*smoothstep(-25.,5.,vH));
+  col=mix(col, snow, smoothstep(30.,58.,vH+vRg*.5));
+  col+=vec3(1.,.93,.80)*smoothstep(6.,15.,vRg)*.28;   /* crest highlight */
+  col*=.34+.66*d;
+  float amb=.5+.5*N.y; col*= .75+.25*amb;
+  gl_FragColor=vec4(col,1.);
+}`;
+
+/* ================= WebGL ================= */
+const cv=document.getElementById('cv');
+const gl=cv.getContext('webgl',{antialias:true})||cv.getContext('experimental-webgl');
+if(!gl){document.body.innerHTML='<p style="padding:40px">WebGL unavailable.</p>';throw new Error('no gl');}
+function resize(){const d=Math.min(devicePixelRatio||1,2);
+  cv.width=Math.floor(innerWidth*d);cv.height=Math.floor(innerHeight*d);gl.viewport(0,0,cv.width,cv.height);}
+addEventListener('resize',resize);resize();
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;}
+const prog=gl.createProgram();
+gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));
+gl.linkProgram(prog);gl.useProgram(prog);
+const aP=gl.getAttribLocation(prog,'p'), uMVP=gl.getUniformLocation(prog,'uMVP');
+const U={};
+['uMicroK','uL36','uL9','uL24','uRidge','seedOff'].forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+gl.enableVertexAttribArray(aP);
+gl.enable(gl.DEPTH_TEST);gl.clearColor(.043,.05,.07,1);
+gl.uniform3f(U.seedOff,Math.random()*10,Math.random()*10,Math.random()*10);
+gl.uniform1f(U.uMicroK,1);gl.uniform1f(U.uL36,1);gl.uniform1f(U.uL9,1);gl.uniform1f(U.uL24,1);gl.uniform1f(U.uRidge,1);
+
+/* grid 256x256 over 420m */
+const SEG=256, SIZE=420;
+(function(){
+  const pos=new Float32Array((SEG+1)*(SEG+1)*3);
+  let k=0;
+  for(let j=0;j<=SEG;j++)for(let i=0;i<=SEG;i++){
+    pos[k++]=-SIZE/2+SIZE*i/SEG; pos[k++]=0; pos[k++]=-SIZE/2+SIZE*j/SEG;
+  }
+  const idx=new Uint32Array(SEG*SEG*6); let q=0;
+  for(let j=0;j<SEG;j++)for(let i=0;i<SEG;i++){
+    const a=j*(SEG+1)+i, b=a+1, c=a+SEG+1, d=c+1;
+    idx[q++]=a;idx[q++]=c;idx[q++]=b; idx[q++]=b;idx[q++]=c;idx[q++]=d;
+  }
+  const pb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pb);
+  gl.bufferData(gl.ARRAY_BUFFER,pos,gl.STATIC_DRAW);
+  gl.vertexAttribPointer(aP,3,gl.FLOAT,false,0,0);
+  const ib=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
+  gl.getExtension('OES_element_index_uint');
+  window.__triCount=idx.length/3;
+})();
+
+/* ================= camera ================= */
+let yaw=.7,pitch=.62,radius=430;
+const target=[0,8,0];
+let auto=true, idleT=0;
+function mPersp(f,a,n,f2){const t=1/Math.tan(f/2),o=new Float32Array(16);
+  o[0]=t/a;o[5]=t;o[10]=(f2+n)/(n-f2);o[11]=-1;o[14]=2*f2*n/(n-f2);return o;}
+function mLook(e,c){const z0=[e[0]-c[0],e[1]-c[1],e[2]-c[2]];
+  const zl=Math.hypot(...z0),z=[z0[0]/zl,z0[1]/zl,z0[2]/zl];
+  let x0=[-z[2],0,z[0]];const xl=Math.hypot(...x0)||1,x=[x0[0]/xl,x0[1]/xl,x0[2]/xl];
+  const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
+  const o=new Float32Array(16);
+  o[0]=x[0];o[1]=y[0];o[2]=z[0];o[4]=x[1];o[5]=y[1];o[6]=z[1];
+  o[8]=x[2];o[9]=y[2];o[10]=z[2];
+  o[12]=-(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]);o[13]=-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]);
+  o[14]=-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]);o[15]=1;return o;}
+function mMul(a,b){const o=new Float32Array(16);
+  for(let c=0;c<4;c++)for(let r=0;r<4;r++)
+    o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];return o;}
+let drag=false,lx=0,ly=0,pinch=0;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;auto=false;idleT=0;
+  cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{if(!drag)return;
+  yaw-=(e.clientX-lx)*.007;pitch=Math.min(1.45,Math.max(.12,pitch+(e.clientY-ly)*.007));
+  lx=e.clientX;ly=e.clientY;idleT=0;});
+cv.addEventListener('pointerup',()=>drag=false);
+cv.addEventListener('wheel',e=>{radius=Math.min(700,Math.max(180,radius*(1+Math.sign(e.deltaY)*.08)));
+  auto=false;idleT=0;},{passive:true});
+
+/* ================= ui ================= */
+const layers={uL36:1,uL9:1,uL24:1,uRidge:1};
+const dval=document.getElementById('dval'), hk=document.getElementById('h-k'), hl=document.getElementById('h-l');
+document.getElementById('detail').addEventListener('input',e=>{
+  const v=parseFloat(e.target.value);
+  gl.uniform1f(U.uMicroK,v);dval.textContent=v.toFixed(2);hk.textContent=v.toFixed(2);
+});
+document.querySelectorAll('.chip[data-l]').forEach(ch=>{
+  ch.addEventListener('click',()=>{
+    const l=ch.dataset.l;layers[l]=layers[l]?0:1;
+    ch.classList.toggle('on',!!layers[l]);
+    gl.uniform1f(U[l],layers[l]);
+    hl.textContent=Object.values(layers).filter(Boolean).length;
+  });
+});
+document.getElementById('seed').addEventListener('click',()=>{
+  gl.uniform3f(U.seedOff,Math.random()*10,Math.random()*10,Math.random()*10);
+});
+
+/* ================= loop ================= */
+function frame(t){
+  idleT+=1/60;
+  if(!drag&&idleT>4)auto=true;
+  if(auto)yaw+=.0009;
+  const eye=[target[0]+radius*Math.cos(pitch)*Math.sin(yaw),
+             target[1]+radius*Math.sin(pitch),
+             target[2]+radius*Math.cos(pitch)*Math.cos(yaw)];
+  gl.uniformMatrix4fv(uMVP,false,mMul(mPersp(.85,cv.width/cv.height,.5,2000),mLook(eye,target)));
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.drawElements(gl.TRIANGLES,window.__triCount,gl.UNSIGNED_INT,0);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
