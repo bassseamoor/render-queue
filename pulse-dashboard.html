@@ -506,9 +506,8 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
   from{ opacity:0; transform:translateX(-52px) scale(.96); }
 }
 /* press: the key goes down like a piano key */
-.tile{ transition:transform .16s ease, filter .22s ease; }
-.tile:active{ transform:translateY(4px) scale(.975); filter:brightness(.93) drop-shadow(0 7px 12px rgba(0,0,0,0.55)); }
-.tile:nth-child(even):active{ filter:brightness(.93) drop-shadow(0 4px 8px rgba(0,0,0,0.45)); }
+.tile{ transform-origin:left center; }
+.tile:active{ transform:perspective(700px) rotateY(11deg) translateY(2px); }
 /* the sent ghost: a dark glass token that peels off the key, lifts through
  * real shadow, arcs to the user side, and dissolves. Slow enough to believe. */
 .tile-ghost{
@@ -7303,6 +7302,114 @@ init();
   setInterval(collectCurve, 2500);
   window.addEventListener('resize', curvePanels);
   setTimeout(curvePanels, 600);
+
+  /* ---- magnetic hinge keys: hinged on the left edge, spring-damped, and they sing ----
+   * Press the right side: the key rotates down around its left hinge with a fast
+   * magnetic pull-in. Release: a stiff spring snaps it back with a soft wobble,
+   * like it dangles on the hinge. Every key plays its note — pentatonic, so it
+   * always sounds like music. It's an instrument. */
+  var audioCtx = null, masterGain = null;
+  function ensureAudio(){
+    if (audioCtx){ if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 0.20;
+      var lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 5200;
+      masterGain.connect(lp); lp.connect(audioCtx.destination);
+    }catch(e){}
+  }
+  var PENTA = [0, 2, 4, 7, 9];
+  function playKey(index){
+    ensureAudio();
+    if (!audioCtx) return;
+    try{
+      var t = audioCtx.currentTime;
+      var semis = PENTA[index % 5] + 12 * Math.floor(index / 5);
+      var f = 523.25 * Math.pow(2, semis / 12);
+      /* glass tone: fundamental + shimmer partials, soft attack, long bloom */
+      var partials = [[1, 0.50, 1.7], [2.01, 0.20, 1.1], [2.98, 0.09, 0.7]];
+      for (var pi = 0; pi < partials.length; pi++){
+        (function(p){
+          var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+          o.type = 'sine'; o.frequency.value = f * p[0];
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(p[1], t + 0.014);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + p[2]);
+          o.connect(g); g.connect(masterGain);
+          o.start(t); o.stop(t + p[2] + 0.1);
+        })(partials[pi]);
+      }
+      /* soft mechanical bottom-out: the key landing on felt */
+      var len = 2205, nb = audioCtx.createBuffer(1, len, 44100), dd = nb.getChannelData(0);
+      for (var i = 0; i < len; i++) dd[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 3);
+      var ns = audioCtx.createBufferSource(); ns.buffer = nb;
+      var nf = audioCtx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 800;
+      var ng = audioCtx.createGain(); ng.gain.value = 0.10;
+      ns.connect(nf); nf.connect(ng); ng.connect(masterGain);
+      ns.start(t);
+    }catch(e){}
+  }
+  var hingeState = new WeakMap();
+  var pressedTiles = new Set();
+  function writeHinge(tile, s){
+    var ds = (s.idx % 2 === 1)
+      ? 'drop-shadow(0 5px 12px rgba(0,0,0,0.35))'
+      : 'drop-shadow(0 18px 26px rgba(0,0,0,0.55))';
+    var br = 1 - Math.min(0.12, Math.abs(s.x) * 0.008);
+    tile.style.transform =
+      'perspective(700px) rotateY(' + s.x.toFixed(2) + 'deg)' +
+      ' translateY(' + (s.baseY + Math.abs(s.x) * 0.18).toFixed(2) + 'px)';
+    tile.style.filter = 'brightness(' + br.toFixed(3) + ') ' + ds;
+  }
+  function springTick(tile, s){
+    var dt = 1/60, k = 210, c = 15; /* stiff magnetic spring, lightly underdamped */
+    if (!s.held){
+      var a = -k * s.x - c * s.v;
+      s.v += a * dt; s.x += s.v * dt;
+      if (Math.abs(s.x) < 0.06 && Math.abs(s.v) < 2.5){
+        s.x = 0; s.v = 0; writeHinge(tile, s); s.raf = 0; return;
+      }
+    }
+    writeHinge(tile, s);
+    s.raf = requestAnimationFrame(function(){ springTick(tile, s); });
+  }
+  function hingeDown(tile){
+    var s = hingeState.get(tile);
+    if (!s){
+      var idx = Array.prototype.indexOf.call(tile.parentNode.children, tile);
+      s = { x:0, v:0, held:false, raf:0, baseY:0, idx: idx < 0 ? 0 : idx };
+      hingeState.set(tile, s);
+    }
+    s.baseY = (window.innerWidth >= 1024 && (s.idx % 2 === 1)) ? 5 : 0;
+    s.held = true;
+    pressedTiles.add(tile);
+    tile.style.transition = 'none';
+    playKey(s.idx);
+    s.x = 11; s.v = 0; /* magnetic pull-in: fast attack to depressed */
+    if (s.raf) cancelAnimationFrame(s.raf);
+    writeHinge(tile, s);
+  }
+  function hingeUp(tile){
+    var s = hingeState.get(tile);
+    if (!s) return;
+    s.held = false;
+    pressedTiles.delete(tile);
+    s.v = -170; /* release kick: the magnet lets go, spring snaps back */
+    if (s.raf) cancelAnimationFrame(s.raf);
+    s.raf = requestAnimationFrame(function(){ springTick(tile, s); });
+  }
+  document.addEventListener('pointerdown', function(e){
+    var tile = e.target.closest ? e.target.closest('.tile') : null;
+    if (tile && document.body.contains(tile)) hingeDown(tile);
+  });
+  function releaseAll(){
+    pressedTiles.forEach(function(t){ hingeUp(t); });
+  }
+  document.addEventListener('pointerup', releaseAll);
+  document.addEventListener('pointercancel', releaseAll);
 })();
 
 </script>
@@ -7344,6 +7451,23 @@ init();
       ctx.beginPath(); ctx.moveTo(x,y);
       ctx.lineTo(x+Math.cos(a)*len, y+Math.sin(a)*len); ctx.stroke();
     }
+    /* rare-stone veins: long wandering mineral streaks */
+    for (i=0;i<15;i++){
+      x = Math.random()*s; y = Math.random()*s;
+      var warm = Math.random()<0.5;
+      ctx.strokeStyle = warm
+        ? 'rgba(216,190,140,'+(Math.random()*0.05+0.03).toFixed(3)+')'
+        : 'rgba(150,165,205,'+(Math.random()*0.05+0.03).toFixed(3)+')';
+      ctx.lineWidth = Math.random()*2.2+0.8;
+      ctx.beginPath(); ctx.moveTo(x,y);
+      var cx=x, cy=y;
+      for (var sg=0;sg<4;sg++){
+        var nx = cx+(Math.random()-0.5)*90, ny = cy+(Math.random()-0.5)*90;
+        ctx.quadraticCurveTo(cx+(Math.random()-0.5)*30, cy+(Math.random()-0.5)*30, nx, ny);
+        cx=nx; cy=ny;
+      }
+      ctx.stroke();
+    }
     /* machine-sanded grain: fine uniform noise */
     var img = ctx.getImageData(0,0,s,s), d = img.data, n, p;
     for (p=0;p<d.length;p+=4){
@@ -7378,7 +7502,7 @@ init();
       'background:'+
         'linear-gradient(115deg, rgba(255,255,255,0.85), rgba(255,255,255,0.30) 38%, rgba(255,255,255,0.05) 62%),'+
         'url("'+tex+'"),'+
-        'linear-gradient(165deg, #ffffff, #efeaf7 55%, #d8d1e8);'+
+        'linear-gradient(165deg, #ffffff, #f3edde 42%, #e3d9ec 72%, #d3c8e2);'+
       'background-size:auto, 170px 170px, auto;'+
       'background-blend-mode:normal, overlay, normal;'+
       'box-shadow:inset 0 2px 3px rgba(255,255,255,1), inset 0 -3px 8px rgba(120,90,160,0.20);'+
