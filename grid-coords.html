@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>grid-coords — teleport coordinate system</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overflow:hidden; background:#05070c; color:#dfe6f2;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+    user-select:none; -webkit-user-select:none; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  #top { position:fixed; top:0; left:0; right:0; z-index:5; pointer-events:none;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 0; }
+  #top h1 { font-size:17px; font-weight:800; letter-spacing:.14em; color:#8fb8d8; }
+  #top h1 b { color:#e8a33d; }
+  #hud { margin-top:8px; display:inline-block; background:rgba(8,12,20,.72);
+    border:1px solid rgba(232,163,61,.35); border-radius:12px; padding:9px 14px;
+    pointer-events:auto; cursor:pointer; backdrop-filter:blur(6px); }
+  #hud .lbl { font-size:10px; font-weight:700; letter-spacing:.12em; color:#6b7a90; }
+  #hudCode { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:16px;
+    font-weight:700; color:#f0c884; letter-spacing:.04em; margin-top:2px; }
+  #hint { margin-top:8px; font-size:11px; color:#5a6578; }
+  #bottom { position:fixed; left:0; right:0; bottom:0; z-index:5;
+    padding:10px 14px calc(env(safe-area-inset-bottom,0px) + 12px);
+    display:flex; flex-direction:column; gap:8px;
+    background:linear-gradient(180deg, transparent, rgba(4,6,10,.85) 45%); }
+  #chip { display:none; align-items:center; justify-content:center; gap:8px;
+    background:rgba(232,163,61,.1); border:1px solid rgba(232,163,61,.5); border-radius:12px;
+    padding:12px; cursor:pointer; }
+  #chip.show { display:flex; }
+  #chip .dot { width:9px; height:9px; border-radius:50%; background:#e8a33d;
+    box-shadow:0 0 10px #e8a33d; }
+  #chipCode { font-family:ui-monospace, Menlo, monospace; font-size:15px; font-weight:700;
+    color:#f0c884; letter-spacing:.04em; }
+  #chip .tap { font-size:10px; color:#8a7a5a; letter-spacing:.08em; }
+  #io { display:flex; gap:8px; }
+  #codeIn { flex:1; background:rgba(10,14,22,.85); border:1px solid rgba(255,255,255,.16);
+    border-radius:12px; color:#e8eaf0; font-size:15px; padding:13px 14px; outline:none;
+    font-family:ui-monospace, Menlo, monospace; letter-spacing:.03em; min-width:0; }
+  #codeIn:focus { border-color:rgba(232,163,61,.6); }
+  #codeIn.shake { animation:shake .3s; border-color:#ff6b6b; }
+  @keyframes shake { 25%{transform:translateX(-6px)} 50%{transform:translateX(6px)} 75%{transform:translateX(-4px)} }
+  #goBtn { background:#e8a33d; color:#14100a; border:0; font-size:15px; font-weight:800;
+    padding:0 22px; border-radius:12px; cursor:pointer; }
+  #goBtn:active { transform:scale(.95); }
+  #flash { position:fixed; inset:0; z-index:8; pointer-events:none; opacity:0;
+    background:radial-gradient(circle at 50% 55%, rgba(255,240,210,.95), rgba(232,163,61,.35) 45%, transparent 75%);
+    transition:opacity .45s; }
+  #toast { position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 150px);
+    transform:translateX(-50%) translateY(12px); z-index:9; background:#161c28; color:#f0c884;
+    font-size:13px; font-weight:600; padding:10px 20px; border-radius:999px; opacity:0;
+    transition:all .25s; pointer-events:none; border:1px solid rgba(232,163,61,.4);
+    white-space:nowrap; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="flash"></div>
+<div id="top">
+  <h1>GRID<b>·</b>COORDS</h1>
+  <div id="hud" title="tap to copy">
+    <div class="lbl">VIEW TARGET — LIVE</div>
+    <div id="hudCode">····-····-····-·</div>
+  </div>
+  <div id="hint">drag to pan · pinch to zoom · tap the grid to drop a marker</div>
+</div>
+<div id="bottom">
+  <div id="chip"><span class="dot"></span><span id="chipCode"></span><span class="tap">TAP TO COPY</span></div>
+  <div id="io">
+    <input id="codeIn" placeholder="paste a grid code…" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="goBtn">GO</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ================================================================
+ * GRID-CODE v1 — teleport coordinate codec
+ * ----------------------------------------------------------------
+ * Every point in the universe gets a short, human-typable code:
+ *
+ *     AAA-BBB-CCC-D        e.g.  8K2-9QP-DAA-7
+ *      |   |   |  |
+ *      X   Y   Z  checksum
+ *
+ * - Each axis group = 3 chars, base-32, 15 bits per axis.
+ * - Alphabet: 0123456789ABCDEFGHJKMNPQRSTVWXYZ
+ *   (Crockford-style: no I, L, O, U — so no 0/O or 1/I/L confusion.
+ *   decode() also forgives O->0, I->1, L->1 on pasted input.)
+ * - World range: -8192 m .. +8191.5 m per axis, quantized to 0.5 m.
+ * - Checksum D = (sum of the 9 char-values * position weights) mod 32.
+ *   Any single-character typo fails validation.
+ * - Case-insensitive, dashes/spaces optional.
+ * - decode() NEVER throws: returns {x,y,z} or null.
+ * ================================================================ */
+var GridCoords = (function(){
+  var ALPH = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+  var VAL = Object.create(null);
+  for (var i = 0; i < ALPH.length; i++) VAL[ALPH[i]] = i;
+  VAL['O'] = 0; VAL['I'] = 1; VAL['L'] = 1;   /* forgiving aliases for pasted codes */
+
+  var STEP = 0.5;          /* quantization, metres */
+  var HALF = 16384;        /* offset: signed 15-bit -> unsigned */
+
+  function encAxis(v){
+    var q = Math.round(v / STEP);
+    if (q < -HALF) q = -HALF;
+    if (q > HALF - 1) q = HALF - 1;
+    q += HALF;
+    return ALPH[(q >> 10) & 31] + ALPH[(q >> 5) & 31] + ALPH[q & 31];
+  }
+  function checksum9(vals){
+    var s = 0;
+    for (var i = 0; i < 9; i++) s += vals[i] * (i + 1);
+    return s % 32;
+  }
+  function encode(x, y, z){
+    x = +x || 0; y = +y || 0; z = +z || 0;
+    var g = encAxis(x) + encAxis(y) + encAxis(z);
+    var vals = [], i;
+    for (i = 0; i < 9; i++) vals.push(VAL[g[i]]);
+    return g.slice(0,3) + '-' + g.slice(3,6) + '-' + g.slice(6,9) + '-' + ALPH[checksum9(vals)];
+  }
+  function decAxis(trip){
+    var q = (VAL[trip[0]] << 10) | (VAL[trip[1]] << 5) | VAL[trip[2]];
+    return (q - HALF) * STEP;
+  }
+  function decode(code){
+    if (typeof code !== 'string') return null;
+    var s = code.toUpperCase().replace(/[-\s]/g, '');
+    if (s.length !== 10) return null;
+    var vals = [], i, ch;
+    for (i = 0; i < 10; i++){
+      ch = s[i];
+      if (!(ch in VAL)) return null;
+      vals.push(VAL[ch]);
+    }
+    if (checksum9(vals.slice(0, 9)) !== vals[9]) return null;
+    return { x: decAxis(s.slice(0,3)), y: decAxis(s.slice(3,6)), z: decAxis(s.slice(6,9)) };
+  }
+  return { encode: encode, decode: decode, STEP: STEP, RANGE: 8192 };
+})();
+window.GridCoords = GridCoords;
+
+/* ================================================================
+ * DEMO — coordinate playground (2D canvas, tiny software 3D)
+ * ================================================================ */
+var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+var DPR = 1, W = 0, H = 0;
+function resize(){
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+var FOV = 62 * Math.PI / 180;
+var cam = { tx: 0, ty: 0, tz: 0, yaw: 0.7, pitch: 0.52, r: 1500 };
+var marker = null, anim = null, autoSpin = true;
+
+function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
+
+function camBasis(){
+  var cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  var ex = cam.tx + cam.r * cp * sy,
+      ey = cam.ty + cam.r * sp,
+      ez = cam.tz + cam.r * cp * cy;
+  var fx = cam.tx - ex, fy = cam.ty - ey, fz = cam.tz - ez;
+  var fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
+  var rx = -fz, ry = 0, rz = fx;
+  var rl = Math.hypot(rx, ry, rz) || 1; rx /= rl; ry /= rl; rz /= rl;
+  return { ex:ex, ey:ey, ez:ez,
+    fx:fx, fy:fy, fz:fz, rx:rx, ry:ry, rz:rz,
+    ux: ry*fz - rz*fy, uy: rz*fx - rx*fz, uz: rx*fy - ry*fx };
+}
+var _pa = {}, _pb = {};
+function project(x, y, z, b, out){
+  var dx = x - b.ex, dy = y - b.ey, dz = z - b.ez;
+  var vx = dx*b.rx + dy*b.ry + dz*b.rz;
+  var vy = dx*b.ux + dy*b.uy + dz*b.uz;
+  var vz = dx*b.fx + dy*b.fy + dz*b.fz;
+  if (vz < 2) return null;
+  var f = (H / 2) / Math.tan(FOV / 2);
+  out.x = W/2 + f * vx / vz;
+  out.y = H/2 - f * vy / vz;
+  out.d = vz;
+  return out;
+}
+function seg(x1,y1,z1, x2,y2,z2, style, w){
+  var a = project(x1,y1,z1, CB, _pa), b2 = project(x2,y2,z2, CB, _pb);
+  if (!a || !b2) return;
+  ctx.strokeStyle = style; ctx.lineWidth = w || 1;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b2.x, b2.y); ctx.stroke();
+}
+function dot(x, y, z, r, style){
+  var p = project(x, y, z, CB, _pa);
+  if (!p) return;
+  var s = clamp(900 / p.d, 0.4, 3) * r;
+  ctx.fillStyle = style;
+  ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, 7); ctx.fill();
+}
+
+/* stars for depth */
+var stars = [];
+(function(){
+  var s = 987654321;
+  function rnd(){ s = (s * 16807) % 2147483647; return s / 2147483647; }
+  for (var i = 0; i < 240; i++)
+    stars.push({ x:(rnd()*2-1)*1600, y: rnd()*900 - 100, z:(rnd()*2-1)*1600, t: 0.25 + rnd()*0.75 });
+})();
+
+var CB = null;
+function draw(now){
+  CB = camBasis();
+  ctx.fillStyle = '#05070c'; ctx.fillRect(0, 0, W, H);
+
+  var i, x, z;
+  /* stars */
+  for (i = 0; i < stars.length; i++){
+    var st = stars[i];
+    dot(st.x, st.y, st.z, 1.4, 'rgba(150,200,255,' + (0.10 + st.t * 0.25) + ')');
+  }
+  /* floor grid: minor 100, major 500 */
+  for (i = -1000; i <= 1000; i += 100){
+    var major = (i % 500 === 0);
+    var stl = major ? 'rgba(90,200,255,0.20)' : 'rgba(90,200,255,0.055)';
+    seg(i, 0, -1000, i, 0, 1000, stl, major ? 1.2 : 1);
+    seg(-1000, 0, i, 1000, 0, i, stl, major ? 1.2 : 1);
+  }
+  /* vertical guides, faint */
+  for (x = -1000; x <= 1000; x += 500)
+    for (z = -1000; z <= 1000; z += 500)
+      seg(x, 0, z, x, 420, z, 'rgba(90,200,255,0.05)', 1);
+  /* axes */
+  seg(-1000, 0, 0, 1000, 0, 0, 'rgba(255,90,90,0.75)', 2);
+  seg(0, 0, 0, 0, 460, 0, 'rgba(77,255,136,0.75)', 2);
+  seg(0, 0, -1000, 0, 0, 1000, 'rgba(77,163,255,0.75)', 2);
+  ctx.font = '700 13px -apple-system, sans-serif'; ctx.textAlign = 'center';
+  [['X', 1020, 0, 0, '#ff7a7a'], ['Y', 0, 490, 0, '#7dffab'], ['Z', 0, 0, 1020, '#7db8ff']]
+    .forEach(function(a){
+      var p = project(a[1], a[2], a[3], CB, _pa);
+      if (p){ ctx.fillStyle = a[4]; ctx.fillText(a[0], p.x, p.y); }
+    });
+  /* origin beacon */
+  dot(0, 0, 0, 5, 'rgba(232,163,61,0.9)');
+
+  /* marker */
+  if (marker){
+    var m = marker;
+    seg(m.x, 0, m.z, m.x, m.y, m.z, 'rgba(232,163,61,0.55)', 1.5);
+    var mp = project(m.x, m.y, m.z, CB, _pa);
+    if (mp){
+      var pulse = 14 + 6 * Math.sin(now / 280);
+      ctx.save(); ctx.translate(mp.x, mp.y); ctx.rotate(Math.PI/4 + now/1400);
+      ctx.strokeStyle = '#e8a33d'; ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#e8a33d'; ctx.shadowBlur = 12;
+      ctx.strokeRect(-9, -9, 18, 18); ctx.restore();
+      /* floor pulse ring */
+      var fp = project(m.x, 0, m.z, CB, _pa);
+      if (fp){
+        var rr = clamp(14000 / fp.d, 4, 60) * (0.7 + 0.3 * Math.sin(now / 280));
+        ctx.strokeStyle = 'rgba(232,163,61,0.5)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(fp.x, fp.y, rr, 0, 7); ctx.stroke();
+      }
+      /* label */
+      ctx.font = '700 12px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      var code = GridCoords.encode(m.x, m.y, m.z);
+      var tw = ctx.measureText(code).width + 16;
+      ctx.fillRect(mp.x - tw/2, mp.y - 44, tw, 22);
+      ctx.fillStyle = '#f0c884'; ctx.fillText(code, mp.x, mp.y - 28);
+    }
+  }
+}
+
+/* ---------- HUD ---------- */
+var hudCode = document.getElementById('hudCode');
+function updateHud(){
+  hudCode.textContent = GridCoords.encode(cam.tx, cam.ty, cam.tz);
+}
+var toastEl = document.getElementById('toast'), toastT = null;
+function toast(m){
+  toastEl.textContent = m; toastEl.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(function(){ toastEl.classList.remove('show'); }, 1700);
+}
+function copyText(t, okMsg){
+  function done(){ toast(okMsg || 'copied'); }
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(done, function(){ fallback(); });
+  else fallback();
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch(e){ toast('copy failed'); }
+    document.body.removeChild(ta);
+  }
+}
+document.getElementById('hud').addEventListener('click', function(){
+  copyText(hudCode.textContent, 'target code copied');
+});
+
+/* ---------- marker chip ---------- */
+var chip = document.getElementById('chip'), chipCode = document.getElementById('chipCode');
+function showChip(){
+  chipCode.textContent = GridCoords.encode(marker.x, marker.y, marker.z);
+  chip.classList.add('show');
+}
+chip.addEventListener('click', function(){
+  copyText(chipCode.textContent, 'marker code copied');
+});
+
+/* ---------- teleport ---------- */
+var flashEl = document.getElementById('flash');
+function teleport(code){
+  var p = GridCoords.decode(code);
+  var inp = document.getElementById('codeIn');
+  if (!p){
+    inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake');
+    toast('invalid grid code');
+    return;
+  }
+  autoSpin = false;
+  marker = { x: p.x, y: p.y, z: p.z };
+  anim = { fx: cam.tx, fy: cam.ty, fz: cam.tz, tx: p.x, ty: p.y, tz: p.z,
+           t0: performance.now(), dur: 800 };
+  flashEl.style.opacity = '0.9';
+  setTimeout(function(){ flashEl.style.opacity = '0'; }, 60);
+  showChip();
+  updateHud();
+}
+window.__teleport = teleport;
+window.__dbg = function(){ return { cam: cam, marker: marker }; };
+document.getElementById('goBtn').addEventListener('click', function(){
+  var v = document.getElementById('codeIn').value;
+  teleport(v);
+  document.getElementById('codeIn').blur();
+});
+document.getElementById('codeIn').addEventListener('keydown', function(e){
+  if (e.key === 'Enter'){ teleport(e.target.value); e.target.blur(); }
+  e.stopPropagation();
+});
+
+/* ---------- input: pan / pinch / tap ---------- */
+var pointers = new Map(), pinchD0 = null;
+var downX = 0, downY = 0, downT = 0, maxDist = 0;
+function panBy(dx, dy){
+  var b = camBasis();
+  var wpp = (2 * cam.r * Math.tan(FOV / 2)) / H;
+  var grx = b.rx, grz = b.rz, gl = Math.hypot(grx, grz) || 1; grx /= gl; grz /= gl;
+  var gfx = b.fx, gfz = b.fz; gl = Math.hypot(gfx, gfz) || 1; gfx /= gl; gfz /= gl;
+  cam.tx = clamp(cam.tx - dx*wpp*grx + dy*wpp*gfx, -1500, 1500);
+  cam.tz = clamp(cam.tz - dx*wpp*grz + dy*wpp*gfz, -1500, 1500);
+  updateHud();
+}
+function tapAt(sx, sy){
+  var b = camBasis();
+  var f = (H / 2) / Math.tan(FOV / 2);
+  var nx = (sx - W/2) / f, ny = (H/2 - sy) / f;
+  var dx = b.fx + b.rx*nx + b.ux*ny;
+  var dy = b.fy + b.ry*nx + b.uy*ny;
+  var dz = b.fz + b.rz*nx + b.uz*ny;
+  if (dy > -1e-4) return;                 /* tapped the sky */
+  var t = (0 - b.ey) / dy;
+  if (t < 0 || t > 20000) return;
+  marker = { x: b.ex + dx*t, y: 0, z: b.ez + dz*t };
+  showChip();
+  toast('marker dropped');
+}
+cv.addEventListener('pointerdown', function(e){
+  autoSpin = false;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1){ downX = e.clientX; downY = e.clientY; downT = performance.now(); maxDist = 0; }
+  pinchD0 = null;
+  try { cv.setPointerCapture(e.pointerId); } catch(err){}
+});
+cv.addEventListener('pointermove', function(e){
+  if (!pointers.has(e.pointerId)) return;
+  var prev = pointers.get(e.pointerId);
+  var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1){
+    maxDist = Math.max(maxDist, Math.hypot(e.clientX - downX, e.clientY - downY));
+    if (maxDist > 10) panBy(dx, dy);
+  } else if (pointers.size === 2){
+    var pts = Array.from(pointers.values());
+    var d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (pinchD0 && d > 0) cam.r = clamp(cam.r * pinchD0 / d, 150, 4000);
+    pinchD0 = d;
+  }
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchD0 = null;
+  if (pointers.size === 0 && downT){
+    var dt = performance.now() - downT;
+    if (maxDist <= 10 && dt < 600) tapAt(e.clientX, e.clientY);
+    downT = 0;
+  }
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('wheel', function(e){
+  autoSpin = false;
+  cam.r = clamp(cam.r * (1 + e.deltaY * 0.001), 150, 4000);
+  e.preventDefault();
+}, { passive: false });
+
+/* ---------- main loop ---------- */
+function frame(now){
+  if (autoSpin) cam.yaw += 0.0011;
+  if (anim){
+    var k = Math.min(1, (now - anim.t0) / anim.dur);
+    var e2 = k < 0.5 ? 2*k*k : 1 - Math.pow(-2*k + 2, 2) / 2;
+    cam.tx = anim.fx + (anim.tx - anim.fx) * e2;
+    cam.ty = anim.fy + (anim.ty - anim.fy) * e2;
+    cam.tz = anim.fz + (anim.tz - anim.fz) * e2;
+    if (k >= 1) anim = null;
+    updateHud();
+  }
+  draw(now);
+  requestAnimationFrame(frame);
+}
+updateHud();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
