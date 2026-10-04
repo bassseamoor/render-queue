@@ -579,18 +579,6 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
   border-radius:8px 10px 0 0;
 }
 
-/* resizable panels: drag handles */
-.resize-handle{width:8px;cursor:ew-resize;background:transparent;position:relative;z-index:5;touch-action:none;}
-.resize-handle:hover,.resize-handle.dragging{background:rgba(43,208,255,0.25);}
-.resize-handle::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:#2c4b63;border-radius:1px;}
-.resize-handle:hover::after,.resize-handle.dragging::after{background:#2bd0ff;}
-.app{grid-template-columns:max(200px,var(--nav-w,260px)) 8px minmax(0,1fr);}
-@media(min-width:1750px){.app{grid-template-columns:max(200px,var(--nav-w,280px)) 8px minmax(0,1fr);}}
-@media(max-width:1250px){.app{grid-template-columns:max(180px,var(--nav-w,230px)) 8px minmax(0,1fr);}}
-aside.activity{width:var(--act-w,340px) !important;}
-.act-resize{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:ew-resize;touch-action:none;z-index:2;}
-.act-resize::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:#2c4b63;border-radius:1px;}
-.act-resize:hover::after{background:#2bd0ff;}
 
 /* Project Pulse — four-tab app shell (Bin / Stream / You / Discover).
  * Replaces the old 7-category nav. Mobile-first: bottom tab bar, single
@@ -759,7 +747,6 @@ aside.activity{width:var(--act-w,340px) !important;}
 <header><button id="menu" class="icon-btn menu-btn" aria-label="Open project navigation" aria-expanded="false">☰</button><div class="brand"><strong>MOOR</strong><span>/ Project Pulse</span></div><div class="head-right"><span class="desktop-status"><i class="dot"></i>Snapshot · no live connection</span><span class="pill">Functional prototype</span><button id="src-toggle" class="btn" aria-label="Underlying source and logic" title="Underlying source and logic — for builders and AIs">&lt;/&gt;</button><button id="activity-toggle" class="btn" aria-expanded="true" aria-controls="activity">Activity</button></div></header>
 <div id="app" class="app"><button class="scrim" id="scrim" aria-label="Close project navigation"></button>
 <nav class="nav frame" aria-label="Project categories"><div class="nav-label eyebrow">Project</div><div class="root-label"><span class="symbol">◇</span> MOOR</div><div id="categories"></div><div class="nav-foot"><span class="pill amber">Snapshot records</span><p>Recovered software, running live in each page. Opening a page never integrates it into MOOR.</p><button id="restore" class="btn">Restore starting layout</button></div></nav>
-<div class="resize-handle" id="nav-resize" title="Drag to resize panels"></div>
 <main id="main" class="main frame"><div class="category-top"><div><h1 id="category-name"></h1><p id="category-description"></p></div><span id="category-count" class="pill category-count"></span></div>
 <section class="inventory"><div class="section-head"><h2>In MOOR</h2><span class="pill cyan" id="in-count"></span></div><p class="section-desc">Already connected in the reported shell.</p><div id="integrated"></div></section>
 <section class="inventory available"><div class="section-head"><h2>Not in MOOR</h2><span class="pill" id="out-count"></span></div><p class="section-desc">Already built elsewhere · available as a base for this category.</p><div id="available"></div></section>
@@ -9271,117 +9258,7 @@ $('activity-close').onclick = function(){
   $('activity').style.display = 'none';
   $('activity-toggle').setAttribute('aria-expanded','false');};
 
-/* ---------------- resizable panels ---------------- */
-(function(){
-  var app=$('app');
-  // restore saved widths
-  try{
-    var nw=parseInt(localStorage.getItem('pulse-nav-w')), aw=parseInt(localStorage.getItem('pulse-act-w'));
-    if(nw>=160 && nw<=600) app.style.setProperty('--nav-w', nw+'px');
-    else try{ localStorage.removeItem('pulse-nav-w'); }catch(e){}
-    if(aw>=240 && aw<=800) app.style.setProperty('--act-w', aw+'px');
-    else try{ localStorage.removeItem('pulse-act-w'); }catch(e){}
-  }catch(e){}
-  // nav resize handle
-  var navH=$('nav-resize');
-  if(navH){
-    var startX=0, startW=0, dragging=false;
-    function navW(){ 
-      var v=getComputedStyle(app).getPropertyValue('--nav-w').trim();
-      return parseInt(v)||260;
-    }
-    function onMove(clientX){
-      var dx=clientX-startX;
-      var w=Math.max(160, Math.min(600, startW+dx));
-      app.style.setProperty('--nav-w', w+'px');
-    }
-    function end(){
-      dragging=false; navH.classList.remove('dragging');
-      document.removeEventListener('mousemove', mm);
-      document.removeEventListener('mouseup', end);
-      document.removeEventListener('touchmove', tm);
-      document.removeEventListener('touchend', end);
-      try{ localStorage.setItem('pulse-nav-w', navW()); }catch(e){}
-    }
-    function mm(e){ if(dragging) onMove(e.clientX); }
-    function tm(e){ if(dragging && e.touches[0]){ onMove(e.touches[0].clientX); e.preventDefault(); } }
-    function start(clientX){
-      dragging=true; startX=clientX; startW=navW();
-      navH.classList.add('dragging');
-      document.addEventListener('mousemove', mm);
-      document.addEventListener('mouseup', end);
-      document.addEventListener('touchmove', tm, {passive:false});
-      document.addEventListener('touchend', end);
-    }
-    navH.addEventListener('mousedown', function(e){ start(e.clientX); e.preventDefault(); });
-    // touch: only hijack if it's a horizontal drag, otherwise let it scroll
-    var tSX=0, tSY=0, tActive=false;
-    navH.addEventListener('touchstart', function(e){
-      if(e.touches[0]){ tSX=e.touches[0].clientX; tSY=e.touches[0].clientY; tActive=true; }
-    }, {passive:true});
-    navH.addEventListener('touchmove', function(e){
-      if(!tActive || !e.touches[0]) return;
-      var dx=e.touches[0].clientX-tSX, dy=e.touches[0].clientY-tSY;
-      if(!dragging && Math.abs(dx)>12 && Math.abs(dx)>Math.abs(dy)*1.5){
-        start(tSX); // begin resize drag
-      }
-    }, {passive:true});
-    navH.addEventListener('touchend', function(){ tActive=false; }, {passive:true});
-  }
-  // activity drawer resize handle (added dynamically)
-  function ensureActHandle(){
-    var act=$('activity');
-    if(!act || act.querySelector('.act-resize')) return;
-    var h=document.createElement('div');
-    h.className='act-resize'; h.title='Drag to resize';
-    act.insertBefore(h, act.firstChild);
-    var startX=0, startW=0, dragging=false;
-    function actW(){
-      var v=getComputedStyle(act).getPropertyValue('--act-w').trim() || 
-            getComputedStyle(app).getPropertyValue('--act-w').trim();
-      return parseInt(v)||340;
-    }
-    function onMove(clientX){
-      var dx=startX-clientX; // dragging left edge: moving left increases width
-      var w=Math.max(240, Math.min(800, startW+dx));
-      app.style.setProperty('--act-w', w+'px');
-    }
-    function end(){
-      dragging=false;
-      document.removeEventListener('mousemove', mm);
-      document.removeEventListener('mouseup', end);
-      document.removeEventListener('touchmove', tm);
-      document.removeEventListener('touchend', end);
-      try{ localStorage.setItem('pulse-act-w', actW()); }catch(e){}
-    }
-    function mm(e){ if(dragging) onMove(e.clientX); }
-    function tm(e){ if(dragging && e.touches[0]){ onMove(e.touches[0].clientX); e.preventDefault(); } }
-    h.addEventListener('mousedown', function(e){
-      dragging=true; startX=e.clientX; startW=actW();
-      document.addEventListener('mousemove', mm);
-      document.addEventListener('mouseup', end);
-      e.preventDefault(); e.stopPropagation();
-    });
-    var aSX=0, aSY=0, aActive=false;
-    h.addEventListener('touchstart', function(e){
-      if(e.touches[0]){ aSX=e.touches[0].clientX; aSY=e.touches[0].clientY; aActive=true; }
-      e.stopPropagation();
-    }, {passive:true});
-    h.addEventListener('touchmove', function(e){
-      if(!aActive || !e.touches[0]) return;
-      var dx=e.touches[0].clientX-aSX, dy=e.touches[0].clientY-aSY;
-      if(!dragging && Math.abs(dx)>12 && Math.abs(dx)>Math.abs(dy)*1.5){
-        dragging=true; startX=aSX; startW=actW();
-        document.addEventListener('touchmove', tm, {passive:false});
-        document.addEventListener('touchend', end);
-      }
-    }, {passive:true});
-    h.addEventListener('touchend', function(){ aActive=false; }, {passive:true});
-  }
-  // ensure handle exists when activity opens
-  setInterval(ensureActHandle, 1000);
-  ensureActHandle();
-})();
+
 $('restore').onclick = function(){
   unmountFocus();
   UI = {tab:'bin', open:[], focus:null, fromTab:'bin', query:''};
