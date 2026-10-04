@@ -121,6 +121,22 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0e14;color:#e8ecf5;
   backdrop-filter:blur(10px);color:#e8ecf5;font-size:1rem;cursor:pointer}
 #reset-btn.armed{background:#c0392b;border-color:#c0392b;color:#fff;width:auto;padding:0 12px;border-radius:17px;font-size:.8rem}
 
+/* world map overlay */
+#map-btn{pointer-events:auto;display:flex;align-items:center;justify-content:center;width:34px;height:34px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.14);background:rgba(10,14,20,.72);
+  backdrop-filter:blur(10px);color:#e8ecf5;font-size:1rem;cursor:pointer}
+#map-wrap{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+  background:rgba(4,8,14,.74);backdrop-filter:blur(14px)}
+#map-wrap[hidden]{display:none}
+#map-cv{border-radius:18px;border:1px solid rgba(255,255,255,.18);box-shadow:0 18px 60px rgba(0,0,0,.5);
+  touch-action:manipulation;cursor:crosshair}
+#map-read{position:absolute;bottom:calc(42px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);
+  background:rgba(10,14,20,.88);border:1px solid rgba(255,255,255,.14);padding:9px 16px;border-radius:12px;
+  font-size:.85rem;color:#e8ecf5;white-space:nowrap}
+#map-close{position:absolute;top:calc(18px + env(safe-area-inset-top));right:18px;width:42px;height:42px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.16);background:rgba(10,14,20,.85);color:#fff;
+  font-size:1.1rem;cursor:pointer}
+
 </style>
 </head>
 <body>
@@ -130,6 +146,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0e14;color:#e8ecf5;
     <button id="world-chip" aria-label="Worlds"><span class="wic">🌍</span><span id="world-name">…</span></button>
     <span style="display:flex;gap:8px;pointer-events:auto">
       <button id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo">↩</button>
+      <button id="map-btn" title="Map (M)" aria-label="Map">🗺</button>
       <button id="reset-btn" title="Reset world" aria-label="Reset world">↺</button>
       <span id="save-state" title="All changes saved">✓</span>
     </span>
@@ -139,6 +156,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0e14;color:#e8ecf5;
   <div id="move-bar" hidden></div>
   <div id="edit-sheet" hidden></div>
   <div id="claim-pop" hidden></div>
+  <div id="map-wrap" hidden>
+    <canvas id="map-cv"></canvas>
+    <div id="map-read">Tap the map to read coordinates</div>
+    <button id="map-close" aria-label="Close map">✕</button>
+  </div>
   <button id="jump" hidden aria-label="Jump">⬆</button>
   <div id="modebar">
     <button data-mode="build"><span class="mi">🏠</span><span class="ml">Build</span></button>
@@ -3086,6 +3108,7 @@ function mutate(fn){
 }
 function afterChange(){
   changed(); rebuildObjects();
+  if(typeof mapDirty!=='undefined') mapDirty=true;
 }
 function undo(){
   var w=activeWorld();
@@ -3563,7 +3586,7 @@ function setMode(m){
        m==='items'?'Tap the ground to place a '+itemLabel(Furnish.TYPES[palSel.items]):
        m==='paths'?'Drag on the ground to draw a '+PATH_WIDTHS[palSel.paths].label.toLowerCase():
        m==='claims'?'Drag on the ground to stake your claim':
-       m==='walk'?'Drag to look · joystick or WASD to walk':'Drag to orbit · scroll to zoom');
+       m==='walk'?'Drag to look · joystick or WASD to walk · M for map':'Drag to orbit · scroll to zoom · M for map');
 }
 function renderPalette(){
   var pal=$('palette');
@@ -3803,6 +3826,7 @@ function bindUI(){
   });
   bindEditSheet();
   bindClaimPop();
+  bindMap();
   $('palette').addEventListener('click',function(e){
     var b=e.target.closest('[data-pal]'); if(!b) return;
     var k=b.dataset.pal.split(':'); palSel[k[0]]=+k[1]; renderPalette();
@@ -4072,6 +4096,97 @@ function bindClaimPop(){
       toast('\u2691 '+nm+' \u2014 claimed');
     }
     pendingClaim=null; $('claim-pop').hidden=true;
+  });
+}
+
+/* ---------------- world map (M key) ---------------- */
+var mapOpen=false, mapBase=null, mapBaseSeed=null, mapDirty=true;
+function worldToMap(x,z,cv){ return [(x+200)/400*cv.width,(z+200)/400*cv.height]; }
+function mapToWorld(px,py,cv){ return [px/cv.width*400-200, py/cv.height*400-200]; }
+function buildMapBase(){
+  var w=activeWorld(); if(!w) return;
+  var S=220, cv=document.createElement('canvas'); cv.width=cv.height=S;
+  var cx=cv.getContext('2d'), img=cx.createImageData(S,S), d=img.data;
+  for(var j=0;j<S;j++) for(var i=0;i<S;i++){
+    var x=(i/(S-1)-0.5)*400, z=(j/(S-1)-0.5)*400, h=heightAt(x,z), c, o=(j*S+i)*4;
+    if(h<0.8) c=[37,69,96];
+    else { var g=groundColor(x,z,h); c=[g[0]*255,g[1]*255,g[2]*255]; }
+    d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; d[o+3]=255;
+  }
+  cx.putImageData(img,0,0);
+  mapBase=cv; mapBaseSeed=w.seed;
+}
+function drawMap(){
+  var w=activeWorld(); if(!w||!mapOpen) return;
+  if(!mapBase||mapBaseSeed!==w.seed) buildMapBase();
+  var cv=$('map-cv');
+  var size=Math.max(280,Math.min(window.innerWidth-24,window.innerHeight-170));
+  size=Math.round(size);
+  if(cv.width!==size){ cv.width=size; cv.height=size; cv.style.width=size+'px'; cv.style.height=size+'px'; }
+  var ctx=cv.getContext('2d');
+  ctx.drawImage(mapBase,0,0,cv.width,cv.height);
+  function P(x,z){ return worldToMap(x,z,cv); }
+  (w.claims||[]).forEach(function(cl){
+    var r=claimRect(cl), a=P(r.x0,r.z0), b=P(r.x1,r.z1), col=claimColor(cl);
+    ctx.fillStyle='rgba('+(col[0]*255|0)+','+(col[1]*255|0)+','+(col[2]*255|0)+',0.30)';
+    ctx.fillRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);
+    ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1.5;
+    ctx.strokeRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);
+    if(cl.name){ ctx.fillStyle='#fff'; ctx.font='600 11px system-ui'; ctx.fillText(cl.name,a[0]+4,a[1]+13); }
+  });
+  ctx.lineCap='round';
+  (w.paths||[]).forEach(function(p){
+    if(!p.pts||p.pts.length<2) return;
+    ctx.strokeStyle='rgba(170,128,74,.92)'; ctx.lineWidth=Math.max(2,(p.w||2.2)/400*cv.width);
+    ctx.beginPath();
+    p.pts.forEach(function(pt,i){ var q=P(pt[0],pt[1]); if(i)ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]); });
+    ctx.stroke();
+  });
+  w.buildings.forEach(function(b){
+    var q=P(b.x,b.z), s=cv.width/400;
+    ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(-b.rot);
+    ctx.fillStyle='rgba(242,242,247,.94)';
+    ctx.fillRect(-b.w/2*s,-b.d/2*s,b.w*s,b.d*s);
+    ctx.restore();
+  });
+  ctx.fillStyle='rgba(255,210,90,.95)';
+  w.items.forEach(function(it){ var q=P(it.x,it.z); ctx.fillRect(q[0]-1.5,q[1]-1.5,3,3); });
+  var px=cam.mode==='walk'?cam.wx:cam.tx, py=cam.mode==='walk'?cam.wz:cam.tz;
+  var pa=cam.mode==='walk'?cam.wyaw:null, q2=P(px,py);
+  if(pa!==null){
+    ctx.strokeStyle='#5bd8ff'; ctx.lineWidth=3; ctx.beginPath();
+    ctx.moveTo(q2[0],q2[1]);
+    ctx.lineTo(q2[0]+Math.sin(pa)*15,q2[1]+Math.cos(pa)*15); ctx.stroke();
+  }
+  ctx.fillStyle='#5bd8ff';
+  ctx.beginPath(); ctx.arc(q2[0],q2[1],6,0,7); ctx.fill();
+  ctx.strokeStyle='#06121c'; ctx.lineWidth=2; ctx.stroke();
+  mapDirty=false;
+}
+function setMap(open){
+  mapOpen=open;
+  $('map-wrap').hidden=!open;
+  $('map-read').textContent='Tap the map to read coordinates';
+  if(open){ mapDirty=true; drawMap(); mapTick(); }
+}
+function mapTick(){
+  if(!mapOpen) return;
+  if(mapDirty) drawMap();
+  requestAnimationFrame(mapTick);
+}
+function bindMap(){
+  $('map-btn').addEventListener('click',function(){ setMap(!mapOpen); });
+  $('map-close').addEventListener('click',function(){ setMap(false); });
+  $('map-cv').addEventListener('click',function(e){
+    var cv=$('map-cv'), r=cv.getBoundingClientRect();
+    var wp=mapToWorld(e.clientX-r.left,e.clientY-r.top,cv);
+    $('map-read').textContent='\uD83D\uDCCD '+wp[0].toFixed(0)+', '+wp[1].toFixed(0);
+  });
+  window.addEventListener('keydown',function(e){
+    var tag=(e.target&&e.target.tagName)||'';
+    if(tag==='INPUT'||tag==='TEXTAREA') return;
+    if(e.key==='m'||e.key==='M'){ setMap(!mapOpen); }
+    else if(e.key==='Escape'&&mapOpen){ setMap(false); }
   });
 }
 
