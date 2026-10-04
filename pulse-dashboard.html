@@ -5021,7 +5021,6 @@ var CATS = [
  * inMoor: connected to the MOOR environment (from Pulse records, role=active).
  * Gaps listed in toolGap are reported in the UI, never silently worked around. */
 var COMPS = [
-{"id":"planet-workshop","tool":"planetWorkshop","toolSrc":"moor-planet-workshop.html","cats":["space","generators"],"icon":"◉","label":"Planet Workshop","short":"Explore terrain, rivers, and plants. Experimental revision.","job":"Generate a seeded planet, inspect geology and water, tune terrain, and save recipes.","why":"Review this terrain revision independently of the future plant replacement.","technical":"planet-workshop v3.0.0","source":"moor-planet-workshop.html","inMoor":false,"toolGap":"Experimental terrain. Plant visuals are provisional and need replacement. Coarse runoff is not full physical erosion. Not in production MOOR."},
   /* --- 3D space: real interactive tools --- */
   {id:'terrain-core', tool:'terrain', toolSrc:'pulse-tools/tool-terrain.js', cats:['space','generators'], icon:'\u25B3', label:'Terrain sculpting',
    short:'Generate land, shape it, and save it.',
@@ -5065,6 +5064,24 @@ var COMPS = [
    why:'The starting point for MOOR\u2019s land ownership + building loop — something concrete to react to before the design is locked.',
    technical:'land-claim', source:'your_files/land-claim.html', inMoor:false,
    toolGap:'Prototype: all logic is panel demo code. Currency, pricing, upkeep, and the free-build vs describe paths are open questions, listed in the demo\u2019s ? panel.'},
+  {id:'glass-map', tool:'glassmap', toolSrc:'pulse-tools/tool-glassmap.js', cats:['space'], icon:'\u1F5FA', label:'Glass map',
+   short:'Holographic laser-etched terrain map.',
+   job:'A floating glass heightmap with razor-sharp laser contour lines, fresnel glow, and laser-wireframe buildings. Press M (or the map button) to open it over your world, tap for coordinates.',
+   why:'The map every world needs — always clean, always readable, built on the real terrain noise.',
+   technical:'glass-map', source:'your_files/glass-map.html', inMoor:false,
+   toolGap:'Showcase embedding the live demo. Height field is verbatim terrain-field GLSL; the glass/contour shader and overlay UX are panel demo code.'},
+  {id:'grid-coords', tool:'gridcoords', toolSrc:'pulse-tools/tool-gridcoords.js', cats:['space'], icon:'\u1F4CD', label:'Grid coords',
+   short:'Every point in the universe gets a code.',
+   job:'GRID-CODE v1: short pasteable coordinates (AAA-BBB-CCC-D) for any 3D point, with checksum typo-catching. Tap the grid to mark, paste a code to teleport.',
+   why:'The addressing layer teleport, the glass map, and transit stations will all build on.',
+   technical:'grid-coords', source:'your_files/grid-coords.html', inMoor:false,
+   toolGap:'The codec is new panel code written for this component (window.GridCoords). Strict validation, never throws.'},
+  {id:'transit', tool:'transit', toolSrc:'pulse-tools/tool-transit.js', cats:['space'], icon:'\u1F68F', label:'Transit',
+   short:'Book a ride. Arrive exactly on time.',
+   job:'The transportation contract: book({from,to,vehicle,durationSec}) — taxi, train, or ship — then ride a look-around cinematic and arrive at exactly the promised second. Cancel returns you to origin.',
+   why:'Stations, taxis, and scripted travel all run on one honest contract.',
+   technical:'transit', source:'your_files/transit.html', inMoor:false,
+   toolGap:'TransitContract is new panel code written for this component. Per-vehicle path curves; terminal sample is exactly the destination.'},
   {id:'pad-garden', tool:'padgarden', toolSrc:'pulse-tools/tool-padgarden.js', cats:["generators"], icon:'\u1F331', label:'Pad Garden',
    short:'Grow seeded ambience from the ambience-engine.',
    job:'A touch pad garden over the real ambience-engine: 8 pentatonic pluck pads, chord/wash/drone, and a generative mode that renders seeded 16-second arrangements with a playhead.',
@@ -17784,6 +17801,88 @@ TOOLS.landclaim = {
 
 </script>
 <script>
+/* TAGS: glass-map, hologram, terrain, contour, laser, map-overlay, showcase, demo
+ * Glass map — holographic laser-etched 3D terrain map.
+ * Embeds the live demo. Height field uses verbatim hash/vnoise/fbm4/microH
+ * from components/terrain-field/field.glsl. M key opens/closes the overlay. */
+(function(){
+'use strict';
+TOOLS.glassmap = {
+  mount: function(host){
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">Press M (or 🗺) to open the hologlass map over your world.</span>'+
+        '<a class="btn primary" href="https://bassseamoor.github.io/render-queue/glass-map.html" target="_blank" rel="noopener">Open full screen</a>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;height:560px;border-radius:12px;overflow:hidden;background:#05070c;">'+
+        '<iframe src="https://bassseamoor.github.io/render-queue/glass-map.html" '+
+        'style="width:100%;height:100%;border:0;" allow="autoplay; fullscreen"></iframe>'+
+      '</div>'+
+      '<p class="meta" style="margin-top:10px;">Components used: '+
+      '<b>terrain-field</b> (field.glsl noise — verbatim) · '+
+      '<b>fresnel glass + contour shader</b> (panel demo code) · '+
+      '<b>laser wireframe buildings</b> (panel demo code).</p>';
+  }
+};
+})();
+
+</script>
+<script>
+/* TAGS: grid-coords, coordinates, teleport, addressing, codec, checksum, universe
+ * Grid coords — every point in the universe gets a short pasteable code.
+ * Embeds the live playground. The GRID-CODE v1 codec (encode/decode/checksum)
+ * is panel demo code written for this component — the addressing layer
+ * teleport, the glass map, and transit stations will build on. */
+(function(){
+'use strict';
+TOOLS.gridcoords = {
+  mount: function(host){
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">Tap the grid to mark a point, paste a code to teleport. window.GridCoords exposes the codec.</span>'+
+        '<a class="btn primary" href="https://bassseamoor.github.io/render-queue/grid-coords.html" target="_blank" rel="noopener">Open full screen</a>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;height:560px;border-radius:12px;overflow:hidden;background:#05070c;">'+
+        '<iframe src="https://bassseamoor.github.io/render-queue/grid-coords.html" '+
+        'style="width:100%;height:100%;border:0;" allow="autoplay; fullscreen"></iframe>'+
+      '</div>'+
+      '<p class="meta" style="margin-top:10px;">Format: <b>AAA-BBB-CCC-D</b> — 3 base-32 chars per axis, '+
+      '±8192m at 0.5m precision, checksum catches single-char typos. '+
+      'Future: teleport, glass-map pick, and transit stations consume these codes.</p>';
+  }
+};
+})();
+
+</script>
+<script>
+/* TAGS: transit, transportation, contract, taxi, train, ship, cinematic, travel, stations
+ * Transit — the transportation contract: book here→there by vehicle + duration,
+ * arrive exactly on time, ride a look-around cinematic.
+ * Embeds the live demo. TransitContract (book/cancel/events/path curves)
+ * is panel demo code written for this component. */
+(function(){
+'use strict';
+TOOLS.transit = {
+  mount: function(host){
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">Plot two points, pick a ride, set the duration — arrive exactly on time.</span>'+
+        '<a class="btn primary" href="https://bassseamoor.github.io/render-queue/transit.html" target="_blank" rel="noopener">Open full screen</a>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;height:560px;border-radius:12px;overflow:hidden;background:#0b0d12;">'+
+        '<iframe src="https://bassseamoor.github.io/render-queue/transit.html" '+
+        'style="width:100%;height:100%;border:0;" allow="autoplay; fullscreen"></iframe>'+
+      '</div>'+
+      '<p class="meta" style="margin-top:10px;">Contract: '+
+      '<b>book({from,to,vehicle,durationSec})</b> → boarding → enroute → arriving → arrived. '+
+      'Terminal sample is exactly <b>to</b>; <b>cancel()</b> returns you to origin. '+
+      'Future: stations publish grid-coords codes as destinations.</p>';
+  }
+};
+})();
+
+</script>
+<script>
 /* TAGS: ambience-engine, audio, generative, pads, seed
  * Pad Garden — Grow seeded ambience from the ambience-engine.
  * Embeds the live demo. See toolGap in dashboard.js for the verbatim/panel split. */
@@ -19067,14 +19166,6 @@ init();
   }
 })();
 
-</script>
-<script>
-/* Planet Workshop registration. Keep this component when rebuilding Pulse. */
-TOOLS.planetWorkshop={
-mount:function(host){host.innerHTML='<div class="t-controls"><span class="meta">Experimental component · plants provisional</span><a class="btn primary" href="moor-planet-workshop.html" target="_blank" rel="noopener">Open full screen</a></div><iframe title="Planet Workshop" src="moor-planet-workshop.html" style="width:100%;height:76dvh;min-height:420px;border:0;border-radius:12px;background:#080c14" allow="fullscreen"></iframe>';},
-unmount:function(){}
-};
-(function(){var id=new URLSearchParams(location.search).get('component');if(id==='planet-workshop')openComponent(id);else if(!UI.focus&&UI.tab==='bin')renderStage();})();
 </script>
 </body>
 </html>
