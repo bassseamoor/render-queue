@@ -447,7 +447,7 @@ function render(){if(!S)return;
 /* ================= app shell: header + tree + center + right ================= */
 function treeData(){
   var comps=S.components||{};
-  function C(id){var c=comps[id];return c?{kind:'component',id:id,name:c.name,st:c.status}:null}
+  function C(id){var c=comps[id];return c?{kind:'component',id:id,name:c.name,st:c.status,role:c.role}:null}
   function G(i){var g=ATLAS[i];return g?{kind:'generator',id:String(i),name:g.name,st:'generator'}:null}
   function O(id){var o=(S.objectives||{})[id];return o?{kind:'objective',id:id,name:o.title,st:o.status}:null}
   function L(id){var l=(S.layouts||{})[id];return l?{kind:'layout',id:id,name:l.name,st:l.category||''}:null}
@@ -483,6 +483,7 @@ function renderTree(){
     h+='<div class="trow'+(sel?' sel':'')+'" tabindex="0" role="treeitem" aria-selected="'+(sel?'true':'false')+'" data-nk="'+esc(nk)+'" onkeydown="treeKey(event,\''+n.kind+'\',\''+String(n.id).replace(/'/g,'')+'\','+(has?1:0)+')" onclick="treeSel(\''+n.kind+'\',\''+String(n.id).replace(/'/g,'')+'\')">'
       +'<span class="twisty" onclick="treeTwist(\''+n.kind+'\',\''+String(n.id).replace(/'/g,'')+'\',event)">'+(has?(exp?'\u25be':'\u25b8'):'\u00b7')+'</span>'
       +'<span class="tname">'+esc(n.name)+'</span>'
+      +(n.kind==='component'?'<span class="badge '+(n.role==='active'?'b-active">in play':'b-reference">not in')+'</span>':'')
       +(n.st?'<span class="tstat">'+esc(n.st)+'</span>':'')+'</div>';
     if(has&&exp){h+='<div class="tkids">';kids.forEach(row);h+='</div>'}
   }
@@ -571,29 +572,28 @@ function splitBoxes(){
   var inIds=['canvas-shell','wrangler-catalog','js-create-pipeline','seed-lab','project-pulse'];
   var inKids=inIds.map(C).filter(Boolean);
   Object.values(comps).forEach(function(c){if(c.role==='active'&&inIds.indexOf(c.id)<0){var x=C(c.id);if(x)inKids.push(x)}});
-  var groups=[
-    {name:'3D space',ids:['terrain-core','terrain-field','mesh-builder','moorworld','palettes','ambience-engine','spawn-director','perf-governor']},
-    {name:'Shared parts',ids:['seed-rng','seed-codec','seed-console','save-shape','release-gate','registry-triple','replace-file','idempotent-upload']},
-    {name:'Reference',ids:['rust-intent-compiler']}
-  ];
-  var notInCount=groups.reduce(function(a,g){return a+g.ids.length},0);
-  function row(c){
+  function crow(c){
     return '<div class="trow" tabindex="0" role="button" aria-label="'+esc(c.name)+'" onclick="openNode(\'component\',\''+c.id+'\')" onkeydown="tileKey(event,\'component\',\''+c.id+'\')">'
       +'<span class="tname">'+esc(c.name)+'</span>'
-      +'<span class="badge b-'+c.role+'">'+esc(c.role)+'</span>'
+      +'<span class="badge b-active">in play</span>'
       +'<span class="tstat">'+esc(c.st)+'</span></div>';
+  }
+  function grow(gid,gname,gsub){
+    return '<div class="trow" tabindex="0" role="button" aria-label="'+esc(gname)+'" onclick="openNode(\'group\',\''+gid+'\')" onkeydown="tileKey(event,\'group\',\''+gid+'\')">'
+      +'<span class="tname">'+esc(gname)+'</span>'
+      +'<span class="badge b-reference">not in</span>'
+      +'<span class="tstat">'+esc(gsub)+'</span></div>';
   }
   var sc=UI.splitCollapsed||{};
   return '<h4 class="sech split-toggle" role="button" tabindex="0" onclick="toggleSplit(\'in\')" onkeydown="if(event.key===\'Enter\')toggleSplit(\'in\')">'
-    +'In Moor \u2014 in the product now ('+inKids.length+') <span class="meta">'+(sc.in?'\u25b8 show':'\u25be hide')+'</span></h4>'
-    +(sc.in?'':'<div class="split-pane split-in">'+inKids.map(row).join('')+'</div>')
+    +'In play \u2014 applied systems in Moor now ('+inKids.length+') <span class="meta">'+(sc.in?'\u25b8 show':'\u25be hide')+'</span></h4>'
+    +(sc.in?'':'<div class="split-pane split-in">'+inKids.map(crow).join('')+'</div>')
     +'<h4 class="sech split-toggle" role="button" tabindex="0" onclick="toggleSplit(\'notin\')" onkeydown="if(event.key===\'Enter\')toggleSplit(\'notin\')">'
-    +'Not in Moor \u2014 reference, already made somewhere ('+notInCount+') <span class="meta">'+(sc.notin?'\u25b8 show':'\u25be hide')+'</span></h4>'
+    +'Not in Moor \u2014 potentially relevant ('+2+') <span class="meta">'+(sc.notin?'\u25b8 show':'\u25be hide')+'</span></h4>'
     +(sc.notin?'':'<div class="split-pane split-notin">'
-      +groups.map(function(g){
-          var kids=g.ids.map(C).filter(Boolean);
-          return '<div class="meta" style="margin:8px 0 4px">'+esc(g.name)+' ('+kids.length+')</div>'+kids.map(row).join('');
-        }).join('')+'</div>');
+      +grow('g-env','3D world stack','terrain, mesh, ambience, spawning \u2014 8 pieces')
+      +grow('g-gen','Procedural generators','terrain, trees, vegetation, worlds \u2014 6 systems')
+      +'</div>');
 }
 function homeBody(){
   var mvp=(S.objectives||{})['more-os-mvp']||{};
@@ -781,7 +781,8 @@ function cGroup(id){
   var g=findNode(id);if(!g)return '<div class="empty">Not found.</div>';
   var h=chead(g.name,[['b-unknown',g.st||'group']]);
   h+='<div class="tiles">'+(g.kids||[]).map(function(k){
-    return '<div class="tile holo-tilt" tabindex="0" role="button" onkeydown="tileKey(event,\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')" onclick="treeSel(\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')"><div class="t">'+esc(k.name)+'</div>'+(k.st?'<div class="s">'+esc(k.st)+'</div>':'')+'</div>'}).join('')+'</div>';
+    var kb=k.kind==='component'&&S.components[k.id]?'<span class="badge '+(S.components[k.id].role==='active'?'b-active">in play':'b-reference">not in')+'</span> ':'';
+    return '<div class="tile holo-tilt" tabindex="0" role="button" onkeydown="tileKey(event,\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')" onclick="treeSel(\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')"><div class="t">'+kb+esc(k.name)+'</div>'+(k.st?'<div class="s">'+esc(k.st)+'</div>':'')+'</div>'}).join('')+'</div>';
   return h;
 }
 function cComponentFull(id){
