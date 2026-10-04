@@ -704,6 +704,38 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 .trow.variant{margin-bottom:6px}
 .trow.variant.rec{border-color:rgba(91,216,255,.35)}
 
+/* The Vault — visual asset triage */
+.vault-head{margin:10px 2px 4px}
+.vault-head h2{margin:0 0 4px;font-size:1.45rem;font-weight:650;letter-spacing:-.01em}
+.vault-head p{margin:0;color:var(--muted);font-size:.88rem;line-height:1.5}
+.vault-filters{display:flex;gap:8px;margin:12px 2px 4px}
+.vault-filters button{flex:1;border:1px solid var(--line);background:transparent;color:var(--muted);
+  font:inherit;font-size:.8rem;padding:9px 0;border-radius:12px;cursor:pointer}
+.vault-filters button.on{color:var(--text);border-color:rgba(91,216,255,.5);background:rgba(91,216,255,.08)}
+.vault-sec{margin:20px 0}
+.vault-sec h3{margin:0 2px 2px;font-size:1.02rem;font-weight:650}
+.vault-sec h3 span{color:var(--muted);font-weight:400;font-size:.85rem}
+.vault-sec p{margin:0 2px 10px;color:var(--muted);font-size:.8rem}
+.vault-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.vault-card{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  background:#0d1420;padding:0;text-align:left;color:var(--text);font:inherit;cursor:pointer}
+.vault-card:active{transform:scale(.98)}
+.vault-card.pinned{border-color:rgba(255,215,106,.55)}
+.vault-vis{position:relative;display:block;aspect-ratio:4/3;background:#0b1523;overflow:hidden}
+.vault-vis img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.vault-art{display:block;width:100%;height:100%;pointer-events:none}
+.vault-pin,.vault-trash{position:absolute;top:6px;min-width:34px;height:34px;border-radius:17px;
+  display:flex;align-items:center;justify-content:center;background:rgba(8,12,20,.72);
+  border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(6px);cursor:pointer}
+.vault-pin{right:6px;color:#ffd76a;font-size:1.05rem}
+.vault-pin.on{color:#ffd76a;border-color:rgba(255,215,106,.6)}
+.vault-trash{right:48px;color:#ff9a9a;font-size:.95rem}
+.vault-trash.armed{background:#a33327;border-color:#d66;color:#fff;font-size:0;padding:0 10px}
+.vault-trash.armed::after{content:'Sure?';font-size:.75rem;font-weight:600}
+.vault-meta{display:block;padding:8px 10px 10px;pointer-events:none}
+.vault-meta strong{display:block;font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vault-meta span{display:block;color:var(--muted);font-size:.72rem;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 </style>
 </head>
 <body>
@@ -8706,6 +8738,12 @@ var COMPS = [
    why:'Turns vague component ideas into sharp, scoped, buildable specs — and the brief is the work order for the builder.',
    technical:'idea-funnel', source:'pulse-v2/tools/tool-quiz.js', inMoor:false,
    toolGap:'The quiz, scoring rubric, and doc templates are panel code. It reads the live component catalog for part-picking. The "automation" is the build brief: paste it to your builder and the component gets built.'},
+  {id:'comp-asset-vault', tool:'vault', toolSrc:'pulse-tools/tool-assets.js', version:'1.0', cats:['creation','interface'], icon:'\uD83D\uDCE6', label:'The Vault',
+   short:'Every asset you\u2019ve made, in one place. Keep, iterate, or trash.',
+   job:'See everything you\u2019ve saved across Pulse and the render queue as visual cards. Tap a card to iterate on it in its home tool, star what earns its keep, trash the rest.',
+   why:'You make assets faster than any list can track. The Vault is the one surface where each thing speaks for itself \u2014 no clicking through every tool to remember what it was.',
+   technical:'vault v1.0', source:'pulse-v2/tools/tool-assets.js', inMoor:false,
+   toolGap:'Reads the asset stores it knows about (queue studio favorites, saved wonders, canvas parts, funnel docs); a tool with a brand-new storage format appears only after its reader is added.'},
   
   
   
@@ -22845,6 +22883,279 @@ function unmount(){
   frame=null;
 }
 TOOLS.planetWorkshop={mount:mount,unmount:unmount};
+})();
+
+</script>
+<script>
+/* The Vault — every asset you've made, in one place.
+ *
+ * You make assets faster than any list can track: render favorites in the
+ * queue studios, saved wonders, Moor Canvas parts, Idea Funnel docs. The Vault
+ * reads those stores (same origin) and shows each asset as a visual card that
+ * speaks for itself — thumbnail where one exists, a seeded generative visual
+ * otherwise. No clicking through every tool to remember what a thing was.
+ *
+ * Triage, per card:
+ *   tap card  -> Iterate: open it in the tool/surface it came from
+ *   star      -> Keep: pin it; pinned cards sort first and survive triage
+ *   trash     -> Trash: two taps (arm, then confirm) deletes it from its store
+ *
+ * Filters: All | Pinned | Undecided (not pinned — the trash candidates).
+ * Pins live in pulse-vault-v1. Nothing here phones home; it's all local.
+ *
+ * TAGS: tool:vault | cat:creation cat:interface | kind:interactive |
+ *       dep:localstorage | prov:asset-triage | see:wonder-feed see:more-canvas see:comp-idea-quiz
+ */
+(function(){
+'use strict';
+
+/* ---------------- small helpers ---------------- */
+function lsGet(k,d){ try{ var v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function cap(s){ s=String(s||''); return s.charAt(0).toUpperCase()+s.slice(1); }
+function shortSeed(s){ s=String(s==null?'':s); return s.length>10?s.slice(0,10)+'\u2026':s; }
+function age(t){ if(!t) return ''; var d=Date.now()-t; if(!(d>0)) return '';
+  var m=Math.floor(d/60000); if(m<1) return 'just now'; if(m<60) return m+'m ago';
+  var h=Math.floor(m/60); if(h<24) return h+'h ago';
+  var dd=Math.floor(h/24); if(dd<30) return dd+'d ago'; return Math.floor(dd/30)+'mo ago'; }
+/* deterministic generative visual from any string: every card speaks, even
+ * when the asset never saved a thumbnail */
+function hash(s){ s=String(s); var h=2166136261; for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function seedArt(seed){
+  var h=hash(seed), h1=h%360, h2=(h>>7)%360, h3=(h>>13)%360;
+  return 'background:'+
+    'radial-gradient(circle at '+((h>>3)%70+15)+'% '+((h>>11)%60+20)+'%, hsla('+h1+',75%,62%,.95), transparent 62%),'+
+    'radial-gradient(circle at '+((h>>17)%70+15)+'% '+((h>>23)%60+20)+'%, hsla('+h2+',70%,42%,.9), transparent 66%),'+
+    'linear-gradient('+(h%360)+'deg, hsl('+h3+',45%,16%), hsl('+((h3+50)%360)+',50%,9%));';
+}
+
+var LS_PIN='pulse-vault-v1';
+var SEC_ORDER=['renders','wonders','parts','docs'];
+var SEC_TITLES={renders:'Renders',wonders:'Wonders',parts:'Canvas parts',docs:'Idea docs'};
+var SEC_HINTS={
+  renders:'Favorited seeds from the render-queue studios.',
+  wonders:'Wonders you saved from the Stream.',
+  parts:'Mixes you saved in Moor Canvas.',
+  docs:'Master documents from the Idea Funnel.'
+};
+/* render-queue studio favorite stores (same origin): key -> page + label */
+var STUDIOS=[
+  {key:'molten-studio-v1',          page:'molten.html',             label:'Molten'},
+  {key:'canal-metropolis-seeds-v1', page:'canal-metropolis.html',   label:'Canal Metropolis'},
+  {key:'alien-planet-studio-v1',    page:'alien-planet.html',       label:'Alien Planet'},
+  {key:'drowned-forest-seeds-v1',   page:'parallax-engine.html',    label:'Drowned Forest'},
+  {key:'ember-wastes-seeds-v1',     page:'parallax-engine.html',    label:'Ember Wastes'},
+  {key:'cloud-ocean-seeds-v1',      page:'parallax-engine.html',    label:'Cloud Ocean'},
+  {key:'mycelium-deep-seeds-v1',    page:'parallax-engine.html',    label:'Mycelium Deep'},
+  {key:'orbital-dawn-seeds-v1',     page:'parallax-engine.html',    label:'Orbital Dawn'},
+  {key:'parallax-engine-seeds-v1',  page:'parallax-engine.html',    label:'Parallax Engine'},
+  {key:'rainforest-studio-v1',      page:'rainforest.html',         label:'Rainforest'},
+  {key:'window-weather-v1',         page:null,                     label:'Window Weather'}
+];
+
+/* ---------------- readers: each returns normalized cards ----------------
+ * card: {uid, sec, title, sub, thumb, art, openComp, studioPage, ts, trash()} */
+function readRenders(){
+  var out=[];
+  STUDIOS.forEach(function(st){
+    var store=lsGet(st.key,null);
+    if(!store) return;
+    var arr=Array.isArray(store)?store:(store.favorites||store.seeds||store.items||[]);
+    if(!Array.isArray(arr)) return;
+    arr.forEach(function(f){
+      if(!f||typeof f!=='object') return;
+      var seed=(f.seed!=null?f.seed:(f.s!=null?f.s:''));
+      if(seed===''&&!f.thumb) return;
+      out.push({
+        uid:'render:'+st.key+':'+String(seed),
+        sec:'renders', title:st.label+(seed!==''?' \u00B7 '+shortSeed(seed):''),
+        sub:'Render favorite', thumb:f.thumb||null, art:'render:'+st.key+':'+seed,
+        openComp:null, studioPage:st.page, ts:f.ts||f.savedAt||f.t||0,
+        trash:(function(k,store,arr,f){ return function(){
+          var ix=arr.indexOf(f); if(ix>=0) arr.splice(ix,1); lsSet(k,store);
+        }; })(st.key,store,arr,f)
+      });
+    });
+  });
+  return out;
+}
+function readWonders(){
+  var lib=lsGet('moor-wonder-library-v1',[]);
+  if(!Array.isArray(lib)) return [];
+  var out=[];
+  lib.forEach(function(e){
+    var g=e&&e.genome; if(!g||!g.type||g.seed==null) return;
+    out.push({
+      uid:'wonder:'+g.type+':'+g.seed,
+      sec:'wonders', title:cap(g.type)+' \u00B7 '+shortSeed(g.seed),
+      sub:'Saved wonder', thumb:null, art:'wonder:'+g.type+':'+g.seed,
+      openComp:'wonder-feed', studioPage:null, ts:0,
+      trash:(function(type,seed){ return function(){
+        var l=lsGet('moor-wonder-library-v1',[]);
+        for(var j=0;j<l.length;j++){ var gg=l[j]&&l[j].genome;
+          if(gg&&gg.type===type&&String(gg.seed)===String(seed)){ l.splice(j,1); break; } }
+        lsSet('moor-wonder-library-v1',l);
+      }; })(g.type,g.seed)
+    });
+  });
+  return out;
+}
+function readParts(){
+  var d=lsGet('moor-pulse-canvas-v1',{});
+  var parts=(d&&d.parts)||[];
+  if(!Array.isArray(parts)) return [];
+  var out=[];
+  parts.forEach(function(p){
+    if(!p||!p.id) return;
+    var ids=(p.recipe&&p.recipe.ids)||[];
+    out.push({
+      uid:'part:'+p.id,
+      sec:'parts', title:p.name||'Untitled part',
+      sub:'Canvas part'+(ids.length?' \u00B7 '+ids.length+' components':''),
+      thumb:p.thumb||null, art:'part:'+p.id,
+      openComp:'more-canvas', studioPage:null, ts:p.ts||0,
+      trash:(function(id){ return function(){
+        var dd=lsGet('moor-pulse-canvas-v1',{});
+        var ps=(dd&&dd.parts)||[];
+        dd.parts=ps.filter(function(x){ return x&&x.id!==id; });
+        lsSet('moor-pulse-canvas-v1',dd);
+      }; })(p.id)
+    });
+  });
+  return out;
+}
+function readDocs(){
+  var docs=lsGet('pulse-quiz-docs-v1',[]);
+  if(!Array.isArray(docs)) return [];
+  var out=[];
+  docs.forEach(function(d){
+    if(!d) return;
+    out.push({
+      uid:'doc:'+(d.ts||'0')+':'+String(d.title||'').slice(0,24),
+      sec:'docs', title:d.title||'Untitled idea',
+      sub:(d.funnel||'idea')+' \u00B7 score '+(d.score!=null?d.score+'/7':'\u2014'),
+      thumb:null, art:'doc:'+(d.ts||d.title),
+      openComp:'comp-idea-quiz', studioPage:null, ts:d.ts||0,
+      trash:(function(ts,title){ return function(){
+        var l=lsGet('pulse-quiz-docs-v1',[]);
+        for(var j=0;j<l.length;j++){
+          if(l[j]&&l[j].ts===ts&&l[j].title===title){ l.splice(j,1); break; } }
+        lsSet('pulse-quiz-docs-v1',l);
+      }; })(d.ts,d.title)
+    });
+  });
+  return out;
+}
+
+/* ---------------- view ---------------- */
+var hostEl=null, filter='all', lastCards=[], armedTrash=null, armedAt=0;
+
+function allCards(){ return readRenders().concat(readWonders(),readParts(),readDocs()); }
+
+function cardHTML(c){
+  var vis=c.thumb
+    ? '<img src="'+esc(c.thumb)+'" alt="">'
+    : '<span class="vault-art" style="'+seedArt(c.art)+'"></span>';
+  var attrs=' data-uid="'+esc(c.uid)+'"';
+  if(c.openComp) attrs+=' data-open="'+esc(c.openComp)+'"';
+  else if(c.studioPage) attrs+=' data-studio="'+esc(c.studioPage)+'"';
+  var ageStr=c.ts?(' \u00B7 '+esc(age(c.ts))):'';
+  return '<button class="vault-card'+(c.pinned?' pinned':'')+'"'+attrs+'>'+
+    '<span class="vault-vis">'+vis+
+      '<span class="vault-pin'+(c.pinned?' on':'')+'" data-pin title="'+(c.pinned?'Unpin':'Keep')+'">'+(c.pinned?'\u2605':'\u2606')+'</span>'+
+      '<span class="vault-trash" data-trash title="Trash">\uD83D\uDDD1</span>'+
+    '</span>'+
+    '<span class="vault-meta"><strong>'+esc(c.title)+'</strong><span>'+esc(c.sub)+ageStr+'</span></span>'+
+  '</button>';
+}
+
+function render(){
+  if(!hostEl) return;
+  var pins=lsGet(LS_PIN,{})||{};
+  var cards=allCards();
+  cards.forEach(function(c){ c.pinned=!!pins[c.uid]; });
+  lastCards=cards;
+  var counts={all:cards.length,pinned:0,undecided:0};
+  cards.forEach(function(c){ if(c.pinned) counts.pinned++; else counts.undecided++; });
+  var list=cards.filter(function(c){
+    if(filter==='pinned') return c.pinned;
+    if(filter==='undecided') return !c.pinned;
+    return true;
+  });
+  list.sort(function(a,b){ return ((b.pinned?1:0)-(a.pinned?1:0))||((b.ts||0)-(a.ts||0)); });
+
+  var html='<div class="vault-head"><h2>The Vault</h2>'+
+    '<p>Everything you\u2019ve made, in one place. Tap a card to iterate on it, star what earns its keep, trash the rest.</p></div>';
+  html+='<div class="vault-filters" role="tablist">'+
+    [['all','All'],['pinned','Pinned'],['undecided','Undecided']].map(function(f){
+      return '<button class="'+(filter===f[0]?'on':'')+'" data-filter="'+f[0]+'">'+f[1]+' \u00B7 '+counts[f[0]]+'</button>';
+    }).join('')+'</div>';
+  SEC_ORDER.forEach(function(sec){
+    var items=list.filter(function(c){ return c.sec===sec; });
+    if(!items.length) return;
+    html+='<section class="vault-sec"><h3>'+SEC_TITLES[sec]+' <span>'+items.length+'</span></h3>'+
+      '<p>'+SEC_HINTS[sec]+'</p>'+
+      '<div class="vault-grid">'+items.map(cardHTML).join('')+'</div></section>';
+  });
+  if(!list.length){
+    html+='<div class="empty">'+(filter==='all'
+      ? 'Nothing saved yet. Make something in any tool \u2014 it lands here.'
+      : 'Nothing here. Tap the star on a card to pin it.')+'</div>';
+  }
+  hostEl.innerHTML=html;
+}
+
+function findCard(uid){
+  for(var i=0;i<lastCards.length;i++) if(lastCards[i].uid===uid) return lastCards[i];
+  return null;
+}
+function onClick(e){
+  var f=e.target.closest('[data-filter]');
+  if(f){ filter=f.getAttribute('data-filter'); render(); return; }
+  var pin=e.target.closest('[data-pin]');
+  if(pin){
+    e.stopPropagation(); e.preventDefault();
+    var card=pin.closest('[data-uid]'); if(!card) return;
+    var uid=card.getAttribute('data-uid'), p=lsGet(LS_PIN,{})||{};
+    if(p[uid]) delete p[uid]; else p[uid]=1;
+    lsSet(LS_PIN,p); render(); return;
+  }
+  var tr=e.target.closest('[data-trash]');
+  if(tr){
+    e.stopPropagation(); e.preventDefault();
+    var now=Date.now();
+    if(armedTrash===tr&&now-armedAt<4000){
+      var c2=tr.closest('[data-uid]'), uid2=c2&&c2.getAttribute('data-uid');
+      var c=findCard(uid2); if(c&&c.trash) c.trash();
+      var p2=lsGet(LS_PIN,{})||{}; delete p2[uid2]; lsSet(LS_PIN,p2);
+      armedTrash=null; render();
+    }else{
+      if(armedTrash) armedTrash.classList.remove('armed');
+      armedTrash=tr; armedAt=now; tr.classList.add('armed');
+      setTimeout(function(){ if(armedTrash===tr){ tr.classList.remove('armed'); armedTrash=null; } },4000);
+    }
+    return;
+  }
+  var st=e.target.closest('[data-studio]');
+  if(st){
+    e.stopPropagation();
+    var url=st.getAttribute('data-studio');
+    if(url) window.open(url,'_blank','noopener');
+  }
+  /* plain card taps with data-open bubble to the dashboard's handler */
+}
+
+function mount(host,comp){
+  hostEl=host;
+  host.addEventListener('click',onClick);
+  render();
+}
+function unmount(){
+  if(hostEl) hostEl.removeEventListener('click',onClick);
+  hostEl=null; lastCards=[]; armedTrash=null;
+}
+TOOLS.vault={mount:mount,unmount:unmount};
 })();
 
 </script>
