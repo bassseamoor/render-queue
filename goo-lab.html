@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>goo lab — softbody smin × metaball</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { background:#0b0d12; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+  body { padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 20px);
+    max-width:560px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  h1 .goo { color:#b98cff; }
+  .sub { font-size:13px; color:#9aa0ae; margin:6px 0 16px; line-height:1.5; }
+  .sub b { color:#cfd4e0; }
+  #stage { position:relative; }
+  #goo { width:100%; aspect-ratio:4/3; border-radius:16px; display:block; background:#020308;
+    touch-action:none; cursor:crosshair; }
+  .tag { position:absolute; top:10px; left:10px; font-size:11px; font-weight:700; letter-spacing:.08em;
+    background:rgba(0,0,0,.55); color:#b98cff; padding:5px 12px; border-radius:999px; pointer-events:none; }
+  .row { display:flex; align-items:center; gap:12px; margin:14px 0; background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:6px 14px; min-height:56px; }
+  .row .nm { font-size:12px; font-weight:700; width:86px; color:#cfd4e0; }
+  .row input[type=range] { flex:1; height:44px; }
+  .row .val { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#8a90a0; width:52px; text-align:right; }
+  #controls { display:flex; gap:10px; margin:4px 0 14px; }
+  .big { flex:1; border:0; border-radius:999px; padding:14px; font-size:15px; font-weight:700; cursor:pointer; }
+  #shake { background:#b98cff; color:#14101c; }
+  #reset { background:rgba(255,255,255,.08); color:#cfd4e0; border:1px solid rgba(255,255,255,.14); }
+  .big:active { transform:scale(.97); }
+  .stats { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#6b7180; margin:6px 2px; }
+  .prov { margin-top:18px; font-size:11px; color:#565c68; line-height:1.6; }
+  #toast { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 30px); left:50%;
+    transform:translateX(-50%) translateY(20px); background:#1a1d26; color:#b98cff;
+    font-size:13px; font-weight:600; padding:10px 20px; border-radius:999px; opacity:0;
+    transition:all .25s; pointer-events:none; border:1px solid rgba(185,140,255,.35); z-index:50; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<h1>goo <span class="goo">lab</span></h1>
+<p class="sub">tool-creatures' <b>smin()</b> smooth-min union × tool-wonder's <b>metaball</b> blobs.
+Tap to drop goo, drag to smear it. The <b>GOO</b> slider is the smooth-min k — high k melts blobs together.
+Blobs drift, merge, and split as a real signed-distance field.</p>
+
+<div id="stage">
+  <canvas id="goo"></canvas>
+  <div class="tag" id="blobTag">0 blobs</div>
+</div>
+
+<div class="row">
+  <div class="nm">GOO (smin k)</div>
+  <input id="k" type="range" min="4" max="60" step="1" value="24">
+  <div class="val" id="kval">24</div>
+</div>
+
+<div id="controls">
+  <button class="big" id="shake">🌀 shake</button>
+  <button class="big" id="reset">↺ reset</button>
+</div>
+<div class="stats" id="stats"></div>
+
+<p class="prov">Provenance: smin(a,b,k) polynomial smooth-min verbatim from
+pulse-v2/tools/tool-creatures.js (unified-skin SDF union); metaball blobs + radial glow
+from TYPES 'metaball' in pulse-v2/tools/tool-wonder.js, here rasterized as a real
+smooth-union field on a 2D canvas.</p>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ============ PROVENANCE ============
+ * smin(): polynomial smooth-min — VERBATIM from tool-creatures.js
+ *   (buildUnifiedSkin SDF smooth union).
+ * Blob drift + radial-glow rendering: approach of TYPES 'metaball' in
+ *   tool-wonder.js (radial gradients, 'lighter' composite), extended to a
+ *   true smin field so blobs genuinely merge and split.
+ */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+/* verbatim tool-creatures.js */
+function smin(a,b,k){
+  var h=0.5+0.5*(b-a)/k; h=h<0?0:(h>1?1:h);
+  return b+(a-b)*h-k*h*(1-h);
+}
+
+var GW = 128, GH = 96;               /* field resolution */
+var blobs = [];                      /* {x,y,vx,vy,r,hue} in field coords */
+var k = 24;                          /* smooth-min radius in field px */
+var seed = 0x60001, rng = mulberry32(seed);
+var grabbed = null, px = 0, py = 0;
+
+var cv = document.getElementById('goo');
+var ctx = cv.getContext('2d');
+var off = document.createElement('canvas'); off.width = GW; off.height = GH;
+var octx = off.getContext('2d');
+var img = octx.createImageData(GW, GH);
+
+function sizeCanvas(){
+  var r = cv.getBoundingClientRect();
+  cv.width = Math.max(320, r.width*2|0); cv.height = Math.max(240, r.width*2*0.75|0);
+}
+function spawnInitial(){
+  blobs = []; rng = mulberry32(seed);
+  for (var i=0;i<7;i++){
+    blobs.push({
+      x: GW*(0.2+rng()*0.6), y: GH*(0.2+rng()*0.6),
+      vx:(rng()-0.5)*26, vy:(rng()-0.5)*26,
+      r: 7+rng()*6, hue: 250+rng()*50
+    });
+  }
+}
+function addBlob(fx, fy){
+  var r = 6 + rng()*7;
+  blobs.push({x:fx, y:fy, vx:(rng()-0.5)*30, vy:(rng()-0.5)*30, r:r, hue:250+rng()*50});
+  if (blobs.length > 40) blobs.shift();
+}
+function update(dt){
+  for (var i=0;i<blobs.length;i++){
+    var b = blobs[i];
+    if (b === grabbed){ b.vx *= 0.9; b.vy *= 0.9; continue; }
+    /* gentle brownian drift */
+    b.vx += (rng()-0.5)*40*dt; b.vy += (rng()-0.5)*40*dt;
+    var sp = Math.hypot(b.vx,b.vy), maxS = 34;
+    if (sp > maxS){ b.vx *= maxS/sp; b.vy *= maxS/sp; }
+    b.x += b.vx*dt; b.y += b.vy*dt;
+    if (b.x < b.r){ b.x = b.r; b.vx = Math.abs(b.vx); }
+    if (b.x > GW-b.r){ b.x = GW-b.r; b.vx = -Math.abs(b.vx); }
+    if (b.y < b.r){ b.y = b.r; b.vy = Math.abs(b.vy); }
+    if (b.y > GH-b.r){ b.y = GH-b.r; b.vy = -Math.abs(b.vy); }
+  }
+}
+function fieldAt(x, y){
+  /* smooth-union of SDF blobs (negative inside) via verbatim smin */
+  var d = 1e9;
+  for (var i=0;i<blobs.length;i++){
+    var b = blobs[i];
+    var di = Math.hypot(x-b.x, y-b.y) - b.r;
+    d = smin(d, di, k);
+  }
+  return d;
+}
+function components(){
+  /* connected-component count of the filled field — the merge assertion */
+  var seen = new Uint8Array(GW*GH), count = 0;
+  for (var gy=0;gy<GH;gy++) for (var gx=0;gx<GW;gx++){
+    var q = gy*GW+gx;
+    if (seen[q] || fieldAt(gx+0.5, gy+0.5) > 0) continue;
+    count++;
+    var stack = [q]; seen[q]=1;
+    while (stack.length){
+      var c = stack.pop(), cxp=c%GW, cyp=(c/GW)|0;
+      var nb = [[1,0],[-1,0],[0,1],[0,-1]];
+      for (var n=0;n<4;n++){
+        var ax=cxp+nb[n][0], ay=cyp+nb[n][1];
+        if (ax<0||ay<0||ax>=GW||ay>=GH) continue;
+        var aq = ay*GW+ax;
+        if (!seen[aq] && fieldAt(ax+0.5, ay+0.5) <= 0){ seen[aq]=1; stack.push(aq); }
+      }
+    }
+  }
+  return count;
+}
+function render(){
+  var d = img.data;
+  for (var gy=0;gy<GH;gy++) for (var gx=0;gx<GW;gx++){
+    var f = fieldAt(gx+0.5, gy+0.5), o = (gy*GW+gx)*4;
+    if (f <= 0){
+      var depth = Math.min(1, -f/18);
+      d[o]   = 140+90*depth;   /* violet goo body */
+      d[o+1] = 90+40*depth;
+      d[o+2] = 235;
+      d[o+3] = 235;
+    } else if (f < k*1.5){
+      /* glow skirt — the tool-wonder 'lighter' look */
+      var t = 1 - f/(k*1.5);
+      d[o] = 120; d[o+1] = 80; d[o+2] = 220; d[o+3] = (t*t*160)|0;
+    } else {
+      d[o]=d[o+1]=d[o+2]=d[o+3]=0;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  /* dark backdrop */
+  var bg = ctx.createRadialGradient(cv.width/2, cv.height/2, 10, cv.width/2, cv.height/2,
+                                    Math.max(cv.width,cv.height)*0.7);
+  bg.addColorStop(0,'#060a14'); bg.addColorStop(1,'#020308');
+  ctx.fillStyle = bg; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, 0, 0, cv.width, cv.height);
+  document.getElementById('blobTag').textContent = blobs.length + ' blobs · ' + components() + ' masses';
+  document.getElementById('stats').textContent =
+    'smin k=' + k + ' · field ' + GW + '×' + GH + ' · merged masses: ' + components();
+}
+var raf = 0, last = 0;
+function frame(ts){
+  raf = requestAnimationFrame(frame);
+  var dt = Math.min(0.05, (ts-last)/1000 || 0.016); last = ts;
+  update(dt); render();
+}
+
+/* ---- interaction: tap drops, drag smears ---- */
+function toField(e){
+  var r = cv.getBoundingClientRect();
+  return [ (e.clientX-r.left)/r.width*GW, (e.clientY-r.top)/r.height*GH ];
+}
+cv.addEventListener('pointerdown', function(e){
+  cv.setPointerCapture(e.pointerId);
+  var p = toField(e);
+  grabbed = null;
+  for (var i=blobs.length-1;i>=0;i--){
+    var b = blobs[i];
+    if (Math.hypot(p[0]-b.x, p[1]-b.y) < b.r*1.6){ grabbed = b; break; }
+  }
+  if (!grabbed){ addBlob(p[0], p[1]); grabbed = blobs[blobs.length-1]; }
+});
+cv.addEventListener('pointermove', function(e){
+  if (!grabbed) return;
+  var p = toField(e);
+  grabbed.x = Math.max(grabbed.r, Math.min(GW-grabbed.r, p[0]));
+  grabbed.y = Math.max(grabbed.r, Math.min(GH-grabbed.r, p[1]));
+  /* smear: dragging flings a little trail */
+  if (rng() < 0.35 && blobs.length < 40)
+    blobs.push({x:grabbed.x+(rng()-0.5)*4, y:grabbed.y+(rng()-0.5)*4,
+                vx:(rng()-0.5)*20, vy:(rng()-0.5)*20,
+                r:grabbed.r*(0.25+rng()*0.3), hue:grabbed.hue});
+});
+cv.addEventListener('pointerup', function(){ grabbed = null; });
+cv.addEventListener('pointercancel', function(){ grabbed = null; });
+
+function toast(m){
+  var t = document.getElementById('toast');
+  t.textContent = m; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove('show'); }, 1600);
+}
+document.getElementById('shake').onclick = function(){
+  for (var i=0;i<blobs.length;i++){
+    var b = blobs[i];
+    b.vx = (rng()-0.5)*160; b.vy = (rng()-0.5)*160;
+  }
+  toast('shaken — blobs scattered');
+};
+document.getElementById('reset').onclick = function(){ spawnInitial(); toast('fresh goo'); };
+var kInp = document.getElementById('k');
+kInp.oninput = function(){
+  k = +kInp.value;
+  document.getElementById('kval').textContent = k;
+};
+
+/* headless test hook */
+window.__gooTest = {
+  blobCount: function(){ return blobs.length; },
+  components: components,
+  addBlob: function(fx, fy){ blobs.push({x:fx, y:fy, vx:0, vy:0, r:9, hue:270}); },
+  clear: function(){ blobs = []; },
+  setK: function(v){ k = v; kInp.value = v; document.getElementById('kval').textContent = v; },
+  shake: function(){ document.getElementById('shake').click(); },
+  step: function(n, dt){ for (var i=0;i<n;i++) update(dt||0.016); render(); }
+};
+
+sizeCanvas(); spawnInitial(); render();
+requestAnimationFrame(function(ts){ last = ts; frame(ts); });
+</script>
+</body>
+</html>
