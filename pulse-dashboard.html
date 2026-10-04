@@ -584,9 +584,9 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 .resize-handle:hover,.resize-handle.dragging{background:rgba(43,208,255,0.25);}
 .resize-handle::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:#2c4b63;border-radius:1px;}
 .resize-handle:hover::after,.resize-handle.dragging::after{background:#2bd0ff;}
-.app{grid-template-columns:var(--nav-w,260px) 8px minmax(0,1fr);}
-@media(min-width:1750px){.app{grid-template-columns:var(--nav-w,280px) 8px minmax(0,1fr);}}
-@media(max-width:1250px){.app{grid-template-columns:var(--nav-w,230px) 8px minmax(0,1fr);}}
+.app{grid-template-columns:minmax(200px,var(--nav-w,260px)) 8px minmax(0,1fr);}
+@media(min-width:1750px){.app{grid-template-columns:minmax(200px,var(--nav-w,280px)) 8px minmax(0,1fr);}}
+@media(max-width:1250px){.app{grid-template-columns:minmax(180px,var(--nav-w,230px)) 8px minmax(0,1fr);}}
 aside.activity{width:var(--act-w,340px) !important;}
 .act-resize{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:ew-resize;touch-action:none;z-index:2;}
 .act-resize::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:#2c4b63;border-radius:1px;}
@@ -9276,9 +9276,11 @@ $('activity-close').onclick = function(){
   var app=$('app');
   // restore saved widths
   try{
-    var nw=localStorage.getItem('pulse-nav-w'), aw=localStorage.getItem('pulse-act-w');
-    if(nw) app.style.setProperty('--nav-w', nw+'px');
-    if(aw) app.style.setProperty('--act-w', aw+'px');
+    var nw=parseInt(localStorage.getItem('pulse-nav-w')), aw=parseInt(localStorage.getItem('pulse-act-w'));
+    if(nw>=160 && nw<=600) app.style.setProperty('--nav-w', nw+'px');
+    else try{ localStorage.removeItem('pulse-nav-w'); }catch(e){}
+    if(aw>=240 && aw<=800) app.style.setProperty('--act-w', aw+'px');
+    else try{ localStorage.removeItem('pulse-act-w'); }catch(e){}
   }catch(e){}
   // nav resize handle
   var navH=$('nav-resize');
@@ -9312,7 +9314,19 @@ $('activity-close').onclick = function(){
       document.addEventListener('touchend', end);
     }
     navH.addEventListener('mousedown', function(e){ start(e.clientX); e.preventDefault(); });
-    navH.addEventListener('touchstart', function(e){ if(e.touches[0]) start(e.touches[0].clientX); }, {passive:true});
+    // touch: only hijack if it's a horizontal drag, otherwise let it scroll
+    var tSX=0, tSY=0, tActive=false;
+    navH.addEventListener('touchstart', function(e){
+      if(e.touches[0]){ tSX=e.touches[0].clientX; tSY=e.touches[0].clientY; tActive=true; }
+    }, {passive:true});
+    navH.addEventListener('touchmove', function(e){
+      if(!tActive || !e.touches[0]) return;
+      var dx=e.touches[0].clientX-tSX, dy=e.touches[0].clientY-tSY;
+      if(!dragging && Math.abs(dx)>12 && Math.abs(dx)>Math.abs(dy)*1.5){
+        start(tSX); // begin resize drag
+      }
+    }, {passive:true});
+    navH.addEventListener('touchend', function(){ tActive=false; }, {passive:true});
   }
   // activity drawer resize handle (added dynamically)
   function ensureActHandle(){
@@ -9348,12 +9362,21 @@ $('activity-close').onclick = function(){
       document.addEventListener('mouseup', end);
       e.preventDefault(); e.stopPropagation();
     });
+    var aSX=0, aSY=0, aActive=false;
     h.addEventListener('touchstart', function(e){
-      if(e.touches[0]){ dragging=true; startX=e.touches[0].clientX; startW=actW();
-        document.addEventListener('touchmove', tm, {passive:false});
-        document.addEventListener('touchend', end); }
+      if(e.touches[0]){ aSX=e.touches[0].clientX; aSY=e.touches[0].clientY; aActive=true; }
       e.stopPropagation();
     }, {passive:true});
+    h.addEventListener('touchmove', function(e){
+      if(!aActive || !e.touches[0]) return;
+      var dx=e.touches[0].clientX-aSX, dy=e.touches[0].clientY-aSY;
+      if(!dragging && Math.abs(dx)>12 && Math.abs(dx)>Math.abs(dy)*1.5){
+        dragging=true; startX=aSX; startW=actW();
+        document.addEventListener('touchmove', tm, {passive:false});
+        document.addEventListener('touchend', end);
+      }
+    }, {passive:true});
+    h.addEventListener('touchend', function(){ aActive=false; }, {passive:true});
   }
   // ensure handle exists when activity opens
   setInterval(ensureActHandle, 1000);
