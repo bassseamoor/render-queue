@@ -148,7 +148,8 @@ var RANGES = {
   pal:[0,6,1], pick:[0,1000000000,1],
   hue:[0,360,0], layers:[5,9,1], hue2:[0,120,0],
   mode:[0,2,1], semi:[0,11,1], name:[0,3,1],
-  waves:[3,7,1]
+  waves:[3,7,1],
+  rings:[6,12,1], intensity:[1,5,1], flow:[0,2,1]
 };
 function clampJit(v, key, rng){
   var r = RANGES[key]; if (!r) return v;
@@ -303,6 +304,17 @@ function makeCanvas(w, h){
   return {cv:cv, ctx:cv.getContext('2d'), dpr:dpr, w:w, h:h};
 }
 
+var PALS = [
+  {deep:'#0a1a3a',shallow:'#1a4a6a',land:['#2a4a2a','#5a7a3a'],atmo:'#88bbff',sea:0.42},
+  {deep:'#1a0a2a',shallow:'#3a1a4a',land:['#4a2a1a','#8a5a2a'],atmo:'#ff9a66',sea:-1},
+  {deep:'#0a2a2a',shallow:'#1a5a4a',land:['#1a4a2a','#3a7a3a'],atmo:'#aaffcc',sea:0.35},
+  {deep:'#0a0a1a',shallow:'#1a1a3a',land:['#3a3a4a','#6a6a7a'],atmo:'#aaaaff',sea:-1},
+  {deep:'#2a1a0a',shallow:'#5a3a1a',land:['#6a4a1a','#a87a3a'],atmo:'#ffcc88',sea:-1},
+  {deep:'#0a1a2a',shallow:'#1a3a5a',land:['#2a5a6a','#4a8a9a'],atmo:'#88ddff',sea:0.5},
+  {deep:'#1a0a1a',shallow:'#4a1a3a',land:['#3a1a2a','#6a2a4a'],atmo:'#ff88cc',sea:-1},
+  {deep:'#0a0a2a',shallow:'#2a2a5a',land:['#4a4a8a','#7a7acc'],atmo:'#aaaaff',sea:-1}
+];
+
 /* ---------- 1. PLANET — WebGL UV sphere, seeded relief, atmosphere rim ----------
  * genome.p: {pal: palette family 0-6, pick: planet index pick} */
 (function(){
@@ -337,16 +349,6 @@ var FS='precision mediump float;'+
  ' float rim=pow(1.0-abs(dot(N,V)),2.5);'+
  ' lit+=uAtmo*rim*0.9;'+
  ' gl_FragColor=vec4(lit,1.0);}';
-var PALS = [
-  {deep:'#0a1a3a',shallow:'#1a4a6a',land:['#2a4a2a','#5a7a3a'],atmo:'#88bbff',sea:0.42},
-  {deep:'#1a0a2a',shallow:'#3a1a4a',land:['#4a2a1a','#8a5a2a'],atmo:'#ff9a66',sea:-1},
-  {deep:'#0a2a2a',shallow:'#1a5a4a',land:['#1a4a2a','#3a7a3a'],atmo:'#aaffcc',sea:0.35},
-  {deep:'#0a0a1a',shallow:'#1a1a3a',land:['#3a3a4a','#6a6a7a'],atmo:'#aaaaff',sea:-1},
-  {deep:'#2a1a0a',shallow:'#5a3a1a',land:['#6a4a1a','#a87a3a'],atmo:'#ffcc88',sea:-1},
-  {deep:'#0a1a2a',shallow:'#1a3a5a',land:['#2a5a6a','#4a8a9a'],atmo:'#88ddff',sea:0.5},
-  {deep:'#1a0a1a',shallow:'#4a1a3a',land:['#3a1a2a','#6a2a4a'],atmo:'#ff88cc',sea:-1},
-  {deep:'#0a0a2a',shallow:'#2a2a5a',land:['#4a4a8a','#7a7acc'],atmo:'#aaaaff',sea:-1}
-];
 TYPES.push({kind:'planet', icon:'🪐', label:'Planet',
  params: function(r){ return {pal:(r()*PALS.length)|0, pick:(r()*1000000000)|0}; },
  make: function(genome){
@@ -947,6 +949,236 @@ TYPES.push({kind:'tide', icon:'🌊', label:'Tide',
       ctx.fillStyle=og;
       ctx.beginPath(); ctx.arc(ob.x,ob.y,ob.r*4,0,6.2832); ctx.fill();
     }
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+
+/* ---------- 8. MAZE — seeded polar labyrinth, glowing walls ----------
+ * from: comp-maze (wasteland-maze-layout.mjs) — distilled capability:
+ * "seeded polar-grid maze + endless coordinate extension, zero 3D deps"
+ * genome.p: {rings:6-12, hue:0-360} */
+TYPES.push({kind:'maze', icon:'\u{1F300}', label:'Maze',
+ params: function(r){ return {rings:6+((r()*7)|0), hue:r()*360}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Maze '+((seed%900)+100), sub = 'polar labyrinth — from the maze layout';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.46;
+  var NR = Math.round(P.rings), NS = 24;
+  /* carve a spanning tree on the polar grid (randomized DFS) */
+  var walls = [];
+  for (var ri=0;ri<NR;ri++){ walls[ri]=[]; for (var si=0;si<NS;si++) walls[ri][si]={r:true,t:true}; }
+  var visited = [];
+  for (var vi=0;vi<NR;vi++){ visited[vi]=[]; for (var vj=0;vj<NS;vj++) visited[vi][vj]=false; }
+  var stack = [[0,(rng()*NS)|0]];
+  visited[stack[0][0]][stack[0][1]] = true;
+  while (stack.length){
+    var cur = stack[stack.length-1], cr = cur[0], cs = cur[1];
+    var nbs = [];
+    if (cr+1<NR && !visited[cr+1][cs]) nbs.push([cr+1,cs,'r']);
+    if (cr-1>=0 && !visited[cr-1][cs]) nbs.push([cr-1,cs,'r2']);
+    if (!visited[cr][(cs+1)%NS]) nbs.push([cr,(cs+1)%NS,'t']);
+    if (!visited[cr][(cs-1+NS)%NS]) nbs.push([cr,(cs-1+NS)%NS,'t2']);
+    if (!nbs.length){ stack.pop(); continue; }
+    var nx = nbs[(rng()*nbs.length)|0];
+    if (nx[2]==='r') walls[cr][cs].r = false;
+    else if (nx[2]==='r2') walls[nx[0]][nx[1]].r = false;
+    else if (nx[2]==='t') walls[cr][cs].t = false;
+    else walls[nx[0]][nx[1]].t = false;
+    visited[nx[0]][nx[1]] = true;
+    stack.push([nx[0],nx[1]]);
+  }
+  /* pulse path: random walk through carved passages */
+  var pr = 0, ps = (rng()*NS)|0, pt = 0;
+  var hue = P.hue, raf = 0, t = 0;
+  function ringR(r){ return R*(r+1)/NR; }
+  function cellXY(r, s){
+    var a = (s/NS)*Math.PI*2, rr = ringR(r)- (R/NR)*0.5;
+    return [cx+Math.cos(a)*rr, cy+Math.sin(a)*rr];
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(cx,cy,10,cx,cy,R*1.3);
+    bg.addColorStop(0,'#060a14'); bg.addColorStop(1,'#020308');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.strokeStyle = 'hsla('+hue+',80%,60%,.85)';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = 'hsla('+hue+',90%,60%,.9)';
+    ctx.shadowBlur = 10;
+    for (var ri2=0;ri2<NR;ri2++){
+      for (var si2=0;si2<NS;si2++){
+        var a0=(si2/NS)*Math.PI*2, a1=((si2+1)/NS)*Math.PI*2;
+        var r0=ringR(ri2);
+        if (walls[ri2][si2].r){
+          ctx.beginPath();
+          ctx.arc(cx,cy,r0,a0,a1);
+          ctx.stroke();
+        }
+        if (walls[ri2][si2].t){
+          ctx.beginPath();
+          ctx.moveTo(cx+Math.cos(a0)* (ri2? ringR(ri2-1):0), cy+Math.sin(a0)*(ri2?ringR(ri2-1):0));
+          ctx.lineTo(cx+Math.cos(a0)*r0, cy+Math.sin(a0)*r0);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+    /* move pulse every few frames */
+    pt += 0.016;
+    if (pt > 0.12){
+      pt = 0;
+      var opts = [];
+      if (!walls[pr][ps].r && pr+1<NR) opts.push([pr+1,ps]);
+      if (pr>0 && !walls[pr-1][ps].r) opts.push([pr-1,ps]);
+      if (!walls[pr][ps].t) opts.push([pr,(ps+1)%NS]);
+      if (!walls[pr][(ps-1+NS)%NS].t) opts.push([pr,(ps-1+NS)%NS]);
+      if (opts.length){ var o = opts[(rng()*opts.length)|0]; pr=o[0]; ps=o[1]; }
+    }
+    var pp = cellXY(pr,ps);
+    var pg = ctx.createRadialGradient(pp[0],pp[1],1,pp[0],pp[1],26);
+    pg.addColorStop(0,'hsla('+((hue+60)%360)+',100%,80%,1)');
+    pg.addColorStop(1,'hsla('+((hue+60)%360)+',100%,70%,0)');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(pp[0],pp[1],26,0,6.2832); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(pp[0],pp[1],4,0,6.2832); ctx.fill();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 9. SWARM — wave-directed particle bursts ----------
+ * from: spawn-director — distilled capability:
+ * "enemy wave pacing (spawn/swarm curves, unlock schedule, kill reporting)"
+ * genome.p: {hue:0-360, intensity:1-5} */
+TYPES.push({kind:'swarm', icon:'\u{1F41D}', label:'Swarm',
+ params: function(r){ return {hue:r()*360, intensity:1+((r()*5)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Swarm '+((seed%900)+100), sub = 'wave pacing — from the spawn director';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, inten = Math.round(P.intensity);
+  /* simplified director: unlock schedule + swarm timer */
+  var t = 0, spawnT = 0, swarmT = 8, wave = 0;
+  var parts = [];
+  function spawnBurst(n, big){
+    for (var i=0;i<n;i++){
+      var a = rng()*6.2832, sp = (big? 60:20)+rng()*(big?140:60);
+      parts.push({x:Wd/2+(rng()-0.5)*40, y:Ht/2+(rng()-0.5)*40,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+        life:1, decay:0.25+rng()*0.4, r:big?2+rng()*4:1+rng()*2.5,
+        hue:(hue+rng()*50)%360});
+    }
+  }
+  var raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt;
+    /* director tick */
+    spawnT -= dt; swarmT -= dt;
+    if (spawnT <= 0){ spawnBurst(4+inten*3, false); spawnT = Math.max(0.25, 1.2 - wave*0.08); }
+    if (swarmT <= 0){ wave++; spawnBurst(20+inten*12, true); swarmT = 6+wave*0.8; }
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(Wd/2,Ht/2,10,Wd/2,Ht/2,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'#0a0714'); bg.addColorStop(1,'#030208');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=parts.length-1;i>=0;i--){
+      var p = parts[i];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.vx *= 0.985; p.vy *= 0.985;
+      p.life -= p.decay*dt;
+      if (p.life <= 0){ parts.splice(i,1); continue; }
+      var g = ctx.createRadialGradient(p.x,p.y,0.5,p.x,p.y,p.r*4);
+      g.addColorStop(0,'hsla('+p.hue+',95%,70%,'+(0.8*p.life)+')');
+      g.addColorStop(1,'hsla('+p.hue+',95%,65%,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r*4,0,6.2832); ctx.fill();
+    }
+    ctx.restore();
+    /* wave banner */
+    ctx.fillStyle = 'rgba(200,180,255,.5)';
+    ctx.font = '12px system-ui';
+    ctx.fillText('wave '+wave+' · next swarm in '+Math.max(0,swarmT).toFixed(1)+'s', 14, Ht-14);
+    if (parts.length > 900) parts.splice(0, parts.length-900);
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 10. SPECTRUM — flowing planet-palette gradients ----------
+ * from: palettes (PTEX/MAT) — distilled capability:
+ * "10 planet-type color tables; schema is the value"
+ * genome.p: {pal:0-7, flow:0-2} */
+TYPES.push({kind:'spectrum', icon:'\u{1F308}', label:'Spectrum',
+ params: function(r){ return {pal:(r()*PALS.length)|0, flow:(r()*3)|0}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Spectrum '+((seed%900)+100), sub = 'palette fields — from the color tables';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var pal = PALS[P.pal % PALS.length];
+  var flow = P.flow;
+  /* collect palette colors into a band */
+  var cols = [pal.deep, pal.shallow, pal.land[0], pal.land[1], pal.atmo];
+  var t = rng()*100, raf = 0;
+  var NB = 7, bands = [];
+  for (var i=0;i<NB;i++){
+    bands.push({c:cols[i%cols.length], y0:i/NB, th:0.5+rng()*0.9,
+      f:0.8+rng()*2.2, sp:0.2+rng()*0.8, ph:rng()*6.28, amp:Ht*(0.02+rng()*0.05)});
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    ctx.fillStyle = '#04060c'; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=0;i<NB;i++){
+      var b = bands[i];
+      ctx.beginPath();
+      for (var x=0;x<=Wd;x+=6){
+        var y;
+        if (flow===0) y = Ht*(b.y0 + Math.sin(x/Wd*6.28*b.f + t*b.sp + b.ph)*0.06);
+        else if (flow===1) y = Ht*(b.y0 + Math.sin(x/Wd*6.28*b.f - t*b.sp*1.4 + b.ph)*0.09 + Math.sin(t*0.7+b.ph)*0.03);
+        else y = Ht*(0.5 + (b.y0-0.5)*0.7 + Math.sin(x/Wd*12.56*b.f*0.5 + t*b.sp*2 + b.ph)*b.amp/Ht*3);
+        if (x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      for (var x2=Wd;x2>=0;x2-=6){
+        var y2;
+        if (flow===0) y2 = Ht*(b.y0 + Math.sin(x2/Wd*6.28*b.f + t*b.sp + b.ph)*0.06) + Ht*0.09*b.th;
+        else if (flow===1) y2 = Ht*(b.y0 + Math.sin(x2/Wd*6.28*b.f - t*b.sp*1.4 + b.ph)*0.09 + Math.sin(t*0.7+b.ph)*0.03) + Ht*0.11*b.th;
+        else y2 = Ht*(0.5 + (b.y0-0.5)*0.7 + Math.sin(x2/Wd*12.56*b.f*0.5 + t*b.sp*2 + b.ph)*b.amp/Ht*3) + Ht*0.07*b.th;
+        ctx.lineTo(x2,y2);
+      }
+      ctx.closePath();
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = b.c;
+      ctx.shadowColor = b.c; ctx.shadowBlur = 24;
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
   return { el:el, title:title, sub:sub,
     start:function(){ if(!raf) frame(); },
