@@ -278,6 +278,371 @@ function ball(geo, r, x,y,z, c, ws, hs){
 function hx(c){ return [parseInt(c.slice(1,3),16)/255,parseInt(c.slice(3,5),16)/255,parseInt(c.slice(5,7),16)/255]; }
 
 /* ================= compiler: anatomy -> runtime assets ================= */
+/* ================= UNIFIED SKIN =================
+ * One continuous mesh over the whole animal. The body plan is a signed
+ * distance field (SDF): smooth-unioned spheres/cones for torso, neck, head,
+ * muzzle, muscle masses, legs, paws, tail. Surface nets polygonizes it into
+ * a SINGLE watertight skin — no bolted parts. Legs/tail bend the skin via
+ * procedural skinning; every vertex is a spring toward its skinned target,
+ * so the whole body is soft tissue. */
+function smin(a,b,k){
+  var h=0.5+0.5*(b-a)/k; h=h<0?0:(h>1?1:h);
+  return b+(a-b)*h-k*h*(1-h);
+}
+function sdSph(px,py,pz,cx,cy,cz,r){
+  var dx=px-cx,dy=py-cy,dz=pz-cz;
+  return Math.sqrt(dx*dx+dy*dy+dz*dz)-r;
+}
+function sdCone(px,py,pz,ax,ay,az,bx,by,bz,r1,r2){
+  var bax=bx-ax,bay=by-ay,baz=bz-az;
+  var pax=px-ax,pay=py-ay,paz=pz-az;
+  var bb=bax*bax+bay*bay+baz*baz;
+  var h=(pax*bax+pay*bay+paz*baz)/(bb>1e-9?bb:1e-9);
+  h=h<0?0:(h>1?1:h);
+  var r=r1+(r2-r1)*h;
+  var dx=pax-bax*h,dy=pay-bay*h,dz=paz-baz*h;
+  return Math.sqrt(dx*dx+dy*dy+dz*dz)-r;
+}
+function subdividePts(pts,n){
+  var lens=[0];
+  for (var i=1;i<pts.length;i++){
+    var dx=pts[i][0]-pts[i-1][0],dy=pts[i][1]-pts[i-1][1],dz=pts[i][2]-pts[i-1][2];
+    lens.push(lens[i-1]+Math.sqrt(dx*dx+dy*dy+dz*dz));
+  }
+  var total=lens[lens.length-1]||1e-9, out=[], seg=0;
+  for (var s=0;s<=n;s++){
+    var d=total*s/n;
+    while (seg<lens.length-2&&lens[seg+1]<d) seg++;
+    var f=(d-lens[seg])/((lens[seg+1]-lens[seg])||1e-9);
+    out.push([pts[seg][0]+(pts[seg+1][0]-pts[seg][0])*f,
+              pts[seg][1]+(pts[seg+1][1]-pts[seg][1])*f,
+              pts[seg][2]+(pts[seg+1][2]-pts[seg][2])*f]);
+  }
+  return out;
+}
+/* rotate vector v by the minimal rotation taking unit a -> unit b */
+function rotVec(ax,ay,az,bx,by,bz,vx,vy,vz){
+  var cx=ay*bz-az*by, cy=az*bx-ax*bz, cz=ax*by-ay*bx;
+  var dot=ax*bx+ay*by+az*bz;
+  var cxx=cy*vz-cz*vy, cyy=cz*vx-cx*vz, czz=cx*vy-cy*vx;
+  var cdotv=cx*vx+cy*vy+cz*vz;
+  var f=(1+dot)>1e-6 ? cdotv/(1+dot) : 0;
+  return [vx*dot+cxx+cx*f, vy*dot+cyy+cy*f, vz*dot+czz+cz*f];
+}
+
+function buildUnifiedSkin(g, M, skin, skinB, bellyC, padC){
+  var L=g.bodyLen, W=g.bodyW, H=g.bodyH;
+  var upperL=g.legLen*g.upperFrac, lowerL=g.legLen*(1-g.upperFrac);
+  var K=0.085, KK=0.06;
+  /* skeleton (rest pose, local: +X forward, Y up). Hip roots match the
+   * anatomy legDefs so the walk IK drives the skin exactly. */
+  var spine=[
+    [-L*0.50,H*0.10,W*0.30],[-L*0.36,H*0.12,W*0.42],[-L*0.18,H*0.10,W*0.50],
+    [L*0.02,H*0.12,W*0.52],[L*0.22,H*0.16,W*0.48],[L*0.36,H*0.24,W*0.40],
+    [L*0.46,H*0.32,W*0.32]
+  ];
+  var neckA=[L*0.46,H*0.32,0], neckB=[L*0.60,H*0.52,0];
+  var headC=[L*0.68,H*0.58,0], headR=W*0.26;
+  var muzzleC=[L*0.82,H*0.53,0], muzzleR=W*0.145;
+  var legs=[];
+  for (var li=0;li<4;li++){
+    var along=(li<2?0.32:-0.32), sz=(li%2===0?1:-1);
+    var hx=along*L, hz=sz*W*0.32, hy=-H*0.22;
+    var hip=[hx,hy,hz];
+    var knee=[hx+upperL*0.22,hy-upperL*0.94,hz*1.02];
+    var ankle=[hx-upperL*0.02,knee[1]-lowerL*0.62,hz*1.02];
+    var foot=[hx+0.12,-g.legLen,hz*1.02];
+    legs.push([hip,knee,ankle,foot]);
+  }
+  var tailPts=[];
+  var nTail=Math.max(3,Math.min(6,g.tailSegs+2));
+  var tailLen=0.5+g.tailSegs*0.16;
+  for (var ti=0;ti<=nTail;ti++){
+    var f=ti/nTail;
+    tailPts.push([-L*0.50-tailLen*f, H*0.10+Math.sin(f*2.0)*0.07-f*0.06, 0]);
+  }
+  var tailR0=0.13;
+  /* SDF: smooth union of everything = the flesh */
+  function sdf(x,y,z){
+    var d=1e9, i, s;
+    for (i=0;i<spine.length;i++){ s=spine[i]; d=smin(d,sdSph(x,y,z,s[0],s[1],0,s[2]),K); }
+    d=smin(d,sdCone(x,y,z,neckA[0],neckA[1],neckA[2],neckB[0],neckB[1],neckB[2],0.20,0.15),K);
+    d=smin(d,sdSph(x,y,z,headC[0],headC[1],headC[2],headR),K);
+    d=smin(d,sdSph(x,y,z,muzzleC[0],muzzleC[1],muzzleC[2],muzzleR),K);
+    for (i=0;i<4;i++){
+      var lg=legs[i], mr=i<2?W*0.20:W*0.27;
+      d=smin(d,sdSph(x,y,z,lg[0][0],lg[0][1]+0.06,lg[0][2],mr),K);
+      d=smin(d,sdCone(x,y,z,lg[0][0],lg[0][1],lg[0][2],lg[1][0],lg[1][1],lg[1][2],0.15,0.095),KK);
+      d=smin(d,sdCone(x,y,z,lg[1][0],lg[1][1],lg[1][2],lg[2][0],lg[2][1],lg[2][2],0.095,0.065),KK);
+      d=smin(d,sdCone(x,y,z,lg[2][0],lg[2][1],lg[2][2],lg[3][0],lg[3][1],lg[3][2],0.065,0.085),KK);
+      d=smin(d,sdSph(x,y,z,lg[3][0],lg[3][1],lg[3][2],0.095),KK);
+    }
+    for (i=0;i<tailPts.length-1;i++){
+      var a=tailPts[i], b=tailPts[i+1];
+      var r0=tailR0*(1-i/tailPts.length)+0.015, r1=tailR0*(1-(i+1)/tailPts.length)+0.015;
+      d=smin(d,sdCone(x,y,z,a[0],a[1],a[2],b[0],b[1],b[2],r0,r1),KK);
+    }
+    return d;
+  }
+  /* surface nets */
+  var minX=-L*0.85, maxX=L*1.05;
+  var minY=-g.legLen*1.25, maxY=H*1.0;
+  var minZ=-W*0.85, maxZ=W*0.85;
+  var nx=76;
+  var ny=Math.max(24,Math.round(nx*(maxY-minY)/(maxX-minX)));
+  var nz=Math.max(24,Math.round(nx*(maxZ-minZ)/(maxX-minX)));
+  var sx=nx+1, sy=ny+1, sz=nz+1;
+  var field=new Float32Array(sx*sy*sz);
+  function idx3(i,j,k){ return (k*sy+j)*sx+i; }
+  for (var k=0;k<sz;k++){
+    var z=minZ+(maxZ-minZ)*k/nz;
+    for (var j=0;j<sy;j++){
+      var y=minY+(maxY-minY)*j/ny, row=(k*sy+j)*sx;
+      for (var i=0;i<sx;i++) field[row+i]=sdf(minX+(maxX-minX)*i/nx, y, z);
+    }
+  }
+  var cellVert=new Int32Array(nx*ny*nz).fill(-1);
+  var vpos=[];
+  function cidx(ci,cj,ck){ return (ck*ny+cj)*nx+ci; }
+  var EDGES=[
+    [[0,0,0],[1,0,0]],[[0,1,0],[1,1,0]],[[0,0,1],[1,0,1]],[[0,1,1],[1,1,1]],
+    [[0,0,0],[0,1,0]],[[1,0,0],[1,1,0]],[[0,0,1],[0,1,1]],[[1,0,1],[1,1,1]],
+    [[0,0,0],[0,0,1]],[[1,0,0],[1,0,1]],[[0,1,0],[0,1,1]],[[1,1,0],[1,1,1]]
+  ];
+  for (var ck=0;ck<nz;ck++) for (var cj=0;cj<ny;cj++) for (var ci=0;ci<nx;ci++){
+    var sign=field[idx3(ci,cj,ck)]<0?1:0, mixed=false;
+    for (var cn=1;cn<8&&!mixed;cn++){
+      var ox=(cn&1), oy=(cn&2)?1:0, oz=(cn&4)?1:0;
+      if ((field[idx3(ci+ox,cj+oy,ck+oz)]<0?1:0)!==sign) mixed=true;
+    }
+    if (!mixed) continue;
+    var ax=0,ay=0,az=0,cnt=0;
+    for (var e=0;e<12;e++){
+      var A=EDGES[e][0], B=EDGES[e][1];
+      var va=field[idx3(ci+A[0],cj+A[1],ck+A[2])];
+      var vb=field[idx3(ci+B[0],cj+B[1],ck+B[2])];
+      if ((va<0)===(vb<0)) continue;
+      var t=va/(va-vb);
+      ax+=ci+A[0]+(B[0]-A[0])*t; ay+=cj+A[1]+(B[1]-A[1])*t; az+=ck+A[2]+(B[2]-A[2])*t;
+      cnt++;
+    }
+    if (!cnt) continue;
+    vpos.push(minX+(maxX-minX)*(ax/cnt)/nx, minY+(maxY-minY)*(ay/cnt)/ny, minZ+(maxZ-minZ)*(az/cnt)/nz);
+    cellVert[cidx(ci,cj,ck)]=vpos.length/3-1;
+  }
+  var indices=[];
+  function quad(v0,v1,v2,v3){
+    if (v0<0||v1<0||v2<0||v3<0) return;
+    indices.push(v0,v1,v2, v0,v2,v3);
+  }
+  var i2,j2,k2,i3,j3,k3,i4,j4,k4;
+  for (k2=1;k2<nz;k2++) for (j2=1;j2<ny;j2++) for (i2=0;i2<nx;i2++){
+    if ((field[idx3(i2,j2,k2)]<0)===(field[idx3(i2+1,j2,k2)]<0)) continue;
+    quad(cellVert[cidx(i2,j2-1,k2-1)],cellVert[cidx(i2,j2,k2-1)],
+         cellVert[cidx(i2,j2,k2)],cellVert[cidx(i2,j2-1,k2)]);
+  }
+  for (k3=1;k3<nz;k3++) for (j3=0;j3<ny;j3++) for (i3=1;i3<nx;i3++){
+    if ((field[idx3(i3,j3,k3)]<0)===(field[idx3(i3,j3+1,k3)]<0)) continue;
+    quad(cellVert[cidx(i3-1,j3,k3-1)],cellVert[cidx(i3,j3,k3-1)],
+         cellVert[cidx(i3,j3,k3)],cellVert[cidx(i3-1,j3,k3)]);
+  }
+  for (k4=0;k4<nz;k4++) for (j4=1;j4<ny;j4++) for (i4=1;i4<nx;i4++){
+    if ((field[idx3(i4,j4,k4)]<0)===(field[idx3(i4,j4,k4+1)]<0)) continue;
+    quad(cellVert[cidx(i4-1,j4-1,k4)],cellVert[cidx(i4,j4-1,k4)],
+         cellVert[cidx(i4,j4,k4)],cellVert[cidx(i4-1,j4,k4)]);
+  }
+  function grad(x,y,z){
+    var e=0.012;
+    return [sdf(x+e,y,z)-sdf(x-e,y,z), sdf(x,y+e,z)-sdf(x,y-e,z), sdf(x,y,z+e)-sdf(x,y,z-e)];
+  }
+  /* fix winding so faces point outward */
+  for (var t3=0;t3<indices.length;t3+=3){
+    var ia=indices[t3]*3, ib=indices[t3+1]*3, ic=indices[t3+2]*3;
+    var ax3=vpos[ia],ay3=vpos[ia+1],az3=vpos[ia+2];
+    var bx3=vpos[ib],by3=vpos[ib+1],bz3=vpos[ib+2];
+    var cx3=vpos[ic],cy3=vpos[ic+1],cz3=vpos[ic+2];
+    var ux=bx3-ax3,uy=by3-ay3,uz=bz3-az3, vx=cx3-ax3,vy=cy3-ay3,vz=cz3-az3;
+    var fnx=uy*vz-uz*vy, fny=uz*vx-ux*vz, fnz=ux*vy-uy*vx;
+    var gg=grad((ax3+bx3+cx3)/3,(ay3+by3+cy3)/3,(az3+bz3+cz3)/3);
+    if (fnx*gg[0]+fny*gg[1]+fnz*gg[2]<0){
+      var tmp=indices[t3+1]; indices[t3+1]=indices[t3+2]; indices[t3+2]=tmp;
+    }
+  }
+  var nv=vpos.length/3;
+  var rest=new Float32Array(vpos);
+  var nrm=new Float32Array(vpos.length);
+  for (var vi=0;vi<vpos.length;vi+=3){
+    var g2=grad(vpos[vi],vpos[vi+1],vpos[vi+2]);
+    var l=Math.hypot(g2[0],g2[1],g2[2])||1;
+    nrm[vi]=g2[0]/l; nrm[vi+1]=g2[1]/l; nrm[vi+2]=g2[2]/l;
+  }
+  /* skinning: assign each vertex to a body part + bone params */
+  var SUB=12, SUBT=8;
+  var legRestSub=legs.map(function(lg){ return subdividePts(lg,SUB); });
+  var tailRestSub=subdividePts(tailPts,SUBT);
+  var legRestDir=legRestSub.map(function(sp){
+    var dd=[];
+    for (var s=0;s<SUB;s++){
+      var dx=sp[s+1][0]-sp[s][0], dy=sp[s+1][1]-sp[s][1], dz=sp[s+1][2]-sp[s][2];
+      var ll=Math.hypot(dx,dy,dz)||1e-9;
+      dd.push([dx/ll,dy/ll,dz/ll]);
+    }
+    return dd;
+  });
+  var tailRestDir=[];
+  for (var s2=0;s2<SUBT;s2++){
+    var dx2=tailRestSub[s2+1][0]-tailRestSub[s2][0],
+        dy2=tailRestSub[s2+1][1]-tailRestSub[s2][1],
+        dz2=tailRestSub[s2+1][2]-tailRestSub[s2][2];
+    var ll2=Math.hypot(dx2,dy2,dz2)||1e-9;
+    tailRestDir.push([dx2/ll2,dy2/ll2,dz2/ll2]);
+  }
+  function nearestOn(sp,x,y,z){
+    var best=null;
+    for (var s=0;s<sp.length-1;s++){
+      var ax=sp[s][0],ay=sp[s][1],az=sp[s][2];
+      var bx=sp[s+1][0],by=sp[s+1][1],bz=sp[s+1][2];
+      var abx=bx-ax,aby=by-ay,abz=bz-az;
+      var t=((x-ax)*abx+(y-ay)*aby+(z-az)*abz)/((abx*abx+aby*aby+abz*abz)||1e-9);
+      t=t<0?0:(t>1?1:t);
+      var cx=ax+abx*t, cy=ay+aby*t, cz=az+abz*t;
+      var dx=x-cx, dy=y-cy, dz=z-cz, d2=dx*dx+dy*dy+dz*dz;
+      if (!best||d2<best.d2) best={sub:s,t:t,cx:cx,cy:cy,cz:cz,d2:d2};
+    }
+    return best;
+  }
+  var skind=new Array(nv);
+  for (var q=0;q<nv;q++){
+    var o=q*3, x=vpos[o], y=vpos[o+1], z=vpos[o+2];
+    var dB=1e9, head=false, si;
+    for (si=0;si<spine.length;si++){ var sp2=spine[si]; var dd=sdSph(x,y,z,sp2[0],sp2[1],0,sp2[2]); if (dd<dB) dB=dd; }
+    var dn=sdCone(x,y,z,neckA[0],neckA[1],neckA[2],neckB[0],neckB[1],neckB[2],0.20,0.15);
+    if (dn<dB){ dB=dn; head=true; }
+    var dh=sdSph(x,y,z,headC[0],headC[1],headC[2],headR);
+    if (dh<dB){ dB=dh; head=true; }
+    var dm=sdSph(x,y,z,muzzleC[0],muzzleC[1],muzzleC[2],muzzleR);
+    if (dm<dB){ dB=dm; head=true; }
+    var bestLeg=-1, bestLI=null, dL2=1e9;
+    for (var ql=0;ql<4;ql++){
+      var inf=nearestOn(legRestSub[ql],x,y,z);
+      if (inf.d2<dL2){ dL2=inf.d2; bestLeg=ql; bestLI=inf; }
+    }
+    var tInf=nearestOn(tailRestSub,x,y,z);
+    var dLs=Math.sqrt(dL2), dT=Math.sqrt(tInf.d2);
+    if (dLs<dB && dLs<dT){
+      skind[q]={part:2+bestLeg,sub:bestLI.sub,t:bestLI.t,rx:x-bestLI.cx,ry:y-bestLI.cy,rz:z-bestLI.cz};
+    } else if (dT<dB){
+      skind[q]={part:6,sub:tInf.sub,t:tInf.t,rx:x-tInf.cx,ry:y-tInf.cy,rz:z-tInf.cz};
+    } else {
+      skind[q]={part:head?1:0};
+    }
+  }
+  /* colors: countershading + markings + dark paws/muzzle */
+  var col=new Float32Array(vpos.length);
+  var dark=[skin[0]*0.60,skin[1]*0.60,skin[2]*0.60];
+  for (var q2=0;q2<nv;q2++){
+    var o2=q2*3, x2=vpos[o2], y2=vpos[o2+1], z2=vpos[o2+2], p2=skind[q2].part;
+    var hf=(y2+H*0.35)/(H*1.05); hf=hf<0?0:(hf>1?1:hf);
+    var c;
+    if (hf<0.5){
+      var f2=hf/0.5;
+      c=[bellyC[0]+(skin[0]-bellyC[0])*f2,bellyC[1]+(skin[1]-bellyC[1])*f2,bellyC[2]+(skin[2]-bellyC[2])*f2];
+    } else {
+      var f3=(hf-0.5)/0.5;
+      c=[skin[0]+(dark[0]-skin[0])*f3,skin[1]+(dark[1]-skin[1])*f3,skin[2]+(dark[2]-skin[2])*f3];
+    }
+    if (g.markingAmt>0.05&&hf>0.55){
+      var mk=g.marking<0.5 ? (Math.sin(x2*9+g.marking*20)>0.55?1:0)
+                           : (Math.sin(x2*22+z2*18+g.marking*30)>0.72?1:0);
+      if (mk){
+        var amt=g.markingAmt*0.55;
+        c=[c[0]*(1-amt)+dark[0]*amt,c[1]*(1-amt)+dark[1]*amt,c[2]*(1-amt)+dark[2]*amt];
+      }
+    }
+    if (p2>=2&&p2<=5){
+      c=[c[0]*0.90,c[1]*0.90,c[2]*0.90];
+      if (y2<-g.legLen*0.72){ c=[padC[0]*0.9+0.05,padC[1]*0.9+0.05,padC[2]*0.9+0.05]; }
+    }
+    if (p2===6&&skind[q2].t>0.75){ c=[c[0]*0.85,c[1]*0.85,c[2]*0.85]; }
+    col[o2]=c[0]; col[o2+1]=c[1]; col[o2+2]=c[2];
+  }
+  /* eyes + nose sit ON the skin (separate small meshes, follow the head) */
+  function eyePos(sideSign){
+    var dx=0.549, dy=0.279, dz=0.788*sideSign;
+    var rr=headR*0.94;
+    return [headC[0]+dx*rr, headC[1]+dy*rr, headC[2]+dz*rr];
+  }
+  return {
+    rest:rest, nrm:nrm, col:col, idx:new Uint32Array(indices), nv:nv,
+    skin:skind, legs:legs, legRestSub:legRestSub, legRestDir:legRestDir,
+    tailRestSub:tailRestSub, tailRestDir:tailRestDir, SUB:SUB, SUBT:SUBT,
+    headC:headC, headR:headR,
+    eyeL:eyePos(1), eyeR:eyePos(-1),
+    nose:[muzzleC[0]+muzzleR*0.92, muzzleC[1]+0.01, 0],
+    simPos:new Float32Array(rest), simVel:new Float32Array(rest.length),
+    simNrm:new Float32Array(nrm)
+  };
+}
+
+/* per-frame: bend the skin by the animated skeleton, then relax every
+ * vertex toward its target with a spring. Whole-body soft tissue. */
+function deformSkin(sm, legAnim, tailAnim, softness, dt, accX, accZ){
+  var SUB=sm.SUB, SUBT=sm.SUBT, li, s;
+  var legSub=[], legDir=[];
+  for (li=0;li<4;li++){
+    var sp=subdividePts(legAnim[li],SUB);
+    legSub.push(sp);
+    var dd=[];
+    for (s=0;s<SUB;s++){
+      var ax=sp[s][0],ay=sp[s][1],az=sp[s][2];
+      var bx=sp[s+1][0],by=sp[s+1][1],bz=sp[s+1][2];
+      var l=Math.hypot(bx-ax,by-ay,bz-az)||1e-9;
+      dd.push([(bx-ax)/l,(by-ay)/l,(bz-az)/l]);
+    }
+    legDir.push(dd);
+  }
+  var tsp=subdividePts(tailAnim,SUBT), tdd=[];
+  for (s=0;s<SUBT;s++){
+    var ax2=tsp[s][0],ay2=tsp[s][1],az2=tsp[s][2];
+    var bx2=tsp[s+1][0],by2=tsp[s+1][1],bz2=tsp[s+1][2];
+    var l2=Math.hypot(bx2-ax2,by2-ay2,bz2-az2)||1e-9;
+    tdd.push([(bx2-ax2)/l2,(by2-ay2)/l2,(bz2-az2)/l2]);
+  }
+  var stiff=Math.max(22, 95-softness*42);
+  var damp=Math.max(3.2, 8.5-softness*3);
+  var rest=sm.rest, simP=sm.simPos, simV=sm.simVel, simN=sm.simNrm, restN=sm.nrm;
+  var sk=sm.skin;
+  var kdt=stiff*dt, dampF=Math.max(0,1-damp*dt);
+  for (var vi=0;vi<sm.nv;vi++){
+    var o=vi*3, sd=sk[vi], tx,ty,tz;
+    if (sd.part>=2&&sd.part<=5){
+      var L2=sd.part-2, sp2=legSub[L2], dd2=legDir[L2], sdi=sd.sub;
+      var p0=sp2[sdi], p1=sp2[sdi+1];
+      var bx3=p0[0]+(p1[0]-p0[0])*sd.t, by3=p0[1]+(p1[1]-p0[1])*sd.t, bz3=p0[2]+(p1[2]-p0[2])*sd.t;
+      var rd=sm.legRestDir[L2][sdi], ad=dd2[sdi];
+      var rr=rotVec(rd[0],rd[1],rd[2],ad[0],ad[1],ad[2],sd.rx,sd.ry,sd.rz);
+      var rn=rotVec(rd[0],rd[1],rd[2],ad[0],ad[1],ad[2],restN[o],restN[o+1],restN[o+2]);
+      tx=bx3+rr[0]; ty=by3+rr[1]; tz=bz3+rr[2];
+      simN[o]=rn[0]; simN[o+1]=rn[1]; simN[o+2]=rn[2];
+    } else if (sd.part===6){
+      var sdi2=sd.sub;
+      var q0=tsp[sdi2], q1=tsp[sdi2+1];
+      var cx4=q0[0]+(q1[0]-q0[0])*sd.t, cy4=q0[1]+(q1[1]-q0[1])*sd.t, cz4=q0[2]+(q1[2]-q0[2])*sd.t;
+      var rd2=sm.tailRestDir[sdi2], ad2=tdd[sdi2];
+      var rr2=rotVec(rd2[0],rd2[1],rd2[2],ad2[0],ad2[1],ad2[2],sd.rx,sd.ry,sd.rz);
+      var rn2=rotVec(rd2[0],rd2[1],rd2[2],ad2[0],ad2[1],ad2[2],restN[o],restN[o+1],restN[o+2]);
+      tx=cx4+rr2[0]; ty=cy4+rr2[1]; tz=cz4+rr2[2];
+      simN[o]=rn2[0]; simN[o+1]=rn2[1]; simN[o+2]=rn2[2];
+    } else {
+      tx=rest[o]; ty=rest[o+1]; tz=rest[o+2];
+    }
+    simV[o]=(simV[o]+(tx-simP[o])*kdt)*dampF+accX*dt;
+    simV[o+1]=(simV[o+1]+(ty-simP[o+1])*kdt)*dampF;
+    simV[o+2]=(simV[o+2]+(tz-simP[o+2])*kdt)*dampF+accZ*dt;
+    simP[o]+=simV[o]*dt; simP[o+1]+=simV[o+1]*dt; simP[o+2]+=simV[o+2]*dt;
+  }
+}
+
 function compile(a){
   var g=a.genome, M=a.materials;
   var skin=hx(M.skin), skinB=hx(M.skinB), bellyC=hx(M.belly),
@@ -308,164 +673,15 @@ function compile(a){
   }
   var darkSkin=[Math.min(1,skin[0]*0.75+0.08), Math.min(1,skin[1]*0.75+0.08), Math.min(1,skin[2]*0.75+0.08)];
 
-  /* ---- torso + neck + head: proper quadruped ---- */
-  var body=new Geo();
-  var L=g.bodyLen, W=g.bodyW, H=g.bodyH;
-  var stations=[];
-  var N=22;
-  for (var si=0;si<N;si++){
-    var u=si/(N-1); // 0=tail base, 1=nose
-    var x=(u-0.5)*L*1.1;
-    var rx, ry, y;
-    if (u<0.62){
-      // torso: tail base -> chest
-      // Quadruped: hindquarters rounded, belly tucked, chest deep
-      var tu=u/0.62;
-      var hindQ=Math.exp(-Math.pow((tu-0.15)/0.25,2)); // hindquarter mass at rear
-      var chestD=Math.exp(-Math.pow((tu-0.85)/0.2,2));  // chest depth at front
-      rx=W*0.5*(0.45+0.35*hindQ+0.25*chestD);
-      ry=H*0.5*(0.5+0.3*hindQ+0.35*chestD);
-      // topline: level, belly tucked up (not hanging)
-      y=hindQ*H*0.08 - (1-hindQ-chestD)*H*0.05 + chestD*H*0.02;
-    } else {
-      // neck -> head: RISES UP (not in line with body)
-      var hu=(u-0.62)/0.38;
-      if (hu<0.4){
-        // neck: rises and narrows
-        var nu=hu/0.4;
-        rx=W*0.5*(0.5-0.18*nu);
-        ry=H*0.5*(0.55-0.15*nu);
-        y=H*0.1 + nu*H*0.35; // neck rises!
-      } else if (hu<0.75){
-        // skull: distinct, boxy-ish
-        var su=(hu-0.4)/0.35;
-        var skull=Math.sin(su*Math.PI);
-        rx=W*0.5*(0.32+0.12*skull);
-        ry=H*0.5*(0.4+0.12*skull);
-        y=H*0.45 + su*H*0.08;
-      } else {
-        // muzzle: tapers, slightly down
-        var mu=(hu-0.75)/0.25;
-        rx=W*0.5*0.32*(1-mu*0.65);
-        ry=H*0.5*0.4*(1-mu*0.55);
-        y=H*0.53 - mu*H*0.12;
-      }
-    }
-    if (u>=0.62){ rx*=g.headScale; ry*=g.headScale; }
-    stations.push({x:x, y:y, z:0, rx:Math.max(0.03,rx), ry:Math.max(0.03,ry)});
-  }
-  tube(body, stations, 14, function(u,v,pos){
-    return skinColor(u, v, pos, skin, darkSkin);
-  });
-  // haunch masses: spheres at rear hips for powerful hindquarters
-  var haunchX=-L*0.32, haunchY=H*0.05, haunchZ=W*0.38;
-  var hg2=new Geo();
-  ball(hg2, 1, 0,0,0, skin, 10, 8);
-  for (var hi=0;hi<hg2.pos.length;hi+=3){
-    hg2.pos[hi]*=W*0.32; hg2.pos[hi+1]*=H*0.42; hg2.pos[hi+2]*=W*0.28;
-  }
-  // left haunch
-  var hgL=new Geo(); appendGeo(hgL, hg2);
-  for (var hli=0;hli<hgL.pos.length;hli+=3){
-    hgL.pos[hli]+=haunchX; hgL.pos[hli+1]+=haunchY; hgL.pos[hli+2]+=haunchZ;
-  }
-  appendGeo(body, hgL);
-  // right haunch
-  var hgR=new Geo(); appendGeo(hgR, hg2);
-  for (var hri=0;hri<hgR.pos.length;hri+=3){
-    hgR.pos[hri]+=haunchX; hgR.pos[hri+1]+=haunchY; hgR.pos[hri+2]-=haunchZ;
-  }
-  appendGeo(body, hgR);
-  // shoulder masses: blend front legs into chest
-  var shX=L*0.30, shY=-H*0.12, shZ=W*0.30;
-  var shg=new Geo();
-  ball(shg, 1, 0,0,0, skin, 9, 7);
-  for (var shi=0;shi<shg.pos.length;shi+=3){
-    shg.pos[shi]*=W*0.26; shg.pos[shi+1]*=H*0.34; shg.pos[shi+2]*=W*0.22;
-  }
-  var shL=new Geo(); appendGeo(shL, shg);
-  for (var sli=0;sli<shL.pos.length;sli+=3){
-    shL.pos[sli]+=shX; shL.pos[sli+1]+=shY; shL.pos[sli+2]+=shZ;
-  }
-  appendGeo(body, shL);
-  var shR=new Geo(); appendGeo(shR, shg);
-  for (var sri=0;sri<shR.pos.length;sri+=3){
-    shR.pos[sri]+=shX; shR.pos[sri+1]+=shY; shR.pos[sri+2]-=shZ;
-  }
-  appendGeo(body, shR);
-  // eyes: on the sides of the elevated skull
-  var eyeX=L*0.5*1.1*0.88, eyeY=H*0.52*g.headScale, eyeZ=W*0.30*g.headScale;
-  var eg=new Geo();
-  ball(eg, 0.08*g.headScale, eyeX, eyeY, eyeZ, eyeC, 10, 8);
-  ball(eg, 0.08*g.headScale, eyeX, eyeY, -eyeZ, eyeC, 10, 8);
-  // eye shine
-  var shineC=[0.9,0.9,0.9];
-  ball(eg, 0.028*g.headScale, eyeX+0.055*g.headScale, eyeY+0.03, eyeZ*0.95, shineC, 6, 5);
-  ball(eg, 0.028*g.headScale, eyeX+0.055*g.headScale, eyeY+0.03, -eyeZ*0.95, shineC, 6, 5);
-  appendGeo(body, eg);
-  // nose tip
-  var noseC=[0.15,0.12,0.1];
-  ball(eg, 0.05*g.headScale, L*0.5*1.1*0.98, H*0.46*g.headScale, 0, noseC, 8, 6);
-  appendGeo(body, eg);
-
-  /* ---- tail: tapered tube with natural curve ---- */
-  var tail=[];
-  for (var t=0;t<g.tailSegs;t++){
-    var tg=new Geo();
-    var tl=0.55*(1-t/(g.tailSegs+0.5));
-    var r0=0.14*(1-t/g.tailSegs)+0.025, r1=0.14*(1-(t+1)/g.tailSegs)+0.02;
-    var tst=[];
-    for (var k=0;k<5;k++){
-      var ku=k/4;
-      tst.push({x:-ku*tl, y:Math.sin(ku*Math.PI)*0.03, z:0,
-        rx:r0+(r1-r0)*ku, ry:r0+(r1-r0)*ku});
-    }
-    tube(tg, tst, 8, function(u,v,pos){ return skinColor(u*0.3, v, pos, skinB, darkSkin); });
-    tail.push({geo:tg, len:tl});
-  }
-
-  /* ---- legs: thick at hip to blend into torso ---- */
-  function legGeo(len, cTop, cBot){
-    var lg=new Geo();
-    // upper: thick at hip (embeds into torso), tapers down
-    // r0 must exceed hip inset so the leg root is buried in the body
-    var r0=0.24, r1=0.11;
-    cyl(lg, r0, r1, len, 9, 0, -len/2, 0, cTop, 'y');
-    // hip cap: sphere at the top to smooth the torso-leg junction
-    var hg=new Geo();
-    ball(hg, r0*1.05, 0, 0.02, 0, cTop, 9, 7);
-    appendGeo(lg, hg);
-    // foot: flattened sphere + toes
-    var fg=new Geo();
-    ball(fg, 1, 0,0,0, padC, 9, 7);
-    for (var i=0;i<fg.pos.length;i+=3){
-      fg.pos[i]*=0.11; fg.pos[i+1]*=0.07; fg.pos[i+2]*=0.13;
-      fg.pos[i+1]-=len+0.02;
-    }
-    appendGeo(lg, fg);
-    for (var toe=-1;toe<=1;toe++){
-      var tg2=new Geo();
-      ball(tg2, 0.045, toe*0.07, -len-0.03, 0.1, padC, 7, 5);
-      appendGeo(lg, tg2);
-    }
-    return lg;
-  }
-  var legUpper=legGeo(g.legLen*g.upperFrac, skin, skinB);
-  var legLower=legGeo(g.legLen*(1-g.upperFrac), skinB, skinB);
-
-  /* ---- soft belly: subtle, under chest only ---- */
-  var belly={ nx:8, nz:4, pts:[], };
-  for (var bz=0;bz<=belly.nz;bz++) for (var bx=0;bx<=belly.nx;bx++){
-    var fx=bx/belly.nx-0.5, fz=bz/belly.nz-0.5;
-    // small region under the chest, not the whole underside
-    belly.pts.push({ x:fx*g.bodyLen*0.4 + g.bodyLen*0.15, y:-g.bodyH*0.42, z:fz*g.bodyW*0.5,
-      px:0, py:0, pz:0, pin:(bx===0||bx===belly.nx||bz===0||bz===belly.nz) });
-  }
-  belly.pts.forEach(function(p){ p.px=p.x; p.py=p.y; p.pz=p.z; });
+  /* ---- unified skin: one continuous mesh, no bolted parts ---- */
+  var skinMesh=buildUnifiedSkin(g, M, skin, skinB, bellyC, padC);
+  // eyes + nose as small separate meshes sitting on the skin
+  var eyeGeoL=new Geo(); ball(eyeGeoL, 0.045, skinMesh.eyeL[0], skinMesh.eyeL[1], skinMesh.eyeL[2], eyeC, 8, 6);
+  var eyeGeoR=new Geo(); ball(eyeGeoR, 0.045, skinMesh.eyeR[0], skinMesh.eyeR[1], skinMesh.eyeR[2], eyeC, 8, 6);
+  var noseGeo=new Geo(); ball(noseGeo, 0.05, skinMesh.nose[0], skinMesh.nose[1], skinMesh.nose[2], [0.08,0.06,0.06], 8, 6);
 
   return {
-    anatomy:a, body:body, tail:tail, legUpper:legUpper, legLower:legLower,
-    belly:belly, torsoY:torsoY,
+    anatomy:a, skin:skinMesh, eyeL:eyeGeoL, eyeR:eyeGeoR, nose:noseGeo, torsoY:torsoY,
     legDefs:a.nodes.filter(function(n){return n.semanticRole==='locomotor-segment';})
   };
 }
@@ -725,7 +941,7 @@ TOOLS.creatures = { mount: function(host){
       return { plant:[wx,s.position[1],wz], phase:gaitPhase(i,genome.legCount),
                swinging:false, from:null, to:null, t:0 };
     });
-    meshCache={};
+    meshCache={}; dynSkin=null;
     var errs=diagReport.diags.filter(function(d){return d.severity==='error';});
     host.querySelector('#cl-info').innerHTML=
       '<b>'+esc(anatomy.genome.legCount)+'-leg walker</b> · '+esc(planet.name)+' ('+esc(anatomy.planet.type)+') · '+
@@ -828,41 +1044,6 @@ TOOLS.creatures = { mount: function(host){
         if (k>=1){ f.swinging=false; f.plant=f.to.slice(); }
       }
     });
-    // soft belly verlet — exaggerated for visibility, scaled by softness
-    var b=compiled.belly, damp=0.965-(1-softness)*0.06;
-    var jiggle=softness; // 0.2..1.5
-    // track body acceleration for flesh lag (in creature-local frame approx)
-    b.pts.forEach(function(p){
-      if (p.pin){
-        p.x=p.px; p.y=p.py; p.z=p.pz; return;
-      }
-      var vx=(p.x-p.px)*damp, vy=(p.y-p.py)*damp, vz=(p.z-p.pz)*damp;
-      p.px=p.x; p.py=p.y; p.pz=p.z;
-      // gravity + lateral slosh from turning/acceleration
-      p.x+=vx - S.accel*dt*dt*30*jiggle*ch - turnRate*dt*dt*40*jiggle*sh;
-      p.y+=vy - 9.8*dt*dt*10*jiggle;
-      p.z+=vz - S.accel*dt*dt*30*jiggle*sh + turnRate*dt*dt*40*jiggle*ch;
-    });
-    for (var it=0;it<3;it++){
-      // distance constraints to neighbors
-      for (var zi=0;zi<=b.nz;zi++) for (var xi=0;xi<=b.nx;xi++){
-        var idx=zi*(b.nx+1)+xi, p0=b.pts[idx];
-        [[1,0],[0,1]].forEach(function(d){
-          var xj=xi+d[0], zj=zi+d[1];
-          if (xj>b.nx||zj>b.nz) return;
-          var p1=b.pts[zj*(b.nx+1)+xj];
-          // rest length from initial layout (small chest belly)
-          var rx=(d[0]? (anatomy.genome.bodyLen*0.4/b.nx):0),
-              rz=(d[1]? (anatomy.genome.bodyW*0.5/b.nz):0);
-          var rest=Math.hypot(rx,rz);
-          var dx=p1.x-p0.x, dy=p1.y-p0.y, dz=p1.z-p0.z;
-          var dd=Math.hypot(dx,dy,dz)||1e-6, diff=(dd-rest)/dd*0.5;
-          if (!p0.pin){p0.x+=dx*diff;p0.y+=dy*diff;p0.z+=dz*diff;}
-          if (!p1.pin){p1.x-=dx*diff;p1.y-=dy*diff;p1.z-=dz*diff;}
-        });
-      }
-    }
-    // belly world transform: belly pts are creature-local; convert at draw time
   }
 
   /* ---------- 2-bone IK ---------- */
@@ -891,7 +1072,28 @@ TOOLS.creatures = { mount: function(host){
   /* ---------- render ---------- */
   var currentMVP=matIdentity();
   // persistent dynamic buffers for belly cloth + target marker (updated per frame, not re-created)
-  var dynBelly=null, dynMarker=null;
+  var dynBelly=null, dynMarker=null, dynSkin=null;
+  function getDynSkin(sm){
+    if (!dynSkin){
+      dynSkin={};
+      var n=sm.nv;
+      [['p',3],['n',3]].forEach(function(x){
+        var b=gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER,b);
+        gl.bufferData(gl.ARRAY_BUFFER, n*x[1]*4, gl.DYNAMIC_DRAW);
+        dynSkin[x[0]]={b:b, sz:x[1], loc:x[0]==='p'?aP:aNorm};
+      });
+      var cb=gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER,cb);
+      gl.bufferData(gl.ARRAY_BUFFER, sm.col, gl.STATIC_DRAW);
+      dynSkin.c={b:cb, sz:3, loc:aC};
+      var ib=gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sm.idx), gl.STATIC_DRAW);
+      dynSkin.ib=ib; dynSkin.count=sm.idx.length;
+    }
+    return dynSkin;
+  }
   function getDynBelly(nverts){
     if (!dynBelly){
       dynBelly={};
@@ -971,69 +1173,64 @@ TOOLS.creatures = { mount: function(host){
     // apply roll (bank into turns) and pitch (acceleration lean)
     if (S.roll) bodyM=matMul(bodyM, matRotX(S.roll));
     if (S.pitch) bodyM=matMul(bodyM, matRotZ(S.pitch));
-    // body (torso+head, creature-local with torso at y=0)
-    drawGeo(compiled.body, matMul(bodyM, matTrans(0,0,0)));
-    // legs
+    // ---- UNIFIED SKIN: one mesh, bent by the animated skeleton ----
+    var sm=compiled.skin;
+    var invBodyM=matInverse(bodyM);
+    function toLocal(w){
+      return [invBodyM[0]*w[0]+invBodyM[4]*w[1]+invBodyM[8]*w[2]+invBodyM[12],
+              invBodyM[1]*w[0]+invBodyM[5]*w[1]+invBodyM[9]*w[2]+invBodyM[13],
+              invBodyM[2]*w[0]+invBodyM[6]*w[1]+invBodyM[10]*w[2]+invBodyM[14]];
+    }
     var upperL=g.legLen*g.upperFrac, lowerL=g.legLen*(1-g.upperFrac);
+    var legAnim=[];
     compiled.legDefs.forEach(function(ld,i){
       var lp=ld.restPose.p;
       var hipW=[S.x+ch*lp[0]-sh*lp[2], S.y+lp[1], S.z+sh*lp[0]+ch*lp[2]];
       var f=feet[i];
-      // pole: knees point outward (away from body) and slightly forward
       var sideSign=(lp[2]>0?1:-1);
-      var outX=-sh*sideSign, outZ=ch*sideSign; // local +Z transformed to world
+      var outX=-sh*sideSign, outZ=ch*sideSign;
       var poleW=[hipW[0]+outX*0.4+ch*0.2, hipW[1]-0.2, hipW[2]+outZ*0.4+sh*0.2];
       var sol=solveLeg(hipW, f.plant, upperL, lowerL, poleW);
-      // upper: hip->knee ; lower: knee->foot
-      drawGeo(compiled.legUpper, segModel(hipW, sol.knee));
-      drawGeo(compiled.legLower, segModel(sol.knee, sol.foot));
+      var hipL=toLocal(hipW), kneeL=toLocal(sol.knee), footL=toLocal(sol.foot);
+      var ankleL=[kneeL[0]+(footL[0]-kneeL[0])*0.55,kneeL[1]+(footL[1]-kneeL[1])*0.55,kneeL[2]+(footL[2]-kneeL[2])*0.55];
+      legAnim.push([hipL,kneeL,ankleL,footL]);
     });
-    // tail
-    var tx=-g.bodyLen*0.52, ty=g.bodyH*0.08; // deeper inside the rear
-    var px=S.x+ch*tx, py=S.y+ty, pz=S.z+sh*tx;
-    var dirx=ch, dirz=sh, t=now/1000;
-    compiled.tail.forEach(function(seg,ti){
-      var wag=Math.sin(t*3+ti*0.9)*0.12*(ti+1)/compiled.tail.length*S.speed;
-      var nx=px-dirx*seg.len*0.9, nz=pz-dirz*seg.len*0.9;
-      var ny=py+Math.sin(t*2+ti)*0.02;
-      // perpendicular wag
-      nx+=-dirz*wag*seg.len; nz+=dirx*wag*seg.len;
-      var from=[px,py,pz], to=[nx,ny,nz];
-      // tail geo is along X centered; build model: translate to midpoint, rotY to dir
-      var ang=Math.atan2(-(to[2]-from[2]), to[0]-from[0]);
-      var mid=[(from[0]+to[0])/2,(from[1]+to[1])/2,(from[2]+to[2])/2];
-      drawGeo(seg.geo, matMul(matTrans(mid[0],mid[1],mid[2]), matRotY(-ang)));
-      px=nx; py=ny; pz=nz;
-    });
-    // belly cloth (creature-local -> world) — update persistent buffer
-    var b=compiled.belly;
-    function bw(p){ return [S.x+ch*p.x-sh*p.z, S.y+p.y, S.z+sh*p.x+ch*p.z]; }
-    var db=getDynBelly(b.pts.length);
-    var bpos=new Float32Array(b.pts.length*3), bnrm=new Float32Array(b.pts.length*3), bcol=new Float32Array(b.pts.length*3);
-    // use skin color (not green) for the belly, slightly lighter
-    var bc=hx(anatomy.materials.skin);
-    bc=[Math.min(1,bc[0]*1.15), Math.min(1,bc[1]*1.15), Math.min(1,bc[2]*1.15)];
-    b.pts.forEach(function(p,vi){
-      var w=bw(p);
-      bpos[vi*3]=w[0]; bpos[vi*3+1]=w[1]; bpos[vi*3+2]=w[2];
-      bnrm[vi*3]=0; bnrm[vi*3+1]=-1; bnrm[vi*3+2]=0;
-      bcol[vi*3]=bc[0]; bcol[vi*3+1]=bc[1]; bcol[vi*3+2]=bc[2];
-    });
-    var bidx=[];
-    for (var zi=0;zi<b.nz;zi++) for (var xi=0;xi<b.nx;xi++){
-      var a2=zi*(b.nx+1)+xi, b2=a2+1, c2=a2+b.nx+1, d2=c2+1;
-      bidx.push(a2,c2,b2, b2,c2,d2);
+    // tail wag (local space, lateral)
+    var tSec=now/1000, tailAnim=[];
+    for (var tpi=0;tpi<sm.tailRestSub.length;tpi++){
+      var rp=sm.tailRestSub[tpi], tf=tpi/(sm.tailRestSub.length-1);
+      tailAnim.push([rp[0], rp[1]+Math.sin(tSec*2+tpi)*0.015*tf,
+                     rp[2]+Math.sin(tSec*3+tpi*0.9)*0.10*tf*Math.min(1,S.speed*2+0.2)]);
     }
-    gl.bindBuffer(gl.ARRAY_BUFFER, db.p.b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, bpos);
-    gl.bindBuffer(gl.ARRAY_BUFFER, db.n.b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, bnrm);
-    gl.bindBuffer(gl.ARRAY_BUFFER, db.c.b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, bcol);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, db.ib);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(bidx), gl.DYNAMIC_DRAW);
+    // whole-body soft tissue: springs chase the skinned targets
+    deformSkin(sm, legAnim, tailAnim, softness, Math.min(0.05,dt),
+               (S.accel||0)*0.35, (typeof turnRate!=='undefined'?turnRate:0)*0.6);
+    // upload (local sim -> world) and draw as one indexed mesh
+    var ds=getDynSkin(sm);
+    var wp=new Float32Array(sm.nv*3), wn=new Float32Array(sm.nv*3);
+    var sp=sm.simPos, sn=sm.simNrm;
+    for (var wvi=0;wvi<sm.nv;wvi++){
+      var wo=wvi*3, lx=sp[wo], ly=sp[wo+1], lz=sp[wo+2];
+      wp[wo]  =bodyM[0]*lx+bodyM[4]*ly+bodyM[8]*lz+bodyM[12];
+      wp[wo+1]=bodyM[1]*lx+bodyM[5]*ly+bodyM[9]*lz+bodyM[13];
+      wp[wo+2]=bodyM[2]*lx+bodyM[6]*ly+bodyM[10]*lz+bodyM[14];
+      var nx2=sn[wo], ny2=sn[wo+1], nz2=sn[wo+2];
+      wn[wo]  =bodyM[0]*nx2+bodyM[4]*ny2+bodyM[8]*nz2;
+      wn[wo+1]=bodyM[1]*nx2+bodyM[5]*ny2+bodyM[9]*nz2;
+      wn[wo+2]=bodyM[2]*nx2+bodyM[6]*ny2+bodyM[10]*nz2;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, ds.p.b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, wp);
+    gl.bindBuffer(gl.ARRAY_BUFFER, ds.n.b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, wn);
     gl.uniformMatrix4fv(uModel,false,matIdentity());
-    [['p',db.p],['n',db.n],['c',db.c]].forEach(function(x){
+    [['p',ds.p],['n',ds.n],['c',ds.c]].forEach(function(x){
       gl.bindBuffer(gl.ARRAY_BUFFER,x[1].b); gl.enableVertexAttribArray(x[1].loc);
       gl.vertexAttribPointer(x[1].loc,x[1].sz,gl.FLOAT,false,0,0); });
-    gl.drawElements(gl.TRIANGLES,bidx.length,gl.UNSIGNED_SHORT,0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ds.ib);
+    gl.drawElements(gl.TRIANGLES, ds.count, gl.UNSIGNED_SHORT, 0);
+    // eyes + nose ride on the skin
+    drawGeo(compiled.eyeL, bodyM);
+    drawGeo(compiled.eyeR, bodyM);
+    drawGeo(compiled.nose, bodyM);
     // walk target marker
     drawGeo(getDynMarker().geo, matTrans(S.tx,terrain.height(S.tx,S.tz)+0.6,S.tz));
   }
