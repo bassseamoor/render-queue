@@ -2182,6 +2182,12 @@ var COMPS = [
    why:'This is the pipeline that turns components into a catalog people pull from.',
    technical:'render-studio', source:'moor-city/studio.html', inMoor:false,
    toolGap:'Hub view only in this panel — the 8 studios run as their own Pulse tools. Full multi-file studio push is future work.'},
+  {id:'wonder-feed', tool:'wonder', toolSrc:'pulse-tools/tool-wonder.js', cats:['experiences'], icon:'\u2728', label:'Wonder Feed',
+   short:'Infinite scroll through live generative wonders.',
+   job:'An infinite vertical feed of live generative wonders — planets, ridgelines, softbody creatures, particle fields, generative soundscapes, ember forests. Every card is seeded and alive; swipe up for the next one. Built for screen recording.',
+   why:'The "living in the future" demo surface: scroll and every flick shows something impossible.',
+   technical:'wonder-feed', source:'pulse-v2/tools/tool-wonder.js', inMoor:false,
+   toolGap:'Panel-only experience for now — the wonders run from real component code (moorworld, terrain noise, creature springs, particle fields, ambience synth).'},
   /* --- MOOR City component kit: reusable seeds --- */
   {id:'comp-vehicle-physics', tool:null, cats:['space','shared'], icon:'\u1F697', label:'Vehicle physics',
    short:'Arcade car physics, zero dependencies.',
@@ -7050,6 +7056,856 @@ TOOLS.stream = { mount: function(host){
   frame();
 }};
 
+})();
+
+</script>
+<script>
+/* Redwood Drive — drivable buggy showcase built from MOOR City components.
+ * Embeds the live Redwood Drive experience. The vehicle physics
+ * (createVehicle/stepVehicle) is the verbatim moor-city buggy-motion.mjs. */
+(function(){
+'use strict';
+TOOLS.redwood = {
+  mount: function(host){
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">Live experience — hold left/right to steer, hold GAS to drive.</span>'+
+        '<a class="btn primary" href="https://bassseamoor.github.io/render-queue/redwood-drive.html" target="_blank" rel="noopener">Open full screen</a>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;height:520px;border-radius:12px;overflow:hidden;background:#0a0f0a;">'+
+        '<iframe src="https://bassseamoor.github.io/render-queue/redwood-drive.html" '+
+        'style="width:100%;height:100%;border:0;" allow="autoplay; fullscreen"></iframe>'+
+      '</div>'+
+      '<p class="meta" style="margin-top:10px;">Components used: '+
+      '<b>buggy-motion.mjs</b> (arcade vehicle physics, zero deps) · '+
+      '<b>procedural terrain</b> (heightfield) · '+
+      '<b>instanced redwoods</b> · wheel-rig naming convention.</p>';
+  }
+};
+})();
+
+</script>
+<script>
+/* Render Studio Hub — the unified MOOR City creative studio.
+ * The 8 studios are already in Pulse as individual tools; this hub
+ * presents them as the single pipeline they are: build → catalog → use. */
+(function(){
+'use strict';
+TOOLS.rstudio = {
+  mount: function(host){
+    var studios = [
+      {id:'terrain-core', icon:'\u25B3', name:'Terrain sculpting', desc:'Generate and sculpt land'},
+      {id:'mesh-builder', icon:'\u25B1', name:'City geometry', desc:'Build 3D shapes + 32 materials'},
+      {id:'palettes', icon:'\u25CD', name:'Color sets', desc:'Art direction tables'},
+      {id:'planet-vegetation', icon:'\u2740', name:'Plants', desc:'Procedural vegetation'},
+      {id:'ambience-engine', icon:'\u266A', name:'Ambience', desc:'Seeded sound beds'},
+      {id:'spawn-director', icon:'\u2623', name:'Spawn director', desc:'Wave pacing brain'},
+    ];
+    var h = '<div class="t-controls"><span class="meta">The 8-studio pipeline: build in any studio, save to the shared library, pull from the catalog.</span></div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;">';
+    studios.forEach(function(s){
+      h += '<div class="card" style="padding:16px;cursor:pointer;" data-open="'+s.id+'">'+
+        '<div style="font-size:28px;">'+s.icon+'</div>'+
+        '<div style="font-weight:700;margin:8px 0 4px;">'+s.name+'</div>'+
+        '<div class="meta">'+s.desc+'</div></div>';
+    });
+    h += '</div>'+
+      '<p class="meta" style="margin-top:14px;">In the original studio, these 8 studios share one asset library — '+
+      'save from any studio, open in any other. The <b>.moor.json</b> format keeps every model editable forever. '+
+      'This hub will deep-link each studio as they are componentized.</p>';
+    host.innerHTML = h;
+    host.querySelectorAll('[data-open]').forEach(function(el){
+      el.onclick = function(){
+        var id = el.getAttribute('data-open');
+        if (window.PulseOpen) window.PulseOpen(id);
+      };
+    });
+  }
+};
+})();
+
+</script>
+<script>
+/* Wonder Feed — infinite scroll through live generative wonders.
+ * Each swipe up reveals a new wonder: planets, terrain, creatures, particles,
+ * soundscapes, forests — all seeded, all live, all from real MOOR components.
+ * Built for screen recording: dark, luminous, "living in the future."
+ * No Math.random anywhere. Offscreen wonders are fully paused. */
+(function(){
+'use strict';
+
+/* mulberry32 — the only RNG in this file */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s){
+  var h = 2166136261;
+  for (var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+/* 1D value noise from a seeded rng */
+function makeNoise1D(rng){
+  var perm = [];
+  for (var i=0;i<256;i++) perm[i]=i;
+  for (var j=255;j>0;j--){ var k=(rng()*(j+1))|0, t=perm[j]; perm[j]=perm[k]; perm[k]=t; }
+  var P = perm.concat(perm);
+  function g(i){ return P[i & 255]/255; }
+  function n1(x){
+    var i=Math.floor(x), f=x-i, u=f*f*(3-2*f);
+    return g(i)*(1-u)+g(i+1)*u;
+  }
+  return function(x, oct){
+    var s=0, a=0.5, f=1;
+    for (var o=0;o<(oct||4);o++){ s+=a*n1(x*f); f*=2.03; a*=0.5; }
+    return s;
+  };
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function hx(c){ return [parseInt(c.slice(1,3),16)/255,parseInt(c.slice(3,5),16)/255,parseInt(c.slice(5,7),16)/255]; }
+function css(rgb){ return 'rgb('+(rgb[0]*255|0)+','+(rgb[1]*255|0)+','+(rgb[2]*255|0)+')'; }
+
+var CSS =
+ '.wd-feed{height:78vh;overflow-y:auto;scroll-snap-type:y mandatory;border-radius:14px;background:#05070d;position:relative;overscroll-behavior:contain}'+
+ '.wd-card{min-height:76vh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;align-items:center;position:relative;padding:18px 14px 26px;box-sizing:border-box;border-bottom:1px solid rgba(255,255,255,.05)}'+
+ '.wd-visual{width:100%;max-width:700px;position:relative}'+
+ '.wd-visual canvas{width:100%;display:block;border-radius:12px;background:#05070d}'+
+ '.wd-cap{margin-top:12px;text-align:center}'+
+ '.wd-cap b{display:block;font-size:17px;letter-spacing:.02em;color:#eef}'+
+ '.wd-cap span{font-size:12px;opacity:.55;color:#cde}'+
+ '.wd-seed{position:absolute;top:10px;right:14px;font-size:10px;opacity:.35;color:#9ab;letter-spacing:.1em}'+
+ '.wd-head{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(5,7,13,.85);backdrop-filter:blur(8px);font-size:12px;color:#9ab}'+
+ '.wd-head b{color:#eef;font-size:13px;letter-spacing:.06em}'+
+ '.wd-sentinel{height:60px;display:flex;align-items:center;justify-content:center;color:#456;font-size:12px;letter-spacing:.2em}'+
+ '.wd-mute{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);padding:10px 22px;border-radius:999px;border:1px solid rgba(160,140,255,.5);background:rgba(20,16,40,.8);color:#dcd2ff;font-size:14px;cursor:pointer;z-index:4}';
+
+/* wonder registry: each factory(seed) -> {el, start, stop} */
+var REGISTRY = [];
+
+function cardShell(kind, title, sub, seed){
+  var el = document.createElement('div');
+  el.className = 'wd-card';
+  el.innerHTML =
+    '<div class="wd-seed">seed '+seed+'</div>'+
+    '<div class="wd-visual"></div>'+
+    '<div class="wd-cap"><b>'+esc(title)+'</b><span>'+esc(sub)+'</span></div>';
+  return el;
+}
+function makeCanvas(w, h){
+  var cv = document.createElement('canvas');
+  var dpr = Math.min(window.devicePixelRatio||1, 1.5);
+  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  cv.style.aspectRatio = w+'/'+h;
+  return {cv:cv, ctx:cv.getContext('2d'), dpr:dpr, w:w, h:h};
+}
+
+/* ---------- 1. PLANET — WebGL UV sphere, seeded relief, atmosphere rim ---------- */
+(function(){
+var VS='attribute vec3 p;attribute vec3 n;attribute vec2 t;'+
+ 'uniform mat4 mvp;uniform float uSeed;'+
+ 'varying vec3 vN;varying vec2 vT;varying float vH;'+
+ 'float h21(vec2 q){ vec3 p3=fract(vec3(q.xyx)*0.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }'+
+ 'float vnoise(vec2 q){ vec2 i=floor(q), f=fract(q); vec2 u=f*f*(3.0-2.0*f);'+
+ ' return mix(mix(h21(i+uSeed),h21(i+vec2(1,0)+uSeed),u.x), mix(h21(i+vec2(0,1)+uSeed),h21(i+vec2(1,1)+uSeed),u.x), u.y); }'+
+ 'float fbm(vec2 q){ float s=0.0,a=0.5; for(int k=0;k<4;k++){ s+=a*vnoise(q); q*=2.03; a*=0.5; } return s; }'+
+ 'void main(){'+
+ ' float h=fbm(t*vec2(6.0,3.0));'+
+ ' float continents=smoothstep(0.35,0.65,fbm(t*vec2(2.0,1.0)+7.0));'+
+ ' float m=h*0.65+continents*0.35;'+
+ ' vec3 q=p*(1.0+(m-0.5)*0.14);'+
+ ' vH=m; vN=n; vT=t;'+
+ ' gl_Position=mvp*vec4(q,1.0);}';
+var FS='precision mediump float;'+
+ 'uniform vec3 uDeep,uShallow,uLandA,uLandB,uIce,uAtmo;uniform float uSea;'+
+ 'varying vec3 vN;varying vec2 vT;varying float vH;'+
+ 'void main(){'+
+ ' vec3 N=normalize(vN); vec3 base;'+
+ ' if (vH<uSea){ float d=smoothstep(uSea,uSea-0.25,vH); base=mix(uShallow,uDeep,d); }'+
+ ' else { float d=smoothstep(uSea,uSea+0.45,vH); base=mix(uLandA,uLandB,d);'+
+ '  float ice=smoothstep(0.72,0.9,abs(vT.y*2.0-1.0)+(vH-uSea)*0.4);'+
+ '  base=mix(base,uIce,ice); }'+
+ ' float ndl=max(dot(N,normalize(vec3(0.6,0.5,0.7))),0.0);'+
+ ' float night=smoothstep(0.0,-0.25,dot(N,normalize(vec3(0.6,0.5,0.7))));'+
+ ' vec3 lit=base*(0.12+0.95*ndl);'+
+ ' lit+=base*night*vec3(0.1,0.15,0.3)*0.4;'+
+ ' vec3 V=vec3(0.0,0.0,1.0);'+
+ ' float rim=pow(1.0-abs(dot(N,V)),2.5);'+
+ ' lit+=uAtmo*rim*0.9;'+
+ ' gl_FragColor=vec4(lit,1.0);}';
+
+/* seeded palettes keyed by planet-type flavor */
+var PALS = [
+  {deep:'#0a1a3a',shallow:'#1a4a6a',land:['#2a4a2a','#5a7a3a'],atmo:'#88bbff',sea:0.42}, // ocean
+  {deep:'#1a0a2a',shallow:'#3a1a4a',land:['#4a2a1a','#8a5a2a'],atmo:'#ff9a66',sea:-1},   // lava
+  {deep:'#0a2a2a',shallow:'#1a5a4a',land:['#1a4a2a','#3a7a3a'],atmo:'#aaffcc',sea:0.35}, // jungle
+  {deep:'#0a0a1a',shallow:'#1a1a3a',land:['#3a3a4a','#6a6a7a'],atmo:'#aaaaff',sea:-1},   // barren
+  {deep:'#2a1a0a',shallow:'#5a3a1a',land:['#6a4a1a','#a87a3a'],atmo:'#ffcc88',sea:-1},   // desert
+  {deep:'#0a1a2a',shallow:'#1a3a5a',land:['#2a5a6a','#4a8a9a'],atmo:'#88ddff',sea:0.5},   // ice ocean
+  {deep:'#1a0a1a',shallow:'#4a1a3a',land:['#3a1a2a','#6a2a4a'],atmo:'#ff88cc',sea:-1},   // toxic
+  {deep:'#0a0a2a',shallow:'#2a2a5a',land:['#4a4a8a','#7a7acc'],atmo:'#aaaaff',sea:-1}    // crystal
+];
+function pickPlanet(rng){
+  try{
+    var W = window.MoorWorld;
+    if (W){
+      var ps=[];
+      W.sectors().forEach(function(s){ s.systems.forEach(function(y){ y.planets.forEach(function(p){ ps.push(p); }); }); });
+      if (ps.length) return ps[(rng()*ps.length)|0];
+    }
+  }catch(e){}
+  return null;
+}
+
+REGISTRY.push({kind:'planet', make:function(seed){
+  var rng = mulberry32(seed);
+  var W = null; try{ W = window.MoorWorld; }catch(e){}
+  var p = pickPlanet(rng);
+  var pname = p ? p.name : 'Kepler-'+(1000+((rng()*9000)|0));
+  var ptype = 'WORLD';
+  if (p && W){ try{ ptype = (W.planetType(p).name||'WORLD').toUpperCase(); }catch(e){} }
+  var pal = PALS[(rng()*PALS.length)|0];
+  /* jitter the palette so every planet is unique */
+  function jit(hex, amt){
+    var c = hx(hex);
+    for (var i=0;i<3;i++) c[i] = Math.max(0, Math.min(1, c[i]+(rng()-0.5)*amt));
+    return c;
+  }
+  var el = cardShell('planet', pname, ptype+' — from moorworld', seed);
+  var vis = el.querySelector('.wd-visual');
+  var cv = document.createElement('canvas');
+  cv.width = 560; cv.height = 560;
+  cv.style.aspectRatio = '1/1';
+  vis.appendChild(cv);
+  var raf = 0, gl = null, ok = false;
+  try{
+    gl = cv.getContext('webgl',{antialias:true,alpha:false});
+    if (!gl) throw new Error('no gl');
+    var pos=[], nrm=[], idx=[], uv=[];
+    var NU=64, NV=44;
+    for (var j=0;j<=NV;j++) for (var i=0;i<=NU;i++){
+      var u=i/NU*Math.PI*2, v=j/NV*Math.PI;
+      var x=Math.sin(v)*Math.cos(u), y=Math.cos(v), z=Math.sin(v)*Math.sin(u);
+      pos.push(x,y,z); nrm.push(x,y,z); uv.push(i/NU, j/NV);
+    }
+    for (var y2=0;y2<NV;y2++) for (var x2=0;x2<NU;x2++){
+      var a=y2*(NU+1)+x2, b=a+1, c=a+NU+1, d=c+1;
+      idx.push(a,c,b, b,c,d);
+    }
+    function sh(t,s){ var h=gl.createShader(t); gl.shaderSource(h,s); gl.compileShader(h);
+      if (!gl.getShaderParameter(h,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(h)); return h; }
+    var pr=gl.createProgram();
+    gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS)); gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    function attr(nm,arr,size){
+      var l=gl.getAttribLocation(pr,nm), bf=gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER,bf); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0);
+    }
+    attr('p',pos,3); attr('n',nrm,3); attr('t',uv,2);
+    var ib=gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(idx),gl.STATIC_DRAW);
+    var uMVP=gl.getUniformLocation(pr,'mvp'), uSeed=gl.getUniformLocation(pr,'uSeed');
+    var U={}; ['uDeep','uShallow','uLandA','uLandB','uIce','uAtmo'].forEach(function(nm){ U[nm]=gl.getUniformLocation(pr,nm); });
+    var uSea=gl.getUniformLocation(pr,'uSea');
+    gl.uniform1f(uSeed, seed % 1000);
+    var landA=jit(pal.land[0],0.12), landB=jit(pal.land[1],0.12);
+    gl.uniform3fv(U.uDeep, jit(pal.deep,0.08));
+    gl.uniform3fv(U.uShallow, jit(pal.shallow,0.08));
+    gl.uniform3fv(U.uLandA, landA);
+    gl.uniform3fv(U.uLandB, landB);
+    gl.uniform3f(U.uIce,0.88,0.92,0.96);
+    var atmo = jit(pal.atmo,0.1);
+    gl.uniform3f(U.uAtmo, atmo[0]*1.4+0.1, atmo[1]*1.4+0.1, atmo[2]*1.4+0.15);
+    gl.uniform1f(uSea, pal.sea);
+    ok = true;
+    var t0 = performance.now(), yaw = rng()*6.28;
+    function persp(f,asp,n,f2){ var t=1/Math.tan(f/2),o=new Float32Array(16);
+      o[0]=t/asp;o[5]=t;o[10]=(f2+n)/(n-f2);o[11]=-1;o[14]=2*f2*n/(n-f2); return o; }
+    function frame(){
+      raf = requestAnimationFrame(frame);
+      yaw += 0.0035;
+      gl.viewport(0,0,cv.width,cv.height);
+      gl.clearColor(0.02,0.027,0.05,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      var cy=Math.cos(yaw), sy=Math.sin(yaw);
+      var rot=new Float32Array([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, 0,0,-3.1,1]);
+      var mvp=new Float32Array(16), P=persp(0.8,1,0.1,50);
+      for (var i2=0;i2<4;i2++) for (var j2=0;j2<4;j2++)
+        mvp[i2*4+j2]=P[j2]*rot[i2*4]+P[4+j2]*rot[i2*4+1]+P[8+j2]*rot[i2*4+2]+P[12+j2]*rot[i2*4+3];
+      gl.uniformMatrix4fv(uMVP,false,mvp);
+      gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_SHORT,0);
+    }
+    /* render one frame immediately so the card isn't blank */
+    (function(){ var saveRaf = raf; yaw+=0.001;
+      gl.viewport(0,0,cv.width,cv.height);
+      gl.clearColor(0.02,0.027,0.05,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      var cy=Math.cos(yaw), sy=Math.sin(yaw);
+      var rot=new Float32Array([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, 0,0,-3.1,1]);
+      var mvp=new Float32Array(16), P=persp(0.8,1,0.1,50);
+      for (var i3=0;i3<4;i3++) for (var j3=0;j3<4;j3++)
+        mvp[i3*4+j3]=P[j3]*rot[i3*4]+P[4+j3]*rot[i3*4+1]+P[8+j3]*rot[i3*4+2]+P[12+j3]*rot[i3*4+3];
+      gl.uniformMatrix4fv(uMVP,false,mvp);
+      gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_SHORT,0);
+    })();
+  }catch(e){ ok = false; }
+  return {
+    el: el,
+    start: function(){ if (ok && !raf) frame(); },
+    stop: function(){ if (raf){ cancelAnimationFrame(raf); raf=0; } }
+  };
+}});
+})();
+
+/* ---------- 2. TERRAIN — layered ridgelines, glowing horizon ---------- */
+REGISTRY.push({kind:'terrain', make:function(seed){
+  var rng = mulberry32(seed);
+  var n1 = makeNoise1D(mulberry32(seed^0x9e37));
+  var el = cardShell('terrain','Ridgeline '+((seed%900)+100),'seeded fbm heightfield — from terrain-core', seed);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 420); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var layers = 7, t = rng()*100;
+  var hue = rng()*360;
+  var raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.004;
+    ctx.clearRect(0,0,Wd,Ht);
+    /* sky */
+    var sky = ctx.createLinearGradient(0,0,0,Ht);
+    sky.addColorStop(0,'#04060d'); sky.addColorStop(0.55,'#0a1024'); sky.addColorStop(0.75,'#1a1440');
+    ctx.fillStyle = sky; ctx.fillRect(0,0,Wd,Ht);
+    /* stars */
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    for (var s=0;s<40;s++){
+      var sx = ((s*97.3+seed)%100)/100*Wd, sy = ((s*57.7+seed*1.3)%100)/100*Ht*0.5;
+      var tw = 0.3+0.7*Math.abs(Math.sin(t*2+s));
+      ctx.globalAlpha = 0.25*tw;
+      ctx.fillRect(sx, sy, 1.5, 1.5);
+    }
+    ctx.globalAlpha = 1;
+    /* horizon glow */
+    var hy = Ht*0.62;
+    var glow = ctx.createLinearGradient(0,hy-60,0,hy+20);
+    glow.addColorStop(0,'rgba(0,0,0,0)');
+    glow.addColorStop(1,'hsla('+hue+',80%,60%,.35)');
+    ctx.fillStyle = glow; ctx.fillRect(0,hy-60,Wd,80);
+    /* ridges back to front */
+    for (var L=0;L<layers;L++){
+      var f = L/(layers-1);           // 0 = far, 1 = near
+      var baseY = hy + f*f*Ht*0.34;
+      var amp = (1-f)*Ht*0.16 + Ht*0.02;
+      var dark = 8+f*10;
+      ctx.beginPath(); ctx.moveTo(0,Ht);
+      for (var x=0;x<=Wd;x+=6){
+        var hgt = n1(x/Wd*4 + L*13.7 + t*(0.3+f*0.9), 4);
+        var y = baseY - hgt*amp;
+        ctx.lineTo(x,y);
+      }
+      ctx.lineTo(Wd,Ht); ctx.closePath();
+      var lum = 10 + f*22;
+      ctx.fillStyle = 'hsl('+hue+',30%,'+lum+'%)';
+      ctx.fill();
+      /* rim light on the ridge top */
+      ctx.beginPath();
+      for (var x2=0;x2<=Wd;x2+=6){
+        var h2 = n1(x2/Wd*4 + L*13.7 + t*(0.3+f*0.9), 4);
+        var y2 = baseY - h2*amp;
+        if (x2===0) ctx.moveTo(x2,y2); else ctx.lineTo(x2,y2);
+      }
+      ctx.strokeStyle = 'hsla('+hue+',70%,'+(45+f*20)+'%,'+(0.25+f*0.45)+')';
+      ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+  return { el: el,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 3. CREATURE — softbody glowing blob ---------- */
+REGISTRY.push({kind:'creature', make:function(seed){
+  var rng = mulberry32(seed);
+  var n1 = makeNoise1D(mulberry32(seed^0x51f7));
+  var names = ['Mote','Wisp','Lumen','Drifter','Pulsar','Nixie','Vesper','Quill'];
+  var nm = names[(rng()*names.length)|0]+'-'+((seed%900)+100);
+  var el = cardShell('creature', nm, 'softbody spring ring — from creature lab', seed);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = rng()*360, hue2 = (hue+60+rng()*60)%360;
+  var N = 42, pts = [];
+  var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.26;
+  for (var i=0;i<N;i++){
+    var a = i/N*Math.PI*2;
+    pts.push({a:a, r:R, vr:0, ph:rng()*10});
+  }
+  /* a second smaller satellite blob */
+  var N2 = 26, pts2 = [];
+  var R2 = R*0.42;
+  for (var j=0;j<N2;j++){ var a2=j/N2*Math.PI*2; pts2.push({a:a2, r:R2, vr:0, ph:rng()*10}); }
+  var t = rng()*100, raf = 0;
+  var ox = 0, oy = 0; // drift
+  function ringPath(P, ccx, ccy){
+    ctx.beginPath();
+    for (var k=0;k<=P.length;k++){
+      var p = P[k%P.length];
+      var x = ccx + Math.cos(p.a)*p.r, y = ccy + Math.sin(p.a)*p.r*0.92;
+      if (k===0) ctx.moveTo(x,y);
+      else {
+        var pp = P[(k-1)%P.length];
+        var px = ccx + Math.cos(pp.a)*pp.r, py = ccy + Math.sin(pp.a)*pp.r*0.92;
+        ctx.quadraticCurveTo(px, py, (px+x)/2, (py+y)/2);
+      }
+    }
+    ctx.closePath();
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ox = Math.sin(t*0.24)*Wd*0.06; oy = Math.cos(t*0.19)*Ht*0.05;
+    var bx = cx+ox, by = cy+oy;
+    /* physics */
+    for (var k=0;k<N;k++){
+      var p = pts[k];
+      var wob = n1(p.ph + t*0.9, 3)-0.5;
+      var pulse = Math.sin(t*2.2 + p.a*3)*0.5+0.5;
+      var target = R*(1 + wob*0.55 + pulse*0.10);
+      var F = (target - p.r)*0.09 - p.vr*0.82;
+      p.vr = (p.vr + F)*0.92; p.r += p.vr;
+    }
+    for (var k2=0;k2<N2;k2++){
+      var q = pts2[k2];
+      var wob2 = n1(q.ph + t*1.3, 3)-0.5;
+      var target2 = R2*(1 + wob2*0.6);
+      var F2 = (target2 - q.r)*0.10 - q.vr*0.80;
+      q.vr = (q.vr + F2)*0.92; q.r += q.vr;
+    }
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(bx,by,10,bx,by,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'hsla('+hue+',60%,14%,1)'); bg.addColorStop(1,'#04060d');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    /* satellite */
+    var sx = bx + Math.cos(t*0.5)*R*1.7, sy = by + Math.sin(t*0.7)*R*1.2;
+    ctx.save();
+    ctx.shadowColor = 'hsla('+hue2+',90%,65%,.9)'; ctx.shadowBlur = 30;
+    ringPath(pts2, sx, sy);
+    var g2 = ctx.createRadialGradient(sx,sy,4,sx,sy,R2*1.6);
+    g2.addColorStop(0,'hsla('+hue2+',90%,72%,.95)'); g2.addColorStop(1,'hsla('+hue2+',90%,55%,.12)');
+    ctx.fillStyle = g2; ctx.fill();
+    ctx.restore();
+    /* main body */
+    ctx.save();
+    ctx.shadowColor = 'hsla('+hue+',90%,60%,.9)'; ctx.shadowBlur = 46;
+    ringPath(pts, bx, by);
+    var g = ctx.createRadialGradient(bx,by,8,bx,by,R*1.7);
+    g.addColorStop(0,'hsla('+hue+',85%,70%,.95)');
+    g.addColorStop(0.55,'hsla('+hue+',80%,52%,.55)');
+    g.addColorStop(1,'hsla('+hue+',80%,45%,.06)');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.restore();
+    /* inner nucleus */
+    var nR = R*0.30*(1+Math.sin(t*2.2)*0.08);
+    var ng = ctx.createRadialGradient(bx,by,1,bx,by,nR);
+    ng.addColorStop(0,'rgba(255,255,255,.95)'); ng.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle = ng;
+    ctx.beginPath(); ctx.arc(bx,by,nR,0,6.2832); ctx.fill();
+    /* trailing sparkles */
+    ctx.fillStyle = 'hsla('+hue+',90%,75%,.8)';
+    for (var s2=0;s2<14;s2++){
+      var sa = n1(s2*3.1+seed,2)*6.2832 + t*0.4;
+      var sr = R*(1.3 + n1(s2*7.7,2)*1.6);
+      ctx.globalAlpha = 0.25+0.55*Math.abs(Math.sin(t*3+s2*2));
+      ctx.beginPath(); ctx.arc(bx+Math.cos(sa)*sr, by+Math.sin(sa)*sr*0.9, 2, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  return { el: el,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 4. PARTICLES — nebula / embers / rain ---------- */
+REGISTRY.push({kind:'particles', make:function(seed){
+  var rng = mulberry32(seed);
+  var mode = (rng()*3)|0;
+  var titles = ['Nebula drift','Ember rise','Ion rain'];
+  var el = cardShell('particles', titles[mode], 'seeded particle field — from particle studio', seed);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = rng()*360;
+  var P = [], NP = mode===0?90:(mode===1?70:110);
+  for (var i=0;i<NP;i++){
+    P.push({
+      x: rng()*Wd, y: rng()*Ht,
+      s: mode===0 ? 20+rng()*60 : 1+rng()*3.2,
+      vx:0, vy:0, ph: rng()*10, hue: (hue + (rng()-0.5)*70+360)%360
+    });
+  }
+  var t = 0, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(4,6,13,0.28)';
+    ctx.fillRect(0,0,Wd,Ht);
+    ctx.globalCompositeOperation = 'lighter';
+    for (var k=0;k<NP;k++){
+      var p = P[k];
+      if (mode===0){
+        /* slow nebula drift */
+        p.x += Math.sin(t*0.3+p.ph)*0.5; p.y += Math.cos(t*0.23+p.ph*1.7)*0.4;
+        var tw = 0.05+0.06*Math.abs(Math.sin(t*0.8+p.ph));
+        var g = ctx.createRadialGradient(p.x,p.y,1,p.x,p.y,p.s);
+        g.addColorStop(0,'hsla('+p.hue+',80%,60%,'+tw+')');
+        g.addColorStop(1,'hsla('+p.hue+',80%,60%,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.s,0,6.2832); ctx.fill();
+      } else if (mode===1){
+        /* embers rising */
+        p.y -= (0.6+p.s*0.5); p.x += Math.sin(t*3+p.ph)*0.7;
+        if (p.y < -10){ p.y = Ht+10; p.x = rng()*Wd; }
+        var fl = 0.5+0.5*Math.sin(t*9+p.ph*4);
+        ctx.fillStyle = 'hsla('+(p.hue*0.15+18)+',95%,'+(50+fl*18)+'%,'+(0.35+fl*0.5)+')';
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.s*(0.7+fl*0.5),0,6.2832); ctx.fill();
+      } else {
+        /* ion rain streaks */
+        p.y += 4+p.s*2.2; p.x += Math.sin(p.ph)*0.6;
+        if (p.y > Ht+20){ p.y = -20; p.x = rng()*Wd; }
+        var lg = ctx.createLinearGradient(p.x,p.y,p.x,p.y-26);
+        lg.addColorStop(0,'hsla('+p.hue+',90%,70%,.75)');
+        lg.addColorStop(1,'hsla('+p.hue+',90%,70%,0)');
+        ctx.strokeStyle = lg; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x,p.y-26); ctx.stroke();
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  /* prime the canvas so it's not black on first paint */
+  ctx.fillStyle = '#04060d'; ctx.fillRect(0,0,Wd,Ht);
+  return { el: el,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 5. AMBIENCE — generative soundscape + breathing orb ----------
+ * Starts MUTED (autoplay policy). Tap the pill to unmute. Suspends offscreen. */
+REGISTRY.push({kind:'ambience', make:function(seed){
+  var rng = mulberry32(seed);
+  var names = ['Deep field','Cathedral','Night tide','Glass desert'];
+  var el = cardShell('ambience', names[(rng()*names.length)|0], 'generative pads + pentatonic plucks — from ambience engine', seed);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = rng()*360;
+  var btn = document.createElement('button');
+  btn.className = 'wd-mute'; btn.textContent = '🔇 tap for sound';
+  vis.appendChild(btn);
+
+  var actx=null, master=null, analyser=null, muted=true, raf=0, t=0;
+  var pluckTimer = 0;
+  var PENTA = [0,2,4,7,9,12,14,16,19,21,24];
+  var baseF = 110 * Math.pow(2, ((rng()*5)|0)/12);
+
+  function buildAudio(){
+    actx = new (window.AudioContext||window.webkitAudioContext)();
+    master = actx.createGain(); master.gain.value = 0;
+    analyser = actx.createAnalyser(); analyser.fftSize = 128;
+    var filt = actx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=900; filt.Q.value=0.8;
+    filt.connect(master); master.connect(analyser); analyser.connect(actx.destination);
+    /* slow filter LFO */
+    var lfo = actx.createOscillator(); lfo.frequency.value = 0.05+rng()*0.06;
+    var lfoG = actx.createGain(); lfoG.gain.value = 420;
+    lfo.connect(lfoG); lfoG.connect(filt.frequency); lfo.start();
+    /* detuned pad oscillators */
+    for (var i=0;i<3;i++){
+      var o = actx.createOscillator();
+      o.type = i===2 ? 'triangle' : 'sine';
+      o.frequency.value = baseF * (i===0?1:(i===1?1.5:2.02)) * (1+(rng()-0.5)*0.004);
+      var g = actx.createGain(); g.gain.value = i===2?0.05:0.09;
+      o.connect(g); g.connect(filt); o.start();
+    }
+  }
+  function pluck(){
+    if (!actx || muted) return;
+    var st = PENTA[(rng()*PENTA.length)|0];
+    var f = baseF*2*Math.pow(2, st/12);
+    var o = actx.createOscillator(); o.type='sine'; o.frequency.value=f;
+    var o2 = actx.createOscillator(); o2.type='sine'; o2.frequency.value=f*2.01;
+    var g = actx.createGain(); var g2 = actx.createGain(); g2.gain.value=0.25;
+    var flt = actx.createBiquadFilter(); flt.type='lowpass'; flt.frequency.value=2400;
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(flt);
+    /* route plucks around the pad filter, straight to master */
+    flt.connect(master);
+    var now = actx.currentTime;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(0.16, now+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now+2.8);
+    o.start(now); o2.start(now); o.stop(now+3); o2.stop(now+3);
+  }
+  btn.onclick = function(){
+    if (!actx) buildAudio();
+    if (actx.state==='suspended') actx.resume();
+    muted = !muted;
+    btn.textContent = muted ? '🔇 tap for sound' : '🔊 sounding';
+    if (master){
+      master.gain.cancelScheduledValues(actx.currentTime);
+      master.gain.setTargetAtTime(muted?0:0.5, actx.currentTime, 0.6);
+    }
+  };
+  var freq = new Uint8Array(64);
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    pluckTimer += 0.016;
+    if (!muted && pluckTimer > 2.2+rng()*2.5){ pluckTimer = 0; pluck(); }
+    var energy = 0.12;
+    if (analyser && !muted){ analyser.getByteFrequencyData(freq); for (var i=0;i<24;i++) energy += freq[i]/255; energy/=24; energy=0.1+energy*1.4; }
+    var cx=Wd/2, cy=Ht/2;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(cx,cy,10,cx,cy,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'#060814'); bg.addColorStop(1,'#03040a');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,Wd,Ht);
+    /* breathing orb */
+    var R = Math.min(Wd,Ht)*0.20*(1+Math.sin(t*1.4)*0.06+energy*0.28);
+    ctx.save();
+    ctx.shadowColor='hsla('+hue+',85%,65%,.9)'; ctx.shadowBlur=60;
+    var g = ctx.createRadialGradient(cx,cy,2,cx,cy,R*2.2);
+    g.addColorStop(0,'hsla('+hue+',80%,72%,'+(0.5+energy*0.4)+')');
+    g.addColorStop(0.5,'hsla('+hue+',75%,55%,'+(0.25+energy*0.2)+')');
+    g.addColorStop(1,'hsla('+hue+',75%,50%,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(cx,cy,R*2.2,0,6.2832); ctx.fill();
+    ctx.restore();
+    /* spectrum ring */
+    if (analyser && !muted){
+      ctx.strokeStyle='hsla('+hue+',80%,70%,.55)'; ctx.lineWidth=2;
+      ctx.beginPath();
+      for (var k=0;k<64;k++){
+        var a = k/64*Math.PI*2;
+        var rr = R*1.35 + (freq[k]/255)*R*0.9;
+        var x = cx+Math.cos(a)*rr, y = cy+Math.sin(a)*rr;
+        if (k===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.closePath(); ctx.stroke();
+    } else {
+      /* idle shimmer ring */
+      ctx.strokeStyle='hsla('+hue+',60%,60%,.25)'; ctx.lineWidth=1.5;
+      ctx.beginPath();
+      for (var k2=0;k2<64;k2++){
+        var a2=k2/64*Math.PI*2;
+        var rr2=R*1.35+Math.sin(t*2+k2*0.4)*6;
+        var x2=cx+Math.cos(a2)*rr2, y2=cy+Math.sin(a2)*rr2;
+        if(k2===0)ctx.moveTo(x2,y2); else ctx.lineTo(x2,y2);
+      }
+      ctx.closePath(); ctx.stroke();
+    }
+  }
+  return { el: el,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){
+      if (raf){ cancelAnimationFrame(raf); raf=0; }
+      if (actx && actx.state==='running') actx.suspend();
+    } };
+}});
+
+/* ---------- 6. FOREST — parallax tree layers + fireflies ---------- */
+REGISTRY.push({kind:'forest', make:function(seed){
+  var rng = mulberry32(seed);
+  var n1 = makeNoise1D(mulberry32(seed^0x7f3a));
+  var el = cardShell('forest','Emberwood','procedural silhouettes + fireflies — from vegetation kit', seed);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = 140+rng()*40;
+  var NL = 4, layers = [];
+  for (var L=0;L<NL;L++){
+    var f = L/(NL-1);
+    layers.push({
+      f:f, off: rng()*100,
+      trees: 14+((rng()*10)|0),
+      hBase: Ht*(0.28+f*0.30),
+      speed: 0.008+f*0.030
+    });
+  }
+  var NF = 26, flies = [];
+  for (var i=0;i<NF;i++) flies.push({x:rng()*Wd, y:Ht*0.4+rng()*Ht*0.55, ph:rng()*10, s:1+rng()*2});
+  var mx = Wd*0.72, my = Ht*0.20; /* moon */
+  var t = rng()*100, raf = 0;
+  function tree(x, baseY, h, w, color){
+    ctx.fillStyle = color;
+    /* trunk */
+    ctx.fillRect(x-w*0.06, baseY-h*0.25, w*0.12, h*0.25);
+    /* 3-tier canopy */
+    for (var k=0;k<3;k++){
+      var ty = baseY - h*0.25 - k*h*0.26;
+      var tw = w*(1-k*0.28);
+      ctx.beginPath();
+      ctx.moveTo(x-tw/2, ty); ctx.lineTo(x+tw/2, ty); ctx.lineTo(x, ty-h*0.34);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    /* night sky */
+    var sky = ctx.createLinearGradient(0,0,0,Ht);
+    sky.addColorStop(0,'#030510'); sky.addColorStop(0.6,'#081226'); sky.addColorStop(1,'#0a1a20');
+    ctx.fillStyle=sky; ctx.fillRect(0,0,Wd,Ht);
+    /* moon + halo */
+    var halo = ctx.createRadialGradient(mx,my,4,mx,my,90);
+    halo.addColorStop(0,'rgba(235,242,255,.95)'); halo.addColorStop(0.12,'rgba(200,220,255,.5)'); halo.addColorStop(1,'rgba(200,220,255,0)');
+    ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(mx,my,90,0,6.2832); ctx.fill();
+    ctx.fillStyle='#f2f6ff'; ctx.beginPath(); ctx.arc(mx,my,16,0,6.2832); ctx.fill();
+    /* stars */
+    ctx.fillStyle='rgba(255,255,255,.6)';
+    for (var s=0;s<36;s++){
+      var sx=((s*89.3+seed)%100)/100*Wd, sy=((s*47.9)%100)/100*Ht*0.55;
+      ctx.globalAlpha = 0.15+0.35*Math.abs(Math.sin(t*1.5+s));
+      ctx.fillRect(sx,sy,1.4,1.4);
+    }
+    ctx.globalAlpha=1;
+    /* tree layers, far to near */
+    for (var L2=0;L2<NL;L2++){
+      var lay = layers[L2];
+      lay.off += lay.speed;
+      var baseY = Ht*0.98 - (NL-1-L2)*Ht*0.015;
+      var lum = 6+lay.f*10;
+      var col = 'hsl('+hue+',28%,'+lum+'%)';
+      for (var k2=0;k2<lay.trees;k2++){
+        var span = Wd/lay.trees;
+        var xi = k2*span + (n1(k2*3.7+L2*50,2)-0.5)*span*1.4 - (lay.off*40 % span);
+        if (xi < -60) xi += Wd+120; if (xi > Wd+60) xi -= Wd+120;
+        var hh = lay.hBase*(0.7+n1(k2*9.1+L2*31,2)*0.7);
+        var ww = hh*(0.42+lay.f*0.2);
+        tree(xi, baseY, hh, ww, col);
+      }
+    }
+    /* ground mist */
+    var mist = ctx.createLinearGradient(0,Ht*0.8,0,Ht);
+    mist.addColorStop(0,'rgba(150,200,255,0)'); mist.addColorStop(1,'hsla('+hue+',40%,40%,.14)');
+    ctx.fillStyle=mist; ctx.fillRect(0,Ht*0.8,Wd,Ht*0.2);
+    /* fireflies */
+    for (var f2=0;f2<NF;f2++){
+      var fl = flies[f2];
+      fl.x += Math.sin(t*0.8+fl.ph)*0.6; fl.y += Math.cos(t*0.6+fl.ph*1.3)*0.45;
+      var bl = 0.25+0.75*Math.abs(Math.sin(t*2.4+fl.ph*3));
+      var fg = ctx.createRadialGradient(fl.x,fl.y,0.5,fl.x,fl.y,fl.s*5);
+      fg.addColorStop(0,'rgba(255,240,180,'+(0.85*bl)+')'); fg.addColorStop(1,'rgba(255,240,180,0)');
+      ctx.fillStyle=fg;
+      ctx.beginPath(); ctx.arc(fl.x,fl.y,fl.s*5,0,6.2832); ctx.fill();
+    }
+  }
+  return { el: el,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ================= FEED ================= */
+var activeFeeds = [];
+
+TOOLS.wonder = {
+  mount: function(host){
+    var st = document.createElement('style');
+    st.textContent = CSS;
+    host.innerHTML =
+      '<div class="wd-head"><b>✨ WONDER FEED</b><span id="wd-seedlbl"></span></div>'+
+      '<div class="wd-feed" id="wd-feed"></div>';
+    host.appendChild(st);
+
+    var feed = host.querySelector('#wd-feed');
+    var sessionSeed = (Date.now() % 1000000) | 0;
+    host.querySelector('#wd-seedlbl').textContent = 'session '+sessionSeed;
+    var seqRng = mulberry32(sessionSeed);
+    var count = 0;
+    var live = [];   /* {w, el, started} */
+    var lastKind = -1;
+
+    function nextKind(){
+      /* seeded shuffle without immediate repeats */
+      var k;
+      do { k = (seqRng()*REGISTRY.length)|0; } while (k===lastKind);
+      lastKind = k;
+      return k;
+    }
+    function addWonder(){
+      var kind = nextKind();
+      var wseed = (seqRng()*1000000)|0;
+      var w;
+      try { w = REGISTRY[kind].make(wseed); }
+      catch(e){ /* skip flaky wonders, never break the feed */
+        var f = document.createElement('div');
+        f.className='wd-card'; f.innerHTML='<div class="wd-cap"><b>signal lost</b><span>seed '+wseed+'</span></div>';
+        w = {el:f, start:function(){}, stop:function(){}};
+      }
+      count++;
+      var rec = {w:w, el:w.el, started:false};
+      live.push(rec);
+      /* insert before sentinel */
+      var sent = feed.querySelector('.wd-sentinel');
+      if (sent) feed.insertBefore(w.el, sent); else feed.appendChild(w.el);
+      visObs.observe(w.el);
+      return rec;
+    }
+    function ensureSentinel(){
+      var s = feed.querySelector('.wd-sentinel');
+      if (!s){
+        s = document.createElement('div');
+        s.className='wd-sentinel'; s.textContent='· · ·';
+        feed.appendChild(s);
+        sentObs.observe(s);
+      }
+    }
+    /* pause offscreen wonders, play the visible one */
+    var visObs = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        for (var i=0;i<live.length;i++){
+          if (live[i].el===en.target){
+            if (en.isIntersecting && en.intersectionRatio > 0.45){
+              if (!live[i].started){ live[i].w.start(); live[i].started=true; }
+            } else if (live[i].started){
+              live[i].w.stop(); live[i].started=false;
+            }
+          }
+        }
+      });
+    }, {root: feed, threshold: [0, 0.45, 1]});
+
+    /* infinite: append when the sentinel nears */
+    var sentObs = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting){ addWonder(); addWonder(); }
+      });
+    }, {root: feed, rootMargin: '600px'});
+
+    /* seed the feed */
+    addWonder(); addWonder(); addWonder(); addWonder();
+    ensureSentinel();
+
+    var api = {
+      stopAll: function(){
+        live.forEach(function(r){ try{ if(r.started) r.w.stop(); }catch(e){} });
+        live = [];
+        try{ visObs.disconnect(); }catch(e){}
+        try{ sentObs.disconnect(); }catch(e){}
+      }
+    };
+    activeFeeds.push(api);
+    host._wonderApi = api;
+  },
+  unmount: function(){
+    for (var i=0;i<activeFeeds.length;i++){
+      try{ activeFeeds[i].stopAll(); }catch(e){}
+    }
+    activeFeeds = [];
+  }
+};
 })();
 
 </script>
