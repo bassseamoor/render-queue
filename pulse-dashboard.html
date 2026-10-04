@@ -5880,6 +5880,19 @@ function buildDiorama(spec){
   return d;
 }
 
+/* the archive: every world ever generated, kept by seed. the data center fills. */
+function loadWorlds(){ try{ return JSON.parse(localStorage.getItem('moreultra-worlds')||'[]'); }catch(e){ return []; } }
+function saveWorld(spec){
+  try{
+    var w=loadWorlds();
+    if (w.some(function(s){return s.seed===spec.seed;})) return;
+    w.unshift({seed:spec.seed,comps:spec.comps,mood:spec.mood,water:spec.water,
+               present:spec.present,caption:spec.caption,at:Date.now()});
+    if (w.length>200) w.length=200;
+    localStorage.setItem('moreultra-worlds',JSON.stringify(w));
+  }catch(e){}
+}
+
 /* ================= the tool ================= */
 TOOLS.stream = { mount: function(host){
   var dev=false, voiceOn=false, rec=null;
@@ -5917,6 +5930,7 @@ TOOLS.stream = { mount: function(host){
       '<div class="stm-sub" id="stm-sub">the second project — say what you want, worlds land in the space</div></div>'+
       '<button class="stm-voice" id="stm-voice">🔊 voice off</button>'+
       '<button class="stm-dev" id="stm-boop" style="color:#7fd4ff;border-color:#7fd4ff;">boop → screen</button>'+
+      '<button class="stm-dev" id="stm-worlds-btn">worlds</button>'+
       '<span id="stm-tune-note" style="font-size:11px;color:#7fe0a8;opacity:0;transition:opacity .4s;"></span>'+
       '<button class="stm-dev" id="stm-dev">dev</button></div>'+
       '<canvas id="stm-gl" width="860" height="440"></canvas>'+
@@ -5929,6 +5943,7 @@ TOOLS.stream = { mount: function(host){
       '<button class="nav" id="stm-next">▶</button></div>'+
       '<div class="stm-ing" id="stm-ingbox"></div>'+
       '<div id="stm-says" style="font-size:12px;color:#7fd4ff;padding:2px 4px;min-height:18px;opacity:0;transition:opacity .4s;"></div>'+
+      '<div id="stm-worlds" style="display:none;overflow-x:auto;white-space:nowrap;padding:6px 4px;"></div>'+
       '<div class="stm-ing" id="stm-tunebox" style="display:none;"></div>'+
     '</div>'+
     '<div class="stm-bar"><div class="stm-row">'+
@@ -6034,6 +6049,35 @@ TOOLS.stream = { mount: function(host){
     var sc=host.querySelector('#stm-screen');
     renderScene2D(sc,d.spec);
   }
+  host.querySelector('#stm-worlds-btn').onclick=function(){
+    var strip=host.querySelector('#stm-worlds');
+    if (strip.style.display==='block'){ strip.style.display='none'; strip.innerHTML=''; return; }
+    var w=loadWorlds();
+    if (!w.length){ say('no saved worlds yet \u2014 build something first.'); return; }
+    say(w.length+' worlds in the archive.');
+    w.forEach(function(s){
+      var wrap=document.createElement('div');
+      wrap.style.cssText='display:inline-block;width:150px;margin-right:8px;cursor:pointer;vertical-align:top;';
+      var c2=document.createElement('canvas'); c2.width=150; c2.height=84;
+      c2.style.width='150px'; c2.style.borderRadius='8px';
+      renderScene2D(c2,s);
+      var lb=document.createElement('div');
+      lb.style.cssText='font-size:10px;color:#8fa3b8;white-space:normal;padding:2px;';
+      lb.textContent=s.caption||s.seed;
+      wrap.appendChild(c2); wrap.appendChild(lb);
+      wrap.onclick=function(){
+        var spec={seed:s.seed,comps:s.comps.slice(),mood:s.mood,water:s.water,
+                  present:s.present,caption:s.caption,settled:false,playerVisible:true,n:dioramas.length};
+        var d=buildDiorama(spec);
+        d.cx=dioramas.length*CONFIG.spacing;
+        dioramas.push(d);
+        setFocus(dioramas.length-1);
+        say('reloaded "'+s.caption+'" from the archive.');
+      };
+      strip.appendChild(wrap);
+    });
+    strip.style.display='block';
+  };
   host.querySelector('#stm-boop').onclick=function(){
     var glc=host.querySelector('#stm-gl'), sc=host.querySelector('#stm-screen');
     var btn=host.querySelector('#stm-boop');
@@ -6261,6 +6305,7 @@ TOOLS.stream = { mount: function(host){
       for (var i=0;i<parsed.count;i++){
         var spec=makeScene(seedBase+':'+Date.now()+':'+Math.random(), dioramas.length, parsed, 'f'+i);
         spec.caption=text;
+        saveWorld(spec);
         var d=buildDiorama(spec);
         d.cx=dioramas.length*CONFIG.spacing;
         dioramas.push(d);
