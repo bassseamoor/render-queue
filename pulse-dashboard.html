@@ -154,25 +154,27 @@ body::before{
 }
 .app,.main,.workspace-bar{ position:relative; z-index:1; }
 /* the glass sheet recipe */
-.tool-host,.frame,.app,.window-body,.w-detail,.w-tree,.info-box,.explanation,
+/* NOTE: .app is NOT a glass sheet — backdrop-filter on it would hijack
+ * position:fixed descendants (the mobile drawer). Its .frame children carry the glass. */
+.tool-host,.frame,.window-body,.w-detail,.w-tree,.info-box,.explanation,
 .inventory,.events,.src-row,.evidence-content{
   position:relative;
   background:
     linear-gradient(115deg, rgba(255,255,255,0.13), rgba(255,255,255,0.025) 38%, rgba(255,255,255,0) 62%),
     linear-gradient(165deg, rgba(36,60,92,0.58), rgba(10,20,34,0.66)) !important;
-  -webkit-backdrop-filter:blur(24px) saturate(1.5);
-  backdrop-filter:blur(24px) saturate(1.5);
-  border:1px solid rgba(150,210,255,0.20) !important;
-  border-top-color:rgba(255,255,255,0.32) !important;
+  -webkit-backdrop-filter:blur(30px) saturate(1.55);
+  backdrop-filter:blur(30px) saturate(1.55);
+  border:1px solid rgba(150,210,255,0.22) !important;
+  border-top-color:rgba(255,255,255,0.38) !important;
   border-radius:var(--radius) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.20),
-    inset 0 -1px 0 rgba(0,0,0,0.28),
-    0 20px 55px rgba(0,0,0,0.50) !important;
+    inset 0 1px 0 rgba(255,255,255,0.24),
+    inset 0 -1px 0 rgba(0,0,0,0.30),
+    0 26px 70px rgba(0,0,0,0.58) !important;
 }
 .tool-host{ padding:18px !important; margin-bottom:18px !important; }
 /* header / nav: darker glass shelf */
-.titlebar,.workspace-bar,.subnav,.activity-head,.section-head{
+.titlebar,.workspace-bar,.subnav,.activity-head{
   background:
     linear-gradient(115deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 45%),
     rgba(8,15,26,0.62) !important;
@@ -256,6 +258,16 @@ input[type=range]{ accent-color:var(--cyan); }
 .brand{ font-weight:700 !important; letter-spacing:.02em; }
 .meta,.muted{ color:var(--muted) !important; }
 .mono{ color:#bfe3ff !important; }
+/* section headings: no dark band — type sits clean on the glass */
+.section-head{
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+  -webkit-backdrop-filter:none; backdrop-filter:none;
+  padding:2px 0 10px !important;
+  border-radius:0 !important;
+}
+.section-head h2{ letter-spacing:.02em; }
 /* activity timeline: keep the rail, light it */
 .event{ background:transparent !important; border:none !important; box-shadow:none !important;
   -webkit-backdrop-filter:none; backdrop-filter:none;
@@ -300,6 +312,7 @@ input[type=range]{ accent-color:var(--cyan); }
 body::before{ display:none; }
 #orbs{
   position:fixed; inset:-20% 0; z-index:0; pointer-events:none; will-change:transform;
+  animation:orb-drift 26s ease-in-out infinite;
   background:
     radial-gradient(520px 520px at 10% 14%, rgba(90,170,245,0.20), transparent 70%),
     radial-gradient(620px 620px at 88% 10%, rgba(70,220,170,0.11), transparent 70%),
@@ -327,6 +340,22 @@ body.chrome-hidden header{ transform:translateY(-101%); }
 @media(min-width:1750px){
   body.chrome-hidden .app{ grid-template-columns:0px minmax(0,1fr) 320px; }
 }
+/* the top bar as one element: deep blue, more solid, milky light on top */
+header{
+  background:
+    linear-gradient(115deg, rgba(255,255,255,0.13), rgba(255,255,255,0.03) 45%, rgba(255,255,255,0) 65%),
+    linear-gradient(180deg, rgba(40,70,108,0.94), rgba(15,29,49,0.96)) !important;
+  border-bottom:1px solid rgba(150,210,255,0.24) !important;
+}
+header .btn, header .icon-btn{
+  background:rgba(255,255,255,0.055) !important;
+  border-color:rgba(255,255,255,0.13) !important;
+  box-shadow:none !important;
+}
+header .btn:hover, header .icon-btn:hover{
+  border-color:rgba(127,212,255,0.45) !important;
+  box-shadow:0 0 16px rgba(127,212,255,0.20) !important;
+}
 /* the pull: a sliver of glass at the top edge when chrome is hidden */
 #chrome-pull{
   position:fixed; top:0; left:50%; transform:translate(-50%,-100%);
@@ -351,6 +380,10 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
   -webkit-text-fill-color:transparent; color:transparent;
   animation:brand-sheen 7s ease-in-out infinite;
 }
+@keyframes orb-drift{
+  0%,100%{ translate:0 0; }
+  50%{ translate:0 -48px; }
+}
 @keyframes brand-sheen{
   0%,100%{ background-position:0% 0; }
   50%{ background-position:100% 0; }
@@ -361,6 +394,76 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 @media(prefers-reduced-motion:reduce){
   #orbs,#chrome-pull{ display:none; }
   .brand strong{ animation:none; }
+}
+
+/* ============ D. drawer connected to the top bar (mobile) ============ */
+/* The hamburger drawer slides from directly beneath the header — square top
+ * corners merge into the bar, one continuous glass element, buttery slide. */
+@media(max-width:760px){
+  .app .nav{
+    display:flex; position:fixed; left:8px; top:60px; bottom:8px; width:min(300px,85vw);
+    z-index:40; overflow:auto; padding:18px 12px;
+    border-radius:0 0 18px 18px !important;
+    border-top:none !important;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,0.13), rgba(255,255,255,0.025) 38%, rgba(255,255,255,0) 62%),
+      linear-gradient(165deg, rgba(36,60,92,0.78), rgba(10,20,34,0.88)) !important;
+    -webkit-backdrop-filter:blur(30px) saturate(1.55);
+    backdrop-filter:blur(30px) saturate(1.55);
+    box-shadow:15px 0 60px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.20) !important;
+    transform:translateX(-115%); visibility:hidden;
+    transition:transform .55s cubic-bezier(0.22,1,0.36,1), visibility 0s linear .55s;
+  }
+  .app.nav-open .nav{
+    display:flex; position:fixed; left:8px; top:60px; bottom:8px; width:min(300px,85vw);
+    z-index:40; overflow:auto; padding:18px 12px;
+    border-radius:0 0 18px 18px !important;
+    border-top:none !important;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,0.13), rgba(255,255,255,0.025) 38%, rgba(255,255,255,0) 62%),
+      linear-gradient(165deg, rgba(36,60,92,0.78), rgba(10,20,34,0.88)) !important;
+    -webkit-backdrop-filter:blur(30px) saturate(1.55);
+    backdrop-filter:blur(30px) saturate(1.55);
+    box-shadow:15px 0 60px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.20) !important;
+    transform:translateX(0); visibility:visible;
+    transition:transform .55s cubic-bezier(0.22,1,0.36,1);
+  }
+}
+
+/* ============ F. tiles: variation in size, depth, color ============ */
+.tiles{ gap:14px !important; }
+/* accent palette cycles across tiles */
+.tile:nth-child(4n+1){ --tile-accent:#7fd4ff; }
+.tile:nth-child(4n+2){ --tile-accent:#7fe0a8; }
+.tile:nth-child(4n+3){ --tile-accent:#b9a7ff; }
+.tile:nth-child(4n){ --tile-accent:#ffd479; }
+.tile strong{ color:var(--tile-accent) !important; }
+.tile .tile-icon{ color:var(--tile-accent) !important; }
+.tile{ border-top-color:rgba(255,255,255,0.30) !important; }
+/* depth planes: odd tiles near (lifted, deep shadow), even tiles far (recessed) */
+@media(max-width:760px){
+  .tile:nth-child(odd){
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.22), 0 18px 44px rgba(0,0,0,0.55) !important;
+  }
+  .tile:nth-child(even){
+    margin:0 12px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 18px rgba(0,0,0,0.35) !important;
+  }
+  /* featured tiles: bigger */
+  .tile:nth-child(3n){
+    padding:18px 16px !important;
+  }
+  .tile:nth-child(3n) strong{ font-size:1.02rem !important; }
+}
+@media(min-width:761px){
+  .tile:nth-child(4n+3){ grid-column:span 2; }
+  .tile:nth-child(odd){
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.22), 0 18px 44px rgba(0,0,0,0.55) !important;
+  }
+  .tile:nth-child(even){
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 18px rgba(0,0,0,0.35) !important;
+    transform:translateY(5px);
+  }
 }
 
 </style>
@@ -6990,6 +7093,17 @@ init();
   pull.id = 'chrome-pull';
   pull.setAttribute('aria-label','Show navigation');
   document.body.appendChild(pull);
+
+  /* mobile: the activity panel is a full-screen overlay — default it closed
+   * on fresh load (same as tapping its ×). The Activity button still opens it. */
+  try{
+    if (window.innerWidth <= 760){
+      var act = document.getElementById('activity');
+      var atog = document.getElementById('activity-toggle');
+      if (act && !act.style.display){ act.style.display = 'none'; }
+      if (atog){ atog.setAttribute('aria-expanded','false'); }
+    }
+  }catch(e){}
 
   var main = document.querySelector('.main');
   var lastY = 0, ticking = false, hoverLock = false, settleUntil = 0;
