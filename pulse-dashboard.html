@@ -444,12 +444,17 @@ function treeData(){
   var dcs=Object.values(S.decisions||{}).map(function(d){return D(d.id)}).filter(Boolean);
   var cps=(S.activity||[]).filter(function(e){return e.type==='proposal'}).map(E);
   function grp(id,name,st,kids){return {kind:'group',id:id,name:name,st:st,kids:kids.filter(Boolean)}}
-  return {kind:'project',id:'more-os',name:'More OS',st:'active project',kids:[
+  var inOrder=['canvas-shell','wrangler-catalog','js-create-pipeline','seed-lab','project-pulse'];
+  var inKids=inOrder.map(C).filter(Boolean);
+  Object.values(comps).forEach(function(c){
+    if(c.role==='active'&&inOrder.indexOf(c.id)<0&&C(c.id))inKids.push(C(c.id))});
+  var notInKids=[
     grp('g-env','3D space','environment',['terrain-core','terrain-field','mesh-builder','moorworld','palettes','ambience-engine','spawn-director','perf-governor'].map(C)),
-    grp('g-iface','Interface','',['canvas-shell','wrangler-catalog'].map(C)),
-    grp('g-prod','Production','',['js-create-pipeline','rust-intent-compiler'].map(C)),
-    grp('g-apps','Apps & worlds','',['seed-lab','project-pulse'].map(C)),
     grp('g-shared','Shared parts','',['seed-rng','seed-codec','seed-console','save-shape','release-gate','registry-triple','replace-file','idempotent-upload'].map(C)),
+    grp('g-ref','Reference','',['rust-intent-compiler'].map(C))];
+  return {kind:'project',id:'more-os',name:'More OS',st:'active project',kids:[
+    grp('g-in','In','in Moor now',inKids),
+    grp('g-notin','Not In','exists, not in Moor',notInKids),
     grp('g-gen','Generators','',[0,1,2,3,4,5].map(G)),
     grp('g-how','How it works','',howKids),
     grp('g-dec','Decisions',String(dcs.length),dcs),
