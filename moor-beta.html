@@ -3039,10 +3039,11 @@ var DEFAULT_TUNE = {
   camFollow: 10.0, camMinDist: 1.2,
   fovBase: 60.0, fovSprint: 64.0, fovEase: 6.0,
   wadeMul: 0.55, flySpeed: 22.0,
-  worldBound: 200
+  worldBound: Infinity /* v0.11: the world is not a tile; set finite to fence */
 };
 
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function bound(v,wb){ return (!isFinite(wb))?v:clamp(v,-wb,wb); }
 function lerp(a,b,t){ return a+(b-a)*t; }
 
 /* ---------------- input ---------------- */
@@ -3147,6 +3148,15 @@ MoorController.create = function(world, tuneOverrides){
   world = world || {};
   if(typeof world.heightAt!=='function') throw new Error('MoorController: world.heightAt required');
   if(typeof world.collideXZ!=='function') throw new Error('MoorController: world.collideXZ required');
+  /* v0.12 sphere hooks (optional; flat fallbacks keep old worlds working):
+   * surfacePoint(mx,mz,h) -> 3D point | surfaceUp(mx,mz) -> up vector |
+   * wrapXZ(x,z) -> position folded onto the playable surface (antipode wrap) */
+  function flatSP(mx,mz,h,out){ out=out||[]; out[0]=mx; out[1]=h; out[2]=mz; return out; }
+  function flatUp(mx,mz,out){ out=out||[]; out[0]=0; out[1]=1; out[2]=0; return out; }
+  function flatWrap(x,z,out){ out=out||[]; out[0]=x; out[1]=z; return out; }
+  var surfP=world.surfacePoint||flatSP, surfU=world.surfaceUp||flatUp, wrapP=world.wrapXZ||flatWrap;
+  var _wp=[0,0];
+  function wrapCam(){ wrapP(cam.wx,cam.wz,_wp); cam.wx=_wp[0]; cam.wz=_wp[1]; }
   var cam = world.cam || {};
   if(cam.wx===undefined){ cam.wx=8; cam.wz=8; }
   if(cam.wyaw===undefined) cam.wyaw=0;
@@ -3185,8 +3195,7 @@ MoorController.create = function(world, tuneOverrides){
   /* axis-separated move with wall push-out + step assist */
   function moveAxis(dx, dz){
     var nx=cam.wx+dx, nz=cam.wz+dz;
-    var wb=tune.worldBound;
-    nx=clamp(nx,-wb,wb); nz=clamp(nz,-wb,wb);
+    nx=bound(nx,tune.worldBound); nz=bound(nz,tune.worldBound);
     var feet=world.heightAt(nx,nz)+cam.air;
     var res=world.collideXZ(nx, feet, feet+tune.bodyHeight, nz, tune.radius);
     var blocked = Math.abs(res[0]-nx)>1e-6 || Math.abs(res[1]-nz)>1e-6;
@@ -3207,6 +3216,7 @@ MoorController.create = function(world, tuneOverrides){
     if(blocked && !wasBlocked) emit('collide',{x:nx,z:nz});
     wasBlocked=blocked;
     cam.wx=res[0]; cam.wz=res[1];
+    wrapCam();
   }
 
   function doJump(){
@@ -3222,11 +3232,15 @@ MoorController.create = function(world, tuneOverrides){
     var pitch=clamp(cam.wpitch,-0.6,0.6), cp=Math.cos(pitch), sp2=Math.sin(pitch);
     var sp=tune.flySpeed*(inp.sprint?3:1);
     var fX=s*cp, fY=-sp2, fZ=c*cp;          /* view direction (matches look()) */
+    /* v0.12: Space-climb accelerates with altitude — leaving the planet
+     * should take seconds, not minutes. Radial air, so this is the climb. */
+    var boost=1+Math.max(0,cam.air)/800;
     var dx=(fX*inp.my + -c*inp.mx)*sp*dt;
-    var dy=(fY*inp.my + (inp.jumpHeld?1:0))*sp*dt;
+    var dy=(fY*inp.my + (inp.jumpHeld?boost:0))*sp*dt;
     var dz=(fZ*inp.my +  s*inp.mx)*sp*dt;
-    cam.wx=clamp(cam.wx+dx,-tune.worldBound,tune.worldBound);
-    cam.wz=clamp(cam.wz+dz,-tune.worldBound,tune.worldBound);
+    cam.wx=bound(cam.wx+dx,tune.worldBound);
+    cam.wz=bound(cam.wz+dz,tune.worldBound);
+    wrapCam();
     noclipY=(noclipY===undefined ? world.heightAt(cam.wx,cam.wz)+6 : noclipY)+dy;
     cam.air=noclipY-world.heightAt(cam.wx,cam.wz);
     cam.vy=0; vx=dx/Math.max(dt,1e-4); vz=dz/Math.max(dt,1e-4);
@@ -3326,36 +3340,39 @@ MoorController.create = function(world, tuneOverrides){
 
   function headPos(out){
     out=out||[];
-    out[0]=cam.wx; out[1]=world.heightAt(cam.wx,cam.wz)+cam.air+1.55; out[2]=cam.wz;
-    return out;
+    return surfP(cam.wx,cam.wz,world.heightAt(cam.wx,cam.wz)+cam.air+1.55,out);
   }
 
   var _h=[0,0,0], _d=[0,0,0];
   function desiredEye(out){
+    out=out||[];
     var s=Math.sin(cam.wyaw), c=Math.cos(cam.wyaw);
-    headPos(_h);
+    var hw=world.heightAt(cam.wx,cam.wz)+cam.air; /* plane-space head height */
     var pitch=clamp(cam.wpitch,-0.6,0.6);
     var dist=tune.eyeDist, cp=Math.cos(pitch), sp2=Math.sin(pitch);
+    var ex,ez,ey;
     if(camMode==='first'){
-      out[0]=_h[0]+s*0.22; out[1]=_h[1]+0.08; out[2]=_h[2]+c*0.22;
-      return out;
+      ex=cam.wx+s*0.22; ez=cam.wz+c*0.22; ey=hw+1.55+0.08;
+      return surfP(ex,ez,ey,out);
     }
-    var ex=_h[0]-s*cp*dist, ez=_h[2]-c*cp*dist;
-    var ey=_h[1]+tune.eyeLift+sp2*dist*0.8;
-    /* keep out of the ground */
+    ex=cam.wx-s*cp*dist; ez=cam.wz-c*cp*dist;
+    wrapP(ex,ez,_wp); ex=_wp[0]; ez=_wp[1];
+    ey=hw+1.55+tune.eyeLift+sp2*dist*0.8;
+    /* keep out of the ground (radial height on the sphere) */
     var minY=world.heightAt(ex,ez)+0.9;
     if(ey<minY) ey=minY;
+    surfP(ex,ez,ey,out);
     /* camera collision: pull in when a building blocks the view */
     if(world.rayHit){
+      surfP(cam.wx,cam.wz,hw+1.55,_h);
       var hit=null;
-      try{ hit=world.rayHit(_h[0],_h[1],_h[2],ex,ey,ez); }catch(_){}
+      try{ hit=world.rayHit(_h[0],_h[1],_h[2],out[0],out[1],out[2]); }catch(_){}
       if(hit && hit.t<1){
         var pull=Math.max(tune.camMinDist, hit.t*dist-0.3);
         var f=pull/dist;
-        ex=_h[0]+(ex-_h[0])*f; ey=_h[1]+(ey-_h[1])*f; ez=_h[2]+(ez-_h[2])*f;
+        out[0]=_h[0]+(out[0]-_h[0])*f; out[1]=_h[1]+(out[1]-_h[1])*f; out[2]=_h[2]+(out[2]-_h[2])*f;
       }
     }
-    out[0]=ex; out[1]=ey; out[2]=ez;
     return out;
   }
 
@@ -3378,17 +3395,17 @@ MoorController.create = function(world, tuneOverrides){
   function look(out){
     out=out||[];
     var s=Math.sin(cam.wyaw), c=Math.cos(cam.wyaw);
-    headPos(_h);
+    var hw=world.heightAt(cam.wx,cam.wz)+cam.air;
+    var tx,tz,th;
     if(camMode==='first'){
       var pitch=clamp(cam.wpitch,-0.6,0.6);
       var cp=Math.cos(pitch);
-      out[0]=_h[0]+s*cp*10; out[1]=_h[1]-Math.sin(pitch)*10+0.08; out[2]=_h[2]+c*cp*10;
-      return out;
+      tx=cam.wx+s*cp*10; tz=cam.wz+c*cp*10; th=hw+1.55+0.08-Math.sin(pitch)*10;
+      return surfP(tx,tz,th,out);
     }
     /* keep the beta's look target: ahead of the body, ~chest height */
-    var py=world.heightAt(cam.wx,cam.wz)+cam.air;
-    out[0]=cam.wx+s*tune.lookAhead; out[1]=py+tune.lookHeight; out[2]=cam.wz+c*tune.lookAhead;
-    return out;
+    tx=cam.wx+s*tune.lookAhead; tz=cam.wz+c*tune.lookAhead; th=hw+tune.lookHeight;
+    return surfP(tx,tz,th,out);
   }
 
   function setCamMode(m){
@@ -3400,8 +3417,9 @@ MoorController.create = function(world, tuneOverrides){
     emit('modeChange',{mode: noclip?'noclip':camMode});
   }
   function teleport(x,z,yaw){
-    cam.wx=clamp(x,-tune.worldBound,tune.worldBound);
-    cam.wz=clamp(z,-tune.worldBound,tune.worldBound);
+    wrapP(x,z,_wp);
+    cam.wx=bound(_wp[0],tune.worldBound);
+    cam.wz=bound(_wp[1],tune.worldBound);
     if(yaw!==undefined) cam.wyaw=yaw;
     cam.air=0; cam.vy=0; cam.grounded=true; vx=0; vz=0; seye=null;
     coyote=0; jumpBuf=0; prevJumpHeld=false; lastGroundY=undefined; wasBlocked=false;
@@ -4032,29 +4050,32 @@ function create(cv,hooks){
    * an azimuthal-equidistant projection — exact at the patch, smooth to the
    * antipode. No tiers, no warp uniforms: this IS the geometry. */
   var R=1200, PC=[0,-1200,0];
+  var ORG={x:0,z:0}; /* FIXED at spawn: the height field is spawn-relative, so the
+   * projection origin never moves. The camera follows the player instead
+   * (view.tx/tz). Moving ORG would slide the terrain around the globe. */
   function setPlanet(o){
     R=o.R||1200;
     PC=[o.x||0,(o.y||0)-R,o.z||0];
   }
   function patchOrigin(){ return [PC[0],PC[1]+R,PC[2]]; }
   function surfPoint(x,z,h){
-    var r=Math.sqrt(x*x+z*z), ang=r/R;
+    var dx=x-ORG.x, dz=z-ORG.z, r=Math.sqrt(dx*dx+dz*dz), ang=r/R;
     var ca=Math.cos(ang), s=r<1e-9?0:Math.sin(ang)/r;
     var rr=R+h;
-    return [PC[0]+x*s*rr, PC[1]+ca*rr, PC[2]+z*s*rr];
+    return [PC[0]+dx*s*rr, PC[1]+ca*rr, PC[2]+dz*s*rr];
   }
   function surfNormal(x,z){
     var p=surfPoint(x,z,0);
     return norm3([p[0]-PC[0],p[1]-PC[1],p[2]-PC[2]]);
   }
-  /* inverse: world point -> tangent meters (null when too far from patch) */
+  /* inverse: world point -> spawn-relative tangent meters (whole sphere) */
   function unsurf(p){
     var vx=p[0]-PC[0], vy=p[1]-PC[1], vz=p[2]-PC[2];
     var l=Math.sqrt(vx*vx+vy*vy+vz*vz)||1;
     var ang=Math.acos(clamp(vy/l,-1,1));
-    if(ang*R>400) return null;
+    if(ang>Math.PI) return null;
     var az=Math.atan2(vz,vx);
-    return [R*ang*Math.cos(az), R*ang*Math.sin(az)];
+    return [ORG.x+R*ang*Math.cos(az), ORG.z+R*ang*Math.sin(az)];
   }
 
   /* ---------- hero terrain sphere (chunked build) ---------- */
@@ -4085,7 +4106,7 @@ function create(cv,hooks){
     for(var i=0;i<=HSEG;i++){
       var th=i/HSEG*Math.PI*2;
       var cth=Math.cos(th), sth=Math.sin(th);
-      var mx=R*ph*cth, mz=R*ph*sth;           /* tangent meters from patch */
+      var mx=ORG.x+R*ph*cth, mz=ORG.z+R*ph*sth; /* game meters under this sphere point */
       var h=planetField(mx,mz);
       var rr=R+h;
       pos.push(PC[0]+sph*cth*rr, PC[1]+cph*rr, PC[2]+sph*sth*rr);
@@ -4094,7 +4115,7 @@ function create(cv,hooks){
   }
   function buildStatic(key){
     worldKey=key;
-    var ck=key+'#'+lens;
+    var ck=key+'#'+lens+'@'+ORG.x+','+ORG.z;
     if(S.key===ck&&!sBuild) return;
     S.key=ck;
     /* start chunked hero-sphere rebuild; statics rebuild now (cheap) */
@@ -4501,7 +4522,7 @@ function create(cv,hooks){
       var hit=[b.eye[0]+d[0]*t,b.eye[1]+d[1]*t,b.eye[2]+d[2]*t];
       m=unsurf(hit);
       if(!m) return null;
-      if(Math.abs(m[0])>200||Math.abs(m[1])>200) return null;
+      if(Math.hypot(m[0]-view.tx,m[1]-view.tz)>2000) return null; /* editable near the player */
       t=raySphere(b.eye,d,R+planetField(m[0],m[1]));
     }
     return (t>=0&&m)?[m[0],m[1]]:null;
@@ -4728,6 +4749,63 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ retu
 function strHash(s){ s=String(s); var h=2166136261; for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; var t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
+/* ---------------- the planet (v0.12): the world IS a sphere ----
+ * (mx,mz) = azimuthal-equidistant meters from spawn (planet top).
+ * Gameplay lives in (mx,mz); 3D comes from planetXYZ. R matches the
+ * map's per-world planet radius (map3d.setPlanet). The antipode wrap
+ * keeps every position inside r<=PI*R: walk past the far side and you
+ * come home — a sphere has no edges, so there is no fence. */
+var PLANET_R=1200, PLANET_C=[0,-1200,0];
+function planetRSet(r){ PLANET_R=r; PLANET_C=[0,-r,0]; }
+function planetXYZ(mx,mz,h,out){
+  var r=Math.sqrt(mx*mx+mz*mz), ang=r/PLANET_R;
+  var ca=Math.cos(ang), s=r<1e-9?(1/PLANET_R):(Math.sin(ang)/r), rr=PLANET_R+h;
+  out=out||[];
+  out[0]=PLANET_C[0]+mx*s*rr; out[1]=PLANET_C[1]+ca*rr; out[2]=PLANET_C[2]+mz*s*rr;
+  return out;
+}
+var _pu=[0,0,0];
+function planetUp(mx,mz,out){
+  out=out||[];
+  planetXYZ(mx,mz,0,_pu);
+  var dx=_pu[0]-PLANET_C[0], dy=_pu[1]-PLANET_C[1], dz=_pu[2]-PLANET_C[2];
+  var l=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;
+  out[0]=dx/l; out[1]=dy/l; out[2]=dz/l; return out;
+}
+/* 3D -> (mx,mz,h): radial height above the planet surface point */
+function planetInv(x,y,z,out){
+  out=out||[];
+  var vx=x-PLANET_C[0], vy=y-PLANET_C[1], vz=z-PLANET_C[2];
+  var l=Math.sqrt(vx*vx+vy*vy+vz*vz)||1;
+  var ang=Math.acos(Math.max(-1,Math.min(1,vy/l)));
+  var az=Math.atan2(vz,vx);
+  out[0]=PLANET_R*ang*Math.cos(az); out[1]=PLANET_R*ang*Math.sin(az); out[2]=l-PLANET_R;
+  return out;
+}
+/* antipode wrap: any (mx,mz) folds onto the r<=PI*R disk, continuous in 3D */
+function wrapXZ(mx,mz,out){
+  out=out||[];
+  var maxR=Math.PI*PLANET_R, r=Math.sqrt(mx*mx+mz*mz);
+  if(r<=maxR){ out[0]=mx; out[1]=mz; return out; }
+  var phi=Math.atan2(mz,mx), q=r%(2*maxR), rr, ph2;
+  if(q<=maxR){ rr=q; ph2=phi; } else { rr=2*maxR-q; ph2=phi+Math.PI; }
+  out[0]=rr*Math.cos(ph2); out[1]=rr*Math.sin(ph2); return out;
+}
+/* local tangent frame at (mx,mz): T1=d/dmx, T2=d/dmz, UP=radial. For
+ * orienting buildings/trees/props so they stand on the sphere. */
+var _ta=[0,0,0], _tb=[0,0,0];
+function planetFrame(mx,mz,out){
+  out=out||{};
+  var e=1.5, h=0;
+  planetXYZ(mx+e,mz,h,_ta); planetXYZ(mx-e,mz,h,_tb);
+  var t1=[_ta[0]-_tb[0],_ta[1]-_tb[1],_ta[2]-_tb[2]];
+  planetXYZ(mx,mz+e,h,_ta); planetXYZ(mx,mz-e,h,_tb);
+  var t2=[_ta[0]-_tb[0],_ta[1]-_tb[1],_ta[2]-_tb[2]];
+  var up=planetUp(mx,mz,[]);
+  function n(v){ var l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])||1; return [v[0]/l,v[1]/l,v[2]/l]; }
+  out.t1=n(t1); out.t2=n(t2); out.up=up; return out;
+}
+
 /* ---------------- world document ----------------
  * One JSON per world: {id,name,seed,buildings[],items[]}. The persistent
  * world system: mesh is DERIVED, never stored — rebuild from the doc. */
@@ -4845,13 +4923,26 @@ function groundColor(x,z,h){
  * Buildings and furniture emit into CityMesh (stride 23: pos/normal/color…);
  * we merge them into compact world buffers with placement transforms. */
 var objPos=[], objNrm=[], objCol=[], objIdx=[];
-function pushMesh(mesh,rot,tx,ty,tz){
+/* push a mesh onto the sphere: yaw `rot` in the local tangent plane,
+ * standing on the radial up. Replaces the old flat Y-rotation placement. */
+var _pf={};
+function pushMesh(mesh,rot,mx,mz,yOff){
   var base=objPos.length/3, d=mesh.data, n=d.length/23;
   var c=Math.cos(rot), s=Math.sin(rot);
+  wrapXZ(mx,mz,_wx);
+  var h=heightAt(_wx[0],_wx[1]);
+  var bp=planetXYZ(_wx[0],_wx[1],h+yOff,[0,0,0]);
+  planetFrame(_wx[0],_wx[1],_pf);
+  var t1=_pf.t1, t2=_pf.t2, up=_pf.up;
   for(var i=0;i<n;i++){
     var o=i*23, x=d[o],y=d[o+1],z=d[o+2], nx=d[o+3],ny=d[o+4],nz=d[o+5];
-    objPos.push(tx+x*c+z*s, ty+y, tz-x*s+z*c);
-    objNrm.push(nx*c+nz*s, ny, -nx*s+nz*c);
+    var lx=x*c+z*s, lz=-x*s+z*c, lnx=nx*c+nz*s, lnz=-nx*s+nz*c;
+    objPos.push(bp[0]+lx*t1[0]+y*up[0]+lz*t2[0],
+                bp[1]+lx*t1[1]+y*up[1]+lz*t2[1],
+                bp[2]+lx*t1[2]+y*up[2]+lz*t2[2]);
+    objNrm.push(lnx*t1[0]+ny*up[0]+lnz*t2[0],
+                lnx*t1[1]+ny*up[1]+lnz*t2[1],
+                lnx*t1[2]+ny*up[2]+lnz*t2[2]);
     objCol.push(d[o+6],d[o+7],d[o+8]);
   }
   var ix=mesh.indices;
@@ -4861,21 +4952,21 @@ function emitBuilding(b){
   var mesh=new CityMesh();
   var bd=Struct.makeBuilding(b.seed,b.theme,{w:b.w,d:b.d},b.stories);
   Struct.emit(mesh,bd);
-  pushMesh(mesh,b.rot,b.x,heightAt(b.x,b.z)-0.15,b.z);
+  pushMesh(mesh,b.rot,b.x,b.z,-0.15);
 }
 function emitItem(it){
   var mesh=new CityMesh();
   var fr=Furnish.furnish(it.type,{seed:it.seed});
   Furnish.emitTris(mesh,fr.tris,fr.colorFor);
-  pushMesh(mesh,it.rot,it.x,heightAt(it.x,it.z),it.z);
+  pushMesh(mesh,it.rot,it.x,it.z,0);
 }
 
 /* ---------------- WebGL ---------------- */
-var gl=null, prog=null, aPos, aNrm, aCol, uMVP, uSun, uFog, uCam, uFogK, uReveal;
+var gl=null, prog=null, aPos, aNrm, aCol, uMVP, uSun, uFog, uCam, uFogK, uReveal, uPlanetC, uPlanetR;
 var terrainBuf=null, terrainCount=0, objBuf=null, objCount=0, waterBuf=null, farBuf=null;
 var VSH='attribute vec3 p;attribute vec3 n;attribute vec3 c;'+
-'uniform mat4 mvp;varying vec3 vN;varying vec3 vC;varying float vD;varying float vY;'+
-'void main(){vN=n;vC=c;vY=p.y;vec4 wp=mvp*vec4(p,1.0);vD=-wp.z;gl_Position=wp;}';
+'uniform mat4 mvp;uniform vec3 planetC;uniform float planetR;varying vec3 vN;varying vec3 vC;varying float vD;varying float vY;'+
+'void main(){vN=n;vC=c;vY=length(p-planetC)-planetR;vec4 wp=mvp*vec4(p,1.0);vD=-wp.z;gl_Position=wp;}';
 var FSH='precision mediump float;varying vec3 vN;varying vec3 vC;varying float vD;varying float vY;'+
 'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;uniform float fogK;uniform float uReveal;'+
 'void main(){vec3 N=normalize(vN);float dif=max(dot(N,normalize(sun)),0.0);'+
@@ -4905,6 +4996,7 @@ function initGL(){
   uFog=gl.getUniformLocation(prog,'fog'); uCam=gl.getUniformLocation(prog,'cam');
   uFogK=gl.getUniformLocation(prog,'fogK');
   uReveal=gl.getUniformLocation(prog,'uReveal');
+  uPlanetC=gl.getUniformLocation(prog,'planetC'); uPlanetR=gl.getUniformLocation(prog,'planetR');
   gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
   return true;
 }
@@ -4927,49 +5019,161 @@ function bindBuf(b){
   gl.vertexAttribPointer(aCol,3,gl.FLOAT,false,36,24); gl.enableVertexAttribArray(aCol);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b.ib);
 }
-function buildTerrainBuffers(){
-  var N=150, SIZE=420, pos=[],nrm=[],col=[],idx=[];
+/* ---------------- streamed terrain (v0.11: the world is not a tile) ----------------
+ * High-detail terrain streams in 100m chunks around the player (5x5 window,
+ * 27x27 verts per chunk @ ~3.8m). The height field is infinite and analytic,
+ * so chunks are seamless by construction. Far rings + water follow at coarse
+ * scale. One chunk builds per frame — crossing a chunk border is invisible.
+ * Chunk validity is keyed on world seed + terrain-edit count, so terraform
+ * undo, reseed, and planet travel all invalidate correctly. */
+var CH=100, CHW=2, CHN=26;
+var terrChunks={}, terrChunkList=[], terrQueue=[];
+var lastPCX=1e9, lastPCZ=1e9, terrSeedKey='\0';
+var farCX=1e9, farCZ=1e9, farBuild=null;
+function worldTerrainKey(){ var w=activeWorld(); return (w?w.seed:'?')+'|'+((w&&w.terrainEdits)?w.terrainEdits.length:0); }
+function disposeChunk(c){ if(c&&c.buf){ gl.deleteBuffer(c.buf.vb); gl.deleteBuffer(c.buf.ib); } }
+var _wx=[0,0];
+function buildTerrainChunk(cx,cz){
+  var N=CHN, S=CH, x0=cx*S-S/2, z0=cz*S-S/2, pos=[],nrm=[],col=[],idx=[];
+  var P=[0,0,0], Ax=[0,0,0], Bx=[0,0,0], Az=[0,0,0], Bz=[0,0,0];
+  function P3(x,z){
+    wrapXZ(x,z,_wx);
+    var h=heightAt(_wx[0],_wx[1]);
+    return {p:planetXYZ(_wx[0],_wx[1],h,[0,0,0]), h:h, wx:_wx[0], wz:_wx[1]};
+  }
   for(var j=0;j<=N;j++) for(var i=0;i<=N;i++){
-    var x=(i/N-0.5)*SIZE, z=(j/N-0.5)*SIZE, h=heightAt(x,z);
-    pos.push(x,h,z);
-    var e=2.0, nx=heightAt(x-e,z)-heightAt(x+e,z), nz=heightAt(x,z-e)-heightAt(x,z+e);
-    var il=1/Math.sqrt(nx*nx+4*e*e+nz*nz);
-    nrm.push(nx*il,2*e*il,nz*il);
-    var c=groundColor(x,z,h); col.push(c[0],c[1],c[2]);
+    var x=x0+i/N*S, z=z0+j/N*S;
+    var q=P3(x,z);
+    pos.push(q.p[0],q.p[1],q.p[2]);
+    /* 3D normal from the draped surface (finite differences on the sphere) */
+    var e=2.0;
+    var qa=P3(x+e,z), qb=P3(x-e,z), qc=P3(x,z+e), qd=P3(x,z-e);
+    var tx=qa.p[0]-qb.p[0], ty=qa.p[1]-qb.p[1], tz=qa.p[2]-qb.p[2];
+    var ux=qc.p[0]-qd.p[0], uy=qc.p[1]-qd.p[1], uz=qc.p[2]-qd.p[2];
+    var nx=ty*uz-tz*uy, ny=tz*ux-tx*uz, nz=tx*uy-ty*ux;
+    var il=1/(Math.sqrt(nx*nx+ny*ny+nz*nz)||1);
+    /* keep the normal pointing away from the planet center */
+    var upx=q.p[0]-PLANET_C[0], upy=q.p[1]-PLANET_C[1], upz=q.p[2]-PLANET_C[2];
+    if(nx*upx+ny*upy+nz*upz<0){ nx=-nx; ny=-ny; nz=-nz; }
+    nrm.push(nx*il,ny*il,nz*il);
+    var c=groundColor(q.wx,q.wz,q.h); col.push(c[0],c[1],c[2]);
   }
   for(var jj=0;jj<N;jj++) for(var ii=0;ii<N;ii++){
     var a=jj*(N+1)+ii, b=a+1, c2=a+N+1, d=c2+1;
     idx.push(a,c2,b, b,c2,d);
   }
-  if(terrainBuf){ gl.deleteBuffer(terrainBuf.vb); gl.deleteBuffer(terrainBuf.ib); }
-  terrainBuf=makeBuf(pos,nrm,col,idx);
-  /* far rings: the world continues to the horizon (same height field, coarser) */
-  var fpos=[],fnrm=[],fcol=[],fidx=[],foff=0;
-  [[1500,25,-0.15],[4200,70,-0.3]].forEach(function(rg){
-    var RS=rg[0], st=rg[1], yo=rg[2], n=Math.round(RS/st), base=foff;
-    for(var j=0;j<=n;j++) for(var i=0;i<=n;i++){
-      var x=(i/n-0.5)*RS, z=(j/n-0.5)*RS, h=heightAt(x,z)+yo;
-      fpos.push(x,h,z);
-      var e=st, nx=heightAt(x-e,z)-heightAt(x+e,z), nz=heightAt(x,z-e)-heightAt(x,z+e);
-      var il=1/Math.sqrt(nx*nx+4*e*e+nz*nz);
-      fnrm.push(nx*il,2*e*il,nz*il);
-      var c=groundColor(x,z,h-yo); fcol.push(c[0],c[1],c[2]);
-    }
-    for(var jj=0;jj<n;jj++) for(var ii=0;ii<n;ii++){
-      var a=base+jj*(n+1)+ii, b=a+1, c2=a+n+1, d=c2+1;
-      fidx.push(a,c2,b, b,c2,d);
-    }
-    foff+=(n+1)*(n+1);
+  return makeBuf(pos,nrm,col,idx);
+}
+function refreshTerrList(){ terrChunkList=[]; for(var k in terrChunks) terrChunkList.push(terrChunks[k]); }
+function updateTerrainChunks(pcx,pcz){
+  var key=worldTerrainKey(), dirty=(key!==terrSeedKey);
+  if(dirty) terrSeedKey=key;
+  for(var dz=-CHW;dz<=CHW;dz++) for(var dx=-CHW;dx<=CHW;dx++){
+    var cx=pcx+dx, cz=pcz+dz, kk=cx+','+cz, e=terrChunks[kk];
+    if(dirty||!e||e.key!==key){ if(terrQueue.indexOf(kk)<0) terrQueue.push(kk); }
+  }
+  terrQueue.sort(function(a,b){
+    var pa=a.split(','), pb=b.split(',');
+    var da=Math.abs(+pa[0]-pcx)+Math.abs(+pa[1]-pcz), db=Math.abs(+pb[0]-pcx)+Math.abs(+pb[1]-pcz);
+    return da-db;
   });
-  if(farBuf){ gl.deleteBuffer(farBuf.vb); gl.deleteBuffer(farBuf.ib); }
-  farBuf=makeBuf(fpos,fnrm,fcol,fidx);
-  /* water plane (extends under the far rings) */
-  var WS=4200;
-  var wpos=[-WS/2,0.8,-WS/2, WS/2,0.8,-WS/2, WS/2,0.8,WS/2, -WS/2,0.8,WS/2];
-  var wnrm=[0,1,0, 0,1,0, 0,1,0, 0,1,0];
-  var wcol=[0.25,0.45,0.62, 0.25,0.45,0.62, 0.25,0.45,0.62, 0.25,0.45,0.62];
+  for(var k2 in terrChunks){ var c=terrChunks[k2];
+    if(Math.abs(c.cx-pcx)>CHW+1||Math.abs(c.cz-pcz)>CHW+1){ disposeChunk(c); delete terrChunks[k2]; } }
+  refreshTerrList();
+}
+function pumpTerrain(){
+  if(!terrQueue.length) return;
+  var kk=terrQueue.shift(), p=kk.split(','), cx=+p[0], cz=+p[1], key=terrSeedKey;
+  var e=terrChunks[kk];
+  if(e&&e.key===key) return;
+  if(e) disposeChunk(e);
+  terrChunks[kk]={buf:buildTerrainChunk(cx,cz),cx:cx,cz:cz,key:key};
+  refreshTerrList();
+}
+/* far planet: the whole sphere, coarse — the world you see from the air.
+ * Built chunked over frames (like the map's hero sphere); detail chunks
+ * sit slightly above it near the player, so no z-fighting. */
+var farBuild=null, farKey='\0';
+function planetFarKey(){ var w=activeWorld(); return (w?w.seed:'?')+'|'+((w&&w.terrainEdits)?w.terrainEdits.length:0)+'|'+PLANET_R; }
+var FHSEG=96, FHST=60;
+function recenterFar(pcx,pcz){
+  var key=planetFarKey();
+  if(farBuf&&key===farKey&&!farBuild) return;
+  farKey=key; farCX=pcx; farCZ=pcz;
+  farBuild={j:0,pos:[],nrm:[],col:[],idx:[]};
+}
+var _fw=[0,0];
+function pumpFar(){
+  if(!farBuild) return;
+  var FB=farBuild, R=PLANET_R;
+  for(var r=0;r<6&&FB.j<=FHST;r++,FB.j++){
+    var j=FB.j, ph=j/FHST*Math.PI, sph=Math.sin(ph), cph=Math.cos(ph);
+    for(var i=0;i<=FHSEG;i++){
+      var th=i/FHSEG*Math.PI*2, cth=Math.cos(th), sth=Math.sin(th);
+      var mx=R*ph*cth, mz=R*ph*sth;
+      var h=heightAt(mx,mz)-0.6; /* tucked under the detail chunks */
+      var p=planetXYZ(mx,mz,h,[0,0,0]);
+      FB.pos.push(p[0],p[1],p[2]);
+      var up=planetUp(mx,mz,[]);
+      FB.nrm.push(up[0],up[1],up[2]);
+      var c=groundColor(mx,mz,h+0.6); FB.col.push(c[0],c[1],c[2]);
+    }
+  }
+  if(FB.j>FHST){
+    var idx=[], j2, i2;
+    for(j2=0;j2<FHST;j2++) for(i2=0;i2<FHSEG;i2++){
+      var a=j2*(FHSEG+1)+i2, b=a+1, c2=a+FHSEG+1, d=c2+1;
+      idx.push(a,b,c2, b,d,c2);
+    }
+    if(farBuf){ gl.deleteBuffer(farBuf.vb); gl.deleteBuffer(farBuf.ib); }
+    farBuf=makeBuf(FB.pos,FB.nrm,FB.col,idx);
+    farBuild=null;
+  }
+}
+/* per-frame streamer: call with the player position */
+function streamWorld(px,pz,sync){
+  var pcx=Math.floor(px/CH), pcz=Math.floor(pz/CH);
+  if(pcx!==lastPCX||pcz!==lastPCZ||terrSeedKey!==worldTerrainKey()){
+    lastPCX=pcx; lastPCZ=pcz;
+    updateTerrainChunks(pcx,pcz);
+    updateScatterChunks(pcx,pcz);
+    recenterFar(pcx,pcz);
+  }
+  if(sync){ var g=0; while(terrQueue.length&&g++<60) pumpTerrain();
+    g=0; while(scatQueue.length&&g++<60) pumpScatter();
+    g=0; while(farBuild&&g++<200) pumpFar();
+  } else { pumpTerrain(); pumpScatter(); pumpFar(); pumpFar(); }
+}
+/* terraform / undo: invalidate cached chunks; they rebuild in the background */
+function dirtyTerrain(){ terrSeedKey='\0'; }
+function buildTerrainBuffers(){
+  /* full reset: world changed, reseeded, or first boot */
+  for(var k in terrChunks) disposeChunk(terrChunks[k]);
+  terrChunks={}; terrChunkList=[]; terrQueue=[];
+  for(var k2 in scatChunks) disposeChunk(scatChunks[k2]);
+  scatChunks={}; scatChunkList=[]; scatQueue=[]; scatterPlacedMap={}; scatterPlaced=[];
+  terrSeedKey='\0'; lastPCX=1e9; lastPCZ=1e9;
+  farCX=1e9; farCZ=1e9; farBuild=null;
+  if(farBuf){ gl.deleteBuffer(farBuf.vb); gl.deleteBuffer(farBuf.ib); farBuf=null; }
+  /* water: a sphere hugging the planet at water level (oceans where terrain < wl) */
+  var WL=0.8, WSEG=48, WHST=28, wpos=[], wnrm=[], wcol=[];
+  for(var wj=0;wj<=WHST;wj++){
+    var wph=wj/WHST*Math.PI, ws=Math.sin(wph), wc=Math.cos(wph);
+    for(var wi=0;wi<=WSEG;wi++){
+      var wth=wi/WSEG*Math.PI*2, wct=Math.cos(wth), wst=Math.sin(wth);
+      var wr=PLANET_R+WL;
+      wpos.push(PLANET_C[0]+ws*wct*wr, PLANET_C[1]+wc*wr, PLANET_C[2]+ws*wst*wr);
+      wnrm.push(ws*wct, wc, ws*wst);
+      wcol.push(0.25,0.45,0.62);
+    }
+  }
+  var widx=[];
+  for(var wj2=0;wj2<WHST;wj2++) for(var wi2=0;wi2<WSEG;wi2++){
+    var wa=wj2*(WSEG+1)+wi2, wb=wa+1, wc2=wa+WSEG+1, wd=wc2+1;
+    widx.push(wa,wb,wc2, wb,wd,wc2);
+  }
   if(waterBuf){ gl.deleteBuffer(waterBuf.vb); gl.deleteBuffer(waterBuf.ib); }
-  waterBuf=makeBuf(wpos,wnrm,wcol,[0,2,1,0,3,2]); /* wound for +y face: visible from above */
+  waterBuf=makeBuf(wpos,wnrm,wcol,widx);
 }
 function rebuildObjects(){
   objPos=[]; objNrm=[]; objCol=[]; objIdx=[];
@@ -4980,8 +5184,8 @@ function rebuildObjects(){
   if(typeof previewPath!=='undefined'&&previewPath) emitPath(previewPath);
   (w.claims||[]).forEach(emitClaim);
   if(typeof previewClaim!=='undefined'&&previewClaim) emitClaim(previewClaim);
-  buildScatter();
   refreshColliders();
+  dirtyTerrain(); /* scatter chunks near new buildings re-place around them */
   if(objBuf){ gl.deleteBuffer(objBuf.vb); gl.deleteBuffer(objBuf.ib); objBuf=null; }
   if(objIdx.length) objBuf=makeBuf(objPos,objNrm,objCol,objIdx);
 }
@@ -5011,7 +5215,7 @@ function undo(){
   w.buildings=s.b; w.items=s.i; w.paths=s.p; w.claims=s.c||[];
   w.terrainEdits=s.t||[]; w.waypoints=s.wp||[];
   selected=null; hideSel(); moveMode=null; hideMoveBar();
-  buildTerrainBuffers(); /* terrain edits undo needs fresh geometry */
+  dirtyTerrain(); /* terrain edits undo: cached chunks rebuild in background */
   afterChange(); toast('Undone');
 }
 
@@ -5026,6 +5230,22 @@ function distSeg(px,pz,a,b){
 function pushV(x,y,z,nx,ny,nz,r,g,b){
   objPos.push(x,y,z); objNrm.push(nx,ny,nz); objCol.push(r,g,b);
   return objPos.length/3-1;
+}
+/* drape flat (x,y,z) vertices [v0,end) onto the planet sphere.
+ * y is treated as radial height; normals rotate into the tangent frame. */
+var _dp=[0,0,0], _df={};
+function drapeObjRange(v0){
+  for(var vi=v0*3; vi<objPos.length; vi+=3){
+    var vx=objPos[vi], vy=objPos[vi+1], vz=objPos[vi+2];
+    wrapXZ(vx,vz,_wx);
+    planetXYZ(_wx[0],_wx[1],vy,_dp);
+    objPos[vi]=_dp[0]; objPos[vi+1]=_dp[1]; objPos[vi+2]=_dp[2];
+    planetFrame(_wx[0],_wx[1],_df);
+    var nx=objNrm[vi], ny=objNrm[vi+1], nz=objNrm[vi+2];
+    objNrm[vi]  =nx*_df.t1[0]+ny*_df.up[0]+nz*_df.t2[0];
+    objNrm[vi+1]=nx*_df.t1[1]+ny*_df.up[1]+nz*_df.t2[1];
+    objNrm[vi+2]=nx*_df.t1[2]+ny*_df.up[2]+nz*_df.t2[2];
+  }
 }
 function emitPath(p){
   var pts=p.pts; if(!pts||pts.length<2) return;
@@ -5044,6 +5264,7 @@ function emitPath(p){
     var v=base+j*2;
     objIdx.push(v,v+2,v+1, v+1,v+2,v+3);
   }
+  drapeObjRange(base);
 }
 var _pathR=mulberry32(1234);
 function R_PATH(){ return 0.96+_pathR()*0.08; }
@@ -5131,58 +5352,109 @@ function flowerPatch(x,y,z,s,R){
     coneY(x+ox, y+sh, z+oz, 0.10*s, 0.14*s, 5, pc[0],pc[1],pc[2]);
   }
 }
-/* ---------------- scatter (trees, shrubs, rocks) ---------------- */
+/* ---------------- scatter (trees, shrubs, rocks) ----------------
+ * v0.11: streamed per 100m chunk, seeded by (world seed, cx, cz) so every
+ * chunk is deterministic and identical on revisit. Emitters write into the
+ * shared obj* globals, so we swap in fresh arrays per chunk and restore. */
 var scatterPlaced=[];
-function buildScatter(){
-  var w=activeWorld(); if(!w) return;
-  var R=mulberry32(strHash(w.seed+'|scatter'));
+var scatChunks={}, scatChunkList=[], scatQueue=[];
+var scatterPlacedMap={};
+function refreshScatList(){
+  scatChunkList=[]; scatterPlaced=[];
+  for(var k in scatChunks){ scatChunkList.push(scatChunks[k]);
+    var pl=scatterPlacedMap[k]; if(pl) for(var i=0;i<pl.length;i++) scatterPlaced.push(pl[i]); }
+}
+function updateScatterChunks(pcx,pcz){
+  var key=worldTerrainKey();
+  for(var dz=-CHW;dz<=CHW;dz++) for(var dx=-CHW;dx<=CHW;dx++){
+    var cx=pcx+dx, cz=pcz+dz, kk=cx+','+cz, e=scatChunks[kk];
+    if(!e||e.key!==key){ if(scatQueue.indexOf(kk)<0) scatQueue.push(kk); }
+  }
+  for(var k in scatChunks){ var c=scatChunks[k];
+    if(Math.abs(c.cx-pcx)>CHW+1||Math.abs(c.cz-pcz)>CHW+1){
+      disposeChunk(c); delete scatChunks[k]; delete scatterPlacedMap[k]; } }
+  refreshScatList();
+}
+function pumpScatter(){
+  if(!scatQueue.length) return;
+  var kk=scatQueue.shift(), p=kk.split(','), cx=+p[0], cz=+p[1], key=worldTerrainKey();
+  var e=scatChunks[kk];
+  if(e&&e.key===key) return;
+  if(e){ disposeChunk(e); delete scatterPlacedMap[kk]; }
+  scatChunks[kk]={buf:buildScatterChunk(cx,cz),cx:cx,cz:cz,key:key};
+  refreshScatList();
+}
+function buildScatterChunk(cx,cz){
+  var w=activeWorld();
+  /* swap emitter globals for fresh per-chunk arrays */
+  var sP=objPos, sN=objNrm, sC=objCol, sI=objIdx;
+  objPos=[]; objNrm=[]; objCol=[]; objIdx=[];
   var placed=[];
-  function blocked(x,z,r){
-    if(heightAt(x,z)<1.15||slopeAt(x,z)>0.6) return true;
-    if(inClaim(x,z,r+0.5)) return true;
-    for(var i=0;i<w.buildings.length;i++){ var b=w.buildings[i];
-      var dx=x-b.x,dz=z-b.z,c=Math.cos(-b.rot),s=Math.sin(-b.rot);
-      if(Math.abs(dx*c+dz*s)<b.w/2+r+1&&Math.abs(-dx*s+dz*c)<b.d/2+r+1) return true; }
-    var ps=w.paths||[];
-    for(var k=0;k<ps.length;k++){ var pts=ps[k].pts, pw=(ps[k].w||2.2)/2;
-      for(var j=0;j<pts.length-1;j++) if(distSeg(x,z,pts[j],pts[j+1])<pw+r+0.8) return true; }
-    for(var m=0;m<placed.length;m++){ var q=placed[m];
-      var ddx=q.x-x,ddz=q.z-z; if(ddx*ddx+ddz*ddz<(q.r+r)*(q.r+r)) return true; }
-    return false;
-  }
-  function spot(r){
-    for(var t=0;t<25;t++){ var x=(R()*2-1)*200, z=(R()*2-1)*200;
-      if(!blocked(x,z,r)){ placed.push({x:x,z:z,r:r}); return {x:x,z:z}; } }
-    return null;
-  }
-  var i,q,s2;
-  for(i=0;i<70;i++){ q=spot(1.8); if(!q) continue; s2=0.8+R()*0.7;
-    treeConifer(q.x, heightAt(q.x,q.z)-0.1, q.z, s2, R); }
-  for(i=0;i<60;i++){ q=spot(2.6); if(!q) continue; s2=0.7+R()*0.6;
-    treeBroad(q.x, heightAt(q.x,q.z)-0.1, q.z, s2, R); }
-  for(i=0;i<40;i++){ q=spot(0.9); if(!q) continue; s2=0.7+R()*0.8;
-    var g2=[0.26+R()*0.1,0.46+R()*0.1,0.26];
-    blobY(q.x,heightAt(q.x,q.z)+0.35*s2,q.z,0.55*s2, g2[0],g2[1],g2[2], R); }
-  for(i=0;i<40;i++){ q=spot(0.8); if(!q) continue; s2=0.8+R()*0.6;
-    flowerPatch(q.x, heightAt(q.x,q.z), q.z, s2, R); }
-  for(i=0;i<150;i++){ q=spot(0.4); if(!q) continue; s2=0.7+R()*0.9;
-    grassTuft(q.x, heightAt(q.x,q.z), q.z, s2, R); }
-  for(i=0;i<60;i++){ q=spot(0.7); if(!q) continue; s2=0.5+R()*1.1;    var gr=0.5+R()*0.15;
-    /* jittered octahedron, faceted */
-    var y0=heightAt(q.x,q.z), j=function(){return (R()-0.5)*0.35*s2;};
-    var top=[q.x+j(),y0+0.9*s2,q.z+j()], bot=[q.x+j(),y0+0.1*s2,q.z+j()];
-    var ring=[]; for(var k=0;k<4;k++){ var a=k/4*Math.PI*2+R()*0.4;
-      ring.push([q.x+Math.cos(a)*0.7*s2+j(), y0+0.45*s2+j()*0.5, q.z+Math.sin(a)*0.7*s2+j()]); }
-    for(k=0;k<4;k++){ var A2=ring[k], B2=ring[(k+1)%4];
-      var ux=B2[0]-top[0],uy=B2[1]-top[1],uz=B2[2]-top[2],vx=A2[0]-top[0],vy=A2[1]-top[1],vz=A2[2]-top[2];
-      var nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,l=Math.hypot(nx,ny,nz)||1;
-      pushTri(top[0],top[1],top[2],A2[0],A2[1],A2[2],B2[0],B2[1],B2[2],nx/l,ny/l,nz/l,gr,gr*0.97,gr*0.94);
-      ux=B2[0]-bot[0];uy=B2[1]-bot[1];uz=B2[2]-bot[2];vx=A2[0]-bot[0];vy=A2[1]-bot[1];vz=A2[2]-bot[2];
-      nx=uy*vz-uz*vy;ny=uz*vx-ux*vz;nz=ux*vy-uy*vx;l=Math.hypot(nx,ny,nz)||1;
-      pushTri(bot[0],bot[1],bot[2],B2[0],B2[1],B2[2],A2[0],A2[1],A2[2],nx/l,ny/l,nz/l,gr*0.9,gr*0.87,gr*0.84);
+  try{
+    if(!w) return null;
+    var R=mulberry32(strHash(w.seed+'|scatter|'+cx+','+cz));
+    var ccx=cx*CH, ccz=cz*CH;
+    function placedNear(x,z,r){
+      for(var m=0;m<placed.length;m++){ var q=placed[m];
+        var ddx=q.x-x,ddz=q.z-z; if(ddx*ddx+ddz*ddz<(q.r+r)*(q.r+r)) return true; }
+      for(var ax=-1;ax<=1;ax++) for(var az=-1;az<=1;az++){
+        if(!ax&&!az) continue;
+        var nl=scatterPlacedMap[(cx+ax)+','+(cz+az)]; if(!nl) continue;
+        for(var n2=0;n2<nl.length;n2++){ var q2=nl[n2];
+          var ex=q2.x-x,ez=q2.z-z; if(ex*ex+ez*ez<(q2.r+r)*(q2.r+r)) return true; }
+      }
+      return false;
     }
+    function blocked(x,z,r){
+      if(heightAt(x,z)<1.15||slopeAt(x,z)>0.6) return true;
+      if(inClaim(x,z,r+0.5)) return true;
+      for(var i=0;i<w.buildings.length;i++){ var b=w.buildings[i];
+        var dx=x-b.x,dz=z-b.z,c=Math.cos(-b.rot),s=Math.sin(-b.rot);
+        if(Math.abs(dx*c+dz*s)<b.w/2+r+1&&Math.abs(-dx*s+dz*c)<b.d/2+r+1) return true; }
+      var ps=w.paths||[];
+      for(var k=0;k<ps.length;k++){ var pts=ps[k].pts, pw=(ps[k].w||2.2)/2;
+        for(var j=0;j<pts.length-1;j++) if(distSeg(x,z,pts[j],pts[j+1])<pw+r+0.8) return true; }
+      return placedNear(x,z,r);
+    }
+    function spot(r){
+      for(var t=0;t<25;t++){ var x=ccx+(R()*2-1)*CH/2, z=ccz+(R()*2-1)*CH/2;
+        wrapXZ(x,z,_wx); x=_wx[0]; z=_wx[1]; /* fold the antipode edge */
+        if(!blocked(x,z,r)){ placed.push({x:x,z:z,r:r}); return {x:x,z:z}; } }
+      return null;
+    }
+    var i,q,s2;
+    for(i=0;i<5;i++){ q=spot(1.8); if(!q) continue; s2=0.8+R()*0.7;
+      treeConifer(q.x, heightAt(q.x,q.z)-0.1, q.z, s2, R); }
+    for(i=0;i<4;i++){ q=spot(2.6); if(!q) continue; s2=0.7+R()*0.6;
+      treeBroad(q.x, heightAt(q.x,q.z)-0.1, q.z, s2, R); }
+    for(i=0;i<3;i++){ q=spot(0.9); if(!q) continue; s2=0.7+R()*0.8;
+      var g2=[0.26+R()*0.1,0.46+R()*0.1,0.26];
+      blobY(q.x,heightAt(q.x,q.z)+0.35*s2,q.z,0.55*s2, g2[0],g2[1],g2[2], R); }
+    for(i=0;i<3;i++){ q=spot(0.8); if(!q) continue; s2=0.8+R()*0.6;
+      flowerPatch(q.x, heightAt(q.x,q.z), q.z, s2, R); }
+    for(i=0;i<10;i++){ q=spot(0.4); if(!q) continue; s2=0.7+R()*0.9;
+      grassTuft(q.x, heightAt(q.x,q.z), q.z, s2, R); }
+    for(i=0;i<4;i++){ q=spot(0.7); if(!q) continue; s2=0.5+R()*1.1;    var gr=0.5+R()*0.15;
+      /* jittered octahedron, faceted */
+      var y0=heightAt(q.x,q.z), j=function(){return (R()-0.5)*0.35*s2;};
+      var top=[q.x+j(),y0+0.9*s2,q.z+j()], bot=[q.x+j(),y0+0.1*s2,q.z+j()];
+      var ring=[]; for(var k=0;k<4;k++){ var a=k/4*Math.PI*2+R()*0.4;
+        ring.push([q.x+Math.cos(a)*0.7*s2+j(), y0+0.45*s2+j()*0.5, q.z+Math.sin(a)*0.7*s2+j()]); }
+      for(k=0;k<4;k++){ var A2=ring[k], B2=ring[(k+1)%4];
+        var ux=B2[0]-top[0],uy=B2[1]-top[1],uz=B2[2]-top[2],vx=A2[0]-top[0],vy=A2[1]-top[1],vz=A2[2]-top[2];
+        var nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,l=Math.hypot(nx,ny,nz)||1;
+        pushTri(top[0],top[1],top[2],A2[0],A2[1],A2[2],B2[0],B2[1],B2[2],nx/l,ny/l,nz/l,gr,gr*0.97,gr*0.94);
+        ux=B2[0]-bot[0];uy=B2[1]-bot[1];uz=B2[2]-bot[2];vx=A2[0]-bot[0];vy=A2[1]-bot[1];vz=A2[2]-bot[2];
+        nx=uy*vz-uz*vy;ny=uz*vx-ux*vz;nz=ux*vy-uy*vx;l=Math.hypot(nx,ny,nz)||1;
+        pushTri(bot[0],bot[1],bot[2],B2[0],B2[1],B2[2],A2[0],A2[1],A2[2],nx/l,ny/l,nz/l,gr*0.9,gr*0.87,gr*0.84);
+      }
+    }
+    scatterPlacedMap[cx+','+cz]=placed;
+    drapeObjRange(0); /* flat emission -> planet sphere */
+    return objIdx.length?makeBuf(objPos,objNrm,objCol,objIdx):null;
+  } finally {
+    objPos=sP; objNrm=sN; objCol=sC; objIdx=sI;
   }
-  scatterPlaced=placed;
 }
 
 /* ---------------- colliders (walk physics) ---------------- */
@@ -5267,6 +5539,7 @@ function emitClaim(cl){
     var px=pts[k][0], pz=pts[k][1];
     cylY(px,heightAt(px,pz)+0.05,pz,0.12,1.3,5, col[0],col[1],col[2]);
   }
+  drapeObjRange(base);
 }
 function inClaim(x,z,m){
   var w=activeWorld(); if(!w) return false;
@@ -5348,6 +5621,7 @@ function uploadAvatar(){
   }
 }
 /* called every frame in walk mode: animate + place the body at the walker */
+var _avF={};
 function tickAvatar(dt){
   var spd=Math.hypot(cam.wx-avPrevX,cam.wz-avPrevZ)/Math.max(dt,1e-4);
   avPrevX=cam.wx; avPrevZ=cam.wz;
@@ -5355,16 +5629,21 @@ function tickAvatar(dt){
   avT+=dt;
   var bob=buildAvatar(moving,avT);
   var gy=heightAt(cam.wx,cam.wz)+cam.air;
+  var base=planetXYZ(cam.wx,cam.wz,gy,[0,0,0]);
+  planetFrame(cam.wx,cam.wz,_avF);
   var ca=Math.cos(cam.wyaw), sa=Math.sin(cam.wyaw);
+  var t1=_avF.t1, t2=_avF.t2, up=_avF.up;
   for(var i=0;i<avPos.length;i+=3){
     var x=avPos[i], y=avPos[i+1]+bob, z=avPos[i+2];
-    avPos[i]  =cam.wx + x*ca + z*sa;
-    avPos[i+1]=gy + y;
-    avPos[i+2]=cam.wz - x*sa + z*ca;
+    var lx=x*ca+z*sa, lz=-x*sa+z*ca;
+    avPos[i]  =base[0]+lx*t1[0]+y*up[0]+lz*t2[0];
+    avPos[i+1]=base[1]+lx*t1[1]+y*up[1]+lz*t2[1];
+    avPos[i+2]=base[2]+lx*t1[2]+y*up[2]+lz*t2[2];
     var nx=avNrm[i], ny=avNrm[i+1], nz=avNrm[i+2];
-    avNrm[i]  =nx*ca + nz*sa;
-    avNrm[i+1]=ny;
-    avNrm[i+2]=-nx*sa + nz*ca;
+    var lnx=nx*ca+nz*sa, lnz=-nx*sa+nz*ca;
+    avNrm[i]  =lnx*t1[0]+ny*up[0]+lnz*t2[0];
+    avNrm[i+1]=lnx*t1[1]+ny*up[1]+lnz*t2[1];
+    avNrm[i+2]=lnx*t1[2]+ny*up[2]+lnz*t2[2];
   }
   uploadAvatar();
 }
@@ -5415,23 +5694,32 @@ function mInvert(m){
 var cam={mode:'orbit', tx:0, tz:0, yaw:0.7, pitch:0.85, dist:70,
          wx:8, wz:8, wyaw:0, wpitch:0.05, air:0, vy:0, grounded:true};
 /* MoorController v0.6: owns walk-mode movement + camera. SPEC: components/controller/ */
-var ctrl=MoorController.create({heightAt:heightAt, collideXZ:collideXZ, cam:cam});
+var ctrl=MoorController.create({heightAt:heightAt, collideXZ:collideXZ, cam:cam,
+  surfacePoint:planetXYZ, surfaceUp:planetUp, wrapXZ:wrapXZ});
 function camEye(){
   if(cam.mode==='walk') return ctrl.eye([]);
-  var gy=heightAt(cam.tx,cam.tz);
-  return [cam.tx+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw),
-          gy+2+cam.dist*Math.sin(cam.pitch),
-          cam.tz+cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw)];
+  /* orbit the planet: target on the sphere, offset in the local tangent frame */
+  var t=planetXYZ(cam.tx,cam.tz,heightAt(cam.tx,cam.tz)+2,[0,0,0]);
+  var F=planetFrame(cam.tx,cam.tz,{});
+  var cp=Math.cos(cam.pitch), sp=Math.sin(cam.pitch);
+  var d=cam.dist;
+  return [t[0]+F.t1[0]*d*cp*Math.sin(cam.yaw)+F.t2[0]*d*cp*Math.cos(cam.yaw)+F.up[0]*d*sp,
+          t[1]+F.t1[1]*d*cp*Math.sin(cam.yaw)+F.t2[1]*d*cp*Math.cos(cam.yaw)+F.up[1]*d*sp,
+          t[2]+F.t1[2]*d*cp*Math.sin(cam.yaw)+F.t2[2]*d*cp*Math.cos(cam.yaw)+F.up[2]*d*sp];
 }
 function camAt(){
   if(cam.mode==='walk') return ctrl.look([]);
-  return [cam.tx,heightAt(cam.tx,cam.tz)+2,cam.tz];
+  return planetXYZ(cam.tx,cam.tz,heightAt(cam.tx,cam.tz)+2,[0,0,0]);
+}
+function camUp(){
+  if(cam.mode==='walk') return planetUp(cam.wx,cam.wz,[0,0,0]);
+  return planetUp(cam.tx,cam.tz,[0,0,0]);
 }
 var vpMat=null, invVP=null;
 function computeVP(){
   var cv=$('gl'), asp=cv.width/cv.height;
   var walkFov=cam.mode==='walk'?ctrl.fov()*Math.PI/180:1.05;
-  var p=mPerspective(walkFov,asp,0.5,6000), v=mLookAt(camEye(),camAt(),[0,1,0]);
+  var p=mPerspective(walkFov,asp,0.5,9000), v=mLookAt(camEye(),camAt(),camUp());
   vpMat=mMul(p,v); invVP=mInvert(vpMat);
 }
 function rayFrom(nx,ny){
@@ -5443,33 +5731,48 @@ function rayFrom(nx,ny){
   var d=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], l=Math.hypot(d[0],d[1],d[2]);
   return {o:a, d:[d[0]/l,d[1]/l,d[2]/l]};
 }
+/* ray vs the planet: march in 3D, test radial height against the field.
+ * Returns {x,y,z} 3D hit plus (mx,mz) planet coords for placement/edits. */
+var _ri=[0,0,0];
 function rayTerrain(r){
   var maxT=cam.mode==='walk'?80:(cam.dist+800), step=Math.max(2.5,maxT/200);
-  var t=0, px=0,py=0,pz=0;
+  function radAt(px,py,pz){
+    planetInv(px,py,pz,_ri);
+    return {h:_ri[2]-heightAt(_ri[0],_ri[1]), mx:_ri[0], mz:_ri[1]};
+  }
+  var t=0, px=0,py=0,pz=0, q=null;
   for(var i=0;i<220;i++){
     t+=step;
     px=r.o[0]+r.d[0]*t; py=r.o[1]+r.d[1]*t; pz=r.o[2]+r.d[2]*t;
-    if(py<heightAt(px,pz)){
+    q=radAt(px,py,pz);
+    if(q.h<0){
       var lo=t-step, hi=t;
-      for(var k=0;k<12;k++){ var m=(lo+hi)/2, my=r.o[1]+r.d[1]*m;
-        if(my<heightAt(r.o[0]+r.d[0]*m,r.o[2]+r.d[2]*m)) hi=m; else lo=m; }
+      for(var k=0;k<12;k++){ var m=(lo+hi)/2;
+        if(radAt(r.o[0]+r.d[0]*m,r.o[1]+r.d[1]*m,r.o[2]+r.d[2]*m).h<0) hi=m; else lo=m; }
       var ft=(lo+hi)/2;
-      return {x:r.o[0]+r.d[0]*ft, y:r.o[1]+r.d[1]*ft, z:r.o[2]+r.d[2]*ft, t:ft};
+      var fx=r.o[0]+r.d[0]*ft, fy=r.o[1]+r.d[1]*ft, fz=r.o[2]+r.d[2]*ft;
+      var fq=radAt(fx,fy,fz);
+      return {x:fx, y:fy, z:fz, t:ft, mx:fq.mx, mz:fq.mz};
     }
     if(t>maxT) break;
   }
   return null;
 }
-/* pick a placed object: nearest footprint hit */
+/* pick a placed object: nearest footprint hit.
+ * The ray is converted to planet (mx,mz) space; footprints are plane tests. */
+var _po=[0,0,0], _p1=[0,0,0];
 function pickObject(r){
   var w=activeWorld(); if(!w) return null;
+  planetInv(r.o[0],r.o[1],r.o[2],_po);
+  planetInv(r.o[0]+r.d[0],r.o[1]+r.d[1],r.o[2]+r.d[2],_p1);
+  var ro={o:[_po[0],0,_po[1]], d:[_p1[0]-_po[0],0,_p1[1]-_po[1]]};
   var best=null, bestT=1e9;
   function test(x,z,hw,hd,rot,kind,idx){
-    var dx=x-r.o[0], dz=z-r.o[2];
+    var dx=x-ro.o[0], dz=z-ro.o[2];
     var c=Math.cos(-rot), s=Math.sin(-rot);
     var lx=dx*c+dz*s, lz=-dx*s+dz*c;
     if(Math.abs(lx)>hw||Math.abs(lz)>hd) return;
-    var t=Math.sqrt(dx*dx+dz*dz)/Math.max(0.2,Math.hypot(r.d[0],r.d[2]));
+    var t=Math.sqrt(dx*dx+dz*dz)/Math.max(0.2,Math.hypot(ro.d[0],ro.d[2]));
     if(t<bestT){ bestT=t; best={kind:kind,idx:idx}; }
   }
   w.buildings.forEach(function(b,i){ test(b.x,b.z,b.w/2+1,b.d/2+1,b.rot,'b',i); });
@@ -5617,7 +5920,7 @@ function onTap(nx,ny){
   if(mode==='claims') return; /* drag stakes claims; taps do nothing */
   if(mode==='build'||mode==='items'){
     var g=rayTerrain(r);
-    if(g&&Math.abs(g.x)<205&&Math.abs(g.z)<205) placeAt(g.x,g.z);
+    if(g) placeAt(g.mx,g.mz);
   }
 }
 
@@ -5642,11 +5945,11 @@ function bindInput(){
     }
     if(mode==='paths'&&downInfo.n===1){
       var g=terrainPoint(e);
-      if(g&&Math.abs(g.x)<205&&Math.abs(g.z)<205) startStroke(g.x,g.z);
+      if(g) startStroke(g.mx,g.mz);
     }
     if(mode==='claims'&&downInfo.n===1){
       var g2=terrainPoint(e);
-      if(g2&&Math.abs(g2.x)<205&&Math.abs(g2.z)<205) startClaim(g2.x,g2.z);
+      if(g2) startClaim(g2.mx,g2.mz);
     }
   });
   cv.addEventListener('pointermove',function(e){
@@ -5656,20 +5959,20 @@ function bindInput(){
     var n=Object.keys(pointers).length;
     if(drawing&&n===1){
       var g=terrainPoint(e);
-      if(g&&Math.abs(g.x)<205&&Math.abs(g.z)<205) extendStroke(g.x,g.z);
+      if(g) extendStroke(g.mx,g.mz);
       if(downInfo) downInfo.moved=(downInfo.moved||0)+Math.abs(dx)+Math.abs(dy);
       return;
     }
     if(claiming&&n===1){
       var gc=terrainPoint(e);
-      if(gc&&Math.abs(gc.x)<205&&Math.abs(gc.z)<205) extendClaim(gc.x,gc.z);
+      if(gc) extendClaim(gc.mx,gc.mz);
       if(downInfo) downInfo.moved=(downInfo.moved||0)+Math.abs(dx)+Math.abs(dy);
       return;
     }
     if(moveMode&&n===1){
       var g2=terrainPoint(e), o=moveTarget();
-      if(g2&&o&&Math.abs(g2.x)<205&&Math.abs(g2.z)<205){
-        o.x=Math.round(g2.x*2)/2; o.z=Math.round(g2.z*2)/2; needsRebuild=true;
+      if(g2&&o){
+        o.x=Math.round(g2.mx*2)/2; o.z=Math.round(g2.mz*2)/2; needsRebuild=true;
       }
       if(downInfo) downInfo.moved=(downInfo.moved||0)+Math.abs(dx)+Math.abs(dy);
       return;
@@ -5955,8 +6258,10 @@ function bootWorld(){
   ensureWorldShape(w);
   $('world-name').textContent=w?w.name:'—';
   document.title='Moor Beta — '+w.name;
+  syncPlanetR(); /* planet radius before any geometry builds */
   reseedTerrain(w.seed); buildTerrainBuffers(); rebuildObjects();
   cam.tx=0; cam.tz=0; cam.wx=8; cam.wz=8;
+  streamWorld(cam.wx,cam.wz,true); /* sync-build the starting window */
   revealT=0; /* holo materialize */
   markSaved(true);
 }
@@ -5973,21 +6278,31 @@ function frame(t){
     ctrl.step(dt);
     tickAvatar(dt);
   }
+  if(typeof streamWorld!=='undefined') streamWorld(cam.wx,cam.wz);
   computeVP();
   var cv=$('gl');
   gl.viewport(0,0,cv.width,cv.height);
-  gl.clearColor(0.52,0.74,0.94,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  gl.uniform3f(uSun,-0.45,0.8,0.35); gl.uniform3f(uFog,0.74,0.82,0.90);
-  gl.uniform1f(uFogK, cam.mode==='walk'?0.0035:0.25/Math.max(cam.dist,40));
+  /* sky fades to space with altitude: leaving the planet looks like leaving */
+  var altM=cam.mode==='walk'?cam.air:cam.dist;
+  var space=Math.min(1,Math.max(0,(altM-1500)/6000)); space=space*space*(3-2*space);
+  gl.clearColor(0.52*(1-space)+0.01*space, 0.74*(1-space)+0.015*space, 0.94*(1-space)+0.03*space, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.uniform3f(uSun,-0.45,0.8,0.35);
+  gl.uniform3f(uFog,0.74*(1-space)+0.02*space,0.82*(1-space)+0.02*space,0.90*(1-space)+0.05*space);
+  gl.uniform1f(uFogK,(cam.mode==='walk'?0.0035:0.25/Math.max(cam.dist,40))*(1-space*0.9));
+  gl.uniform3f(uPlanetC,PLANET_C[0],PLANET_C[1],PLANET_C[2]); gl.uniform1f(uPlanetR,PLANET_R);
   if(revealT<1) revealT=Math.min(1,revealT+dt/2.4);
   var rse=revealT*revealT*(3-2*revealT);
   gl.uniform1f(uReveal,rse);
   var e=camEye(); gl.uniform3f(uCam,e[0],e[1],e[2]);
   gl.uniformMatrix4fv(uMVP,false,vpMat);
-  bindBuf(terrainBuf); gl.drawElements(gl.TRIANGLES,terrainBuf.count,gl.UNSIGNED_INT,0);
+  for(var ci=0;ci<terrChunkList.length;ci++){ var ch=terrChunkList[ci];
+    bindBuf(ch.buf); gl.drawElements(gl.TRIANGLES,ch.buf.count,gl.UNSIGNED_INT,0); }
   if(typeof farBuf!=='undefined'&&farBuf){ bindBuf(farBuf); gl.drawElements(gl.TRIANGLES,farBuf.count,gl.UNSIGNED_INT,0); }
   bindBuf(waterBuf); gl.drawElements(gl.TRIANGLES,waterBuf.count,gl.UNSIGNED_INT,0);
   if(objBuf){ bindBuf(objBuf); gl.drawElements(gl.TRIANGLES,objBuf.count,gl.UNSIGNED_INT,0); }
+  for(var si=0;si<scatChunkList.length;si++){ var sh=scatChunkList[si]; if(!sh.buf) continue;
+    bindBuf(sh.buf); gl.drawElements(gl.TRIANGLES,sh.buf.count,gl.UNSIGNED_INT,0); }
   if(cam.mode==='walk'&&avBuf&&ctrl.camMode()==='follow'){
     gl.disable(gl.CULL_FACE);
     bindBuf(avBuf); gl.drawElements(gl.TRIANGLES,avBuf.count,gl.UNSIGNED_INT,0);
@@ -6199,23 +6514,13 @@ var PURPOSES=Object.keys(PURPOSE_COLS);
 var mapFollow=true, mapLastZoomT=0, mapFedPid='__unfed__', verseCache={bodies:[],stars:[],sectors:[],me:null,home:null};
 var mapLastAir=-1; /* follow the player's altitude, not the clock */
 var VERSE_K=400; /* moorworld units -> meters */
-/* planetField: the real game terrain inside the patch, the world's raw noise
- * field beyond it — one continuous height function over the whole planet. */
+/* planetField: v0.12 — the patch concept is gone. The whole planet is one
+ * continuous height function: heightAt everywhere (edits included). */
 var fieldSeed=null;
 function planetField(mx,mz){
   var w=activeWorld();
   if(w&&w.seed!==fieldSeed){ reseedTerrain(w.seed); fieldSeed=w.seed; }
-  var ax=Math.abs(mx), az=Math.abs(mz);
-  if(ax<=200&&az<=200) return heightAt(mx,mz);
-  var t=terrainOf(w), R2=(t&&t.relief)||36;
-  var h=Math.abs(coreF(mx,mz)-0.3)*R2*2.5-8+(vnoise(mx*0.05,mz*0.05)-0.5)*2.2;
-  var bx=Math.max(ax,az);
-  if(bx<300){
-    var h0=heightAt(Math.max(-200,Math.min(200,mx)),Math.max(-200,Math.min(200,mz)));
-    var u=(bx-200)/100, s=u*u*(3-2*u);
-    return h0+(h-h0)*s;
-  }
-  return h;
+  return heightAt(mx,mz);
 }
 /* noise under an explicit seed (verse impostor shading); restores world seed */
 function mapSampleNoise(seedStr,x,z){
@@ -6259,6 +6564,24 @@ function verseBodies(){
   return {bodies:bodies,stars:stars,sectors:sectors};
 }
 function currentPid(){ var w=activeWorld(); var s=w?w.seed:''; return s.indexOf('moor:')===0?s.slice(5):null; }
+/* the planet's radius for the active world: verse size when it's a verse
+ * planet, 1200m otherwise. The game and the map must use the same R. */
+function worldPlanetR(){
+  var pid=currentPid(), R=1200;
+  if(pid){
+    try{
+      var vb=verseBodies(), me=null;
+      for(var i=0;i<vb.bodies.length;i++) if(vb.bodies[i].id===pid) me=vb.bodies[i];
+      if(me) R=Math.max(350,Math.min(1600,me.size*1000));
+      if(me&&me.gap) R=Math.min(R,Math.max(350,me.gap*0.35));
+    }catch(_){}
+  }
+  return R;
+}
+function syncPlanetR(){
+  var R=worldPlanetR();
+  if(R!==PLANET_R){ planetRSet(R); buildTerrainBuffers(); rebuildObjects(); }
+}
 function feedVerse(force){
   if(!map3d) return;
   var pid=currentPid();
@@ -6278,11 +6601,11 @@ function feedVerse(force){
     bi.r=Math.max(180,Math.min(bi.r,nd*0.35));
   }
   for(i=0;i<vb.bodies.length;i++) if(vb.bodies[i].id===pid) me=vb.bodies[i];
-  var R=me?Math.max(350,Math.min(1600,me.size*1000)):1200;
-  if(me&&me.gap) R=Math.min(R,Math.max(350,me.gap*0.35));
+  var R=worldPlanetR();
   var home=me?[me.x,me.y,me.z]:clearHome(vb.bodies,R);
   verseCache={bodies:vb.bodies,stars:vb.stars,sectors:vb.sectors,me:me,home:home};
   map3d.setPlanet({R:R,x:home[0],y:home[1],z:home[2]});
+  syncPlanetR(); /* game planet matches the map's */
   map3d.setVerseData({bodies:vb.bodies,stars:vb.stars,currentId:pid,home:home});
 }
 /* a home point with real elbow room (for worlds that aren't verse planets) */
@@ -6672,7 +6995,7 @@ function commitTerraform(samples){
       else w.terrainEdits.push({x:Math.round(s[0]*2)/2,z:Math.round(s[1]*2)/2,r:9,dh:terrSign*0.5});
     });
   });
-  buildTerrainBuffers(); mapDirty=true;
+  dirtyTerrain(); mapDirty=true;
   toast('⛰️ Terrain '+(terrSign>0?'raised':'lowered'));
 }
 /* waypoint popup */
@@ -6717,6 +7040,13 @@ window.__beta.setMapTier=function(t){ mapFlyTo(t,false); };
 window.__beta.mapTier=function(){ if(!map3d) return 'surface'; var d=map3d.getView().dist; return d<1500?'surface':d<30000?'planet':'verse'; };
 window.__beta.colliders=function(){ return colliders.length; };
 window.__beta.objTris=function(){ return objIdx.length/3; };
+window.__beta.scatTris=function(){ var n=0; for(var k in scatChunks){ var c=scatChunks[k]; if(c&&c.buf) n+=c.buf.count; } return n; };
+/* v0.12 sphere test hooks */
+window.__beta.planetR=function(){ return PLANET_R; };
+window.__beta.planetXYZ=function(mx,mz,h){ return planetXYZ(mx,mz,h,[]); };
+window.__beta.planetUp=function(mx,mz){ return planetUp(mx,mz,[]); };
+window.__beta.wrapXZ=function(mx,mz){ return wrapXZ(mx,mz,[]); };
+window.__beta.eye3=function(){ return ctrl.eye([]); };
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
 else boot();
 })();
