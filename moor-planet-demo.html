@@ -9,19 +9,30 @@
   body{background:#040409;color:#e8e4da;font-family:-apple-system,system-ui,sans-serif;
     overflow-x:hidden}
   .wrap{max-width:560px;margin:0 auto;padding:0 18px}
-  /* hero */
-  #hero{position:relative;height:92vh;min-height:560px;overflow:hidden}
-  #heroCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y}
-  #heroText{position:absolute;left:0;right:0;bottom:0;padding:0 24px 46px;pointer-events:none;
+  /* hero — the drop-in experience fills the viewport */
+  #hero{position:relative;height:100vh;height:100svh;min-height:520px;overflow:hidden}
+  #heroCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #heroText{position:absolute;left:0;right:0;bottom:0;padding:0 24px 118px;pointer-events:none;
     background:linear-gradient(transparent,rgba(4,4,9,.88) 70%)}
   #heroText h1{font-size:34px;letter-spacing:2px;margin-bottom:8px;text-shadow:0 2px 24px #000}
   #heroText h1 .gold{color:#c9a227}
   #heroText p{font-size:15px;color:#b8b8c8;line-height:1.6;max-width:420px;text-shadow:0 1px 12px #000}
   #heroHint{position:absolute;top:18px;right:20px;font-size:11px;letter-spacing:2px;color:#8a8a9a;z-index:3}
-  #dropInBtn,#orbitBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:170px;z-index:3;
-    height:46px;padding:0 22px;border-radius:23px;font-size:13px;letter-spacing:2px;cursor:pointer;
-    background:rgba(10,14,24,.85);border:1px solid rgba(125,249,255,.45);color:#7df9ff;}
-  #modeBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:228px;z-index:3;
+  /* drop-in control bar */
+  #dropbar{position:absolute;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));
+    z-index:3;display:flex;gap:8px;align-items:center;}
+  #dropbar button{height:46px;padding:0 16px;border-radius:23px;font-size:12px;letter-spacing:2px;
+    cursor:pointer;background:rgba(10,14,24,.85);border:1px solid rgba(125,249,255,.45);
+    color:#7df9ff;white-space:nowrap;flex-shrink:0;}
+  #dropbar button.gold{border-color:rgba(201,162,39,.6);color:#ffe9a8;}
+  #zoomSlider{flex:1;min-width:0;height:46px;accent-color:#c9a227;cursor:pointer;}
+  #orbitBtn{display:none;}
+  #playHint{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:3;display:none;
+    font-size:11px;letter-spacing:2px;color:#ffe9a8;background:rgba(10,14,24,.8);
+    border:1px solid rgba(201,162,39,.5);border-radius:14px;padding:8px 14px;white-space:nowrap;}
+  #ctlHint{position:absolute;left:0;right:0;bottom:calc(72px + env(safe-area-inset-bottom));z-index:3;
+    text-align:center;font-size:10px;letter-spacing:2px;color:#6a6a7a;pointer-events:none;}
+  #modeBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(104px + env(safe-area-inset-bottom));z-index:3;
     height:40px;padding:0 18px;border-radius:20px;font-size:12px;letter-spacing:2px;cursor:pointer;
     background:rgba(10,14,24,.85);border:1px solid rgba(201,162,39,.5);color:#ffe9a8;display:none;}
   #typeChips{position:absolute;top:52px;left:14px;right:14px;z-index:3;display:flex;flex-wrap:wrap;gap:6px;}
@@ -64,179 +75,24 @@ const t="160",e={LEFT:0,MIDDLE:1,RIGHT:2,ROTATE:0,DOLLY:1,PAN:2},n={ROTATE:0,PAN
 
 <div id="hero">
   <canvas id="heroCanvas"></canvas>
-  <div id="heroHint">drag · scroll to zoom · double-tap a spot to descend</div>
-  <button id="dropInBtn">◉ FIND SPOT</button>
-  <button id="orbitBtn" style="display:none">▲ RETURN TO ORBIT</button>
+  <div id="heroHint">drag = move · 2-finger drag = look · pinch / scroll / slider = zoom</div>
+  <div id="dropbar">
+    <button id="randomBtn" class="gold" title="random planet drop-in">🎲</button>
+    <button id="dropInBtn">▶ DROP-IN</button>
+    <input id="zoomSlider" type="range" min="0" max="1000" value="0" aria-label="zoom from orbit to ground">
+    <button id="orbitBtn">⤴ ORBIT</button>
+  </div>
+  <div id="playHint">▼ dropping in — touch anything to take control</div>
+  <div id="ctlHint">drag moves the camera · two-finger drag tilts the view · you are never locked</div>
   <div id="typeChips"></div>
   <div id="cloudCut"></div>
   <button id="modeBtn" style="display:none">⛰ BRUSH</button>
   <div id="vignette"></div>
   <div id="heroText">
     <h1><span class="gold">MOOR</span> <span style="color:#fff">PLANET</span></h1>
-    <p>One world, from orbit to the ground. No cuts.<br>One planet. One continuous world. <b style="color:#fff">Double-tap a spot</b> to descend to it.</p>
+    <p>One world, from orbit to the ground. No cuts.<br>Drag to <b style="color:#fff">move the camera anywhere</b> — hit <b style="color:#fff">▶ drop-in</b> or roll the slider to fall in.</p>
   </div>
 </div>
-
-<div class="wrap">
-
-<section>
-<div class="card">
-  <h2>1 · THE PLANET IS A FIELD</h2>
-  <div class="tag">Not a mesh. Not chunks. A function.</div>
-  <svg viewBox="0 0 340 300">
-    <defs>
-      <radialGradient id="pg1" cx="38%" cy="32%" r="80%">
-        <stop offset="0%" stop-color="#2a6a44"/><stop offset="55%" stop-color="#17402a"/>
-        <stop offset="100%" stop-color="#0a1f14"/>
-      </radialGradient>
-    </defs>
-    <circle cx="170" cy="145" r="112" fill="none" stroke="#aaff66" stroke-opacity=".16" stroke-width="10"/>
-    <path id="planetBlob" fill="url(#pg1)" stroke="#c8e6a0" stroke-opacity=".5" stroke-width="1.5"/>
-    <g id="samples"></g>
-    <text x="170" y="278" text-anchor="middle" class="lbl">terrain = f(seed, lat, lon) — defined everywhere</text>
-  </svg>
-  <p>The whole planet is <b>one continuous function</b>: give it a seed and a spot on the ball, it answers how high the ground is there. Same spot, same answer, forever. No chunks to stitch, no seams, no poles problem — because there's no mesh at all, just math.</p>
-</div>
-</section>
-
-<section>
-<div class="card">
-  <h2>2 · TWO VIEWS, ONE PLANET</h2>
-  <div class="tag">Far and near are the same field, drawn two ways.</div>
-  <svg viewBox="0 0 340 330">
-    <defs>
-      <radialGradient id="halo" cx="50%" cy="50%" r="50%">
-        <stop offset="60%" stop-color="#aaff66" stop-opacity=".22"/>
-        <stop offset="100%" stop-color="#aaff66" stop-opacity="0"/>
-      </radialGradient>
-      <radialGradient id="pg2" cx="38%" cy="30%" r="85%">
-        <stop offset="0%" stop-color="#2a6a44"/><stop offset="100%" stop-color="#0e2c1a"/>
-      </radialGradient>
-      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#0a1a10"/><stop offset="100%" stop-color="#2a4a1e"/>
-      </linearGradient>
-      <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-        <path d="M0,0 L8,4 L0,8" fill="none" stroke="#c9a227" stroke-width="1.6"/>
-      </marker>
-      <marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-        <path d="M0,0 L8,4 L0,8" fill="none" stroke="#7df9ff" stroke-width="1.6"/>
-      </marker>
-    </defs>
-    <circle cx="80" cy="105" r="72" fill="url(#halo)"/>
-    <circle cx="80" cy="105" r="50" fill="url(#pg2)"/>
-    <ellipse cx="65" cy="92" rx="30" ry="8" fill="#d8ffb0" opacity=".20"/>
-    <ellipse cx="95" cy="118" rx="26" ry="7" fill="#d8ffb0" opacity=".14"/>
-    <text x="80" y="185" text-anchor="middle" class="clbl">orbit · the far view</text>
-    <rect x="196" y="40" width="132" height="110" rx="10" fill="url(#sky)" opacity=".6"/>
-    <circle cx="300" cy="62" r="10" fill="#ffe9a8"/>
-    <path d="M196,150 Q228,108 262,132 T328,124 L328,150 Z" fill="#1f5a30"/>
-    <path d="M196,150 Q240,122 280,138 T328,132 L328,150 Z" fill="#2f7a40" opacity=".8"/>
-    <g fill="#0e3a1e">
-      <path d="M238,132 l7,-18 7,18 Z"/><rect x="243.5" y="130" width="3" height="8"/>
-      <path d="M282,128 l7,-18 7,18 Z"/><rect x="287.5" y="126" width="3" height="8"/>
-    </g>
-    <circle cx="258" cy="118" r="5" fill="#c9a227"/>
-    <text x="258" y="110" text-anchor="middle" class="glbl" font-size="9">you</text>
-    <text x="262" y="185" text-anchor="middle" class="clbl">surface · the window</text>
-    <line x1="140" y1="105" x2="188" y2="105" stroke="#c9a227" stroke-width="1.4"
-      marker-start="url(#arr)" marker-end="url(#arr)"/>
-    <text x="164" y="92" text-anchor="middle" class="glbl" font-size="9">same field</text>
-    <text x="164" y="122" text-anchor="middle" class="glbl" font-size="9">same seed</text>
-    <path d="M80,190 C110,250 190,250 236,196" fill="none" stroke="#7df9ff"
-      stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#arr2)"/>
-    <text x="150" y="272" text-anchor="middle" class="clbl" font-size="10">the descent — a crossfade.</text>
-    <text x="150" y="288" text-anchor="middle" class="lbl" font-size="10">the mountains you saw from orbit</text>
-    <text x="150" y="303" text-anchor="middle" class="lbl" font-size="10">are the mountains you land on</text>
-  </svg>
-  <p>From orbit you see the <b>far view</b> — the sphere above, with atmosphere, clouds, water. On the ground you see the <b>window</b> — one sharp patch. Both sample the same field, so they always agree. Dropping in is just a crossfade between them.</p>
-</div>
-</section>
-
-<section>
-<div class="card">
-  <h2>3 · THE WINDOW FOLLOWS YOU</h2>
-  <div class="tag">Walk around the world. There is no world mesh.</div>
-  <svg viewBox="0 0 340 320">
-    <defs>
-      <radialGradient id="pg3" cx="40%" cy="32%" r="80%">
-        <stop offset="0%" stop-color="#1c4a2e"/><stop offset="100%" stop-color="#081a10"/>
-      </radialGradient>
-    </defs>
-    <circle cx="170" cy="150" r="98" fill="url(#pg3)" stroke="#2a4a3a" stroke-width="1"/>
-    <circle cx="170" cy="150" r="98" fill="none" stroke="#fff" stroke-opacity=".14"
-      stroke-width="1.4" stroke-dasharray="5 6"/>
-    <g id="ghosts"></g>
-    <path id="patchArc" fill="none" stroke="#c9a227" stroke-width="13" stroke-linecap="round"/>
-    <circle id="youDot" r="7" fill="#c9a227" stroke="#040409" stroke-width="2"/>
-    <text x="170" y="292" text-anchor="middle" class="lbl">the window re-centers under your feet as you walk</text>
-  </svg>
-  <p>Your position is tracked on the <b>true sphere</b>. The patch is a window that slides along under you, regenerated from the field — identical every time, so nothing ever pops. Walk in a straight line long enough and <b>you come back around</b>. That's walking around the globe, with no globe mesh existing anywhere.</p>
-</div>
-</section>
-
-<section>
-<div class="card">
-  <h2>4 · WHY IT'S FAST</h2>
-  <div class="tag">The phone barely wakes up.</div>
-  <div class="fast"><span class="ic">▦</span><span><b>One patch mesh.</b> Every triangle of detail goes here — under your feet, where the eyes are.</span></div>
-  <div class="fast"><span class="ic">○</span><span><b>One orbit sphere.</b> The far view, like the one above. It never changes.</span></div>
-  <div class="fast"><span class="ic">♣</span><span><b>Props are instanced copies.</b> Thousands of trees and rocks, drawn in a handful of calls.</span></div>
-  <div class="fast"><span class="ic">∿</span><span><b>A planet is a seed.</b> Nothing stored, everything generated. Tiny download, infinite worlds.</span></div>
-</div>
-</section>
-
-</div>
-
-<div class="foot">
-  <span class="gold">field</span> — what the planet is · <span class="gold">window</span> — what you stand on<br>
-  a planet is a seed · the rest is math
-</div>
-
-<script>
-/* ---- SVG diagrams ---- */
-function wavy(cx,cy,r,amp,seed,n){
-  n=n||140;let d='';
-  for(let i=0;i<=n;i++){
-    const a=i/n*Math.PI*2;
-    const w=Math.sin(a*3+seed)*.5+Math.sin(a*7+seed*1.7)*.3+Math.sin(a*13+seed*2.3)*.2;
-    const rr=r+w*amp,x=(cx+Math.cos(a)*rr).toFixed(1),y=(cy+Math.sin(a)*rr).toFixed(1);
-    d+=(i?'L':'M')+x+' '+y;
-  }
-  return d+'Z';
-}
-document.getElementById('planetBlob').setAttribute('d',wavy(170,145,98,13,2.1));
-const NS='http://www.w3.org/2000/svg';
-const sg=document.getElementById('samples');
-[[248,86],[104,196],[232,196]].forEach((pt,i)=>{
-  const c=document.createElementNS(NS,'circle');
-  c.setAttribute('cx',pt[0]);c.setAttribute('cy',pt[1]);c.setAttribute('r',4);
-  c.setAttribute('fill','#7df9ff');
-  const an=document.createElementNS(NS,'animate');
-  an.setAttribute('attributeName','opacity');an.setAttribute('values','1;.25;1');
-  an.setAttribute('dur',(1.6+i*.5)+'s');an.setAttribute('repeatCount','indefinite');
-  c.appendChild(an);sg.appendChild(c);
-});
-function arc(cx,cy,r,a0,a1){
-  const p0=[cx+r*Math.cos(a0),cy+r*Math.sin(a0)],p1=[cx+r*Math.cos(a1),cy+r*Math.sin(a1)];
-  return `M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} A${r} ${r} 0 0 1 ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}`;
-}
-const D=Math.PI/180,gg=document.getElementById('ghosts');
-[[100,152],[208,260]].forEach(c=>{
-  const p=document.createElementNS(NS,'path');
-  p.setAttribute('d',arc(170,150,98,(c[0]-26)*D,(c[0]+26)*D));
-  p.setAttribute('fill','none');p.setAttribute('stroke','#c9a227');
-  p.setAttribute('stroke-opacity','.28');p.setAttribute('stroke-width','13');
-  p.setAttribute('stroke-linecap','round');gg.appendChild(p);
-});
-const patchArc=document.getElementById('patchArc'),youDot=document.getElementById('youDot');
-let t=0;
-setInterval(()=>{
-  t+=0.006;
-  patchArc.setAttribute('d',arc(170,150,98,t-28*D,t+28*D));
-  youDot.setAttribute('cx',170+98*Math.cos(t));youDot.setAttribute('cy',150+98*Math.sin(t));
-},50);
-</script>
-
 <script type="module">
 /* ================================================================
    MOOR PLANET DEMO — one persistent world, orbit to ground.
@@ -251,12 +107,28 @@ const THREE = await import(URL.createObjectURL(new Blob(
 
 /* ---------- THE FIELD: the only terrain truth ----------
    fieldRaw(sp): 0..1 over unit directions. Shared by the orbit
-   shader, the terrain patches, the water, and every prop. */
+   shader, the terrain patches, the water, the props, and the land probe.
+
+   DROP-IN TERRAIN STAGES — one coherent field, built in named stages with
+   isolated parameters (see DROPIN_STAGES below; uniforms are shared objects
+   so the planet inspector can tune each stage live later):
+     1. broadLandforms  — continent-scale plates (low-freq fBm, domain-warped)
+     2. regionalGeology  — ridged mountain systems, warped onto the plates
+     3. erosionDrainage  — V-valleys carved along drainage lines (highlands)
+     4. fieldRaw        — the ONE height field everything samples
+     5. biomeMaterial   — color that FOLLOWS relief (fragment stage, BIOME_GLSL)
+     6. surfaceDetail   — small relief whose amplitude follows the macro field */
 const FIELD_GLSL = `
 uniform vec3 seedOff;
 uniform vec4 uEditA[48];   /* xyz = direction, w = radius (radians) */
 uniform float uEditB[48]; /* delta (meters) */
 uniform int uEditCount;
+uniform float uMicroK;
+/* stage parameters (isolated, inspector-tunable) */
+uniform float uBroadFreq, uWarpAmt;    /* 1 broadLandforms */
+uniform float uGeoFreq, uGeoGain;      /* 2 regionalGeology */
+uniform float uErodeAmt, uErodeFreq;    /* 3 erosionDrainage */
+uniform float uDetailAmp;              /* 6 surfaceDetail */
 float hash(vec3 p){ p=fract(p*0.3183099+seedOff); p*=17.0;
   return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
 float vnoise(vec3 p){
@@ -270,9 +142,42 @@ float fbm4(vec3 p){ float v=0.0,a=0.5;
   for(int i=0;i<4;i++){ v+=a*vnoise(p); p=p*2.03+vec3(1.7); a*=0.5; } return v; }
 float fbm2(vec3 p){ float v=0.0,a=0.5;
   for(int i=0;i<2;i++){ v+=a*vnoise(p); p=p*2.11+vec3(3.1); a*=0.5; } return v; }
+float ridge(vec3 p){ float n=vnoise(p); n=1.0-abs(n*2.0-1.0); return n*n; }
+float fbmR(vec3 p){ float v=0.0,a=0.55;
+  for(int i=0;i<5;i++){ v+=a*ridge(p); p=p*2.13+vec3(1.7,9.2,4.1); a*=0.5; } return v; }
+/* STAGE 1 — broadLandforms: continent plates */
+float stageBroad(vec3 sp, vec3 q){ return fbm4(sp*uBroadFreq+uWarpAmt*(q-0.5)); }
+/* STAGE 2 — regionalGeology: ridged mountain systems warped onto the plates */
+float stageGeology(vec3 sp, vec3 q){ return fbmR(sp*uGeoFreq+0.9*(q-0.5)); }
+/* STAGE 3 — erosionDrainage: carve V-valleys along drainage lines, highlands only */
+float stageErosion(vec3 sp, float h){
+  float drain=ridge(sp*uErodeFreq+vec3(4.4,8.8,2.2));
+  float carve=pow(drain,1.6)*smoothstep(0.35,0.75,h);
+  return h-uErodeAmt*carve;
+}
+/* STAGE 4 — fieldRaw: the ONE height field (0..1). Orbit, patches, water,
+   props and the probe all sample this — a location never changes identity. */
 float fieldRaw(vec3 sp){
-  vec3 q=vec3(fbm2(sp*2.0),fbm2(sp*2.0+vec3(5.2)),fbm2(sp*2.0+vec3(9.1)));
-  return fbm4(sp*3.0+0.35*(q-0.5));
+  vec3 q=vec3(fbm2(sp*2.0),fbm2(sp*2.0+vec3(5.2,1.3,2.8)),fbm2(sp*2.0+vec3(9.1,4.7,8.3)));
+  float h=mix(stageBroad(sp,q),stageGeology(sp,q),uGeoGain);
+  return clamp(stageErosion(sp,h),0.0,1.0);
+}
+/* STAGE 6 — surfaceDetail: small relief that FOLLOWS the macro field.
+   Amplitude couples to height (detail lives on highlands, plains stay calm),
+   so it enriches landforms instead of turning the surface into alien noise.
+   Lives in the VERTICES (shared by terrain AND props), never as fragment
+   normal perturbation. macroN = fieldRaw at the same point. */
+float microH(vec2 mp, float macroN){
+  float amp=uDetailAmp*(0.30+0.70*smoothstep(0.45,0.72,macroN));
+  float h=(fbm4(vec3(mp*0.030,3.7))-0.5)*14.0;
+  h+=(fbm2(vec3(mp*0.13,9.1))-0.5)*4.0;
+  h+=(vnoise(vec3(mp*0.5,4.2))-0.5)*1.2;
+  /* ridged spine: sharp crests at ~20m wavelength for real ridgelines */
+  float r=0.0,a=0.5;vec2 rp=mp*0.05;
+  for(int i=0;i<3;i++){ float n=vnoise(vec3(rp,7.7)); n=1.0-abs(n*2.0-1.0);
+    r+=a*n*n; rp=rp*2.17+vec2(3.1,7.7); a*=0.5; }
+  h+=(r-0.29)*12.0;
+  return h*amp*uMicroK;
 }
 /* persistent brush edits, addressed by direction */
 float editDelta(vec3 sp){
@@ -285,6 +190,52 @@ float editDelta(vec3 sp){
     d+=uEditB[i]*k*k*(3.0-2.0*k);
   }
   return d;
+}
+`;
+/* STAGE 5 — biomeMaterial (fragment stage): color follows relief.
+   ONE function feeds the orbit shader AND the ground patches, so the planet
+   can never disagree with itself about what a place looks like.
+   n: field 0..1, slope: 0=flat..~1=cliff, det: km-scale variation,
+   grain: meter-scale variation, hM: height in meters, latAbs: |sin(lat)|. */
+const BIOME_GLSL = `
+uniform vec3 uLand1,uLand2,uWat1,uWat2,uRockA,uRockB;
+uniform float uSea,uMode,uSnowK;
+uniform vec3 seedOff; /* shared seed for the grain noise */
+float bhash(vec3 p){ p=fract(p*0.3183099+seedOff); p*=17.0;
+  return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float bvnoise(vec3 p){
+  vec3 i=floor(p),f=fract(p); vec3 u=f*f*(3.0-2.0*f);
+  return mix(mix(mix(bhash(i),bhash(i+vec3(1.,0.,0.)),u.x),
+                 mix(bhash(i+vec3(0.,1.,0.)),bhash(i+vec3(1.,1.,0.)),u.x),u.y),
+             mix(mix(bhash(i+vec3(0.,0.,1.)),bhash(i+vec3(1.,0.,1.)),u.x),
+                 mix(bhash(i+vec3(0.,1.,1.)),bhash(i+vec3(1.,1.,1.)),u.x),u.y),u.z);
+}
+vec3 stageBiome(float n,float slope,float det,float grain,float hM,float latAbs){
+  vec3 col;
+  if(uMode>0.5&&uMode<1.5){
+    float band=sin(latAbs*14.0+n*9.0)*0.5+0.5;
+    col=mix(uLand1,uLand2,clamp(band*0.75+n*0.35,0.0,1.0));
+  }else if(uMode>1.5){
+    if(n>0.52&&n<0.60){float t=clamp((n-0.52)*12.0,0.,1.);
+      col=vec3(1.0,0.43+t*0.47,0.08+t*0.24);}
+    else{float t=clamp((n-0.3)*1.8,0.,1.);
+      col=mix(vec3(0.10,0.05,0.02),vec3(0.34,0.14,0.05),t);}
+  }else if(uSea>=0.0&&n<uSea){
+    float depth=clamp(n/max(uSea,1e-3),0.,1.);
+    col=mix(uWat1,uWat2,pow(depth,0.65));
+    col+=vec3(0.05,0.09,0.07)*smoothstep(uSea-0.05,uSea,n); /* shallow shelf */
+  }else{
+    float t=clamp((n-max(uSea,0.0))/max(1.0-max(uSea,0.0),1e-3),0.,1.);
+    col=mix(uLand1,uLand2,pow(t,0.75));
+  }
+  /* crisp coastline: darken right at the waterline */
+  if(uMode<0.5||uMode>1.5){ float cw=smoothstep(0.0,0.012,abs(n-uSea)); col*=mix(0.80,1.0,cw); }
+  /* relief: steep slopes expose rock, high peaks catch snow */
+  col=mix(col,mix(uRockA,uRockB,det),smoothstep(0.40,0.70,slope)*0.85);
+  col=mix(col,vec3(0.93,0.95,0.98),uSnowK*smoothstep(150.0,300.0,hM));
+  col*=0.90+0.20*det;
+  col*=0.92+0.16*grain;
+  return col;
 }
 `;
 /* log-depth includes (one scene from 250km to 1.7m) */
@@ -359,6 +310,28 @@ function createPlanetDemo(canvas,opts){
   const editA={value:blankEditA()},editB={value:blankEditB()},editN={value:0};
   const seedU={value:seedVec(seed)};
 
+  /* ---- DROP-IN EXPERIENCE: terrain stage parameters (stable names) ----
+     One object, one set of uniforms, shared by every material that samples
+     the field. Tune a stage here (or live later via the planet inspector);
+     orbit, patches, water, props and the probe all stay on the same truth. */
+  const DROPIN_STAGES={
+    broadLandforms:{freq:1.6,warp:0.35,weight:0.28},  /* continent plates */
+    regionalGeology:{freq:3.0,weight:0.72},          /* ridged mountains */
+    erosionDrainage:{amount:0.18,freq:7.0},          /* carved valleys */
+    biomeMaterial:{coastWidth:0.012},                /* color follows relief */
+    surfaceDetail:{amp:1.0,highlandBias:0.70},       /* follows macro field */
+  };
+  const stageU={
+    uBroadFreq:{value:DROPIN_STAGES.broadLandforms.freq},
+    uWarpAmt:{value:DROPIN_STAGES.broadLandforms.warp},
+    uGeoFreq:{value:DROPIN_STAGES.regionalGeology.freq},
+    uGeoGain:{value:DROPIN_STAGES.regionalGeology.weight},
+    uErodeAmt:{value:DROPIN_STAGES.erosionDrainage.amount},
+    uErodeFreq:{value:DROPIN_STAGES.erosionDrainage.freq},
+    uDetailAmp:{value:DROPIN_STAGES.surfaceDetail.amp},
+  };
+  const microU={uMicroK:{value:1}};
+
   /* player address: direction + altitude (dossier §3). mode: orbit|descent|ground|return */
   const player={dir:new THREE.Vector3(0.3,0.75,0.6).normalize(),yaw:0,pitch:-0.04};
   let mode='orbit';
@@ -390,7 +363,7 @@ function createPlanetDemo(canvas,opts){
     }
     for(let iy=0;iy<h;iy++)for(let ix=0;ix<w;ix++){
       const a=iy*(w+1)+ix,b=a+1,c=a+w+1,d=c+1;
-      idx.push(a,c,b,b,c,d);
+      idx.push(a,b,c,b,d,c); /* outward winding: we see the near side, not the far side's interior */
     }
     const g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
@@ -398,49 +371,57 @@ function createPlanetDemo(canvas,opts){
     g.setIndex(idx);
     return g;
   }
-  const SPHERE_R=R-800; // datum sits below lowest terrain; invisible from orbit
+  /* The orbit sphere IS the terrain: displaced by the same field the patches
+     sample, so the backdrop and the detail windows can never disagree. */
   const surfUni={
     seedOff:seedU,sunDir:{value:sunDir},atmoColor:{value:hx(P().atmo)},
-    land1:{value:hx(P().land?P().land[0]:P().bands[0])},
-    land2:{value:hx(P().land?P().land[1]:P().bands[1])},
-    wat1:{value:hx(P().water?P().water[0]:'#000000')},
-    wat2:{value:hx(P().water?P().water[1]:'#000000')},
-    sea:{value:P().sea},specAmt:{value:P().spec},mode:{value:P().mode},
+    uLand1:{value:hx(P().land?P().land[0]:P().bands[0])},
+    uLand2:{value:hx(P().land?P().land[1]:P().bands[1])},
+    uWat1:{value:hx(P().water?P().water[0]:'#000000')},
+    uWat2:{value:hx(P().water?P().water[1]:'#000000')},
+    uSea:{value:P().sea},uSpec:{value:P().spec},uMode:{value:P().mode},
+    uRockA:{value:new THREE.Color(M().rock[0])},uRockB:{value:new THREE.Color(M().rock[1])},
+    uSnowK:{value:(type==='ICE')?1.0:(type==='TERRAN')?0.55:(type==='BARREN')?0.25:0.0},
+    uH:{value:H_SCALE},
     uEditA:editA,uEditB:editB,uEditCount:editN,
+    ...stageU,...microU,
   };
   const surfMat=new THREE.ShaderMaterial({uniforms:surfUni,
-    vertexShader:LDVP+`
+    vertexShader:FIELD_GLSL+LDVP+`
+      uniform float uH;
       varying vec3 vP;varying vec3 vN;varying vec3 vWp;
-      void main(){vP=normalize(position);vN=normalize(mat3(modelMatrix)*normal);
-        vec4 wp=modelMatrix*vec4(position,1.0);vWp=wp.xyz;
+      varying float vNf;varying float vHm;varying float vSlope;varying float vLat;
+      void main(){
+        vec3 sp=normalize(position);
+        float n=fieldRaw(sp);
+        /* relief shading: field gradient -> perturbed normal (vertex-cheap) */
+        float e=0.004;
+        vec3 up=abs(sp.y)>0.94?vec3(1.,0.,0.):vec3(0.,1.,0.);
+        vec3 t1=normalize(cross(up,sp));
+        vec3 t2=normalize(cross(sp,t1));
+        float gx=(fieldRaw(normalize(sp+t1*e))-n)/e;
+        float gy=(fieldRaw(normalize(sp+t2*e))-n)/e;
+        float hM=(n-0.5)*uH;
+        vec4 wp=modelMatrix*vec4(position+sp*hM,1.0);
+        vWp=wp.xyz;vP=sp;vNf=n;vHm=hM;vLat=abs(sp.y);
+        vec3 nn=normalize(sp-(t1*gx+t2*gy)*(uH/100000.0));
+        vN=normalize(mat3(modelMatrix)*nn);
+        vSlope=clamp(length(vec2(gx,gy))*(uH/100000.0),0.0,1.5);
         gl_Position=projectionMatrix*viewMatrix*wp;
         ${LDV}}`,
-    fragmentShader:LDFP+FIELD_GLSL+`
-      uniform vec3 sunDir;uniform vec3 atmoColor;
-      uniform vec3 land1,land2,wat1,wat2;
-      uniform float sea,specAmt,mode;
+    fragmentShader:LDFP+BIOME_GLSL+`
+      uniform vec3 sunDir;uniform vec3 atmoColor;uniform float uSpec;
       varying vec3 vP;varying vec3 vN;varying vec3 vWp;
+      varying float vNf;varying float vHm;varying float vSlope;varying float vLat;
       void main(){
         ${LDF}
         vec3 p=normalize(vP);
-        float n=fieldRaw(p);
-        float det=vnoise(p*90.0);
-        vec3 col;float spec=0.0;
-        if(mode>0.5&&mode<1.5){
-          float band=sin(p.y*14.0+n*9.0)*0.5+0.5;
-          col=mix(land1,land2,clamp(band*0.75+n*0.35,0.0,1.0));
-        }else if(mode>1.5){
-          if(n>0.52&&n<0.60){float t=clamp((n-0.52)*12.0,0.,1.);
-            col=vec3(1.0,0.43+t*0.47,0.08+t*0.24);}
-          else{float t=clamp((n-0.3)*1.8,0.,1.);
-            col=mix(vec3(0.10,0.05,0.02),vec3(0.34,0.14,0.05),t);}
-        }else if(sea>=0.0&&n<sea){
-          col=mix(wat1,wat2,clamp(n/max(sea,1e-3),0.,1.));spec=specAmt;
-        }else{
-          float base=sea<0.0?n:clamp((n-sea)/max(1.0-sea,1e-3)*1.15,0.,1.);
-          col=mix(land1,land2,base);spec=specAmt*0.15;
-        }
-        col*=0.86+det*0.28;
+        float det=bvnoise(p*90.0);
+        float grain=bvnoise(p*160.0+3.1);
+        float spec=0.0;
+        vec3 col=stageBiome(vNf,vSlope,det,grain,vHm,vLat);
+        if(uSea>=0.0&&vNf<uSea&&uMode<0.5)spec=uSpec;
+        else spec=uSpec*0.15;
         vec3 nn=normalize(vN);
         vec3 sd=normalize(sunDir);
         float ndl=dot(nn,sd);
@@ -457,7 +438,7 @@ function createPlanetDemo(canvas,opts){
         fcol+=atmoColor*rim*(0.30+0.70*day);
         gl_FragColor=vec4(fcol,1.0);
       }`});
-  const planetMesh=new THREE.Mesh(fieldSphere(SPHERE_R,160,96),surfMat);
+  const planetMesh=new THREE.Mesh(fieldSphere(R,160,96),surfMat);
   orbitGroup.add(planetMesh);
 
   /* ----- clouds ----- */
@@ -582,37 +563,43 @@ function createPlanetDemo(canvas,opts){
   }
   const patchUniBase=()=>({
     seedOff:seedU,uEditA:editA,uEditB:editB,uEditCount:editN,
+    ...stageU,
+    uMicroK:{value:1}, /* per-patch (far window runs macro-only): NOT shared */
     uDir:{value:new THREE.Vector3(0,1,0)},
     uEast:{value:new THREE.Vector3(1,0,0)},uNorth:{value:new THREE.Vector3(0,0,-1)},
     uR:{value:R},uH:{value:H_SCALE},uPatch:{value:600},
-    land1:{value:hx(P().land?P().land[0]:'#8a5f3a')},
-    land2:{value:hx(P().land?P().land[1]:'#f0d0a0')},
-    wat1:{value:hx(P().water?P().water[0]:'#0a2a5e')},
-    wat2:{value:hx(P().water?P().water[1]:'#1f6fa3')},
+    uLand1:{value:hx(P().land?P().land[0]:'#8a5f3a')},
+    uLand2:{value:hx(P().land?P().land[1]:'#f0d0a0')},
+    uWat1:{value:hx(P().water?P().water[0]:'#0a2a5e')},
+    uWat2:{value:hx(P().water?P().water[1]:'#1f6fa3')},
     uSea:{value:P().sea},uMode:{value:P().mode},
     uSun:{value:sunDir.clone()},
     uFogColor:{value:new THREE.Color(P().sky?P().sky[1]:'#0a0a12')},
     uFogRange:{value:new THREE.Vector2(400,60000)},
-    uLift:{value:0.4},
+    uLift:{value:2.0},   /* small lift over the orbit sphere: kills z-fighting */
+    uSkirt:{value:3.0},  /* edge skirt in meters (was a 120m cliff) */
     uOrigin:{value:new THREE.Vector2(0,0)},
-    uMicroK:{value:1},
+    uRockA:{value:new THREE.Color('#6e6e72')},
+    uRockB:{value:new THREE.Color('#8e8e92')},
+    uSnowK:{value:0.55},
   });
   const PATCH_VERT=FIELD_GLSL+LDVP+`
-    uniform vec3 uDir,uEast,uNorth;uniform float uR,uH,uPatch,uSea,uLift,uMicroK;
+    uniform vec3 uDir,uEast,uNorth;uniform float uR,uH,uPatch,uLift,uSkirt;
     uniform vec2 uOrigin;
     varying vec3 vN;varying float vNf;varying float vDist;varying float vHm;
+    varying float vDet;varying float vLat;varying vec2 vMp;
     vec3 sph(vec3 d){ return normalize(d); }
-    float microH(vec2 mp){
-      return (fbm4(vec3(mp*0.025,3.7))-0.5)*36.0*uMicroK;
-    }
     float hAt(vec3 sp){ return (fieldRaw(sp)-0.5)*uH; }
-    float hFull(vec3 sp,vec2 mp){ return hAt(sp)+microH(mp); }
     void main(){
       float dx=position.x,dz=position.z;
       vec2 mp=vec2(dx,dz)+uOrigin;
       vec3 sp=normalize(uDir+(uEast*dx-uNorth*dz)/uR);
-      float h0=hFull(uDir,uOrigin);
-      float h=hFull(sp,mp);
+      float n=fieldRaw(sp);
+      float edge=max(abs(dx),abs(dz))/(uPatch*0.5);
+      /* detail dissolves toward the patch border so the rough near window
+         melts into the smooth far window instead of sitting in it as a speck */
+      float microFade=(1.0-smoothstep(0.80,0.98,edge));
+      float h=hAt(sp)+microH(mp,n)*microFade;
       float e=0.00012;
       vec3 spE=normalize(uDir+(uEast*(dx+e*uR)-uNorth*dz)/uR);
       vec3 spW=normalize(uDir+(uEast*(dx-e*uR)-uNorth*dz)/uR);
@@ -621,45 +608,34 @@ function createPlanetDemo(canvas,opts){
       float dhdxM=(hAt(spE)-hAt(spW))/(2.0*e*uR);
       float dhdzM=(hAt(spS)-hAt(spN))/(2.0*e*uR);
       float me2=6.0;
-      float dmdx=(microH(mp+vec2(me2,0.0))-microH(mp-vec2(me2,0.0)))/(2.0*me2);
-      float dmdz=(microH(mp+vec2(0.0,me2))-microH(mp-vec2(0.0,me2)))/(2.0*me2);
-      float dhdx=dhdxM+dmdx;
-      float dhdz=dhdzM+dmdz;
+      float dmdx=(microH(mp+vec2(me2,0.0),n)-microH(mp-vec2(me2,0.0),n))/(2.0*me2);
+      float dmdz=(microH(mp+vec2(0.0,me2),n)-microH(mp-vec2(0.0,me2),n))/(2.0*me2);
+      float dhdx=dhdxM+dmdx*microFade;
+      float dhdz=dhdzM+dmdz*microFade;
       float drop=(dx*dx+dz*dz)/(2.0*uR);
-      float y=(h-h0)-drop+editDelta(sp)+uLift;
-      float edge=max(abs(dx),abs(dz))/(uPatch*0.5);
-      y-=smoothstep(0.86,1.0,edge)*120.0;
+      /* ABSOLUTE height (same field, same datum as the orbit sphere and the
+         props) — the patch is a detail overlay on the true surface, so its
+         border can't read as a separate rectangle. */
+      float y=h-drop+editDelta(sp)+uLift;
+      y-=smoothstep(0.94,1.0,edge)*uSkirt;
       vN=normalize(vec3(-dhdx,1.0,-dhdz));
-      vNf=fieldRaw(sp);vHm=h;
+      vNf=n;vHm=h;vDet=vnoise(sp*90.0);vLat=abs(sp.y);vMp=mp;
       vec4 wp=modelMatrix*vec4(dx,y,dz,1.0);
       vDist=distance(cameraPosition,wp.xyz);
       gl_Position=projectionMatrix*viewMatrix*wp;
       ${LDV}}
   `;
-  const PATCH_FRAG=LDFP+`
-    uniform vec3 land1,land2,wat1,wat2;
-    uniform float uSea,uMode;
+  const PATCH_FRAG=LDFP+BIOME_GLSL+`
     uniform vec3 uSun,uFogColor;uniform vec2 uFogRange;
     varying vec3 vN;varying float vNf;varying float vDist;varying float vHm;
+    varying float vDet;varying float vLat;varying vec2 vMp;
     void main(){
       ${LDF}
-      float n=vNf;
-      vec3 col;
-      /* same palette logic as the orbit shader */
-      if(uMode>0.5&&uMode<1.5){
-        float band=sin(n*22.0)*0.5+0.5;
-        col=mix(land1,land2,clamp(band*0.7+n*0.4,0.0,1.0));
-      }else if(uMode>1.5){
-        if(n>0.52&&n<0.60){float t=clamp((n-0.52)*12.0,0.,1.);
-          col=vec3(1.0,0.43+t*0.47,0.08+t*0.24);}
-        else{float t=clamp((n-0.3)*1.8,0.,1.);
-          col=mix(vec3(0.10,0.05,0.02),vec3(0.34,0.14,0.05),t);}
-      }else if(uSea>=0.0&&n<uSea){
-        col=mix(wat1,wat2,clamp(n/max(uSea,1e-3),0.,1.));
-      }else{
-        float t=clamp((n-max(uSea,0.0))/max(1.0-max(uSea,0.0),1e-3),0.,1.);
-        col=mix(land1,land2,t);
-      }
+      /* meter-scale grain so the ground isn't a smooth shader at eye height */
+      float grain=bvnoise(vec3(vMp*0.33,7.3));
+      float slope=1.0-clamp(vN.y,-1.0,1.0);
+      /* the SAME biome function as the orbit shader: one truth, every view */
+      vec3 col=stageBiome(vNf,slope,vDet,grain,vHm,vLat);
       vec3 Nn=normalize(vN);
       float ndl=max(dot(Nn,normalize(uSun)),0.0);
       vec3 lit=col*(0.30+1.25*ndl);
@@ -667,16 +643,16 @@ function createPlanetDemo(canvas,opts){
       f*=smoothstep(uFogRange.x*0.2,uFogRange.x,vDist);
       gl_FragColor=vec4(mix(lit,uFogColor,clamp(f,0.0,1.0)),1.0);
     }`;
-  function makePatch(size,seg){
-    const uni=patchUniBase();uni.uPatch.value=size;uni.uLift.value=size>1000?0:0.4;
+  function makePatch(size,seg,skirt){
+    const uni=patchUniBase();uni.uPatch.value=size;uni.uSkirt.value=skirt;
     const g=new THREE.PlaneGeometry(size,size,seg,seg);g.rotateX(-Math.PI/2);
     const m=new THREE.Mesh(g,new THREE.ShaderMaterial({
       uniforms:uni,vertexShader:PATCH_VERT,fragmentShader:PATCH_FRAG}));
     m.frustumCulled=false;
     return{m,uni};
   }
-  const nearPatch=makePatch(600,170);   // ~58k tris where the eyes are
-  const farPatch=makePatch(8000,80);    // regional context for descent
+  const nearPatch=makePatch(520,256,3.0);   // 131k tris where the eyes are: crisp silhouettes
+  const farPatch=makePatch(8000,80,1.0);    // regional context for descent
   farPatch.uni.uMicroK.value=0;
   groundGroup.add(nearPatch.m,farPatch.m);
   const patchMats=[nearPatch.uni,farPatch.uni];
@@ -684,6 +660,7 @@ function createPlanetDemo(canvas,opts){
   /* ----- water: the field's sea level, same frame ----- */
   const waterUni={
     seedOff:seedU,uEditA:editA,uEditB:editB,uEditCount:editN,
+    ...stageU,...microU,
     uDir:nearPatch.uni.uDir,uEast:nearPatch.uni.uEast,uNorth:nearPatch.uni.uNorth,
     uR:{value:R},uH:{value:H_SCALE},uSea:{value:P().sea},uPatch:{value:8000},
     uTime:{value:0},
@@ -696,11 +673,11 @@ function createPlanetDemo(canvas,opts){
       varying float vDist;varying vec3 vWp;
       void main(){
         float dx=position.x,dz=position.z;
-        float h0=(fieldRaw(normalize(uDir))-0.5)*uH;
         float drop=(dx*dx+dz*dz)/(2.0*uR);
-        float y=(uSea-0.5)*uH-h0-drop+0.9;
+        /* absolute sea level on the same datum as terrain: no h0 anywhere */
+        float y=(uSea-0.5)*uH-drop+2.0;
         float edge=max(abs(dx),abs(dz))/(uPatch*0.5);
-        y-=smoothstep(0.86,1.0,edge)*120.0;
+        y-=smoothstep(0.94,1.0,edge)*2.0;
         vec4 wp=modelMatrix*vec4(dx,y,dz,1.0);
         vWp=wp.xyz;vDist=distance(cameraPosition,wp.xyz);
         gl_Position=projectionMatrix*viewMatrix*wp;
@@ -745,6 +722,11 @@ function createPlanetDemo(canvas,opts){
     groundGroup.quaternion.setFromRotationMatrix(_m4);
     _sunL.set(sunDir.dot(f.e),sunDir.dot(f.u),-sunDir.dot(f.n));
     _rel.copy(player.dir).sub(_refDir);
+    /* re-anchor the reference frame if we've drifted far: keeps uOrigin
+       (and the micro detail coordinates) small so the shader noise stays
+       precise. The micro pattern jumps only on these rare re-anchors. */
+    if(_rel.length()*R>20000)anchorFrame(player.dir);
+    _rel.copy(player.dir).sub(_refDir);
     const ox=_rel.dot(_refE)*R,oz=-_rel.dot(_refN)*R;
     for(const u of patchMats){
       u.uDir.value.copy(player.dir);
@@ -753,17 +735,20 @@ function createPlanetDemo(canvas,opts){
       u.uOrigin.value.set(ox,oz);
     }
     for(const m of propList){const uu=m.userData.uni;
-      uu.uOrigin.value.set(ox,oz);uu.uDir.value.copy(player.dir);}
+      uu.uOrigin.value.set(ox,oz);uu.uDir.value.copy(player.dir);
+      uu.uEast.value.copy(f.e);uu.uNorth.value.copy(f.n);}
   }
   function applyGroundType(){
     const T=PTEX[type];
     for(const u of patchMats){
-      u.land1.value.set(T.land?T.land[0]:T.bands[0]);
-      u.land2.value.set(T.land?T.land[1]:T.bands[1]);
-      u.wat1.value.set(T.water?T.water[0]:'#000000');
-      u.wat2.value.set(T.water?T.water[1]:'#000000');
+      u.uLand1.value.set(T.land?T.land[0]:T.bands[0]);
+      u.uLand2.value.set(T.land?T.land[1]:T.bands[1]);
+      u.uWat1.value.set(T.water?T.water[0]:'#000000');
+      u.uWat2.value.set(T.water?T.water[1]:'#000000');
       u.uSea.value=T.sea;u.uMode.value=T.mode;
       u.uFogColor.value.set(T.sky?T.sky[1]:'#0a0a12');
+      u.uRockA.value.set(M().rock[0]);u.uRockB.value.set(M().rock[1]);
+      u.uSnowK.value=(type==='ICE')?1.0:(type==='TERRAN')?0.55:(type==='BARREN')?0.25:0.0;
     }
     waterUni.uSea.value=T.sea;
     waterUni.uDeep.value.set(T.water?T.water[0]:'#0a2a5e');
@@ -780,7 +765,9 @@ function createPlanetDemo(canvas,opts){
      float or sink; the math is identical to the terrain's. */
   const propUniBase=()=>({
     seedOff:seedU,uEditA:editA,uEditB:editB,uEditCount:editN,
+    ...stageU,...microU,
     uDir:{value:new THREE.Vector3(0,1,0)},
+    uEast:{value:new THREE.Vector3(1,0,0)},uNorth:{value:new THREE.Vector3(0,0,-1)},
     uR:{value:R},uH:{value:H_SCALE},uSea:{value:P().sea},uMode:{value:P().mode},
     uSun:{value:sunDir.clone()},
     uTime:{value:0},uWind:{value:0.35},
@@ -797,20 +784,24 @@ function createPlanetDemo(canvas,opts){
   });
   const PROP_VERT=FIELD_GLSL+LDVP+`
     attribute vec3 aDir;attribute vec4 aParam;attribute vec3 aTint;
-    uniform vec3 uDir;uniform float uR,uH,uSea,uMode,uTime,uWind,uBend;
-    uniform vec3 uSun;uniform vec2 uOrigin;uniform vec3 uRefDir,uRefEast,uRefNorth;
-    float microH(vec2 mp){
-      return (fbm4(vec3(mp*0.025,3.7))-0.5)*36.0;
-    }
+    uniform vec3 uDir,uEast,uNorth;uniform float uR,uH,uSea,uMode,uTime,uWind,uBend;
+    uniform vec3 uSun;uniform vec2 uOrigin;
     varying vec3 vN;varying float vDist;varying vec3 vCol;varying float vLand;
+    vec3 sph(vec3 d){ return normalize(d); }
+    float hAt(vec3 sp){ return (fieldRaw(sp)-0.5)*uH; }
     void main(){
-      vec3 sp=normalize(aDir);
+      /* planar mapping, SAME as the terrain patches: the prop sits on the
+         exact surface the patch renders, so nothing floats or sinks */
+      vec3 rel=aDir-uDir;
+      float dx=dot(rel,uEast)*uR;
+      float dz=-dot(rel,uNorth)*uR;
+      vec2 mp=vec2(dx,dz)+uOrigin;
+      vec3 sp=normalize(uDir+(uEast*dx-uNorth*dz)/uR);
       float n=fieldRaw(sp);
-      vec2 mp=vec2(dot(sp-uRefDir,uRefEast),-dot(sp-uRefDir,uRefNorth))*uR;
-      float h=(n-0.5)*uH+microH(mp);
-      float h0=(fieldRaw(normalize(uDir))-0.5)*uH+microH(uOrigin);
-      float ang=acos(clamp(dot(sp,normalize(uDir)),-1.0,1.0));
-      float drop=ang*ang*uR*0.5;
+      float edge=max(abs(dx),abs(dz))/(260.0);
+      float microFade=1.0-smoothstep(0.80,0.98,edge);
+      float h=hAt(sp)+microH(mp,n)*microFade;
+      float drop=(dx*dx+dz*dz)/(2.0*uR);
       float land=step(uSea,n);
       if(uMode>1.5)land=1.0;
       float sc=aParam.x*land;
@@ -821,16 +812,14 @@ function createPlanetDemo(canvas,opts){
       vec3 rp=vec3(lp.x*cr-lp.z*sr,lp.y,lp.x*sr+lp.z*cr);
       /* wind sway, stronger toward the top */
       float hk=clamp(rp.y/max(sc*4.0,0.001),0.0,1.0);
-      vec2 sway=vec2(0.8,0.35)*(sin(uTime*1.9+aParam.w*6.28+sp.x*40.0)*0.5+0.5)*uWind*hk*hk;
+      vec2 sway=vec2(0.8,0.35)*(sin(uTime*1.9+aParam.w*6.28+dx*0.1)*0.5+0.5)*uWind*hk*hk;
       /* soft bend away from the player when close */
-      float angP=acos(clamp(dot(normalize(sp*(uR+h)),normalize(uDir)),-1.0,1.0));
-      float bk=(1.0-smoothstep(0.0,5e-5,angP))*uBend;
-      vec3 e2=normalize(cross(vec3(0.0,1.0,0.0),sp)+vec3(1e-4));
-      vec3 n2=cross(sp,e2);
-      vec3 wp=sp*(uR+(h-h0)-drop+editDelta(sp)+0.35)+e2*rp.x+sp*rp.y+n2*rp.z;
-      wp.x+=sway.x;wp.z+=sway.y;
+      float bk=(1.0-smoothstep(0.0,5.0,length(vec2(dx,dz))))*uBend;
+      /* planar frame: up=uDir, east=uEast, north=uNorth (matches the patches) */
+      vec3 wp=uDir*(uR+h-drop+editDelta(sp)+2.0)+uEast*(dx+rp.x)+uDir*rp.y-uNorth*(dz+rp.z);
+      wp+=uEast*sway.x-uNorth*sway.y;
       wp+=normalize(wp-uDir*dot(wp,uDir)+vec3(1e-5))*bk*rp.y*0.35;
-      vN=normalize(e2*normal.x+sp*normal.y+n2*normal.z);
+      vN=normalize(uEast*normal.x+uDir*normal.y-uNorth*normal.z);
       vDist=distance(cameraPosition,wp);
       vCol=aTint;vLand=land;
       gl_Position=projectionMatrix*viewMatrix*vec4(wp,1.0);
@@ -849,7 +838,7 @@ function createPlanetDemo(canvas,opts){
       base=mix(base,vec3(0.92,0.94,0.97),uSnow*clamp(Nn.y,0.0,1.0)*0.85);
       float ndl=max(dot(Nn,normalize(uSun)),0.0);
       float upFill=Nn.y*0.5+0.5;
-      vec3 lit=base*(0.62+0.75*ndl+0.25*upFill);
+      vec3 lit=base*(0.85+0.75*ndl+0.30*upFill);
       float f=1.0-exp(-pow(vDist/uFogRange.y,2.0)*4.0);
       f*=smoothstep(uFogRange.x*0.2,uFogRange.x,vDist);
       gl_FragColor=vec4(mix(lit,uFogColor,clamp(f,0.0,1.0)),1.0);
@@ -912,13 +901,13 @@ function createPlanetDemo(canvas,opts){
     // oak-like: short trunk + LARGE canopy (visible from distance)
     const trunk=new THREE.CylinderGeometry(0.32,0.48,1.8,6);trunk.translate(0,0.9,0);
     tinted(trunk,0.5,1,0);
-    const can=jitterGeo(new THREE.IcosahedronGeometry(3.8,1),1.0,seed+9);
+    const can=jitterGeo(new THREE.IcosahedronGeometry(3.8,2),1.0,seed+9);
     can.scale(1,0.8,1);can.translate(0,3.4,0);
     tinted(can,0.35,0,0);
     return merge2(trunk,can);
   }
   function rockGeo(){
-    const g=jitterGeo(new THREE.IcosahedronGeometry(1.5,1),0.55,seed+21);
+    const g=jitterGeo(new THREE.IcosahedronGeometry(1.5,2),0.55,seed+21);
     g.scale(1,0.72,1);g.translate(0,0.5,0);
     return tinted(g,0.6,0.4,0);
   }
@@ -993,7 +982,14 @@ function createPlanetDemo(canvas,opts){
   };
   const propList=Object.values(props);
   const _pv=new THREE.Vector3();
-  function scatter(mesh,cx,cz,radius,count,seedO,minR){
+  /* JS value noise for prop clumping (placement only; heights stay on the GPU) */
+  function vnoise2(x,y,s){
+    const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi;
+    const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+    const a=hash2i(xi,yi,s),b=hash2i(xi+1,yi,s),c=hash2i(xi,yi+1,s),d=hash2i(xi+1,yi+1,s);
+    return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+  }
+  function scatter(mesh,cx,cz,radius,count,seedO,minR,cl0,cl1){
     const g=mesh.geometry,N=mesh.userData.count;
     const dirA=g.attributes.aDir,paramA=g.attributes.aParam;
     const f=frameOf(player.dir);
@@ -1002,6 +998,10 @@ function createPlanetDemo(canvas,opts){
       const a=hash2i(cx+guard,cz-guard,seedO)*Math.PI*2;
       const rr=minR+Math.sqrt(hash2i(cx-guard,cz+guard,seedO+1))*(radius-minR);
       const lx=Math.cos(a)*rr,lz=Math.sin(a)*rr;
+      /* clumps + clearings: keep the prop only where the biome noise runs high */
+      const cm=vnoise2(lx*0.011+cx*7.3,lz*0.011+cz*3.1,seedO+40)*0.65
+              +vnoise2(lx*0.043+cx*1.7,lz*0.043-cz*2.3,seedO+41)*0.35;
+      if(hash2i(guard*7+3,cx-cz,seedO+6)>THREE.MathUtils.smoothstep(cm,cl0,cl1))continue;
       _pv.copy(player.dir).addScaledVector(f.e,lx/R).addScaledVector(f.n,-lz/R).normalize();
       const sc=0.6+hash2i(cx+guard*2,cz,seedO+2)*1.1;
       const rot=hash2i(cx,cz+guard*3,seedO+3)*6.283;
@@ -1018,12 +1018,12 @@ function createPlanetDemo(canvas,opts){
     const key=Math.floor(player.dir.x*R/40)+':'+Math.floor(player.dir.y*R/40)+':'+Math.floor(player.dir.z*R/40);
     if(key===lastPropKey)return;lastPropKey=key;
     const s=seed;
-    scatter(props.conifer,1,2,200,140,s+101,8);
-    scatter(props.broad,3,4,200,110,s+103,8);
-    scatter(props.rock,5,6,320,130,s+105,8);
-    scatter(props.grass,7,8,70,2600,s+106,2);
-    scatter(props.flower,9,10,90,260,s+107,4);
-    scatter(props.soft,11,12,110,130,s+108,5);
+    scatter(props.conifer,1,2,200,140,s+101,8,0.48,0.62);
+    scatter(props.broad,3,4,200,110,s+103,8,0.50,0.64);
+    scatter(props.rock,5,6,320,130,s+105,8,0.30,0.55);
+    scatter(props.grass,7,8,70,2600,s+106,2,0.36,0.55);
+    scatter(props.flower,9,10,90,260,s+107,4,0.52,0.66);
+    scatter(props.soft,11,12,110,130,s+108,5,0.46,0.62);
   }
   function applyPropType(){
     const t=M();
@@ -1065,7 +1065,8 @@ function createPlanetDemo(canvas,opts){
   const probeRT=new THREE.WebGLRenderTarget(128,64);
   const probeMat=new THREE.ShaderMaterial({
     uniforms:{seedOff:seedU,uSea:{value:0},uMode:{value:0},
-      uEditA:{value:blankEditA()},uEditB:{value:blankEditB()},uEditCount:{value:0}},
+      uEditA:{value:blankEditA()},uEditB:{value:blankEditB()},uEditCount:{value:0},
+      ...stageU,...microU},
     vertexShader:`varying vec2 vUv;void main(){vUv=uv;
       gl_Position=vec4(position.xy,0.0,1.0);}`,
     fragmentShader:FIELD_GLSL+`
@@ -1099,6 +1100,29 @@ function createPlanetDemo(canvas,opts){
     const y=Math.min(63,Math.max(0,Math.floor((lat/Math.PI+0.5)*64)));
     return landMask[(y*128+x)*4]/255;
   }
+  /* precise height at ONE direction: renders fieldRaw for that exact point.
+     The 128x64 probe finds land; this lands on it. */
+  const pointRT=new THREE.WebGLRenderTarget(1,1);
+  const pointMat=new THREE.ShaderMaterial({
+    uniforms:{seedOff:seedU,uDir:{value:new THREE.Vector3()},
+      uEditA:{value:blankEditA()},uEditB:{value:blankEditB()},uEditCount:{value:0},
+      ...stageU,...microU},
+    vertexShader:`varying vec2 vUv;void main(){vUv=uv;
+      gl_Position=vec4(position.xy,0.0,1.0);}`,
+    fragmentShader:FIELD_GLSL+`
+      uniform vec3 uDir;varying vec2 vUv;
+      void main(){gl_FragColor=vec4(fieldRaw(normalize(uDir)),0.0,0.0,1.0);}`});
+  function heightAt(d){
+    pointMat.uniforms.uDir.value.copy(d).normalize();
+    const s=new THREE.Scene();
+    s.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),pointMat));
+    const oc=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+    renderer.setRenderTarget(pointRT);renderer.render(s,oc);
+    const px=new Uint8Array(4);
+    renderer.readRenderTargetPixels(pointRT,0,0,1,1,px);
+    renderer.setRenderTarget(null);
+    return (px[0]/255-0.5)*H_SCALE;
+  }
   function nudgeToLand(dir){
     // pick high, dry, SUNLIT land: global search + local refinement.
     // (the spiral alone can't reach the day side from the night side)
@@ -1124,6 +1148,12 @@ function createPlanetDemo(canvas,opts){
     return best;
   }
   probeLand();
+  /* initial framing: face sunlit land, not empty ocean (uses the probe) */
+  {
+    const d0=nudgeToLand(new THREE.Vector3(0.12,0.42,2.55).normalize());
+    orbit.theta=Math.atan2(d0.x,d0.z);
+    orbit.phi=Math.acos(THREE.MathUtils.clamp(d0.y,-1,1));
+  }
 
   function slerpDir(a,b,t,out){
     const ang=Math.acos(clampN(a.dot(b),-1,1));
@@ -1140,61 +1170,136 @@ function createPlanetDemo(canvas,opts){
     backBtn.style.display=uiGround?'block':'none';
     if(modeBtn)modeBtn.style.display=uiGround?'block':'none';
   }
-  let faceTarget=null,groundDirty=true,groundAnchor=null,lastGroundR=0;
-  const view={yaw:0,pitch:-0.05}; // look direction when close (persistent)
+  let groundDirty=true,groundAnchor=null,lastGroundR=0;
+  const view={yaw:0,pitch:-1.45}; // look direction: user-controlled at ALL altitudes via drag
   let uiGround=false;
   const _ray=new THREE.Raycaster(),_down=new THREE.Vector3();
-  let terrainMinR=R+5; // dynamic floor: never zoom below real ground + margin
+  /* terrain-aware ground clearance: the camera never goes under the world.
+     Uses a precise GPU height query at the exact nadir (not the coarse probe),
+     + margin for micro detail. This is a floor, not a cage. */
+  /* cache the GPU height query: it's a full render+readback, too slow per-frame */
+  let _hcDir=new THREE.Vector3(1e9,0,0),_hcVal=0;
+  function groundClearance(dir){
+    if(dir.distanceToSquared(_hcDir)>1e-8){
+      _hcVal=heightAt(dir)+18;
+      _hcDir.copy(dir);
+    }
+    return _hcVal;
+  }
+  function camDirNow(out){
+    return out.set(Math.sin(orbit.phi)*Math.sin(orbit.theta),
+      Math.cos(orbit.phi),Math.sin(orbit.phi)*Math.cos(orbit.theta));
+  }
+  const _cd=new THREE.Vector3();
+  function minRadius(){
+    return R+groundClearance(camDirNow(_cd))+1.5;
+  }
+  /* no auto-look, no easing, no takeover: the look direction is the user's property.
+     Dive/return never touch yaw/pitch. The only floor is the terrain itself. */
   function diveTo(dir){
     if((orbit.radius-R)<50000)return;
-    // no more auto-flight: turn to face a beautiful spot, you pinch the dive
+    // instant framing on direct user input (button/double-click): no lerp,
+    // no auto-flight. The camera jumps exactly where the input sent it.
     const target=dir?nudgeToLand(dir):nudgeToLand(_v1.copy(camera.position).normalize());
-    faceTarget={th:Math.atan2(target.x,target.z),ph:Math.acos(THREE.MathUtils.clamp(target.y,-1,1))};
+    orbit.theta=Math.atan2(target.x,target.z);
+    orbit.phi=Math.acos(THREE.MathUtils.clamp(target.y,-1,1));
   }
   function returnToOrbit(){
-    if(mode!=='ground')return;
     orbit.theta=Math.atan2(player.dir.x,player.dir.z);
     orbit.phi=Math.acos(THREE.MathUtils.clamp(player.dir.y,-1,1));
-    orbit.radius=R+80000;orbit.targetR=R+80000;
-    mode='orbit';setModeUI();
+    orbit.radius=R+80000;
+    setModeUI();
   }
-  if(dropBtn)dropBtn.addEventListener('click',()=>diveTo(null));
-  if(backBtn)backBtn.addEventListener('click',()=>{
-    orbit.targetR=R+80000;
-  });
+
+  /* ================= DROP-IN EXPERIENCE (component) =================
+     What it is: pick a world, fall into it, fly it yourself.
+     - 🎲 random: random planet type + random sunlit land, then plays the drop-in
+     - ▶ drop-in: plays a radius descent from wherever you are (cancelable)
+     - slider: log-scale zoom, orbit <-> ground, 1:1, stops dead
+     - the play is the ONLY thing that ever moves the camera unprompted, and
+       any touch, scroll, pinch or slider input cancels it instantly. */
+  const LOG_FAR=Math.log(R*10),LOG_NEAR=Math.log(R+2);
+  const dropin={playing:false,t0:0,fromLog:0,dur:12000};
+  const playHint=document.getElementById('playHint');
+  const slider=document.getElementById('zoomSlider');
+  function dropinUI(on){ if(playHint)playHint.style.display=on?'block':'none'; }
+  function cancelDropIn(){ if(dropin.playing){dropin.playing=false;dropinUI(false);} }
+  function playDropIn(){
+    dropin.playing=true;dropin.t0=performance.now();
+    dropin.fromLog=Math.log(orbit.radius);
+    /* land 30m above the local terrain, not at an absolute radius that could be underground */
+    dropin.toLog=Math.log(R+groundClearance(camDirNow(_cd))+30);
+    const span=Math.max(0,dropin.fromLog-dropin.toLog);
+    dropin.dur=8000+7000*Math.min(1,span/Math.log(20));
+    dropinUI(true);
+  }
+  function syncChips(t){
+    const tc=document.getElementById('typeChips');if(!tc)return;
+    tc.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+  }
+  function randomDropIn(){
+    const keys=Object.keys(PTEX);
+    const t=keys[(Math.random()*keys.length)|0];
+    setType(t);syncChips(t);
+    orbit.radius=R*3;
+    _v1.set(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1).normalize();
+    diveTo(_v1);
+    playDropIn();
+  }
+  if(dropBtn)dropBtn.addEventListener('click',()=>{diveTo(null);playDropIn();});
+  if(backBtn)backBtn.addEventListener('click',()=>{cancelDropIn();returnToOrbit();});
+  const randomBtn=document.getElementById('randomBtn');
+  if(randomBtn)randomBtn.addEventListener('click',randomDropIn);
+  let sliderActive=false;
+  if(slider){
+    slider.addEventListener('input',()=>{cancelDropIn();
+      const lo=Math.log(minRadius());
+      orbit.radius=Math.exp(LOG_FAR+(lo-LOG_FAR)*(slider.value/1000));});
+    slider.addEventListener('pointerdown',()=>{sliderActive=true;});
+    addEventListener('pointerup',()=>{sliderActive=false;});
+  }
   if(modeBtn)modeBtn.addEventListener('click',()=>{
     brushMode=!brushMode;
     modeBtn.textContent=brushMode?'🚶 WALK':'⛰ BRUSH';
   });
 
-  /* ----- input ----- */
-  const zoom=f=>{if(mode!=='orbit')return;
-    const minR=(typeof terrainMinR!=='undefined')?terrainMinR:R+1.7;
-    orbit.targetR=THREE.MathUtils.clamp((orbit.targetR||orbit.radius)*f,minR,R*10);};
+  /* ----- input: the user flies the camera, nothing else does -----
+     1-finger / left-drag = MOVE the camera (orbit the planet, fly the ground).
+       Grab-the-world: the ground point under the camera follows the finger.
+     2-finger drag / right-drag / shift-drag = LOOK (tilt the view, free).
+     wheel / pinch / slider = ZOOM radius 1:1, stops dead.
+     No easing, no snap, no auto-look, no takeover. */
+  const zoom=f=>{cancelDropIn();orbit.radius=THREE.MathUtils.clamp(orbit.radius*f,minRadius(),R*10);};
+  let pinchM=null;
   canvas.addEventListener('pointerdown',e=>{
+    cancelDropIn();
     try{canvas.setPointerCapture(e.pointerId);}catch(_){}
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pointers.size===1)
-      dragging={x:e.clientX,y:e.clientY,th:orbit.theta,ph:orbit.phi,yw:view.yaw,pt:view.pitch};
+      dragging={x:e.clientX,y:e.clientY,look:(e.button===2||e.shiftKey)};
     else if(pointers.size===2){const p=[...pointers.values()];
-      pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);dragging=false;}
+      pinchD=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+      pinchM={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2};
+      dragging=false;}
   });
-  function groundPinch(){
-    const p=[...pointers.values()];
-    const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
-    if(pinchD&&d>0){
-      const ratio=d/pinchD;
-      if(ratio>1.02){ // pinch out: ascend
-        orbit.targetR=Math.min(R*10,(orbit.targetR||orbit.radius)*Math.pow(ratio,1.5));
-        if(orbit.radius>R+30){
-          // lift off: resume orbit from above this spot
-          orbit.theta=Math.atan2(player.dir.x,player.dir.z);
-          orbit.phi=Math.acos(THREE.MathUtils.clamp(player.dir.y,-1,1));
-          mode='orbit';setModeUI();
-        }
-      }
-    }
-    pinchD=d;
+  function moveCam(dx,dy){
+    // grab-the-world: move the camera's ground point with the finger.
+    // Sensitivity blends from angular (orbit) to linear meters/px (ground).
+    const r=orbit.radius,alt=r-R;
+    const orbitK=THREE.MathUtils.smoothstep(alt,20000,80000);
+    const mPx=orbitK*r*0.0016+(1-orbitK)*0.15;
+    _v1.set(Math.sin(orbit.phi)*Math.sin(orbit.theta),
+            Math.cos(orbit.phi),
+            Math.sin(orbit.phi)*Math.cos(orbit.theta));
+    const f=frameOf(_v1);
+    _v1.addScaledVector(f.e,-dx*mPx/r).addScaledVector(f.n,dy*mPx/r).normalize();
+    orbit.theta=Math.atan2(_v1.x,_v1.z);
+    orbit.phi=THREE.MathUtils.clamp(
+      Math.acos(THREE.MathUtils.clamp(_v1.y,-1,1)),0.02,Math.PI-0.02);
+  }
+  function lookBy(dx,dy){
+    view.yaw-=dx*0.0042;
+    view.pitch=THREE.MathUtils.clamp(view.pitch-dy*0.0042,-1.45,1.45);
   }
   const _plane=new THREE.Plane();
   function brushAt(cx,cy){
@@ -1212,20 +1317,6 @@ function createPlanetDemo(canvas,opts){
     if(edits.length>48)edits.shift();
     pushEdits();
   }
-  function walkBy(dx,dy){
-    const k=0.09;
-    const sy=Math.sin(view.yaw),cy=Math.cos(view.yaw);
-    const me=-dy*k*cy+dx*k*sy;
-    const mn=-dy*k*sy-dx*k*cy;
-    _v1.set(Math.sin(orbit.phi)*Math.sin(orbit.theta),
-            Math.cos(orbit.phi),
-            Math.sin(orbit.phi)*Math.cos(orbit.theta));
-    const f=frameOf(_v1);
-    _v1.addScaledVector(f.e,me/R).addScaledVector(f.n,mn/R).normalize();
-    orbit.theta=Math.atan2(_v1.x,_v1.z);
-    orbit.phi=Math.acos(THREE.MathUtils.clamp(_v1.y,-1,1));
-    orbit.targetR=orbit.radius;
-  }
   canvas.addEventListener('pointermove',e=>{
     const pt=pointers.get(e.pointerId);if(!pt)return;
     const dx=e.clientX-pt.x,dy=e.clientY-pt.y;
@@ -1234,31 +1325,24 @@ function createPlanetDemo(canvas,opts){
     if(pointers.size===2){
       const p=[...pointers.values()];
       const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
-      if(pinchD)zoom(pinchD/d);pinchD=d;return;
+      const mx=(p[0].x+p[1].x)/2,my=(p[0].y+p[1].y)/2;
+      if(pinchD)zoom(pinchD/d);
+      if(pinchM)lookBy(mx-pinchM.x,my-pinchM.y);
+      pinchD=d;pinchM={x:mx,y:my};return;
     }
     if(pointers.size===1){
       if(brushMode&&altNow<300){brushAt(e.clientX,e.clientY);return;}
       if(dragging){
-        if(altNow>3000){
-          // far: orbit
-          orbit.theta=dragging.th-(e.clientX-dragging.x)*0.008;
-          orbit.phi=Math.min(2.8,Math.max(0.2,dragging.ph-(e.clientY-dragging.y)*0.008));
-          orbit.targetR=orbit.radius; // cancel zoom easing while orbiting
-        }else{
-          // close: look around (or walk on left half when very low)
-          const r=canvas.getBoundingClientRect();
-          if(altNow<150&&e.clientX<r.left+r.width/2){
-            walkBy(dx,dy);
-          }else{
-            view.yaw=dragging.yw-(e.clientX-dragging.x)*0.0042;
-            view.pitch=Math.max(-1.2,Math.min(1.2,dragging.pt-(e.clientY-dragging.y)*0.0042));
-          }
-        }
+        const mdx=e.clientX-dragging.x,mdy=e.clientY-dragging.y;
+        if(dragging.look)lookBy(mdx,mdy);else moveCam(mdx,mdy);
+        dragging.x=e.clientX;dragging.y=e.clientY;
       }
     }
   });
-  const up=e=>{pointers.delete(e.pointerId);if(!pointers.size){dragging=false;pinchD=0;}};
+  const up=e=>{pointers.delete(e.pointerId);
+    if(!pointers.size){dragging=false;pinchD=0;pinchM=null;}};
   canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+  canvas.addEventListener('contextmenu',e=>e.preventDefault());
   canvas.addEventListener('wheel',e=>{e.preventDefault();zoom(1+e.deltaY*0.0011);},{passive:false});
   canvas.addEventListener('dblclick',e=>{
     if(mode!=='orbit')return;
@@ -1272,12 +1356,14 @@ function createPlanetDemo(canvas,opts){
   function setType(t){
     if(!PTEX[t])return;type=t;
     const T=PTEX[type];
-    surfUni.land1.value.set(T.land?T.land[0]:T.bands[0]);
-    surfUni.land2.value.set(T.land?T.land[1]:T.bands[1]);
-    surfUni.wat1.value.set(T.water?T.water[0]:'#000000');
-    surfUni.wat2.value.set(T.water?T.water[1]:'#000000');
-    surfUni.sea.value=T.sea;surfUni.specAmt.value=T.spec;surfUni.mode.value=T.mode;
+    surfUni.uLand1.value.set(T.land?T.land[0]:T.bands[0]);
+    surfUni.uLand2.value.set(T.land?T.land[1]:T.bands[1]);
+    surfUni.uWat1.value.set(T.water?T.water[0]:'#000000');
+    surfUni.uWat2.value.set(T.water?T.water[1]:'#000000');
+    surfUni.uSea.value=T.sea;surfUni.uSpec.value=T.spec;surfUni.uMode.value=T.mode;
     surfUni.atmoColor.value.set(T.atmo);atmoMat.uniforms.c.value.set(T.atmo);
+    surfUni.uRockA.value.set(M().rock[0]);surfUni.uRockB.value.set(M().rock[1]);
+    surfUni.uSnowK.value=(type==='ICE')?1.0:(type==='TERRAN')?0.55:(type==='BARREN')?0.25:0.0;
     clouds1.material.uniforms.uOp.value=type==='GAS'?0.96:0.85;
     applyGroundType();applyPropType();probeLand();
   }
@@ -1314,28 +1400,33 @@ function createPlanetDemo(canvas,opts){
     waterMat.uniforms.uTime.value+=dt;
     for(const m of propList)m.userData.uni.uTime.value+=dt;
 
-    // UNIFIED CAMERA — one continuous motion from space to ground, no mode switch
+    // CAMERA — the user flies it, nothing else does.
+    // Scroll/pinch/slider set radius 1:1 (no easing). 1-finger drag moves the
+    // camera (orbit position); 2-finger/right/shift drag tilts the view.
+    // The ONLY unprompted motion is an explicit ▶ drop-in play, which any
+    // input cancels instantly. No idle rotation, no look snap. The terrain
+    // itself is the only floor: radius never goes under local ground+1.5m.
     {
-      if(!dragging&&!pointers.size&&(orbit.radius>R+50000))orbit.theta+=dt*0.03;
-      if(faceTarget){
-        const k=Math.min(1,dt*2.5);
-        let dth=faceTarget.th-orbit.theta;
-        while(dth>Math.PI)dth-=Math.PI*2;while(dth<-Math.PI)dth+=Math.PI*2;
-        orbit.theta+=dth*k;orbit.phi+=(faceTarget.ph-orbit.phi)*k;
-        if(Math.abs(dth)<0.01&&Math.abs(faceTarget.ph-orbit.phi)<0.01)faceTarget=null;
+      if(dropin.playing){
+        const t=Math.min(1,(now-dropin.t0)/dropin.dur);
+        const k=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+        orbit.radius=Math.exp(dropin.fromLog+(dropin.toLog-dropin.fromLog)*k);
+        if(t>=1){dropin.playing=false;dropinUI(false);}
       }
-      // smooth zoom: ease toward target
-      const dr=orbit.targetR-orbit.radius;
-      if(Math.abs(dr)>0.01)orbit.radius+=dr*Math.min(1,dt*7);
-      else orbit.radius=orbit.targetR;
-      // position: orbit direction * radius (clamped above real terrain)
-      const r=Math.max(orbit.radius,terrainMinR);
+      const r=orbit.radius;
       _v1.set(Math.sin(orbit.phi)*Math.sin(orbit.theta),
               Math.cos(orbit.phi),
               Math.sin(orbit.phi)*Math.cos(orbit.theta));
       camera.position.copy(_v1).multiplyScalar(r);
+      camera.up.set(0,1,0);
+      const f=frameOf(_v1);
+      const cp=Math.cos(view.pitch);
+      _v3.copy(f.e).multiplyScalar(Math.sin(view.yaw)*cp)
+        .addScaledVector(f.n,Math.cos(view.yaw)*cp)
+        .addScaledVector(f.u,Math.sin(view.pitch));
+      camera.lookAt(_v4.copy(camera.position).add(_v3));
       const alt=r-R;
-      // ground follows when close — throttled
+      // ground follows when close — throttled (moves geometry, never the camera)
       if(r<R+60000){
         if(!groundGroup.visible){groundGroup.visible=true;groundDirty=true;}
         if(!groundAnchor)groundAnchor=new THREE.Vector3();
@@ -1346,43 +1437,17 @@ function createPlanetDemo(canvas,opts){
           placeGround();buildProps();
           groundAnchor.copy(camera.position);lastGroundR=r;groundDirty=false;
         }
-        // raycast real terrain when close: never go under the dirt
-        if(r<R+3000){
-          _down.copy(_v1).negate();
-          _ray.set(camera.position,_down);
-          _ray.far=r-R+500;
-          const hit=_ray.intersectObjects([nearPatch.m,farPatch.m],false)[0];
-          if(hit){
-            terrainMinR=hit.point.length()+2.5;
-            if(orbit.targetR<terrainMinR)orbit.targetR=terrainMinR;
-          }
-        }else{terrainMinR=R+1.7;}
       }else if(groundGroup.visible){groundGroup.visible=false;}
-      // orientation: continuous blend by altitude (far: planet, close: horizon)
-      // closeK=0 far, 1 at ground — smooth, no snap
-      const closeK=1-THREE.MathUtils.smoothstep(alt,400,6000);
-      if(closeK<0.02){
-        camera.up.set(0,1,0);
-        camera.lookAt(0,0,0);
-      }else{
-        const f=frameOf(_v1);
-        const cp=Math.cos(view.pitch);
-        // horizon look direction from yaw/pitch in local frame
-        _v3.copy(f.e).multiplyScalar(Math.sin(view.yaw)*cp)
-          .addScaledVector(f.n,Math.cos(view.yaw)*cp)
-          .addScaledVector(f.u,Math.sin(view.pitch));
-        _v4.copy(camera.position).addScaledVector(_v3,300);
-        // nadir look target
-        _v2.copy(_v1).multiplyScalar(R);
-        // blend: nadir -> horizon
-        _v2.lerp(_v4,closeK);
-        camera.lookAt(_v2);
-        // up: blend world-up -> surface normal (safe: never parallel to view)
-        camera.up.set(0,1,0).lerp(_v1,closeK).normalize();
-      }
       // UI follows altitude, not a mode flip
       const wantGroundUI=alt<120;
       if(wantGroundUI!==uiGround){uiGround=wantGroundUI;setModeUI();}
+      // detail LOD: the 131k-tri near window only matters below 8km
+      nearPatch.m.visible=alt<8000;
+      // zoom slider tracks the radius 1:1 (never fights an active drag)
+      if(slider&&!sliderActive){
+        const loS=Math.log(minRadius());
+        slider.value=Math.round(1000*(Math.log(r)-LOG_FAR)/(loS-LOG_FAR));
+      }
     }
 
     // altitude-driven atmosphere
@@ -1405,6 +1470,42 @@ function createPlanetDemo(canvas,opts){
     renderer.render(scene,camera);
   })(last);
 
+  /* terrain handoff instrumentation: what the drop-in is actually doing */
+  function fieldRange(){
+    if(!landMask)return null;
+    let mn=1,mx=0,land=0;
+    const sea=P().sea;
+    for(let i=0;i<128*64;i++){const v=landMask[i*4]/255;
+      if(v<mn)mn=v;if(v>mx)mx=v;if(v>sea)land++;}
+    return{min:+mn.toFixed(3),max:+mx.toFixed(3),
+      minM:Math.round((mn-0.5)*H_SCALE),maxM:Math.round((mx-0.5)*H_SCALE),
+      landFrac:+(land/(128*64)).toFixed(3)};
+  }
+  window.__dropin={
+    state(){const r=orbit.radius,alt=r-R;
+      return{type,seed,radius:+r.toFixed(1),altitude:+alt.toFixed(1),
+        theta:+orbit.theta.toFixed(3),phi:+orbit.phi.toFixed(3),
+        yaw:+view.yaw.toFixed(3),pitch:+view.pitch.toFixed(3),
+        playing:dropin.playing,
+        groundVisible:groundGroup.visible,
+        nearPatch:nearPatch.m.visible?'on (<8km)':'off',
+        farPatch:groundGroup.visible?'on (8km window)':'off',
+        field:fieldRange(),
+        seaLevel:P().sea,edits:edits.length};},
+    setRadius(r){cancelDropIn();
+      orbit.radius=THREE.MathUtils.clamp(r,R+1.0,R*10);},
+    play:playDropIn,cancel:cancelDropIn,random:randomDropIn,
+    dive:()=>diveTo(null),setType:setType,
+    probeN(dx,dy,dz){const l=Math.hypot(dx,dy,dz)||1;
+      return +sampleN({x:dx/l,y:dy/l,z:dz/l}).toFixed(3);},
+    stages:DROPIN_STAGES,
+    camDir:()=>camDirNow(new THREE.Vector3()).toArray(),
+    groundClearanceAt(dir){return groundClearance(dir.clone?dir.clone().normalize():dir);},
+    terrainHAt(dir){const d=(dir.clone?dir.clone().normalize():new THREE.Vector3(dir.x,dir.y,dir.z)).normalize();return heightAt(d);},
+    perf(){const i=renderer.info.render;
+      return{calls:i.calls,tris:i.triangles,geoms:i.geometries,
+        textures:i.textures,emaMs:+emaMs.toFixed(2),qLevel};},
+  };
   window.__pdbg={props:propList,sunL:()=>patchMats[0].uSun.value.toArray(),
     cam:()=>camera.position.toArray().map(v=>v.toFixed(1)),
     info:()=>{const i=renderer.info.render;return{calls:i.calls,tris:i.triangles};},
