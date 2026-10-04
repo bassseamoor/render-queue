@@ -490,7 +490,7 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 
 /* ============ CHAT INSTRUMENT: messages from the left, keys press, sent to the right ============ */
 /* entrance: tiles arrive like incoming chat messages */
-.tile{ animation:tile-in .55s cubic-bezier(0.22,1,0.36,1) backwards; }
+.tile{ animation:tile-in .8s cubic-bezier(0.22,1,0.36,1) backwards; }
 .tile:nth-child(2){ animation-delay:.05s; }
 .tile:nth-child(3){ animation-delay:.10s; }
 .tile:nth-child(4){ animation-delay:.15s; }
@@ -503,21 +503,36 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 .tile:nth-child(11){ animation-delay:.50s; }
 .tile:nth-child(12){ animation-delay:.55s; }
 @keyframes tile-in{
-  from{ opacity:0; transform:translateX(-46px); }
+  from{ opacity:0; transform:translateX(-52px) scale(.96); }
 }
 /* press: the key goes down like a piano key */
-.tile{ transition:transform .13s ease; }
-.tile:active{ transform:translateY(4px) scale(.975); }
-/* the sent ghost: your press arcs to the user side like a sent message */
+.tile{ transition:transform .16s ease, filter .22s ease; }
+.tile:active{ transform:translateY(4px) scale(.975); filter:brightness(.93) drop-shadow(0 7px 12px rgba(0,0,0,0.55)); }
+.tile:nth-child(even):active{ filter:brightness(.93) drop-shadow(0 4px 8px rgba(0,0,0,0.45)); }
+/* the sent ghost: a dark glass token that peels off the key, lifts through
+ * real shadow, arcs to the user side, and dissolves. Slow enough to believe. */
 .tile-ghost{
   position:fixed; z-index:200; pointer-events:none;
-  background:linear-gradient(165deg, #ffffff, #efe6c8);
-  border:1px solid rgba(150,110,20,0.35);
-  color:#96711c; font-weight:700; font-size:13px;
-  padding:10px 16px; border-radius:16px 16px 4px 16px;
-  box-shadow:0 12px 30px rgba(0,0,0,0.5);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  background:linear-gradient(165deg, #251743, #0d0718 72%);
+  border:1px solid rgba(212,172,72,0.5);
+  border-radius:14px;
+  box-shadow:inset 0 1px 2px rgba(255,255,255,0.28), inset 0 -3px 8px rgba(0,0,0,0.55);
+  overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
 }
+.tg-label{
+  color:#eac968; font-weight:700; font-size:14px; letter-spacing:.02em;
+  text-shadow:0 1px 3px rgba(0,0,0,0.85);
+  padding:0 14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  position:relative; z-index:1;
+}
+.tg-sheen{
+  position:absolute; top:-25%; bottom:-25%; left:0; width:45%;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,0.30), transparent);
+  z-index:2; pointer-events:none;
+}
+/* the pressed key stays down and goes quiet while its message travels */
+.tiles .tile.tile-sent{ filter:brightness(.86); transform:translateY(3px) scale(.98); }
 
 </style>
 </head>
@@ -7231,17 +7246,36 @@ init();
       var label = tile.querySelector('strong');
       var ghost = document.createElement('div');
       ghost.className = 'tile-ghost';
-      ghost.textContent = label ? label.textContent : 'sent';
-      ghost.style.left = Math.min(r.left, window.innerWidth - 180) + 'px';
+      ghost.style.left = r.left + 'px';
       ghost.style.top = r.top + 'px';
-      ghost.style.maxWidth = '220px';
+      ghost.style.width = r.width + 'px';
+      ghost.style.height = r.height + 'px';
+      var lab = document.createElement('span');
+      lab.className = 'tg-label';
+      lab.textContent = label ? label.textContent : 'sent';
+      var sheen = document.createElement('span');
+      sheen.className = 'tg-sheen';
+      ghost.appendChild(lab); ghost.appendChild(sheen);
       document.body.appendChild(ghost);
-      var anim = ghost.animate([
-        { transform:'translate(0,0) scale(1)', opacity:1 },
-        { transform:'translate(70px,-38px) scale(.93)', opacity:.92, offset:.55 },
-        { transform:'translate(170px,-6px) scale(.8)', opacity:0 }
-      ], { duration:640, easing:'cubic-bezier(0.22,1,0.36,1)' });
-      anim.onfinish = function(){ ghost.remove(); };
+      /* the key stays down and goes quiet while its message travels */
+      tile.classList.add('tile-sent');
+      setTimeout(function(){ tile.classList.remove('tile-sent'); }, 1300);
+      /* four phases: peel, lift (shadow blooms), travel (light sweeps), dissolve */
+      var flight = ghost.animate([
+        { transform:'translate(0,0) scale(1) rotate(0deg)', opacity:0,
+          filter:'drop-shadow(0 4px 8px rgba(0,0,0,0.60)) brightness(1)' },
+        { transform:'translate(8px,-24px) scale(1.045) rotate(-1.5deg)', opacity:1,
+          filter:'drop-shadow(0 32px 36px rgba(0,0,0,0.38)) brightness(1.14)', offset:0.30 },
+        { transform:'translate(120px,-48px) scale(.90) rotate(1deg)', opacity:1,
+          filter:'drop-shadow(0 18px 26px rgba(0,0,0,0.45)) brightness(1.06)', offset:0.66 },
+        { transform:'translate(205px,-16px) scale(.76) rotate(2.5deg)', opacity:0,
+          filter:'drop-shadow(0 6px 10px rgba(0,0,0,0.50)) brightness(.94)' }
+      ], { duration:1250, easing:'cubic-bezier(0.33,1,0.68,1)', fill:'forwards' });
+      flight.onfinish = function(){ ghost.remove(); };
+      sheen.animate([
+        { transform:'translateX(-130%) skewX(-18deg)' },
+        { transform:'translateX(260%) skewX(-18deg)' }
+      ], { duration:1250, easing:'cubic-bezier(0.33,1,0.68,1)', fill:'forwards' });
     }catch(e){}
   }, true); /* capture: run before the dashboard re-renders the tile */
 
@@ -7261,7 +7295,7 @@ init();
       if (r.bottom < -240 || r.top > window.innerHeight + 240 || r.height === 0) continue;
       d = (r.top + r.height/2 - vc) / vc;
       d = Math.max(-1, Math.min(1, d));
-      el.style.transform = 'perspective(1400px) rotateX('+(-d*5).toFixed(2)+'deg)';
+      el.style.transform = 'perspective(1400px) rotateX('+(-d*7).toFixed(2)+'deg)';
     }
   }
   collectCurve();
