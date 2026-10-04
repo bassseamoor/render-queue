@@ -3005,20 +3005,20 @@ function emitItem(it){
 }
 
 /* ---------------- WebGL ---------------- */
-var gl=null, prog=null, aPos, aNrm, aCol, uMVP, uSun, uFog, uCam;
+var gl=null, prog=null, aPos, aNrm, aCol, uMVP, uSun, uFog, uCam, uFogK;
 var terrainBuf=null, terrainCount=0, objBuf=null, objCount=0, waterBuf=null;
 var VSH='attribute vec3 p;attribute vec3 n;attribute vec3 c;'+
 'uniform mat4 mvp;varying vec3 vN;varying vec3 vC;varying float vD;'+
 'void main(){vN=n;vC=c;vec4 wp=mvp*vec4(p,1.0);vD=-wp.z;gl_Position=wp;}';
 var FSH='precision mediump float;varying vec3 vN;varying vec3 vC;varying float vD;'+
-'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;'+
+'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;uniform float fogK;'+
 'void main(){vec3 N=normalize(vN);float dif=max(dot(N,normalize(sun)),0.0);'+
 'float amb=0.42+0.18*N.y;vec3 col=vC*(amb+dif*vec3(1.0,0.96,0.88));'+
-'float f=1.0-exp(-vD*0.0035);col=mix(col,fog,clamp(f,0.0,1.0));'+
+'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+
 'gl_FragColor=vec4(col,1.0);}';
 var FSH_WATER='precision mediump float;varying vec3 vN;varying vec3 vC;varying float vD;'+
-'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;'+
-'void main(){float f=1.0-exp(-vD*0.0035);vec3 col=mix(vC,fog,clamp(f,0.0,1.0));'+
+'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;uniform float fogK;'+
+'void main(){float f=1.0-exp(-vD*fogK);vec3 col=mix(vC,fog,clamp(f,0.0,1.0));'+
 'gl_FragColor=vec4(col,0.82);}';
 
 function sh(t,s){ var h=gl.createShader(t); gl.shaderSource(h,s); gl.compileShader(h);
@@ -3033,6 +3033,7 @@ function initGL(){
   aPos=gl.getAttribLocation(prog,'p'); aNrm=gl.getAttribLocation(prog,'n'); aCol=gl.getAttribLocation(prog,'c');
   uMVP=gl.getUniformLocation(prog,'mvp'); uSun=gl.getUniformLocation(prog,'sun');
   uFog=gl.getUniformLocation(prog,'fog'); uCam=gl.getUniformLocation(prog,'cam');
+  uFogK=gl.getUniformLocation(prog,'fogK');
   gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
   return true;
 }
@@ -3495,7 +3496,7 @@ function camAt(){
 var vpMat=null, invVP=null;
 function computeVP(){
   var cv=$('gl'), asp=cv.width/cv.height;
-  var p=mPerspective(1.05,asp,0.5,1200), v=mLookAt(camEye(),camAt(),[0,1,0]);
+  var p=mPerspective(1.05,asp,0.5,6000), v=mLookAt(camEye(),camAt(),[0,1,0]);
   vpMat=mMul(p,v); invVP=mInvert(vpMat);
 }
 function rayFrom(nx,ny){
@@ -3508,18 +3509,19 @@ function rayFrom(nx,ny){
   return {o:a, d:[d[0]/l,d[1]/l,d[2]/l]};
 }
 function rayTerrain(r){
+  var maxT=cam.mode==='walk'?80:(cam.dist+800), step=Math.max(2.5,maxT/200);
   var t=0, px=0,py=0,pz=0;
-  for(var i=0;i<160;i++){
-    t+=2.5;
+  for(var i=0;i<220;i++){
+    t+=step;
     px=r.o[0]+r.d[0]*t; py=r.o[1]+r.d[1]*t; pz=r.o[2]+r.d[2]*t;
     if(py<heightAt(px,pz)){
-      var lo=t-2.5, hi=t;
+      var lo=t-step, hi=t;
       for(var k=0;k<12;k++){ var m=(lo+hi)/2, my=r.o[1]+r.d[1]*m;
         if(my<heightAt(r.o[0]+r.d[0]*m,r.o[2]+r.d[2]*m)) hi=m; else lo=m; }
       var ft=(lo+hi)/2;
       return {x:r.o[0]+r.d[0]*ft, y:r.o[1]+r.d[1]*ft, z:r.o[2]+r.d[2]*ft, t:ft};
     }
-    if(t>700) break;
+    if(t>maxT) break;
   }
   return null;
 }
@@ -3693,7 +3695,7 @@ function terrainPoint(e){
 function bindInput(){
   var cv=$('gl');
   cv.addEventListener('pointerdown',function(e){
-    cv.setPointerCapture(e.pointerId);
+    try{ cv.setPointerCapture(e.pointerId); }catch(_){}
     pointers[e.pointerId]={x:e.clientX,y:e.clientY};
     downInfo={x:e.clientX,y:e.clientY,t:Date.now(),n:Object.keys(pointers).length,moved:0};
     if(downInfo.n===2){
@@ -3737,8 +3739,20 @@ function bindInput(){
     if(n===2){
       var ks=Object.keys(pointers), a=pointers[ks[0]], b=pointers[ks[1]];
       var d=Math.hypot(a.x-b.x,a.y-b.y);
-      if(downInfo.pinch) cam.dist=Math.max(12,Math.min(260,cam.dist*downInfo.pinch/d));
-      downInfo.pinch=d; return;
+      if(downInfo.pinch) cam.dist=Math.max(12,Math.min(1600,cam.dist*downInfo.pinch/d));
+      downInfo.pinch=d;
+      /* two-finger drag pans the orbit target */
+      var mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+      if(downInfo.mid&&cam.mode!=='walk'){
+        var mdx=mx-downInfo.mid[0], mdy=my-downInfo.mid[1];
+        var rx=Math.cos(cam.yaw), rz=-Math.sin(cam.yaw);
+        var fx=-Math.sin(cam.yaw), fz=-Math.cos(cam.yaw);
+        var k=cam.dist*0.0016;
+        cam.tx=Math.max(-220,Math.min(220,cam.tx+(-rx*mdx+fx*mdy)*k));
+        cam.tz=Math.max(-220,Math.min(220,cam.tz+(-rz*mdx+fz*mdy)*k));
+      }
+      downInfo.mid=[mx,my];
+      return;
     }
     if(mode==='paths'||mode==='claims') return; /* draw modes own the gesture */
     if(cam.mode==='walk'){ cam.wyaw-=dx*0.005; cam.wpitch=Math.max(-0.6,Math.min(0.6,cam.wpitch+dy*0.004)); }
@@ -3757,7 +3771,7 @@ function bindInput(){
   }
   cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
   cv.addEventListener('wheel',function(e){ e.preventDefault();
-    cam.dist=Math.max(12,Math.min(260,cam.dist*(1+e.deltaY*0.001))); },{passive:false});
+    cam.dist=Math.max(12,Math.min(1600,cam.dist*(1+e.deltaY*0.001))); },{passive:false});
   /* joystick */
   var joy=$('joy'), knob=$('joy-knob'), joyAct=null;
   function joyMove(e){
@@ -3927,6 +3941,7 @@ function frame(t){
   gl.viewport(0,0,cv.width,cv.height);
   gl.clearColor(0.52,0.74,0.94,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.uniform3f(uSun,-0.45,0.8,0.35); gl.uniform3f(uFog,0.74,0.82,0.90);
+  gl.uniform1f(uFogK, cam.mode==='walk'?0.0035:0.25/Math.max(cam.dist,40));
   var e=camEye(); gl.uniform3f(uCam,e[0],e[1],e[2]);
   gl.uniformMatrix4fv(uMVP,false,vpMat);
   bindBuf(terrainBuf); gl.drawElements(gl.TRIANGLES,terrainBuf.count,gl.UNSIGNED_INT,0);
