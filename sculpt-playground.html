@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>sculpt playground — terrain-core brush</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { background:#0b0d12; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+  body { padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 20px);
+    max-width:560px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  h1 .grn { color:#7ce8a3; }
+  .sub { font-size:13px; color:#9aa0ae; margin:6px 0 16px; line-height:1.5; }
+  .sub b { color:#cfd4e0; }
+  .sub code { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#8a90a0; }
+  .lbl { font-size:11px; font-weight:700; letter-spacing:.1em; color:#6b7180; margin:14px 0 8px; }
+  #tools { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .tool { border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05);
+    color:#cfd4e0; font-size:13px; font-weight:700; padding:14px 4px; border-radius:12px;
+    cursor:pointer; min-height:48px; }
+  .tool.on { border-color:rgba(124,232,163,.6); background:rgba(124,232,163,.12); color:#7ce8a3; }
+  .tool:active { transform:scale(.96); }
+  #viewWrap { margin-top:12px; border-radius:16px; overflow:hidden; background:#0e1420;
+    border:1px solid rgba(255,255,255,.08); touch-action:none; position:relative; }
+  #view { width:100%; display:block; }
+  .sliders { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  .sl label { font-size:11px; font-weight:700; letter-spacing:.08em; color:#6b7180; display:block; margin-bottom:6px; }
+  .sl label b { color:#7ce8a3; }
+  input[type=range] { width:100%; height:48px; accent-color:#7ce8a3; }
+  #presets { display:flex; gap:8px; margin-top:12px; }
+  .preset { flex:1; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05);
+    color:#9aa0ae; font-size:12px; font-weight:700; padding:12px 4px; border-radius:10px;
+    cursor:pointer; min-height:48px; }
+  .preset.on { border-color:rgba(124,232,163,.6); color:#7ce8a3; background:rgba(124,232,163,.1); }
+  .preset:active { transform:scale(.96); }
+  #row { display:flex; gap:10px; margin-top:12px; }
+  .big { flex:1; border:0; border-radius:999px; padding:14px; font-size:15px; font-weight:700; cursor:pointer; }
+  #shuffle { background:#7ce8a3; color:#0a1410; }
+  #export { background:rgba(255,255,255,.08); color:#cfd4e0; border:1px solid rgba(255,255,255,.14); }
+  .big:active { transform:scale(.97); }
+  .meta { font-size:11px; color:#6b7180; margin-top:10px; line-height:1.5; }
+  .meta b { color:#9aa0ae; }
+  #toast { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 30px); left:50%;
+    transform:translateX(-50%) translateY(20px); background:#1a1d26; color:#7ce8a3;
+    font-size:13px; font-weight:600; padding:10px 20px; border-radius:999px; opacity:0;
+    transition:all .25s; pointer-events:none; border:1px solid rgba(124,232,163,.35); z-index:50; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<h1>sculpt <span class="grn">playground</span></h1>
+<p class="sub">terrain-core's <b>brush()</b> on a live 81×81 heightfield. Drag the terrain to raise, lower,
+flatten, or smooth it. <code>generate('silver-coast','island',38)</code> built this island.</p>
+
+<div class="lbl">BRUSH TOOL</div>
+<div id="tools">
+  <button class="tool on" data-t="raise">⛰ RAISE</button>
+  <button class="tool" data-t="lower">🕳 LOWER</button>
+  <button class="tool" data-t="flatten">🟫 FLATTEN</button>
+  <button class="tool" data-t="smooth">🌊 SMOOTH</button>
+</div>
+
+<div id="viewWrap"><canvas id="view" width="720" height="700"></canvas></div>
+
+<div class="sliders">
+  <div class="sl"><label>RADIUS — <b id="rV">16</b></label>
+    <input type="range" id="radius" min="4" max="40" value="16"></div>
+  <div class="sl"><label>STRENGTH — <b id="sV">6</b></label>
+    <input type="range" id="strength" min="1" max="15" value="6"></div>
+</div>
+
+<div class="lbl">TERRAIN PRESET</div>
+<div id="presets">
+  <button class="preset on" data-p="island">island</button>
+  <button class="preset" data-p="mountains">mountains</button>
+  <button class="preset" data-p="valley">valley</button>
+  <button class="preset" data-p="flat">flat</button>
+</div>
+
+<div id="row">
+  <button class="big" id="shuffle">🎲 SHUFFLE SEED</button>
+  <button class="big" id="export">📋 EXPORT JSON</button>
+</div>
+<p class="meta">Export copies <b>pack()</b> JSON (the real <code>moor-world-terrain/1</code> format) to the
+clipboard — paste it back into the editor with <b>unpack()</b>. Terrain math is the verbatim
+<code style="font-size:10px">terrain-core.mjs</code> below; only the isometric renderer is the demo's own.</p>
+
+<div id="toast"></div>
+
+<script type="module">
+'use strict';
+/* ============ VERBATIM SOURCE — components/terrain-core/source/terrain-core.mjs ============
+ * Provenance: ~/workspace/moor-recovery/components/terrain-core/source/terrain-core.mjs
+ * Copied verbatim into this <script type="module"> (it has no imports). Only the
+ * isometric renderer + UI below are the demo's own. */
+export const N=80, SIZE=256, COUNT=(N+1)**2;
+export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+export function generate(seed='silver-coast',preset='island',relief=38){
+  let hash=2166136261;for(const c of seed)hash=Math.imul(hash^c.charCodeAt(0),16777619);
+  const random=(x,z)=>{let h=Math.imul(x,374761393)^Math.imul(z,668265263)^hash;h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;};
+  const noise=(x,z)=>{const i=Math.floor(x),j=Math.floor(z);let u=x-i,v=z-j;u=u*u*(3-2*u);v=v*v*(3-2*v);return (random(i,j)*(1-u)+random(i+1,j)*u)*(1-v)+(random(i,j+1)*(1-u)+random(i+1,j+1)*u)*v;};
+  const heights=new Float32Array(COUNT),biomes=new Uint8Array(COUNT);
+  for(let z=0;z<=N;z++)for(let x=0;x<=N;x++){
+    let f=0,amp=1,sum=0;for(let k=0;k<5;k++){f+=noise(x/N*3*2**k,z/N*3*2**k)*amp;sum+=amp;amp*=.5;}f/=sum;
+    const radius=Math.hypot((x/N-.5)*2,(z/N-.5)*2);
+    let h=(f-.38)*relief*2;
+    if(preset==='island')h+=(.52-radius)*relief;
+    if(preset==='mountains')h=Math.abs(f-.3)*relief*2.5-8;
+    if(preset==='valley')h+=(Math.abs(x/N-.5)*2-.45)*relief;
+    if(preset==='flat')h=6;
+    heights[z*(N+1)+x]=clamp(h,-40,120);
+  }
+  return {format:'moor-world-terrain/1',name:'Silver Coast',seed,preset,relief,resolution:N,size:SIZE,water:0,heights,biomes};
+}
+export function brush(data,x,z,{tool,radius,strength,target=6,biome=1}){
+  const source=tool==='smooth'?data.heights.slice():data.heights;let changed=false;
+  for(let j=Math.max(0,Math.floor((z-radius+SIZE/2)/SIZE*N));j<=Math.min(N,Math.ceil((z+radius+SIZE/2)/SIZE*N));j++)for(let i=Math.max(0,Math.floor((x-radius+SIZE/2)/SIZE*N));i<=Math.min(N,Math.ceil((x+radius+SIZE/2)/SIZE*N));i++){
+    const dist=Math.hypot(i/N*SIZE-SIZE/2-x,j/N*SIZE-SIZE/2-z);if(dist>=radius)continue;
+    const q=j*(N+1)+i,w=(1-dist/radius)**2,old=data.heights[q];let next=old;
+    if(tool==='raise'||tool==='lower')next+=strength*w*(tool==='raise'?1:-1);
+    if(tool==='flatten')next+=(target-old)*Math.min(1,strength*.12*w);
+    if(tool==='smooth'){let sum=0,n=0;for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const a=i+dx,b=j+dz;if(a>=0&&a<=N&&b>=0&&b<=N){sum+=source[b*(N+1)+a];n++;}}next+=(sum/n-old)*Math.min(1,strength*.2*w);}
+    if(tool==='paint'){changed ||= data.biomes[q]!==biome;data.biomes[q]=biome;}
+    next=clamp(next,-40,120);changed ||= next!==old;data.heights[q]=next;
+  }return changed;
+}
+export const pack=d=>({...d,heights:Array.from(d.heights),biomes:Array.from(d.biomes)});
+export function unpack(d){
+  if(!d||d.format!=='moor-world-terrain/1'||d.resolution!==N||d.size!==SIZE||!Array.isArray(d.heights)||d.heights.length!==COUNT||!d.heights.every(v=>Number.isFinite(v)&&v>=-40&&v<=120)||!Array.isArray(d.biomes)||d.biomes.length!==COUNT||!d.biomes.every(v=>Number.isInteger(v)&&v>=0&&v<=4)||!Number.isFinite(d.water)||d.water< -20||d.water>40||!['island','mountains','valley','flat'].includes(d.preset)||!Number.isFinite(d.relief)||d.relief<10||d.relief>70)throw Error('Choose a valid MOOR terrain JSON exported by this editor.');
+  return {...d,name:String(d.name||'Untitled world').slice(0,80),seed:String(d.seed||'silver-coast').slice(0,80),heights:Float32Array.from(d.heights),biomes:Uint8Array.from(d.biomes)};
+}
+/* ============ END VERBATIM SOURCE ============ */
+
+/* ---- demo: seeded rng + isometric renderer ---- */
+function mulberry32(a){
+  return function(){ a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const cv = document.getElementById('view');
+const c = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const S = 1.5, HS = 1.15, C30 = 0.8660254, S30 = 0.5;
+const CX0 = W / 2, CY0 = 168;
+
+let data = generate('silver-coast', 'island', 38);
+let seedStr = 'silver-coast', preset = 'island';
+let tool = 'raise', radius = 16, strength = 6;
+let pointer = null; // {px, py, wx, wz} in data world coords
+let dirty = true;
+
+function proj(x, z, h){
+  return [CX0 + (x - z) * C30 * S, CY0 + (x + z) * S30 * S - h * HS];
+}
+const gx = i => i / N * SIZE - SIZE / 2;
+const gz = j => j / N * SIZE - SIZE / 2;
+
+function lerpHex(a, b, t){
+  const va = parseInt(a.slice(1), 16), vb = parseInt(b.slice(1), 16);
+  const r = Math.round(((va >> 16) & 255) + ((((vb >> 16) & 255) - ((va >> 16) & 255)) * t));
+  const g = Math.round(((va >> 8) & 255) + ((((vb >> 8) & 255) - ((va >> 8) & 255)) * t));
+  const bl = Math.round((va & 255) + (((vb & 255) - (va & 255)) * t));
+  return '#' + ((r << 16) | (g << 8) | bl).toString(16).padStart(6, '0');
+}
+function ramp(h){
+  if(h < 0) return '#1f6fa3';
+  if(h < 6) return lerpHex('#c2b280', '#6a8a3a', h / 6);
+  if(h < 30) return lerpHex('#6a8a3a', '#4a7a2e', (h - 6) / 24);
+  if(h < 55) return lerpHex('#6e6e72', '#8e8e92', (h - 30) / 25);
+  return lerpHex('#8e8e92', '#eef4fa', Math.min(1, (h - 55) / 25));
+}
+const shadeOf = (hex, f) => {
+  const v = parseInt(hex.slice(1), 16);
+  const r = Math.min(255, Math.max(0, Math.round(((v >> 16) & 255) * f)));
+  const g = Math.min(255, Math.max(0, Math.round(((v >> 8) & 255) * f)));
+  const b = Math.min(255, Math.max(0, Math.round((v & 255) * f)));
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+};
+
+function render(){
+  dirty = false;
+  // backdrop
+  const bg = c.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#0a1018'); bg.addColorStop(1, '#131b26');
+  c.fillStyle = bg; c.fillRect(0, 0, W, H);
+
+  const hAt = (i, j) => data.heights[clamp(j, 0, N) * (N + 1) + clamp(i, 0, N)];
+  const quad = (i, j) => {
+    const x0 = gx(i), z0 = gz(j), x1 = gx(i + 1), z1 = gz(j + 1);
+    const h00 = hAt(i, j), h10 = hAt(i + 1, j), h11 = hAt(i + 1, j + 1), h01 = hAt(i, j + 1);
+    const top = Math.max(h00, h10, h11, h01, 0);
+    const p00 = proj(x0, z0, Math.max(h00, 0)), p10 = proj(x1, z0, Math.max(h10, 0)),
+          p11 = proj(x1, z1, Math.max(h11, 0)), p01 = proj(x0, z1, Math.max(h01, 0));
+    // simple lambert-ish shade
+    const nx = h00 - h10, nz = h00 - h01;
+    const nl = Math.hypot(nx, 1, nz);
+    const sh = 0.62 + 0.38 * ((-nx * 0.45 + 1 - nz * 0.3) / nl);
+    c.fillStyle = shadeOf(ramp(top), sh);
+    c.beginPath();
+    c.moveTo(p00[0], p00[1]); c.lineTo(p10[0], p10[1]);
+    c.lineTo(p11[0], p11[1]); c.lineTo(p01[0], p01[1]);
+    c.closePath(); c.fill();
+  };
+  // painter order: far (small x+z) first
+  for(let d = 0; d <= 2 * N; d++)
+    for(let i = 0; i <= N; i++){
+      const j = d - i;
+      if(j < 0 || j > N || i >= N || j >= N) continue;
+      quad(i, j);
+    }
+  // side skirts: floating-island chunk sides
+  const skirt = (pts, col) => {
+    c.fillStyle = col; c.beginPath();
+    c.moveTo(pts[0][0], pts[0][1]);
+    for(let k = 1; k < pts.length; k++) c.lineTo(pts[k][0], pts[k][1]);
+    c.closePath(); c.fill();
+  };
+  const B = -46;
+  for(let i = 0; i < N; i++){
+    // near edges: (i,N) south and (N,i) east — drawn after top
+    let a = proj(gx(i), gz(N), Math.max(hAt(i, N), 0)), b = proj(gx(i + 1), gz(N), Math.max(hAt(i + 1, N), 0));
+    let a2 = proj(gx(i), gz(N), B), b2 = proj(gx(i + 1), gz(N), B);
+    skirt([a, b, b2, a2], shadeOf('#4a4038', 0.75));
+    a = proj(gx(N), gz(i), Math.max(hAt(N, i), 0)); b = proj(gx(N), gz(i + 1), Math.max(hAt(N, i + 1), 0));
+    a2 = proj(gx(N), gz(i), B); b2 = proj(gx(N), gz(i + 1), B);
+    skirt([a, b, b2, a2], shadeOf('#4a4038', 0.55));
+  }
+  // brush cursor
+  if(pointer){
+    const [sx, sy] = proj(pointer.wx, pointer.wz, Math.max(dataHeightAt(pointer.wx, pointer.wz), 0));
+    c.strokeStyle = 'rgba(124,232,163,.9)'; c.lineWidth = 2.5;
+    c.beginPath(); c.ellipse(sx, sy, radius * C30 * S, radius * S30 * S, 0, 0, 7); c.stroke();
+  }
+  // seed tag
+  c.fillStyle = 'rgba(255,255,255,.55)'; c.font = '600 13px system-ui';
+  c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText(seedStr + ' · ' + preset, 14, 14);
+}
+
+function dataHeightAt(wx, wz){
+  const fi = (wx + SIZE / 2) / SIZE * N, fj = (wz + SIZE / 2) / SIZE * N;
+  const i = clamp(Math.round(fi), 0, N), j = clamp(Math.round(fj), 0, N);
+  return data.heights[j * (N + 1) + i];
+}
+
+// screen -> data world coords (one height iteration for accuracy)
+function unproject(px, py){
+  let a = (px - CX0) / (C30 * S), b = (py - CY0) / (S30 * S);
+  let x = (b + a) / 2 + SIZE / 2 - SIZE / 2, z = (b - a) / 2;
+  // x,z in data coords: px mapping used gx(i)=i/N*SIZE-SIZE/2
+  for(let k = 0; k < 2; k++){
+    const h = dataHeightAt(x, z);
+    b = (py - CY0 + h * HS) / (S30 * S);
+    x = (b + a) / 2; z = (b - a) / 2;
+  }
+  return { x: clamp(x, -SIZE / 2, SIZE / 2), z: clamp(z, -SIZE / 2, SIZE / 2) };
+}
+
+function paintBrush(wx, wz){
+  if(brush(data, wx, wz, { tool, radius, strength })) dirty = true;
+}
+
+const wrap = document.getElementById('viewWrap');
+function evtPos(e){
+  const r = cv.getBoundingClientRect();
+  return { px: (e.clientX - r.left) * (W / r.width), py: (e.clientY - r.top) * (H / r.height) };
+}
+let down = false;
+wrap.addEventListener('pointerdown', e => {
+  down = true; wrap.setPointerCapture(e.pointerId);
+  const { px, py } = evtPos(e);
+  const w = unproject(px, py);
+  pointer = { px, py, wx: w.x, wz: w.z };
+  paintBrush(w.x, w.z);
+});
+wrap.addEventListener('pointermove', e => {
+  const { px, py } = evtPos(e);
+  const w = unproject(px, py);
+  pointer = { px, py, wx: w.x, wz: w.z };
+  if(down) paintBrush(w.x, w.z);
+  dirty = true;
+});
+const end = () => { down = false; pointer = null; dirty = true; };
+wrap.addEventListener('pointerup', end);
+wrap.addEventListener('pointercancel', end);
+
+function raf(){
+  if(dirty) render();
+  requestAnimationFrame(raf);
+}
+raf();
+
+/* ---- controls ---- */
+document.querySelectorAll('.tool').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tool').forEach(x => x.classList.remove('on'));
+  t.classList.add('on'); tool = t.dataset.t;
+}));
+const rIn = document.getElementById('radius'), sIn = document.getElementById('strength');
+rIn.addEventListener('input', () => { radius = +rIn.value; document.getElementById('rV').textContent = radius; });
+sIn.addEventListener('input', () => { strength = +sIn.value; document.getElementById('sV').textContent = strength; });
+document.querySelectorAll('.preset').forEach(p => p.addEventListener('click', () => {
+  document.querySelectorAll('.preset').forEach(x => x.classList.remove('on'));
+  p.classList.add('on'); preset = p.dataset.p;
+  data = generate(seedStr, preset, 38); dirty = true;
+}));
+document.getElementById('shuffle').addEventListener('click', () => {
+  const words = ['ember', 'coral', 'moss', 'dune', 'tide', 'ash', 'fern', 'gale', 'reef', 'stone'];
+  const r = mulberry32((Math.random() * 1e9) | 0);
+  seedStr = words[(r() * words.length) | 0] + '-' + words[(r() * words.length) | 0];
+  data = generate(seedStr, preset, 38); dirty = true;
+  toast('seed: ' + seedStr);
+});
+document.getElementById('export').addEventListener('click', () => {
+  const json = JSON.stringify(pack(data));
+  const done = () => toast('exported ' + (json.length / 1024).toFixed(1) + ' KB — unpack() can reload it');
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(json).then(done, () => toast('copy blocked — ' + (json.length / 1024).toFixed(1) + ' KB'));
+  else toast('clipboard unavailable here');
+});
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+/* test hook */
+window.__terr = {
+  raiseCenter: () => brush(data, 0, 0, { tool: 'raise', radius: 20, strength: 8 }),
+  centerHeight: () => data.heights[Math.floor(N / 2) * (N + 1) + Math.floor(N / 2)],
+  variance: () => {
+    const h = data.heights; let m = 0;
+    for(let k = 0; k < h.length; k++) m += h[k];
+    m /= h.length;
+    let v = 0;
+    for(let k = 0; k < h.length; k++){ const d = h[k] - m; v += d * d; }
+    return v / h.length;
+  },
+  flattenAll: () => brush(data, 0, 0, { tool: 'flatten', radius: 400, strength: 15 }),
+  reset: s => { data = generate(s, 'island', 38); dirty = true; }
+};
+</script>
+</body>
+</html>
