@@ -4317,7 +4317,7 @@ function expandAnatomy(genome, planet){
     var hip=node('locomotor-segment', torso.id,
       {upper:upperL, lower:lowerL, footR:0.14},
       {material:'skin', caps:['ground-contact'], sym:'leg-'+side});
-    hip.restPose.p=[along*genome.bodyLen, -genome.bodyH*0.28, (side==='L'?1:-1)*genome.bodyW*0.52];
+    hip.restPose.p=[along*genome.bodyLen, -genome.bodyH*0.22, (side==='L'?1:-1)*genome.bodyW*0.32];
     hip.joint={ type:'ball', limits:{swing:0.9, lift:0.7}, poleOut:1 };
     var foot=node('contact-pad', hip.id, {r:0.14}, {material:'pad', caps:['ground-contact']});
     legs.push({hip:hip, foot:foot, side:side, along:along});
@@ -4593,6 +4593,23 @@ function compile(a){
     hgR.pos[hri]+=haunchX; hgR.pos[hri+1]+=haunchY; hgR.pos[hri+2]-=haunchZ;
   }
   appendGeo(body, hgR);
+  // shoulder masses: blend front legs into chest
+  var shX=L*0.30, shY=-H*0.12, shZ=W*0.30;
+  var shg=new Geo();
+  ball(shg, 1, 0,0,0, skin, 9, 7);
+  for (var shi=0;shi<shg.pos.length;shi+=3){
+    shg.pos[shi]*=W*0.26; shg.pos[shi+1]*=H*0.34; shg.pos[shi+2]*=W*0.22;
+  }
+  var shL=new Geo(); appendGeo(shL, shg);
+  for (var sli=0;sli<shL.pos.length;sli+=3){
+    shL.pos[sli]+=shX; shL.pos[sli+1]+=shY; shL.pos[sli+2]+=shZ;
+  }
+  appendGeo(body, shL);
+  var shR=new Geo(); appendGeo(shR, shg);
+  for (var sri=0;sri<shR.pos.length;sri+=3){
+    shR.pos[sri]+=shX; shR.pos[sri+1]+=shY; shR.pos[sri+2]-=shZ;
+  }
+  appendGeo(body, shR);
   // eyes: on the sides of the elevated skull
   var eyeX=L*0.5*1.1*0.88, eyeY=H*0.52*g.headScale, eyeZ=W*0.30*g.headScale;
   var eg=new Geo();
@@ -4624,12 +4641,17 @@ function compile(a){
     tail.push({geo:tg, len:tl});
   }
 
-  /* ---- legs: simple tapered (reverted for stability; organic tube was breaking IK) ---- */
+  /* ---- legs: thick at hip to blend into torso ---- */
   function legGeo(len, cTop, cBot){
     var lg=new Geo();
-    // upper segment: thicker tapered cylinder along -Y (muscular)
-    var r0=0.19, r1=0.11;
+    // upper: thick at hip (embeds into torso), tapers down
+    // r0 must exceed hip inset so the leg root is buried in the body
+    var r0=0.24, r1=0.11;
     cyl(lg, r0, r1, len, 9, 0, -len/2, 0, cTop, 'y');
+    // hip cap: sphere at the top to smooth the torso-leg junction
+    var hg=new Geo();
+    ball(hg, r0*1.05, 0, 0.02, 0, cTop, 9, 7);
+    appendGeo(lg, hg);
     // foot: flattened sphere + toes
     var fg=new Geo();
     ball(fg, 1, 0,0,0, padC, 9, 7);
@@ -5184,7 +5206,7 @@ TOOLS.creatures = { mount: function(host){
       drawGeo(compiled.legLower, segModel(sol.knee, sol.foot));
     });
     // tail
-    var tx=-g.bodyLen*0.5, ty=g.bodyH*0.1;
+    var tx=-g.bodyLen*0.52, ty=g.bodyH*0.08; // deeper inside the rear
     var px=S.x+ch*tx, py=S.y+ty, pz=S.z+sh*tx;
     var dirx=ch, dirz=sh, t=now/1000;
     compiled.tail.forEach(function(seg,ti){
