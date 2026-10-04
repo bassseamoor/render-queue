@@ -3495,35 +3495,547 @@ function mInvert(m){
   det=1/det; for(var i=0;i<16;i++) o[i]=inv[i]*det; return o;
 }
 
+/* ===== moor-controller.js (verbatim, v0.6.0-firstpass) ===== */
+/* Third-person character controller: feel + dev features. SPEC in components/controller/. */
+/* ============================================================
+ * MoorController — third-person character controller for the moor beta verse
+ * v0.6.0-firstpass. IIFE, zero dependencies, ES5 (pastes straight into
+ * moor-beta.html). See SPEC.md for feel targets and INTEGRATION.md for the
+ * ~25-line adoption patch.
+ *
+ * What it owns: input (keys+stick+gamepad), velocity w/ accel curves,
+ * jump (coyote/buffer/variable), step assist, slope slide, wall slide,
+ * wading, follow/first-person camera w/ collision, sprint FOV, noclip,
+ * bookmarks, input recorder, tune console, event hooks.
+ *
+ * What it does NOT own: rendering, avatar animation, world building,
+ * mode switching, the map overlay. It reads/writes the beta's `cam`
+ * object fields (wx,wz,wyaw,wpitch,air,vy,grounded) so tickAvatar and the
+ * map overlay keep working untouched.
+ * ============================================================ */
+(function(global){
+'use strict';
+
+var MoorController = {};
+MoorController.VERSION = '0.6.0-firstpass';
+/* Dev tools (noclip, bookmarks, readout, tune console) arm via ?dev=1. */
+MoorController.DEV = (function(){ try{ return /[?&]dev=1/.test(location.search); }catch(_){ return false; } })();
+
+/* ---------------- tuning ---------------- */
+var DEFAULT_TUNE = {
+  walkSpeed: 7.0, sprintMul: 1.6,
+  accel: 11.0, decel: 14.0, airAccel: 4.5,      // exponential approach rates (1/s)
+  jumpV: 4.6, gravity: 12.0,
+  coyote: 0.12, buffer: 0.15, jumpCut: 0.5,      // jumpCut: vy *= on release
+  stepHeight: 0.45, slideSlope: 1.4, slideAccel: 18.0,
+  radius: 0.35, bodyHeight: 1.7,
+  eyeDist: 6.5, eyeLift: 1.2, lookAhead: 2.5, lookHeight: 1.25,
+  camFollow: 10.0, camMinDist: 1.2,
+  fovBase: 60.0, fovSprint: 64.0, fovEase: 6.0,
+  wadeMul: 0.55, flySpeed: 22.0,
+  worldBound: 200
+};
+
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+
+/* ---------------- input ---------------- */
+var KEYMAP = {
+  fwd:   ['w','arrowup'], back: ['s','arrowdown'],
+  left:  ['a','arrowleft'], right: ['d','arrowright'],
+  jump:  [' '], sprint: ['shift'],
+  camMode: ['c'], noclip: ['v']
+};
+
+function makeInput(world){
+  var prev = {jump:false, camMode:false, noclip:false};
+  var queuedJump = false;
+  var joyState = {x:0, y:0};
+
+  function readKeys(){
+    if(world.input && world.input.keys) return world.input.keys();
+    if(typeof window!=='undefined' && window.__keysGet) return window.__keysGet();
+    return {};
+  }
+  function readJoy(){
+    if(world.input && world.input.joy) return world.input.joy();
+    if(typeof window!=='undefined' && window.__joyGet) return window.__joyGet();
+    return null;
+  }
+  function has(keys, names){
+    for(var i=0;i<names.length;i++) if(keys[names[i]]) return true;
+    return false;
+  }
+  function gamepad(){
+    try{
+      var gps = navigator.getGamepads ? navigator.getGamepads() : null;
+      if(!gps) return null;
+      for(var i=0;i<gps.length;i++) if(gps[i] && gps[i].connected) return gps[i];
+    }catch(_){}
+    return null;
+  }
+
+  function poll(){
+    var keys = readKeys() || {};
+    var mx = (has(keys,KEYMAP.right)?1:0) - (has(keys,KEYMAP.left)?1:0);
+    var my = (has(keys,KEYMAP.fwd)?1:0)   - (has(keys,KEYMAP.back)?1:0);
+    var j = readJoy();
+    if(j){ mx += (j.x||0); my += -(j.y||0); }
+    var gp = gamepad(), gpJump=false, gpSprint=false;
+    if(gp){
+      var ax=function(i){ var v=gp.axes[i]||0; return Math.abs(v)<0.18?0:v; };
+      mx += ax(0); my += -ax(1);
+      gpJump = !!(gp.buttons[0] && gp.buttons[0].pressed);
+      gpSprint = !!((gp.buttons[7] && gp.buttons[7].pressed) || (gp.buttons[5] && gp.buttons[5].pressed));
+    }
+    var mag = Math.hypot(mx,my);
+    if(mag>1){ mx/=mag; my/=mag; mag=1; }
+    var jumpHeld = has(keys,KEYMAP.jump) || gpJump || queuedJump;
+    var jumpPressed = (jumpHeld && !prev.jump) || queuedJump;
+    queuedJump = false;
+    var camPressed = has(keys,KEYMAP.camMode) && !prev.camMode;
+    var noclipPressed = has(keys,KEYMAP.noclip) && !prev.noclip;
+    prev.jump = jumpHeld; prev.camMode = has(keys,KEYMAP.camMode); prev.noclip = has(keys,KEYMAP.noclip);
+    return {
+      mx: mx, my: my, mag: mag,
+      jumpHeld: jumpHeld, jumpPressed: jumpPressed,
+      sprint: has(keys,KEYMAP.sprint) || gpSprint,
+      camPressed: camPressed, noclipPressed: noclipPressed,
+      joy: j
+    };
+  }
+  return {
+    poll: poll,
+    queueJump: function(){ queuedJump = true; },   // touch jump button calls this
+    /* reset edge detectors (call on teleport / spawn while keys held) */
+    resetEdges: function(){ prev={jump:false,camMode:false,noclip:false}; queuedJump=false; },
+    _joyState: joyState
+  };
+}
+
+/* ---------------- recorder ---------------- */
+function makeRecorder(){
+  var recording=false, log=[], replayLog=null, replayIdx=0;
+  return {
+    start: function(){ recording=true; log=[]; },
+    stop: function(){ recording=false; var out=log; log=[]; return out; },
+    push: function(inp, dt){
+      if(recording) log.push([dt, inp.mx, inp.my, inp.mag,
+        inp.jumpPressed?1:0, inp.jumpHeld?1:0, inp.sprint?1:0]);
+    },
+    replay: function(l){ replayLog=l; replayIdx=0; },
+    feed: function(){
+      if(!replayLog || replayIdx>=replayLog.length) return null;
+      var f=replayLog[replayIdx++];
+      return { dt:f[0], mx:f[1], my:f[2], mag:f[3],
+               jumpPressed:!!f[4], jumpHeld:!!f[5], sprint:!!f[6],
+               camPressed:false, noclipPressed:false, joy:null };
+    },
+    playing: function(){ return !!replayLog && replayIdx<replayLog.length; },
+    stopReplay: function(){ replayLog=null; replayIdx=0; }
+  };
+}
+
+/* ---------------- controller ---------------- */
+MoorController.create = function(world, tuneOverrides){
+  world = world || {};
+  if(typeof world.heightAt!=='function') throw new Error('MoorController: world.heightAt required');
+  if(typeof world.collideXZ!=='function') throw new Error('MoorController: world.collideXZ required');
+  var cam = world.cam || {};
+  if(cam.wx===undefined){ cam.wx=8; cam.wz=8; }
+  if(cam.wyaw===undefined) cam.wyaw=0;
+  if(cam.wpitch===undefined) cam.wpitch=0.05;
+  if(cam.air===undefined) cam.air=0;
+  if(cam.vy===undefined) cam.vy=0;
+  if(cam.grounded===undefined) cam.grounded=true;
+
+  var tune = {};
+  for(var k in DEFAULT_TUNE) tune[k]=DEFAULT_TUNE[k];
+  if(tuneOverrides) for(var k2 in tuneOverrides) tune[k2]=tuneOverrides[k2];
+
+  var input = makeInput(world);
+  var rec = makeRecorder();
+  var listeners = {};
+  function on(evt, fn){ (listeners[evt]=listeners[evt]||[]).push(fn); }
+  function emit(evt, data){
+    var ls=listeners[evt]; if(!ls) return;
+    for(var i=0;i<ls.length;i++){ try{ ls[i](data); }catch(_){} }
+  }
+
+  var vx=0, vz=0;                 // horizontal velocity (world units/s)
+  var coyote=0, jumpBuf=0, prevJumpHeld=false;
+  var lastGroundY;                // terrain height under feet last grounded frame
+  var wasBlocked=false;
+  var camMode='follow';           // 'follow' | 'first'
+  var noclip=false;
+  var sprinting=false, wasSprinting=false;
+  var fovCur=tune.fovBase;
+  var seye=null;                  // smoothed camera eye [x,y,z]
+  var bookmarks={};
+  var inWater=false;
+
+  function speed2D(){ return Math.hypot(vx,vz); }
+
+  /* axis-separated move with wall push-out + step assist */
+  function moveAxis(dx, dz){
+    var nx=cam.wx+dx, nz=cam.wz+dz;
+    var wb=tune.worldBound;
+    nx=clamp(nx,-wb,wb); nz=clamp(nz,-wb,wb);
+    var feet=world.heightAt(nx,nz)+cam.air;
+    var res=world.collideXZ(nx, feet, feet+tune.bodyHeight, nz, tune.radius);
+    var blocked = Math.abs(res[0]-nx)>1e-6 || Math.abs(res[1]-nz)>1e-6;
+    if(blocked && cam.grounded){
+      /* step assist: try the same move with feet raised */
+      var up=world.collideXZ(nx, feet+tune.stepHeight, feet+tune.bodyHeight+tune.stepHeight, nz, tune.radius);
+      if(Math.abs(up[0]-nx)<1e-6 && Math.abs(up[1]-nz)<1e-6){
+        var dh=world.heightAt(nx,nz)-world.heightAt(cam.wx,cam.wz);
+        if(dh>=-1e-6 && dh<=tune.stepHeight+1e-6){
+          /* low obstacle (planter, curb): step over instead of sticking */
+          cam.wx=nx; cam.wz=nz;
+          wasBlocked=false;
+          emit('step',{dh:dh});
+          return;
+        }
+      }
+    }
+    if(blocked && !wasBlocked) emit('collide',{x:nx,z:nz});
+    wasBlocked=blocked;
+    cam.wx=res[0]; cam.wz=res[1];
+  }
+
+  function doJump(){
+    cam.vy=tune.jumpV; cam.grounded=false;
+    cam.air=Math.max(cam.air, 0.001);
+    coyote=0; jumpBuf=0;
+    emit('jump',{});
+  }
+
+  function stepNoclip(dt, inp){
+    /* fly where you look: W/S along view dir (pitch included), strafe level, Space up */
+    var s=Math.sin(cam.wyaw), c=Math.cos(cam.wyaw);
+    var pitch=clamp(cam.wpitch,-0.6,0.6), cp=Math.cos(pitch), sp2=Math.sin(pitch);
+    var sp=tune.flySpeed*(inp.sprint?3:1);
+    var fX=s*cp, fY=-sp2, fZ=c*cp;          /* view direction (matches look()) */
+    var dx=(fX*inp.my + -c*inp.mx)*sp*dt;
+    var dy=(fY*inp.my + (inp.jumpHeld?1:0))*sp*dt;
+    var dz=(fZ*inp.my +  s*inp.mx)*sp*dt;
+    cam.wx=clamp(cam.wx+dx,-tune.worldBound,tune.worldBound);
+    cam.wz=clamp(cam.wz+dz,-tune.worldBound,tune.worldBound);
+    noclipY=(noclipY===undefined ? world.heightAt(cam.wx,cam.wz)+6 : noclipY)+dy;
+    cam.air=noclipY-world.heightAt(cam.wx,cam.wz);
+    cam.vy=0; vx=dx/Math.max(dt,1e-4); vz=dz/Math.max(dt,1e-4);
+    wasBlocked=false;
+  }
+  var noclipY;
+
+  function step(dt){
+    dt=clamp(dt||0.016, 0.0001, 0.05);
+
+    var inp, rdt=dt;
+    var fed=rec.feed();
+    if(fed){ inp=fed; rdt=fed.dt; dt=fed.dt; }
+    else inp=input.poll();
+    rec.push(inp, rdt);
+
+    if(MoorController.DEV && inp.noclipPressed){ setNoclip(!noclip); }
+    if(inp.camPressed){ setCamMode(camMode==='follow'?'first':'follow'); }
+    if(noclip){ stepNoclip(dt, inp); updateCamera(dt, inp); return; }
+
+    /* --- wish direction: THE axis contract ---
+       forward = away from camera (up-screen). right = screen-right.
+       right = (-cos wyaw, sin wyaw) in xz. (D-001 proves it.) */
+    var s=Math.sin(cam.wyaw), c=Math.cos(cam.wyaw);
+    var fX=s, fZ=c, rX=-c, rZ=s;
+    var wX=fX*inp.my + rX*inp.mx;
+    var wZ=fZ*inp.my + rZ*inp.mx;
+    var mag=Math.min(1, Math.hypot(inp.mx,inp.my));
+    if(mag>1){ wX/=mag; wZ/=mag; }
+
+    /* wade check */
+    inWater=false;
+    if(world.waterLevelAt){
+      try{ inWater = world.waterLevelAt(cam.wx,cam.wz) > world.heightAt(cam.wx,cam.wz)+0.05; }catch(_){}
+    }
+
+    sprinting = inp.sprint && mag>0.1 && cam.grounded && !inWater;
+    if(sprinting && !wasSprinting) emit('sprintStart',{});
+    if(!sprinting && wasSprinting) emit('sprintStop',{});
+    wasSprinting=sprinting;
+
+    var target=tune.walkSpeed*(sprinting?tune.sprintMul:1)*(inWater?tune.wadeMul:1)*mag;
+    var k = cam.grounded ? (mag>0.05 ? tune.accel : tune.decel) : tune.airAccel;
+    var t=Math.min(1, k*dt);
+    vx += (wX*target - vx)*t;
+    vz += (wZ*target - vz)*t;
+
+    /* --- jump intent (coyote + buffer) --- */
+    coyote-=dt; jumpBuf-=dt;
+    if(inp.jumpPressed) jumpBuf=tune.buffer;
+    if(jumpBuf>0 && !inWater && (cam.grounded || coyote>0)) doJump();
+    if(!inp.jumpHeld && prevJumpHeld && cam.vy>0) cam.vy*=tune.jumpCut;  /* variable height */
+    prevJumpHeld=inp.jumpHeld;
+
+    /* --- horizontal --- */
+    moveAxis(vx*dt, 0);
+    moveAxis(0, vz*dt);
+
+    /* --- slope slide --- */
+    if(cam.grounded){
+      var e=0.6, H=world.heightAt;
+      var gx=(H(cam.wx+e,cam.wz)-H(cam.wx-e,cam.wz))/(2*e);
+      var gz=(H(cam.wx,cam.wz+e)-H(cam.wx,cam.wz-e))/(2*e);
+      var sl=Math.hypot(gx,gz);
+      if(sl>tune.slideSlope){
+        var inv=1/sl;
+        vx+=(-gx*inv)*tune.slideAccel*dt;
+        vz+=(-gz*inv)*tune.slideAccel*dt;
+      }
+    }
+
+    /* --- vertical --- */
+    var gy=world.heightAt(cam.wx,cam.wz);
+    if(cam.grounded){
+      if(lastGroundY!==undefined && lastGroundY-gy > tune.stepHeight+0.05){
+        /* walked off a drop: become airborne, keep world Y, open coyote */
+        cam.grounded=false; cam.vy=0; cam.air=lastGroundY-gy; coyote=tune.coyote;
+      } else { cam.air=0; cam.vy=0; coyote=tune.coyote; }
+      lastGroundY=gy;
+    }
+    if(!cam.grounded){
+      cam.vy-=tune.gravity*dt;
+      cam.air+=cam.vy*dt;
+      if(cam.air<=0 && cam.vy<=0){
+        var impact=-cam.vy;
+        cam.air=0; cam.vy=0; cam.grounded=true; coyote=tune.coyote;
+        lastGroundY=world.heightAt(cam.wx,cam.wz);
+        emit('land',{fallSpeed:impact});
+      } else if(cam.air<0){ cam.air=0; }
+    }
+
+    /* --- camera + fov --- */
+    updateCamera(dt, inp);
+    var fovT=sprinting?tune.fovSprint:tune.fovBase;
+    fovCur+=(fovT-fovCur)*Math.min(1,tune.fovEase*dt);
+  }
+
+  function headPos(out){
+    out=out||[];
+    out[0]=cam.wx; out[1]=world.heightAt(cam.wx,cam.wz)+cam.air+1.55; out[2]=cam.wz;
+    return out;
+  }
+
+  var _h=[0,0,0], _d=[0,0,0];
+  function desiredEye(out){
+    var s=Math.sin(cam.wyaw), c=Math.cos(cam.wyaw);
+    headPos(_h);
+    var pitch=clamp(cam.wpitch,-0.6,0.6);
+    var dist=tune.eyeDist, cp=Math.cos(pitch), sp2=Math.sin(pitch);
+    if(camMode==='first'){
+      out[0]=_h[0]+s*0.22; out[1]=_h[1]+0.08; out[2]=_h[2]+c*0.22;
+      return out;
+    }
+    var ex=_h[0]-s*cp*dist, ez=_h[2]-c*cp*dist;
+    var ey=_h[1]+tune.eyeLift+sp2*dist*0.8;
+    /* keep out of the ground */
+    var minY=world.heightAt(ex,ez)+0.9;
+    if(ey<minY) ey=minY;
+    /* camera collision: pull in when a building blocks the view */
+    if(world.rayHit){
+      var hit=null;
+      try{ hit=world.rayHit(_h[0],_h[1],_h[2],ex,ey,ez); }catch(_){}
+      if(hit && hit.t<1){
+        var pull=Math.max(tune.camMinDist, hit.t*dist-0.3);
+        var f=pull/dist;
+        ex=_h[0]+(ex-_h[0])*f; ey=_h[1]+(ey-_h[1])*f; ez=_h[2]+(ez-_h[2])*f;
+      }
+    }
+    out[0]=ex; out[1]=ey; out[2]=ez;
+    return out;
+  }
+
+  function updateCamera(dt, inp){
+    desiredEye(_d);
+    if(!seye){ seye=[_d[0],_d[1],_d[2]]; }
+    else{
+      var t=Math.min(1, tune.camFollow*dt);
+      seye[0]+=( _d[0]-seye[0])*t; seye[1]+=( _d[1]-seye[1])*t; seye[2]+=( _d[2]-seye[2])*t;
+    }
+  }
+
+  function eye(out){
+    out=out||[];
+    if(camMode==='first'){ return desiredEye(out); }
+    if(!seye) desiredEye(_d), seye=[_d[0],_d[1],_d[2]];
+    out[0]=seye[0]; out[1]=seye[1]; out[2]=seye[2];
+    return out;
+  }
+  function look(out){
+    out=out||[];
+    var s=Math.sin(cam.wyaw), c=Math.cos(cam.wyaw);
+    headPos(_h);
+    if(camMode==='first'){
+      var pitch=clamp(cam.wpitch,-0.6,0.6);
+      var cp=Math.cos(pitch);
+      out[0]=_h[0]+s*cp*10; out[1]=_h[1]-Math.sin(pitch)*10+0.08; out[2]=_h[2]+c*cp*10;
+      return out;
+    }
+    /* keep the beta's look target: ahead of the body, ~chest height */
+    var py=world.heightAt(cam.wx,cam.wz)+cam.air;
+    out[0]=cam.wx+s*tune.lookAhead; out[1]=py+tune.lookHeight; out[2]=cam.wz+c*tune.lookAhead;
+    return out;
+  }
+
+  function setCamMode(m){
+    if(m!==camMode){ camMode=m; seye=null; emit('modeChange',{mode:m}); }
+  }
+  function setNoclip(b){
+    noclip=!!b; noclipY=undefined; input.resetEdges();
+    if(noclip){ cam.grounded=false; } else { cam.vy=0; }
+    emit('modeChange',{mode: noclip?'noclip':camMode});
+  }
+  function teleport(x,z,yaw){
+    cam.wx=clamp(x,-tune.worldBound,tune.worldBound);
+    cam.wz=clamp(z,-tune.worldBound,tune.worldBound);
+    if(yaw!==undefined) cam.wyaw=yaw;
+    cam.air=0; cam.vy=0; cam.grounded=true; vx=0; vz=0; seye=null;
+    coyote=0; jumpBuf=0; prevJumpHeld=false; lastGroundY=undefined; wasBlocked=false;
+    input.resetEdges();
+  }
+
+  /* dev: bookmarks (Alt+1..5 store, 1..5 recall) */
+  function bookmarkKey(e){
+    if(!MoorController.DEV) return;
+    var m=/^Digit([1-5])$/.exec(e.code||'');
+    if(!m) return;
+    var i=m[1];
+    if(e.altKey){ bookmarks[i]={x:cam.wx,z:cam.wz,yaw:cam.wyaw,pitch:cam.wpitch}; }
+    else if(bookmarks[i]){ var b=bookmarks[i]; teleport(b.x,b.z,b.yaw); cam.wpitch=b.pitch; }
+  }
+  if(typeof window!=='undefined'){
+    window.addEventListener('keydown', bookmarkKey);
+  }
+
+  /* dev: tune console (?tune=1) */
+  function mountTuneConsole(){
+    if(typeof document==='undefined') return;
+    var panel=document.createElement('div');
+    panel.id='mc-tune';
+    panel.style.cssText='position:fixed;right:10px;top:60px;z-index:9999;background:rgba(12,16,14,.92);'+
+      'border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:12px;width:230px;'+
+      'font:12px system-ui;color:#edf3ed;';
+    var html='<b>MoorController tune</b> <span style="opacity:.6">v'+MoorController.VERSION+'</span><br><br>';
+    var keys=['walkSpeed','sprintMul','accel','decel','airAccel','jumpV','gravity','coyote','buffer','eyeDist','camFollow'];
+    keys.forEach(function(k2){
+      var v=tune[k2];
+      var max=v*2.5||1;
+      html+='<label style="display:block;margin:6px 0;opacity:.9">'+k2+
+        ' <span id="mcv-'+k2+'" style="float:right">'+v+'</span><br>'+
+        '<input type="range" data-k="'+k2+'" min="0" max="'+max.toFixed(2)+'" step="0.01" value="'+v+
+        '" style="width:100%"></label>';
+    });
+    html+='<button id="mc-copy" style="margin-top:8px">copy JSON</button> '+
+          '<button id="mc-reset">reset</button> <button id="mc-x">×</button>';
+    panel.innerHTML=html;
+    document.body.appendChild(panel);
+    panel.addEventListener('input',function(e){
+      var k2=e.target.getAttribute('data-k'); if(!k2) return;
+      tune[k2]=parseFloat(e.target.value);
+      var s2=document.getElementById('mcv-'+k2); if(s2) s2.textContent=tune[k2];
+    });
+    panel.querySelector('#mc-copy').onclick=function(){
+      var j=JSON.stringify(tune);
+      if(navigator.clipboard) navigator.clipboard.writeText(j);
+      try{ window.prompt('tune JSON:', j); }catch(_){}
+    };
+    panel.querySelector('#mc-reset').onclick=function(){
+      for(var k2 in DEFAULT_TUNE) tune[k2]=DEFAULT_TUNE[k2];
+      panel.remove(); mountTuneConsole();
+    };
+    panel.querySelector('#mc-x').onclick=function(){ panel.remove(); };
+  }
+  function mountReadout(){
+    if(typeof document==='undefined') return null;
+    var d=document.createElement('div');
+    d.id='mc-readout';
+    d.style.cssText='position:fixed;left:10px;bottom:10px;z-index:9999;background:rgba(12,16,14,.85);'+
+      'border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px 10px;'+
+      'font:11px ui-monospace,monospace;color:#c5eaa5;pointer-events:none;';
+    document.body.appendChild(d);
+    return d;
+  }
+
+  var api = {
+    step: step,
+    eye: eye, look: look,
+    fov: function(){ return fovCur; },
+    input: input, tune: tune, rec: rec,
+    on: on, emit: emit,
+    setCamMode: setCamMode, camMode: function(){ return noclip?'noclip':camMode; },
+    setNoclip: setNoclip, noclip: function(){ return noclip; },
+    teleport: teleport,
+    queueJump: function(){ input.queueJump(); },
+    speed2D: speed2D,
+    sprinting: function(){ return sprinting; },
+    inWater: function(){ return inWater; },
+    state: function(){ return {x:cam.wx, z:cam.wz, yaw:cam.wyaw, pitch:cam.wpitch,
+      vx:vx, vz:vz, vy:cam.vy, air:cam.air, grounded:cam.grounded,
+      camMode:camMode, noclip:noclip, sprinting:sprinting}; },
+    _defaults: DEFAULT_TUNE
+  };
+
+  /* dev overlays */
+  if(typeof window!=='undefined' && /[?&]tune=1/.test(location.search||'')){
+    try{ mountTuneConsole(); }catch(_){}
+  }
+  var readoutEl=null, lastFpsT=0, fpsN=0, fpsV=0;
+  var _step=step;
+  api.step=function(dt){
+    _step(dt);
+    if(MoorController.DEV){
+      if(!readoutEl) readoutEl=mountReadout();
+      if(readoutEl){
+        fpsN++; var now=(typeof performance!=='undefined')?performance.now():Date.now();
+        if(now-lastFpsT>500){ fpsV=Math.round(fpsN*1000/Math.max(1,now-lastFpsT)); fpsN=0; lastFpsT=now; }
+        var st=api.state();
+        readoutEl.textContent='spd '+st.vx.toFixed(1)+','+st.vz.toFixed(1)+
+          ' | vy '+st.vy.toFixed(1)+' | gnd '+(st.grounded?1:0)+
+          ' | '+api.camMode()+' | '+fpsV+'fps';
+      }
+    }
+  };
+
+  return api;
+};
+
+MoorController.KEYMAP = KEYMAP;
+MoorController.DEFAULT_TUNE = DEFAULT_TUNE;
+
+if(typeof module!=='undefined' && module.exports) module.exports=MoorController;
+else global.MoorController=MoorController;
+
+})(typeof window!=='undefined'?window:this);
+
 /* ---------------- camera ---------------- */
 var cam={mode:'orbit', tx:0, tz:0, yaw:0.7, pitch:0.85, dist:70,
          wx:8, wz:8, wyaw:0, wpitch:0.05, air:0, vy:0, grounded:true};
+/* MoorController v0.6: owns walk-mode movement + camera. SPEC: components/controller/ */
+var ctrl=MoorController.create({heightAt:heightAt, collideXZ:collideXZ, cam:cam});
 function camEye(){
-  if(cam.mode==='walk'){
-    /* third-person: camera behind + above the body; wpitch works the boom */
-    var fx=Math.sin(cam.wyaw), fz=Math.cos(cam.wyaw);
-    var ay=heightAt(cam.wx,cam.wz)+cam.air;
-    var boomD=6.5-cam.wpitch*2, boomH=3.1+cam.wpitch*6;
-    var ex=cam.wx-fx*boomD, ez=cam.wz-fz*boomD;
-    return [ex, Math.max(ay+boomH,heightAt(ex,ez)+0.9), ez];
-  }
+  if(cam.mode==='walk') return ctrl.eye([]);
   var gy=heightAt(cam.tx,cam.tz);
   return [cam.tx+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw),
           gy+2+cam.dist*Math.sin(cam.pitch),
           cam.tz+cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw)];
 }
 function camAt(){
-  if(cam.mode==='walk'){
-    var fx=Math.sin(cam.wyaw), fz=Math.cos(cam.wyaw);
-    var ay=heightAt(cam.wx,cam.wz)+cam.air;
-    return [cam.wx+fx*2.5, ay+1.25, cam.wz+fz*2.5];
-  }
+  if(cam.mode==='walk') return ctrl.look([]);
   return [cam.tx,heightAt(cam.tx,cam.tz)+2,cam.tz];
 }
 var vpMat=null, invVP=null;
 function computeVP(){
   var cv=$('gl'), asp=cv.width/cv.height;
-  var p=mPerspective(1.05,asp,0.5,6000), v=mLookAt(camEye(),camAt(),[0,1,0]);
+  var walkFov=cam.mode==='walk'?ctrl.fov()*Math.PI/180:1.05;
+  var p=mPerspective(walkFov,asp,0.5,6000), v=mLookAt(camEye(),camAt(),[0,1,0]);
   vpMat=mMul(p,v); invVP=mInvert(vpMat);
 }
 function rayFrom(nx,ny){
@@ -3859,7 +4371,7 @@ function bindUI(){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); }
   });
   $('jump').addEventListener('click',function(){
-    if(cam.mode==='walk'&&cam.grounded){ cam.vy=4.6; cam.grounded=false; }
+    if(cam.mode==='walk') ctrl.queueJump();
   });
   $('move-bar').addEventListener('click',function(e){
     var b=e.target.closest('[data-mv]'); if(!b) return;
@@ -3946,22 +4458,7 @@ function frame(t){
   var dt=Math.min(0.05,(t-lastT)/1000||0.016); lastT=t;
   if(needsRebuild){ needsRebuild=false; rebuildObjects(); }
   if(cam.mode==='walk'){
-    var sp=7*dt, k=(window.__keysGet?window.__keysGet():{}), j=(window.__joyGet?window.__joyGet():null);
-    var fx=0,fz=0;
-    if(k['w']||k['arrowup'])fz+=1; if(k['s']||k['arrowdown'])fz-=1;
-    if(k['a']||k['arrowleft'])fx-=1; if(k['d']||k['arrowright'])fx+=1;
-    if(j){ fx+=j.x; fz-=j.y; }
-    if(k[' ']){ if(cam.grounded){ cam.vy=4.6; cam.grounded=false; } k[' ']=false; }
-    var s=Math.sin(cam.wyaw), c=Math.cos(cam.wyaw);
-    var nx=cam.wx+(s*fz-c*fx)*sp, nz=cam.wz+(c*fz+s*fx)*sp;
-    nx=Math.max(-200,Math.min(200,nx)); nz=Math.max(-200,Math.min(200,nz));
-    /* vertical: gravity + ground */
-    cam.vy-=12*dt; cam.air+=cam.vy*dt;
-    if(cam.air<=0){ cam.air=0; cam.vy=0; cam.grounded=true; }
-    /* horizontal: collide against buildings + items */
-    var gy=heightAt(nx,nz), feet=gy+cam.air;
-    var res=collideXZ(nx,feet,feet+1.7,nz,0.35);
-    cam.wx=res[0]; cam.wz=res[1];
+    ctrl.step(dt);
     tickAvatar(dt);
   }
   computeVP();
@@ -3979,7 +4476,7 @@ function frame(t){
   if(typeof farBuf!=='undefined'&&farBuf){ bindBuf(farBuf); gl.drawElements(gl.TRIANGLES,farBuf.count,gl.UNSIGNED_INT,0); }
   bindBuf(waterBuf); gl.drawElements(gl.TRIANGLES,waterBuf.count,gl.UNSIGNED_INT,0);
   if(objBuf){ bindBuf(objBuf); gl.drawElements(gl.TRIANGLES,objBuf.count,gl.UNSIGNED_INT,0); }
-  if(cam.mode==='walk'&&avBuf){
+  if(cam.mode==='walk'&&avBuf&&ctrl.camMode()==='follow'){
     gl.disable(gl.CULL_FACE);
     bindBuf(avBuf); gl.drawElements(gl.TRIANGLES,avBuf.count,gl.UNSIGNED_INT,0);
     gl.enable(gl.CULL_FACE);
@@ -4311,6 +4808,7 @@ window.__beta.farTris=function(){ return (typeof farBuf!=='undefined'&&farBuf)?f
 window.__beta.reveal=function(){ return revealT; };
 window.__beta.scatterPts=function(){ return scatterPlaced; };
 window.__beta.h=function(x,z){ return heightAt(x,z); };
+window.__beta.ctrl=function(){ return ctrl; };
 window.__beta.colliders=function(){ return colliders.length; };
 window.__beta.objTris=function(){ return objIdx.length/3; };
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
