@@ -9739,7 +9739,7 @@ var CSS =
  '.wd-commentbox button{border-radius:8px;border:1px solid rgba(160,140,255,.5);background:rgba(40,32,80,.8);color:#dcd2ff;padding:8px 12px;cursor:pointer;font-size:14px}'+
  '.wd-scrim{position:fixed;inset:0;background:rgba(2,4,8,.72);z-index:50;display:flex;align-items:flex-end;justify-content:center}'+
  '.wd-drawer{width:100%;max-width:720px;max-height:84vh;background:#0a0e18;border:1px solid rgba(255,255,255,.1);border-bottom:none;border-radius:18px 18px 0 0;display:flex;flex-direction:column;overflow:hidden}'+
- '.wd-dhead{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.07)}'+
+ '.wd-dhead{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.07)}'+'.wd-dhead>span{display:flex;gap:8px;align-items:center}'+'.wd-dbtn{background:rgba(143,208,255,.12);border:1px solid rgba(143,208,255,.35);color:#bfe0ff;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer}'+
  '.wd-dhead b{color:#eef;font-size:15px;letter-spacing:.04em}'+
  '.wd-dhead button{background:none;border:none;color:#9ab;font-size:22px;cursor:pointer;padding:0 4px}'+
  '.wd-grid{overflow-y:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}'+
@@ -14162,16 +14162,27 @@ function mountFeed(host, opts){
       };
     });
   }
+  function exportLibrary(){
+    var items = Library.list();
+    if (!items.length){ toast('nothing saved yet'); return; }
+    var out = {wonders: items.map(function(e){
+      return {type:e.genome.type, seed:e.genome.seed, p:e.genome.p,
+              title:e.title||'', comment:e.comment||''};
+    })};
+    var txt = JSON.stringify(out);
+    copyText(txt, function(ok){ toast(ok ? items.length+' wonders copied — paste to buster' : 'copy failed'); });
+  }
   function openLibrary(){
     if (!drawer){
       var scrim = document.createElement('div');
       scrim.className = 'wd-scrim'; scrim.style.display = 'flex';
       scrim.innerHTML =
-        '<div class="wd-drawer"><div class="wd-dhead"><b>LIBRARY</b><button id="wd-dclose">×</button></div>'+
+        '<div class="wd-drawer"><div class="wd-dhead"><b>LIBRARY</b><span><button id="wd-dexport" class="wd-dbtn">⧉ export</button><button id="wd-dclose">×</button></span></div>'+
         '<div class="wd-grid" id="wd-dgrid"></div></div>';
       document.body.appendChild(scrim);
       drawer = scrim;
       scrim.querySelector('#wd-dclose').onclick = closeDrawer;
+      scrim.querySelector('#wd-dexport').onclick = exportLibrary;
       scrim.addEventListener('click', function(e){ if (e.target===scrim) closeDrawer(); });
     }
     refreshDrawer();
