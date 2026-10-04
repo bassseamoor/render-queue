@@ -540,6 +540,17 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 /* the pressed key stays down and goes quiet while its message travels */
 .tiles .tile.tile-sent{ filter:brightness(.86); transform:translateY(3px) scale(.98); }
 
+/* standalone flagship tools: big gold open button */
+.standalone-open{
+  display:inline-block; margin:6px 0 14px; padding:13px 26px;
+  font-size:15px; font-weight:700; letter-spacing:.02em; text-decoration:none;
+  color:#1a0f00 !important;
+  background:linear-gradient(165deg, #ffe9b0, #e8b64c 60%, #c9962e) !important;
+  border:1px solid rgba(255,235,180,0.7) !important;
+  border-radius:14px !important;
+  box-shadow:0 10px 28px rgba(232,182,76,0.28), inset 0 1px 0 rgba(255,255,255,0.6) !important;
+}
+
 </style>
 </head>
 <body>
@@ -2131,11 +2142,17 @@ var COMPS = [
    why:'Understand what a generator does, then shape it without touching code.',
    technical:'terrain-pipeline', source:'components/terrain-core (pipeline) + panel layers', inMoor:false,
    toolGap:'The base pipeline is the untouched component. Added layers are panel composition — real seeded math, but not part of the component.'},
-  {id:'stream', tool:'stream', toolSrc:'pulse-tools/tool-stream.js', cats:['space','generators'], icon:'\u224B', label:'Moor Ultra OS',
+  {id:'more-canvas', tool:null, cats:['creation'], icon:'\u25A3', label:'More Canvas', page:'more-canvas.html',
+   short:'The mixing bench: pick two parts, say what they should become, mix them into something new.',
+   job:'Choose component A and component B from the live catalog, describe what the mix should become (type or speak), and press Mix parts. A live preview renders the composition; saving stores it in My parts with versions. Recipes persist on this device.',
+   why:'This is where new software gets imagined from existing parts instead of built from scratch — combine, describe, preview, keep the ones that work.',
+   technical:'more-canvas', source:'more-canvas.html (standalone; catalog refreshes from pulse-manifest.json)', inMoor:false,
+   toolGap:'The preview is a procedural composition sketch, not the truly fused tool. A mix becomes a saved recipe + build brief — a builder still implements the real thing.'},
+  {id:'stream', tool:'stream', toolSrc:'pulse-tools/tool-stream.js', cats:['space','generators','creation'], icon:'\u224B', label:'Moor Ultra OS',
    short:'The build-anything stream: say what you want, scenes land.',
    job:'One-way water: never a blank page, no questions asked. You state what you want (talk or type), the stream infers intent and lands N scenes below — 3 by default, any number on request. Tap a scene for ingredients (real components + seeds, all the way down). Dev gets the kitchen: spec JSON, rewire, player-visible flags.',
    why:'Building without the builder-ui: ordering, not engineering. Players customize everything, control nothing structural.',
-   technical:'stream', source:'new: Stream v1', inMoor:false,
+   technical:'stream', source:'new: Stream v1', inMoor:false, page:'moor-ultra.html',
    toolGap:'V1: scene previews are seeded 2D procedural renders naming real components — not the full 3D tools. Ingredients deep-link to component tools; dev spec editing is live.'},
   {id:'softbody-creatures', tool:'creatures', toolSrc:'pulse-tools/tool-creatures.js', cats:['space','generators'], icon:'\u25CF', label:'Creature Lab',
    short:'Stage A: end-to-end procedural walker.',
@@ -2345,10 +2362,15 @@ function windowHTML(c){
     ? '<span class="pill cyan">In MOOR</span>'
     : '<span class="pill amber">Not in MOOR \u2014 runs standalone here</span>';
   var body = '';
+  if (c.page) {
+    body = '<a class="btn standalone-open" href="'+esc(c.page)+'" target="_blank" rel="noopener">Open '+esc(c.label)+' \u2197</a>';
+  }
   if (c.tool && TOOLS[c.tool]) {
-    body = '<div class="tool-host" id="toolhost-'+c.id+'"></div>';
-  } else {
+    body += '<div class="tool-host" id="toolhost-'+c.id+'"></div>';
+  } else if (!c.page) {
     body = '<p class="job">'+esc(c.job)+'</p>';
+  } else {
+    body += '<p class="job">'+esc(c.job)+'</p>';
   }
   body +=
     '<div class="status-line">'+pill+'<span class="pill">'+esc(c.inMoor?'connected':'available to reuse')+'</span></div>'+
