@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ef">
+  <title>MOOR · Server Harness</title>
+  <style>
+    :root {
+      --paper: #f5f4ef;
+      --panel: #fffefa;
+      --ink: #20211f;
+      --muted: #777872;
+      --line: #e7e5dd;
+      --soft: #efeee8;
+      --orange: #df6b34;
+      --orange-pale: #fbefe7;
+      --yellow: #e7c95d;
+      --green: #417b58;
+      --red: #b94a3b;
+      --blue: #527387;
+      --shadow: 0 16px 40px rgba(36, 34, 27, .12);
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--paper); color: var(--ink); }
+    body { font: 14px/1.4 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .app { min-height: 100vh; display: grid; grid-template-rows: 60px minmax(0, 1fr); }
+    .topbar { height: 60px; padding: 0 22px; display: flex; align-items: center; gap: 22px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 226px; font-weight: 760; letter-spacing: .12em; font-size: 13px; }
+    .brandmark { height: 25px; width: 25px; display: grid; place-items: center; background: var(--ink); color: white; font-size: 12px; letter-spacing: 0; }
+    .brand small { color: var(--muted); font-weight: 520; letter-spacing: .02em; margin-left: 2px; }
+    .search { position: relative; max-width: 520px; width: min(42vw, 520px); }
+    .search input { width: 100%; height: 36px; border: 1px solid var(--line); background: #faf9f5; border-radius: 7px; padding: 0 36px 0 36px; outline: none; color: var(--ink); }
+    .search input:focus { border-color: #c9a18b; box-shadow: 0 0 0 3px rgba(223, 107, 52, .09); }
+    .search-icon { position: absolute; left: 12px; top: 9px; color: #8a8b84; pointer-events: none; }
+    .search-kbd { position: absolute; right: 9px; top: 8px; color: #999a94; font-size: 11px; border: 1px solid var(--line); padding: 1px 5px; border-radius: 4px; }
+    .top-right { margin-left: auto; display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 12px; }
+    .demo-tag { color: #725d22; background: #f8f1d8; padding: 5px 8px; font-size: 10px; font-weight: 750; letter-spacing: .1em; }
+    .icon-button { display: grid; place-items: center; width: 30px; height: 30px; background: transparent; border: 1px solid transparent; cursor: pointer; color: var(--muted); }
+    .icon-button:hover { background: var(--soft); border-color: var(--line); }
+    .layout { min-height: 0; display: grid; grid-template-columns: 270px minmax(0, 1fr); }
+    .sidebar { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #f9f8f3; }
+    .side-top { padding: 19px 15px 12px; }
+    .side-label { font-size: 10px; font-weight: 760; letter-spacing: .13em; color: #85867f; margin: 0 0 10px 5px; }
+    .side-tabs { display: grid; grid-template-columns: 1fr 1fr; background: #ecebe4; padding: 3px; gap: 3px; }
+    .side-tab { height: 30px; border: 0; background: transparent; color: #73746e; cursor: pointer; font-size: 12px; font-weight: 650; }
+    .side-tab[aria-selected="true"] { color: var(--ink); background: var(--panel); box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    .overview-link { margin: 5px 10px 10px; width: calc(100% - 20px); display: flex; align-items: center; gap: 10px; padding: 10px 11px; background: transparent; border: 0; text-align: left; cursor: pointer; color: #4d4f49; font-weight: 650; }
+    .overview-link:hover, .overview-link.active { background: var(--orange-pale); color: #9b4c26; }
+    .overview-link .glyph { width: 17px; text-align: center; font-size: 15px; }
+    .tree-wrap { min-height: 0; overflow: auto; padding: 0 10px 16px; }
+    .tree-root-label { display: flex; align-items: center; justify-content: space-between; color: #84857e; font-size: 10px; letter-spacing: .12em; font-weight: 750; padding: 9px 7px 7px; }
+    .tree { list-style: none; padding: 0; margin: 0; }
+    .tree li { margin: 1px 0; }
+    .tree-node { min-height: 32px; display: flex; align-items: center; gap: 7px; width: 100%; border: 0; background: transparent; text-align: left; padding: 5px 7px; cursor: pointer; color: #50514c; font-size: 12px; }
+    .tree-node:hover { background: #eeede7; }
+    .tree-node.selected { background: var(--orange-pale); color: #8f4726; font-weight: 680; }
+    .tree-node .caret { color: #9a9b94; width: 10px; font-size: 10px; }
+    .tree-node .node-icon { color: #85867f; width: 16px; text-align: center; font-size: 12px; }
+    .tree-node .node-name { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .tree-node .node-count { color: #969790; font-size: 10px; font-variant-numeric: tabular-nums; }
+    .tree-children { list-style: none; margin: 0 0 2px 13px; padding: 0 0 0 9px; border-left: 1px solid #e3e1d9; }
+    .tree-empty { color: var(--muted); font-size: 12px; padding: 9px; }
+    .side-foot { margin-top: auto; border-top: 1px solid var(--line); padding: 12px 16px; color: #8a8b84; font-size: 11px; display: flex; justify-content: space-between; }
+    .main { min-width: 0; overflow: auto; }
+    .main-inner { max-width: 1480px; margin: 0 auto; padding: 27px 32px 44px; }
+    .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: 11px; color: #888982; margin-bottom: 12px; }
+    .crumbs .sep { color: #bbb9b1; }
+    .page-head { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 22px; }
+    .head-mark { width: 42px; height: 42px; background: #f0df9e; color: #4e472c; display: grid; place-items: center; font-weight: 750; font-size: 16px; }
+    .head-copy { min-width: 0; }
+    .eyebrow { color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .13em; font-weight: 740; margin-bottom: 4px; }
+    h1 { margin: 0; font-size: clamp(22px, 2vw, 29px); line-height: 1.15; letter-spacing: -.035em; font-weight: 700; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--green); background: #edf4ee; padding: 6px 9px; white-space: nowrap; }
+    .dot { width: 7px; height: 7px; background: currentColor; border-radius: 50%; }
+    .primary-button { background: var(--ink); color: white; border: 1px solid var(--ink); padding: 8px 12px; cursor: pointer; font-size: 11px; font-weight: 650; }
+    .primary-button:hover { background: #42443e; }
+    .metric-row { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+    .metric { background: var(--panel); border: 1px solid var(--line); padding: 13px 14px; min-height: 76px; }
+    .metric-label { font-size: 10px; letter-spacing: .1em; color: #85867f; font-weight: 700; text-transform: uppercase; }
+    .metric-value { font-size: 20px; margin-top: 5px; font-weight: 680; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+    .metric-sub { color: var(--muted); font-size: 10px; margin-left: 5px; font-weight: 500; letter-spacing: 0; }
+    .content-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(260px, .85fr); gap: 14px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--line); min-width: 0; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 17px; border-bottom: 1px solid var(--line); }
+    .panel-title { font-size: 13px; font-weight: 700; }
+    .panel-sub { color: var(--muted); font-size: 11px; margin-top: 3px; }
+    .panel-tools { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+    .select { background: white; border: 1px solid var(--line); padding: 6px 25px 6px 8px; color: #5d5e58; font-size: 11px; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { color: #888982; font-size: 9px; letter-spacing: .1em; font-weight: 730; text-transform: uppercase; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #efeee9; color: #464742; font-size: 11px; white-space: nowrap; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #faf9f5; }
+    .member { display: flex; align-items: center; gap: 9px; min-width: 155px; }
+    .avatar { width: 29px; height: 29px; flex: 0 0 auto; display: grid; place-items: center; font-size: 10px; font-weight: 750; color: #4c4638; background: #e9dfc4; border-radius: 50%; }
+    .avatar.a2 { background: #d8e5dc; color: #345c42; }
+    .avatar.a3 { background: #eadbd2; color: #77492e; }
+    .avatar.a4 { background: #dbe3eb; color: #36536c; }
+    .avatar.a5 { background: #eadfed; color: #684e6d; }
+    .avatar.a6 { background: #e8e4c9; color: #605a2d; }
+    .avatar.large { width: 66px; height: 66px; font-size: 20px; }
+    .name-button { display: block; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; color: var(--ink); font-size: 11px; font-weight: 680; }
+    .name-button:hover { color: var(--orange); text-decoration: underline; text-underline-offset: 3px; }
+    .handle { color: #92938c; font-size: 10px; margin-top: 1px; }
+    .presence { display: inline-flex; align-items: center; gap: 5px; color: #696a64; }
+    .presence .dot { width: 6px; height: 6px; color: var(--green); }
+    .presence.idle .dot { color: #b9a351; }
+    .role-tag, .server-tag, .kind-tag { display: inline-block; padding: 3px 6px; background: #f1f0ea; color: #666760; font-size: 9px; }
+    .role-tag.mod { background: #faeee5; color: #a3542e; }
+    .world-host { display: grid; gap: 0; padding: 0 16px; }
+    .host-row { display: grid; grid-template-columns: 24px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 56px; border-bottom: 1px solid #efeee9; }
+    .host-row:last-child { border-bottom: 0; }
+    .host-icon { width: 23px; height: 23px; display: grid; place-items: center; background: #f0efe9; color: #777870; font-size: 11px; }
+    .host-name { font-size: 11px; font-weight: 650; }
+    .host-desc { color: var(--muted); font-size: 10px; margin-top: 2px; }
+    .text-button { background: none; border: 0; padding: 0; color: #9a542f; cursor: pointer; font-size: 10px; font-weight: 650; }
+    .text-button:hover { text-decoration: underline; }
+    .empty { padding: 30px 17px; text-align: center; color: var(--muted); font-size: 12px; }
+    .world-table .world-main { display: flex; align-items: center; gap: 9px; }
+    .planet-dot { width: 26px; height: 26px; display: grid; place-items: center; background: #dce7dc; color: #3d6547; font-size: 11px; border-radius: 50%; }
+    .world-link { padding: 0; border: 0; background: transparent; font-weight: 690; color: var(--ink); cursor: pointer; text-align: left; font-size: 11px; }
+    .world-link:hover { color: var(--orange); text-decoration: underline; }
+    .row-secondary { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .bar-wrap { width: 64px; height: 4px; background: #eeede7; display: inline-block; vertical-align: middle; margin-right: 5px; }
+    .bar { height: 100%; background: var(--orange); }
+    .notice { display: flex; gap: 9px; align-items: flex-start; border-top: 1px solid var(--line); margin-top: 3px; padding: 12px 16px; font-size: 10px; color: #73746e; }
+    .notice-mark { color: var(--orange); font-weight: 800; }
+    .profile-backdrop { position: fixed; inset: 0; z-index: 5; background: rgba(27,28,25,.25); opacity: 0; pointer-events: none; transition: opacity .16s ease; }
+    .profile-backdrop.open { opacity: 1; pointer-events: auto; }
+    .profile-drawer { position: fixed; z-index: 6; top: 0; right: 0; bottom: 0; width: min(410px, 92vw); background: var(--panel); box-shadow: var(--shadow); transform: translateX(102%); transition: transform .2s ease; display: flex; flex-direction: column; }
+    .profile-drawer.open { transform: translateX(0); }
+    .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 19px; border-bottom: 1px solid var(--line); }
+    .drawer-label { font-size: 10px; font-weight: 750; letter-spacing: .13em; color: #777872; }
+    .drawer-body { padding: 23px 21px; overflow: auto; }
+    .profile-top { display: flex; align-items: center; gap: 15px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    .profile-name { font-size: 21px; font-weight: 710; letter-spacing: -.035em; }
+    .profile-handle { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .profile-presence { color: var(--green); font-size: 11px; display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+    .profile-section { padding: 17px 0; border-bottom: 1px solid var(--line); }
+    .profile-section:last-child { border-bottom: 0; }
+    .profile-section h3 { margin: 0 0 9px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: #85867f; }
+    .profile-copy { font-size: 12px; color: #50514b; line-height: 1.65; }
+    .location-line { font-size: 11px; color: #4f504b; margin: 5px 0; }
+    .profile-mini { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11px; padding: 5px 0; }
+    .profile-mini span:first-child { color: var(--muted); }
+    .profile-footer { margin-top: auto; padding: 12px 20px; border-top: 1px solid var(--line); color: #92938c; font-size: 10px; }
+    .search-pop { position: absolute; top: 42px; left: 0; right: 0; z-index: 8; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); display: none; max-height: 360px; overflow: auto; }
+    .search-pop.open { display: block; }
+    .search-group { padding: 8px 10px 4px; color: #85867f; font-size: 9px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .search-result { width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 0; background: transparent; text-align: left; cursor: pointer; font-size: 11px; }
+    .search-result:hover { background: #f6f4ed; }
+    .search-result small { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; }
+    .search-no-results { padding: 12px; color: var(--muted); font-size: 11px; }
+    .toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 12px); background: var(--ink); color: white; padding: 9px 13px; font-size: 11px; opacity: 0; pointer-events: none; transition: all .16s ease; z-index: 10; }
+    .toast.show { transform: translate(-50%,0); opacity: 1; }
+    @media (max-width: 1000px) {
+      .main-inner { padding: 23px 20px 34px; }
+      .content-grid { grid-template-columns: minmax(0,1.35fr) minmax(235px,.8fr); }
+      .brand { min-width: 205px; }
+    }
+    @media (max-width: 760px) {
+      .app { grid-template-rows: 54px minmax(0,1fr); }
+      .topbar { height: 54px; padding: 0 12px; gap: 10px; }
+      .brand { min-width: auto; font-size: 11px; }
+      .brand small { display: none; }
+      .search { flex: 1; width: auto; }
+      .top-right { gap: 7px; }
+      .top-right .environment { display: none; }
+      .layout { grid-template-columns: 218px minmax(0,1fr); }
+      .main-inner { padding: 17px 14px 25px; }
+      .content-grid { grid-template-columns: 1fr; }
+      .metric-row { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+      .metric { min-height: 64px; padding: 10px 11px; }
+      .metric-value { font-size: 17px; }
+      .page-head { margin-bottom: 15px; }
+      .head-mark { width: 35px; height: 35px; }
+      .head-actions .primary-button { display: none; }
+      h1 { font-size: 22px; }
+    }
+    @media (max-width: 520px) {
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); }
+      .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+      .side-top { padding: 9px 10px 4px; }
+      .side-label, .overview-link, .side-foot { display: none; }
+      .side-tabs { max-width: 300px; }
+      .tree-wrap { display: none; }
+      .main-inner { padding: 15px 11px; }
+      .top-right .demo-tag { font-size: 8px; padding: 4px 5px; }
+      .crumbs { font-size: 9px; }
+      .panel-head { padding: 12px; }
+      th, td { padding-left: 9px; padding-right: 9px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brandmark">M</span><span>MOOR <small>SERVER HARNESS</small></span></div>
+      <div class="search">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="globalSearch" type="search" placeholder="Find a world, server, or person" autocomplete="off" aria-label="Find a world, server, or person">
+        <span class="search-kbd">/</span>
+        <div class="search-pop" id="searchPop" role="listbox" aria-label="Search results"></div>
+      </div>
+      <div class="top-right"><span class="environment">NETWORK · PREVIEW</span><span class="demo-tag">DEMO DATA</span><button class="icon-button" id="helpBtn" aria-label="About this harness" title="About this harness">ⓘ</button></div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar" aria-label="World and server navigation">
+        <div class="side-top">
+          <div class="side-label">BROWSE</div>
+          <div class="side-tabs" role="tablist" aria-label="Browse by">
+            <button class="side-tab" id="worldTab" role="tab" aria-selected="false">Worlds</button>
+            <button class="side-tab" id="serverTab" role="tab" aria-selected="true">Hosting</button>
+          </div>
+        </div>
+        <button class="overview-link" id="overviewBtn"><span class="glyph">▦</span><span>Network overview</span></button>
+        <div class="tree-wrap" id="treeWrap"></div>
+        <div class="side-foot"><span>MOOR NETWORK</span><span>v0.1</span></div>
+      </aside>
+      <main class="main" id="main" tabindex="-1"></main>
+    </div>
+  </div>
+  <div class="profile-backdrop" id="profileBackdrop"></div>
+  <aside class="profile-drawer" id="profileDrawer" aria-label="Player profile" aria-hidden="true">
+    <div class="drawer-head"><span class="drawer-label">PLAYER PROFILE</span><button class="icon-button" id="closeProfile" aria-label="Close profile">×</button></div>
+    <div class="drawer-body" id="profileBody"></div>
+    <div class="profile-footer">Profile details shown according to this person's visibility settings.</div>
+  </aside>
+  <div class="toast" id="toast" role="status"></div>
+  <script>
+    /*
+      Reusable harness contract (demo data below):
+      Universe -> Planet -> World -> Room is the persistent place hierarchy.
+      Region -> SystemServer -> WorldServer -> Instance is the hosting hierarchy.
+      Hosting links places to runtime; it does not own world identity/state.
+      ProfileV1: id, displayName, handle, avatarInitials, presence, about,
+      role, currentWorldId, currentServerId, memberSince, visibility.
+      Only the name button opens the profile. Avatar is decorative.
+    */
+    const data = {
+      universe: { id: "moor", name: "MOOR" },
+      planets: [
+        { id: "terran", name: "Terran", kind: "Garden world" },
+        { id: "veyra", name: "Veyra", kind: "Volcanic world" },
+        { id: "nacre", name: "Nacre", kind: "Ocean world" }
+      ],
+      worlds: [
+        { id: "terr-prime", name: "Terran Prime", planetId: "terran", type: "Official", description: "Shared surface · North and South Reach", status: "online" },
+        { id: "glass-coast", name: "Glass Coast", planetId: "terran", type: "Community", description: "Coastal exploration · player hosted", status: "online" },
+        { id: "emberfall", name: "Emberfall", planetId: "veyra", type: "Official", description: "Volcanic frontier · seasonal", status: "online" },
+        { id: "blue-archive", name: "The Blue Archive", planetId: "nacre", type: "Private", description: "A quiet place for its members", status: "online" }
+      ],
+      rooms: [
+        { id: "room-sable", name: "Sable's Loft", worldId: "terr-prime", owner: "sable" },
+        { id: "room-nova", name: "Nova Workshop", worldId: "glass-coast", owner: "nova" }
+      ],
+      regions: [
+        { id: "na-west", name: "North America · West", latency: "18 ms", systems: [
+          { id: "sys-west-01", name: "System 01", host: "usw-a", health: "Healthy", version: "1.8.4", load: 42, worldServers: [
+            { id: "ws-terr-n", name: "Terran · North Reach", worldId: "terr-prime", kind: "World server", capacity: 64, latency: "18 ms", health: "Healthy", instance: null },
+            { id: "ws-terr-s", name: "Terran · South Reach", worldId: "terr-prime", kind: "World server", capacity: 64, latency: "19 ms", health: "Healthy", instance: { id: "inst-grotto", name: "Grotto 07", kind: "Dungeon instance", capacity: 12 } },
+            { id: "ws-glass", name: "Glass Coast · Main", worldId: "glass-coast", kind: "World server", capacity: 40, latency: "22 ms", health: "Healthy", instance: null }
+          ] },
+          { id: "sys-west-02", name: "System 02", host: "usw-b", health: "Healthy", version: "1.8.4", load: 28, worldServers: [
+            { id: "ws-ember", name: "Emberfall · Caldera", worldId: "emberfall", kind: "World server", capacity: 48, latency: "31 ms", health: "Healthy", instance: null },
+            { id: "ws-room-sable", name: "Sable's Loft", worldId: "terr-prime", roomId: "room-sable", kind: "Private room", capacity: 8, latency: "18 ms", health: "Healthy", instance: null }
+          ] }
+        ] },
+        { id: "eu-central", name: "Europe · Central", latency: "104 ms", systems: [
+          { id: "sys-eu-01", name: "System 01", host: "de-central", health: "Healthy", version: "1.8.3", load: 36, worldServers: [
+            { id: "ws-terr-e", name: "Terran · Eastern Reach", worldId: "terr-prime", kind: "World server", capacity: 64, latency: "104 ms", health: "Healthy", instance: null },
+            { id: "ws-blue", name: "Blue Archive · Atrium", worldId: "blue-archive", kind: "World server", capacity: 20, latency: "111 ms", health: "Healthy", instance: null },
+            { id: "ws-room-nova", name: "Nova Workshop", worldId: "glass-coast", roomId: "room-nova", kind: "Private room", capacity: 6, latency: "109 ms", health: "Healthy", instance: null }
+          ] }
+        ] }
+      ],
+      people: [
+        { id: "sable", displayName: "Sable Moore", handle: "@sable", initials: "SM", avatar: "a3", presence: "Online", role: "World host", about: "Building a home on Terran Prime. Usually found near the north ridge.", worldId: "terr-prime", serverId: "ws-terr-n", since: "Aug 2026", visibility: "MOOR members" },
+        { id: "nova", displayName: "Nova Chen", handle: "@nova", initials: "NC", avatar: "a4", presence: "Online", role: "Member", about: "Making small places worth getting lost in.", worldId: "glass-coast", serverId: "ws-glass", since: "Sep 2026", visibility: "Everyone" },
+        { id: "moss", displayName: "Moss", handle: "@moss", initials: "M", avatar: "a2", presence: "Online", role: "Moderator", about: "Keeps the trails open and the community kind.", worldId: "terr-prime", serverId: "ws-terr-n", since: "Jun 2026", visibility: "MOOR members" },
+        { id: "sol", displayName: "Sol Rivera", handle: "@sol", initials: "SR", avatar: "a6", presence: "Idle", role: "Member", about: "Exploring the places between the map markers.", worldId: "terr-prime", serverId: "ws-terr-s", instanceId: "inst-grotto", since: "Sep 2026", visibility: "MOOR members" },
+        { id: "orin", displayName: "Orin Vale", handle: "@orin", initials: "OV", avatar: "a5", presence: "Online", role: "Member", about: "I collect strange plants and good views.", worldId: "terr-prime", serverId: "ws-terr-s", since: "Jul 2026", visibility: "Everyone" },
+        { id: "kestrel", displayName: "Kestrel", handle: "@kestrel", initials: "K", avatar: "a4", presence: "Online", role: "Member", about: "Mostly here for the sky islands.", worldId: "emberfall", serverId: "ws-ember", since: "Oct 2026", visibility: "MOOR members" },
+        { id: "lumen", displayName: "Lumen Park", handle: "@lumen", initials: "LP", avatar: "a5", presence: "Online", role: "Member", about: "Making a soft landing place for friends.", worldId: "blue-archive", serverId: "ws-blue", since: "Aug 2026", visibility: "Friends" },
+        { id: "rowan", displayName: "Rowan", handle: "@rowan", initials: "R", avatar: "a6", presence: "Online", role: "Member", about: "Wanders the eastern reaches.", worldId: "terr-prime", serverId: "ws-terr-e", since: "Oct 2026", visibility: "MOOR members" },
+        { id: "pip", displayName: "Pip", handle: "@pip", initials: "P", avatar: "a2", presence: "Idle", role: "Member", about: "A little cabin, a big map.", worldId: "terr-prime", serverId: "ws-room-sable", since: "Oct 2026", visibility: "Room members" },
+        { id: "echo", displayName: "Echo", handle: "@echo", initials: "E", avatar: "a3", presence: "Online", role: "Member", about: "Current location is shared with MOOR members.", worldId: "terr-prime", serverId: "ws-terr-n", since: "Sep 2026", visibility: "MOOR members" }
+      ]
+    };
+
+    const state = { mode: "hosting", selected: { type: "overview", id: "overview" }, rosterFilter: "all", searchText: "" };
+    const $ = (s, root=document) => root.querySelector(s);
+    const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const allSystems = () => data.regions.flatMap(region => region.systems.map(system => ({...system, regionId: region.id, regionName: region.name, regionLatency: region.latency})));
+    const allServers = () => allSystems().flatMap(system => system.worldServers.map(server => ({...server, systemId: system.id, systemName: system.name, regionId: system.regionId, regionName: system.regionName})));
+    const worldById = id => data.worlds.find(w => w.id === id);
+    const planetById = id => data.planets.find(p => p.id === id);
+    const serverById = id => allServers().find(s => s.id === id);
+    const instanceById = id => allServers().find(s => s.instance?.id === id)?.instance;
+    const runtimeNameForPerson = p => p.instanceId ? instanceById(p.instanceId)?.name : serverById(p.serverId)?.name;
+    const systemById = id => allSystems().find(s => s.id === id);
+    const regionById = id => data.regions.find(r => r.id === id);
+    const userById = id => data.people.find(p => p.id === id);
+    const online = people => people.filter(p => p.presence === "Online").length;
+    const usersForServers = ids => data.people.filter(person => ids.includes(person.serverId));
+    const serversForWorld = worldId => allServers().filter(s => s.worldId === worldId);
+    const systemServerIds = systemId => (systemById(systemId)?.worldServers ?? []).map(s => s.id);
+    const regionServerIds = regionId => (regionById(regionId)?.systems ?? []).flatMap(s => s.worldServers.map(w => w.id));
+    const totalConnections = () => data.people.length;
+    const totalServerCapacity = () => allServers().reduce((n,s) => n+s.capacity,0);
+    const healthClass = h => h === "Healthy" ? "good" : "warn";
+    const shortName = n => n.split(" · ")[0];
+
+    function renderTree() {
+      const wrap = $("#treeWrap");
+      if (state.mode === "worlds") {
+        wrap.innerHTML = `<div class="tree-root-label"><span>PLACE HIERARCHY</span><span>⌄</span></div><ul class="tree">
+          <li>${treeButton("universe", data.universe.id, data.universe.name, "◈", "", true)}
+            <ul class="tree-children">${data.planets.map(planet => {
+              const planetWorlds = data.worlds.filter(w => w.planetId === planet.id);
+              return `<li>${treeButton("planet", planet.id, planet.name, "◉", `${planetWorlds.length}`, true)}
+                <ul class="tree-children">${planetWorlds.map(world => {
+                  const count = usersForServers(serversForWorld(world.id).map(s => s.id)).length;
+                  const roomNodes = data.rooms.filter(r => r.worldId === world.id);
+                  return `<li>${treeButton("world", world.id, world.name, "◇", String(count), false)}${roomNodes.length ? `<ul class="tree-children">${roomNodes.map(room => `<li>${treeButton("room", room.id, room.name, "⌂", "Private", false)}</li>`).join("")}</ul>` : ""}</li>`;
+                }).join("")}</ul></li>`;
+            }).join("")}</ul></li></ul>`;
+      } else {
+        wrap.innerHTML = `<div class="tree-root-label"><span>HOSTING HIERARCHY</span><span>⌄</span></div><ul class="tree">${data.regions.map(region => {
+          const regionIds = regionServerIds(region.id);
+          const regionUsers = usersForServers(regionIds);
+          return `<li>${treeButton("region", region.id, region.name, "⌖", `${online(regionUsers)} online`, true)}
+            <ul class="tree-children">${region.systems.map(system => {
+              const sysIds = system.worldServers.map(s=>s.id), people = usersForServers(sysIds);
+              return `<li>${treeButton("system", system.id, system.name, "▦", `${online(people)}`, true)}
+                <ul class="tree-children">${system.worldServers.map(server => {
+                  const pcount = usersForServers([server.id]).length;
+                  return `<li>${treeButton("server", server.id, server.name, server.kind === "Private room" ? "⌂" : "▤", String(pcount), false)}${server.instance ? `<ul class="tree-children"><li>${treeButton("instance", server.instance.id, server.instance.name, "↳", server.instance.kind, false)}</li></ul>` : ""}</li>`;
+                }).join("")}</ul></li>`;
+            }).join("")}</ul></li>`;
+        }).join("")}</ul>`;
+      }
+      wrap.querySelectorAll("[data-select]").forEach(btn => btn.addEventListener("click", () => selectNode(btn.dataset.type, btn.dataset.id)));
+    }
+    function treeButton(type,id,label,icon,count,expand) {
+      const selected = state.selected.type === type && state.selected.id === id;
+      return `<button class="tree-node ${selected?"selected":""}" data-select data-type="${esc(type)}" data-id="${esc(id)}" aria-current="${selected?"page":"false"}"><span class="caret">${expand?"⌄":""}</span><span class="node-icon">${icon}</span><span class="node-name">${esc(label)}</span><span class="node-count">${esc(count)}</span></button>`;
+    }
+    function selectNode(type,id) {
+      state.selected={type,id};
+      if (["world","planet","universe","room"].includes(type)) state.mode="worlds";
+      else if (["server","system","region","instance"].includes(type)) state.mode="hosting";
+      state.rosterFilter="all";
+      render();
+    }
+    function setMode(mode) {
+      state.mode=mode;
+      if (mode === "worlds" && ["server","system","region","instance"].includes(state.selected.type)) state.selected={type:"overview",id:"overview"};
+      if (mode === "hosting" && ["world","planet","universe","room"].includes(state.selected.type)) state.selected={type:"overview",id:"overview"};
+      render();
+    }
+    function render() {
+      $("#worldTab").setAttribute("aria-selected", String(state.mode === "worlds"));
+      $("#serverTab").setAttribute("aria-selected", String(state.mode === "hosting"));
+      $("#overviewBtn").classList.toggle("active", state.selected.type === "overview");
+      renderTree();
+      const main=$("#main");
+      if (state.selected.type === "overview") main.innerHTML=renderOverview();
+      else if (state.selected.type === "world") main.innerHTML=renderWorld(state.selected.id);
+      else if (state.selected.type === "server") main.innerHTML=renderServer(state.selected.id);
+      else if (state.selected.type === "system") main.innerHTML=renderSystem(state.selected.id);
+      else if (state.selected.type === "region") main.innerHTML=renderRegion(state.selected.id);
+      else if (state.selected.type === "planet") main.innerHTML=renderPlanet(state.selected.id);
+      else if (state.selected.type === "universe") main.innerHTML=renderOverview();
+      else if (state.selected.type === "room") main.innerHTML=renderRoom(state.selected.id);
+      else if (state.selected.type === "instance") main.innerHTML=renderInstance(state.selected.id);
+      bindContent();
+    }
+    function header(title, eyebrow, subtitle, status="Healthy", mark="◈") {
+      return `<div class="crumbs"><span>MOOR</span><span class="sep">/</span><span>${state.mode === "worlds" ? "WORLD MAP" : "HOSTING"}</span>${state.selected.type !== "overview" ? `<span class="sep">/</span><span>${esc(eyebrow)}</span>`:""}</div>
+        <div class="page-head"><div class="head-mark">${mark}</div><div class="head-copy"><div class="eyebrow">${esc(eyebrow)}</div><h1>${esc(title)}</h1><div class="subtitle">${esc(subtitle)}</div></div><div class="head-actions"><span class="status-pill"><span class="dot"></span>${esc(status)}</span></div></div>`;
+    }
+    function metric(label,value,sub="") { return `<div class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${esc(value)}<span class="metric-sub">${esc(sub)}</span></div></div>`; }
+    function renderOverview() {
+      const all=allServers(), ppl=data.people;
+      const worldRows=data.worlds.map(w=>{
+        const hosts=serversForWorld(w.id), ids=hosts.map(s=>s.id), roster=usersForServers(ids), planet=planetById(w.planetId);
+        return `<tr><td><div class="world-main"><span class="planet-dot">◉</span><div><button class="world-link" data-open-world="${w.id}">${esc(w.name)}</button><div class="row-secondary">${esc(w.type)} · ${esc(w.description)}</div></div></div></td><td>${esc(planet?.name)}</td><td>${hosts.length} <span class="row-secondary">servers</span></td><td>${online(roster)} <span class="row-secondary">online</span></td><td><span class="status-pill"><span class="dot"></span>Running</span></td></tr>`;
+      }).join("");
+      return `${header("Network overview","WORLD + SERVER FABRIC","Persistent places connected to their active hosting.","All systems healthy","▦")}
+        <div class="metric-row">${metric("Worlds",data.worlds.length,"across 3 planets")}${metric("Hosting servers",all.length,"in 3 regions")}${metric("People online",online(ppl),"demo presence")}${metric("Capacity used",`${Math.round(ppl.length/totalServerCapacity()*100)}%`,`${ppl.length} / ${totalServerCapacity()}`)}</div>
+        <div class="content-grid"><section class="panel"><div class="panel-head"><div><div class="panel-title">Worlds</div><div class="panel-sub">A world stays the same place as its servers scale or move.</div></div><div class="panel-tools">${data.worlds.length} places</div></div><div class="table-scroll"><table class="world-table"><thead><tr><th>WORLD</th><th>PLANET</th><th>HOSTING</th><th>PEOPLE</th><th>STATE</th></tr></thead><tbody>${worldRows}</tbody></table></div><div class="notice"><span class="notice-mark">↗</span><span>Choose a world to see its host servers and everyone currently there. Choose <b>Hosting</b> on the left to inspect regions and nested servers.</span></div></section>
+        <section class="panel"><div class="panel-head"><div><div class="panel-title">Regions</div><div class="panel-sub">System hosts and their live world servers.</div></div></div>${data.regions.map(r=>`<div class="host-row" style="padding:0 15px"><span class="host-icon">⌖</span><div><div class="host-name">${esc(r.name)}</div><div class="host-desc">${r.systems.length} system servers · ${esc(r.latency)} median</div></div><button class="text-button" data-select="region" data-id="${r.id}">Inspect</button></div>`).join("")}</section></div>`;
+    }
+    function peopleTable(people, showServer=false) {
+      if (!people.length) return `<div class="empty">No people are connected to this selection right now.</div>`;
+      const filtered=state.rosterFilter === "online" ? people.filter(p=>p.presence === "Online") : people;
+      return `<div class="table-scroll"><table><thead><tr><th>PERSON</th><th>PRESENCE</th><th>ROLE</th>${showServer?"<th>SERVER</th>":""}<th>WORLD</th></tr></thead><tbody>${filtered.map(p=>{
+        const w=worldById(p.worldId), s=serverById(p.serverId);
+        return `<tr><td><div class="member"><span class="avatar ${p.avatar}">${esc(p.initials)}</span><div><button class="name-button" data-open-profile="${p.id}" aria-label="Open ${esc(p.displayName)} profile">${esc(p.displayName)}</button><div class="handle">${esc(p.handle)}</div></div></div></td><td><span class="presence ${p.presence==="Idle"?"idle":""}"><span class="dot"></span>${esc(p.presence)}</span></td><td><span class="role-tag ${p.role==="Moderator"?"mod":""}">${esc(p.role)}</span></td>${showServer?`<td><span class="server-tag">${esc(runtimeNameForPerson(p)??s?.name??"—")}</span></td>`:""}<td>${esc(w?.name??"Private room")}</td></tr>`;
+      }).join("")}</tbody></table></div>`;
+    }
+    function rosterPanel(people,title="People in this server",showServer=false) {
+      const n=state.rosterFilter === "online" ? online(people) : people.length;
+      return `<section class="panel"><div class="panel-head"><div><div class="panel-title">${esc(title)}</div><div class="panel-sub">Select a person's name to view their profile.</div></div><div class="panel-tools"><select class="select" id="rosterFilter" aria-label="Filter people"><option value="all" ${state.rosterFilter==="all"?"selected":""}>Everyone (${people.length})</option><option value="online" ${state.rosterFilter==="online"?"selected":""}>Online (${online(people)})</option></select></div></div>${peopleTable(people,showServer)}</section>`;
+    }
+    function hostPanel(servers,title="Hosting") {
+      return `<section class="panel"><div class="panel-head"><div><div class="panel-title">${esc(title)}</div><div class="panel-sub">Runtime placement for this persistent place.</div></div></div>${servers.map(s=>`<div class="host-row"><span class="host-icon">${s.kind==="Private room"?"⌂":"▤"}</span><div><div class="host-name">${esc(s.name)}</div><div class="host-desc">${esc(s.regionName)} · ${esc(s.systemName)}</div></div><button class="text-button" data-select="server" data-id="${s.id}">Open roster</button></div>`).join("")||`<div class="empty">No active host.</div>`}<div class="notice"><span class="notice-mark">i</span><span>World identity and saved state belong to the world. Hosting can change independently.</span></div></section>`;
+    }
+    function renderWorld(id) {
+      const w=worldById(id); if(!w) return renderOverview();
+      const planet=planetById(w.planetId), hosts=serversForWorld(id), ids=hosts.map(s=>s.id), people=usersForServers(ids);
+      return `${header(w.name,"WORLD",`${data.universe.name} / ${planet?.name} / ${w.name} · ${w.type}`,"Running","◇")}
+        <div class="metric-row">${metric("People online",online(people),`of ${people.length} here`)}${metric("Host servers",hosts.length,"active segments")}${metric("Planet",planet?.name??"—",planet?.kind??"")}${metric("World state","Persistent","saved place")}</div>
+        <div class="content-grid">${rosterPanel(people,"People in this world",true)}${hostPanel(hosts,"World servers")}</div>`;
+    }
+    function renderServer(id) {
+      const s=serverById(id); if(!s) return renderOverview();
+      const people=usersForServers([id]).filter(p=>!p.instanceId), w=worldById(s.worldId), sys=systemById(s.systemId), region=regionById(s.regionId);
+      const room=data.rooms.find(r=>r.id===s.roomId);
+      const child=s.instance ? `<div class="host-row"><span class="host-icon">↳</span><div><div class="host-name">${esc(s.instance.name)}</div><div class="host-desc">Dedicated child instance · ${s.instance.capacity} slots</div></div><button class="text-button" data-select="instance" data-id="${s.instance.id}">Inspect</button></div>` : "";
+      return `${header(s.name,s.kind.toUpperCase(),`${region?.name} / ${sys?.name} / ${s.name}`,s.health,s.kind==="Private room"?"⌂":"▤")}
+        <div class="metric-row">${metric("People",`${online(people)} / ${s.capacity}`,"online / capacity")}${metric("Latency",s.latency,"to region")}${metric("World",w?.name??room?.name??"—",s.kind)}${metric("System",sys?.name??"—",`host ${sys?.host??""}`)}</div>
+        <div class="content-grid">${rosterPanel(people,"People in this server")}
+          <section class="panel"><div class="panel-head"><div><div class="panel-title">Server details</div><div class="panel-sub">Live host and world association.</div></div></div>
+            <div class="world-host"><div class="host-row"><span class="host-icon">⌖</span><div><div class="host-name">${esc(region?.name)}</div><div class="host-desc">Region · ${esc(region?.latency)} typical latency</div></div><span class="status-pill"><span class="dot"></span>Healthy</span></div>
+            <div class="host-row"><span class="host-icon">▦</span><div><div class="host-name">${esc(sys?.name)}</div><div class="host-desc">System server · ${sys?.load??0}% load</div></div><span class="server-tag">${esc(sys?.version??"")}</span></div>
+            <div class="host-row"><span class="host-icon">◇</span><div><div class="host-name">${esc(w?.name??room?.name??"World")}</div><div class="host-desc">Persistent world identity</div></div><button class="text-button" data-select="world" data-id="${s.worldId}">Open world</button></div>
+            ${child}</div></section></div>`;
+    }
+    function renderSystem(id) {
+      const sys=systemById(id); if(!sys) return renderOverview();
+      const people=usersForServers(sys.worldServers.map(s=>s.id));
+      const hosts=sys.worldServers.map(s=>({...s,regionName:sys.regionName,systemName:sys.name}));
+      const region=regionById(sys.regionId);
+      return `${header(sys.name,"SYSTEM SERVER",`${region?.name} / ${sys.name} · ${sys.host}`,sys.health,"▦")}
+        <div class="metric-row">${metric("People online",online(people),`of ${people.length} connected`)}${metric("World servers",sys.worldServers.length,"children")}${metric("Host load",`${sys.load}%`,"reported")}${metric("Build",sys.version,"server version")}</div>
+        <div class="content-grid">${rosterPanel(people,"People in this server tree",true)}${hostPanel(hosts,"Child servers")}</div>`;
+    }
+    function renderRegion(id) {
+      const r=regionById(id); if(!r) return renderOverview();
+      const ids=regionServerIds(id), people=usersForServers(ids), hosts=allServers().filter(s=>s.regionId===id);
+      return `${header(r.name,"REGION",`${r.systems.length} system servers · ${r.latency} median latency`,"Healthy","⌖")}
+        <div class="metric-row">${metric("People online",online(people),`of ${people.length} connected`)}${metric("System servers",r.systems.length,"active")}${metric("World servers",hosts.length,"active hosts")}${metric("Worlds",new Set(hosts.map(s=>s.worldId)).size,"represented here")}</div>
+        <div class="content-grid">${rosterPanel(people,"People in this region",true)}<section class="panel"><div class="panel-head"><div><div class="panel-title">System servers</div><div class="panel-sub">Infrastructure in this region.</div></div></div>${r.systems.map(s=>`<div class="host-row" style="padding:0 15px"><span class="host-icon">▦</span><div><div class="host-name">${esc(s.name)}</div><div class="host-desc">${s.worldServers.length} world servers · ${s.load}% load</div></div><button class="text-button" data-select="system" data-id="${s.id}">Open</button></div>`).join("")}</section></div>`;
+    }
+    function renderPlanet(id) {
+      const p=planetById(id), worlds=data.worlds.filter(w=>w.planetId===id);
+      return `${header(p?.name??"Planet","PLANET",`${data.universe.name} / ${p?.name} · ${p?.kind}`,"Mapped","◉")}
+        <div class="metric-row">${metric("Worlds",worlds.length,"on this planet")}${metric("Online",worlds.reduce((n,w)=>n+online(usersForServers(serversForWorld(w.id).map(s=>s.id))),0),"people")}${metric("Active servers",worlds.reduce((n,w)=>n+serversForWorld(w.id).length,0),"hosting")}${metric("Travel","Available","between worlds")}</div>
+        <section class="panel"><div class="panel-head"><div><div class="panel-title">Worlds on ${esc(p?.name)}</div><div class="panel-sub">Persistent places hosted across the network.</div></div></div><div class="table-scroll"><table><thead><tr><th>WORLD</th><th>TYPE</th><th>HOSTS</th><th>PEOPLE</th><th></th></tr></thead><tbody>${worlds.map(w=>{const ss=serversForWorld(w.id);return `<tr><td><button class="world-link" data-open-world="${w.id}">${esc(w.name)}</button></td><td>${esc(w.type)}</td><td>${ss.length} servers</td><td>${online(usersForServers(ss.map(s=>s.id)))} online</td><td><button class="text-button" data-select="world" data-id="${w.id}">Open world</button></td></tr>`}).join("")}</tbody></table></div></section>`;
+    }
+    function renderRoom(id) {
+      const room=data.rooms.find(r=>r.id===id); if(!room) return renderOverview();
+      const server=allServers().find(s=>s.roomId===id), people=usersForServers(server?[server.id]:[]), world=worldById(room.worldId);
+      return `${header(room.name,"PRIVATE ROOM",`${data.universe.name} / ${planetById(world?.planetId)?.name} / ${world?.name} / ${room.name}`,"Private","⌂")}
+        <div class="metric-row">${metric("People online",online(people),`of ${people.length} present`)}${metric("Access","Private","owner controlled")}${metric("Owner",userById(room.owner)?.displayName??"Member","profile available")}${metric("Host",server?.name??"Starting","room server")}</div>
+        <div class="content-grid">${rosterPanel(people,"People in this room")}${hostPanel(server?[{...server,regionName:server.regionName,systemName:server.systemName}]:[],"Room hosting")}</div>`;
+    }
+    function renderInstance(id) {
+      const server=allServers().find(s=>s.instance?.id===id); if(!server) return renderOverview();
+      const people=data.people.filter(p=>p.instanceId===id);
+      return `${header(server.instance.name,"DEDICATED INSTANCE",`${server.regionName} / ${server.systemName} / ${server.name} / ${server.instance.name}`,"Running","↳")}
+        <div class="metric-row">${metric("People",`${people.length} / ${server.instance.capacity}`,"instance roster")}${metric("Parent",server.name,"world server")}${metric("World",worldById(server.worldId)?.name??"—","persistent source")}${metric("Lifecycle","On demand","returns to parent")}</div>
+        <div class="content-grid">${rosterPanel(people,"People in this instance")}${hostPanel([{...server, name:server.name, regionName:server.regionName, systemName:server.systemName}],"Parent host")}</div>`;
+    }
+    function bindContent() {
+      $("#main").querySelectorAll("[data-select]").forEach(b=>b.addEventListener("click",()=>selectNode(b.dataset.select,b.dataset.id)));
+      $("#main").querySelectorAll("[data-open-world]").forEach(b=>b.addEventListener("click",()=>{state.mode="worlds";selectNode("world",b.dataset.openWorld)}));
+      $("#main").querySelectorAll("[data-open-profile]").forEach(b=>b.addEventListener("click",()=>openProfile(b.dataset.openProfile)));
+      const filter=$("#rosterFilter"); if(filter) filter.addEventListener("change",()=>{state.rosterFilter=filter.value;render();});
+    }
+    function openProfile(id) {
+      const p=userById(id); if(!p) return;
+      const world=worldById(p.worldId), server=serverById(p.serverId), planet=planetById(world?.planetId);
+      const body=$("#profileBody");
+      body.innerHTML=`<div class="profile-top"><div class="avatar large ${p.avatar}">${esc(p.initials)}</div><div><div class="profile-name">${esc(p.displayName)}</div><div class="profile-handle">${esc(p.handle)}</div><div class="profile-presence"><span class="dot"></span>${esc(p.presence)} · ${esc(p.role)}</div></div></div>
+        <section class="profile-section"><h3>About</h3><div class="profile-copy">${esc(p.about)}</div></section>
+        <section class="profile-section"><h3>Here now</h3><div class="location-line">${esc(data.universe.name)} <span class="row-secondary">/</span> ${esc(planet?.name??"MOOR")} <span class="row-secondary">/</span> ${esc(world?.name??"Private room")}</div><div class="profile-mini"><span>Current server</span><span>${esc(runtimeNameForPerson(p)??server?.name??"Private")}</span></div><div class="profile-mini"><span>Member since</span><span>${esc(p.since)}</span></div></section>
+        <section class="profile-section"><h3>Visible to</h3><div class="profile-copy">${esc(p.visibility)}</div></section>`;
+      $("#profileDrawer").classList.add("open"); $("#profileDrawer").setAttribute("aria-hidden","false"); $("#profileBackdrop").classList.add("open"); $("#closeProfile").focus();
+    }
+    function closeProfile() { $("#profileDrawer").classList.remove("open"); $("#profileDrawer").setAttribute("aria-hidden","true"); $("#profileBackdrop").classList.remove("open"); }
+    function search(query) {
+      const pop=$("#searchPop"), q=query.trim().toLowerCase();
+      if(!q) { pop.classList.remove("open"); pop.innerHTML=""; return; }
+      const worlds=data.worlds.filter(x=>(x.name+" "+x.type+" "+x.description).toLowerCase().includes(q)).slice(0,4);
+      const servers=allServers().filter(x=>(x.name+" "+x.kind+" "+x.regionName+" "+x.systemName).toLowerCase().includes(q)).slice(0,4);
+      const people=data.people.filter(x=>(x.displayName+" "+x.handle).toLowerCase().includes(q)).slice(0,5);
+      let html="";
+      if(worlds.length) html+=`<div class="search-group">Worlds</div>`+worlds.map(w=>`<button class="search-result" data-search-world="${w.id}"><span class="planet-dot">◇</span><span>${esc(w.name)}<small>${esc(planetById(w.planetId)?.name)} · ${esc(w.type)}</small></span></button>`).join("");
+      if(servers.length) html+=`<div class="search-group">Servers</div>`+servers.map(s=>`<button class="search-result" data-search-server="${s.id}"><span class="host-icon">▤</span><span>${esc(s.name)}<small>${esc(s.regionName)} · ${esc(s.kind)}</small></span></button>`).join("");
+      if(people.length) html+=`<div class="search-group">People</div>`+people.map(p=>`<div class="search-result"><span class="avatar ${p.avatar}" aria-hidden="true">${esc(p.initials)}</span><span><button class="name-button" data-search-person="${p.id}">${esc(p.displayName)}</button><small>${esc(p.handle)} · ${esc(worldById(p.worldId)?.name)}</small></span></div>`).join("");
+      pop.innerHTML=html||`<div class="search-no-results">No matches.</div>`; pop.classList.add("open");
+      pop.querySelectorAll("[data-search-world]").forEach(b=>b.addEventListener("click",()=>{pop.classList.remove("open");$("#globalSearch").value="";state.mode="worlds";selectNode("world",b.dataset.searchWorld)}));
+      pop.querySelectorAll("[data-search-server]").forEach(b=>b.addEventListener("click",()=>{pop.classList.remove("open");$("#globalSearch").value="";state.mode="hosting";selectNode("server",b.dataset.searchServer)}));
+      pop.querySelectorAll("[data-search-person]").forEach(b=>b.addEventListener("click",()=>{pop.classList.remove("open");$("#globalSearch").value="";openProfile(b.dataset.searchPerson)}));
+    }
+    let toastTimer;
+    function showToast(message) { const t=$("#toast"); t.textContent=message; t.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2400); }
+    $("#worldTab").addEventListener("click",()=>setMode("worlds"));
+    $("#serverTab").addEventListener("click",()=>setMode("hosting"));
+    $("#overviewBtn").addEventListener("click",()=>{state.selected={type:"overview",id:"overview"};render();});
+    $("#globalSearch").addEventListener("input",e=>search(e.target.value));
+    $("#globalSearch").addEventListener("focus",e=>search(e.target.value));
+    $("#globalSearch").addEventListener("keydown",e=>{if(e.key==="Escape"){e.target.value="";search("");e.target.blur();} if(e.key==="Enter"){const first=$("#searchPop button");if(first) first.click();}});
+    $("#closeProfile").addEventListener("click",closeProfile);
+    $("#profileBackdrop").addEventListener("click",closeProfile);
+    $("#helpBtn").addEventListener("click",()=>showToast("Preview harness · demo presence · world and hosting data are sample records."));
+    document.addEventListener("keydown",e=>{if(e.key==="Escape")closeProfile();if(e.key==="/"&&!/input|textarea/i.test(document.activeElement.tagName)){e.preventDefault();$("#globalSearch").focus();}});
+    render();
+  </script>
+</body>
+</html>
