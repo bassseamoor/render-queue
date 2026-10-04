@@ -1708,7 +1708,7 @@ var COMPS = [
    why:'Understand what a generator does, then shape it without touching code.',
    technical:'terrain-pipeline', source:'components/terrain-core (pipeline) + panel layers', inMoor:false,
    toolGap:'The base pipeline is the untouched component. Added layers are panel composition — real seeded math, but not part of the component.'},
-  {id:'stream', tool:'stream', toolSrc:'pulse-tools/tool-stream.js', cats:['space','generators'], icon:'\u224B', label:'Stream',
+  {id:'stream', tool:'stream', toolSrc:'pulse-tools/tool-stream.js', cats:['space','generators'], icon:'\u224B', label:'More Ultra',
    short:'The build-anything stream: say what you want, scenes land.',
    job:'One-way water: never a blank page, no questions asked. You state what you want (talk or type), the stream infers intent and lands N scenes below — 3 by default, any number on request. Tap a scene for ingredients (real components + seeds, all the way down). Dev gets the kitchen: spec JSON, rewire, player-visible flags.',
    why:'Building without the builder-ui: ordering, not engineering. Players customize everything, control nothing structural.',
@@ -5541,7 +5541,8 @@ var COMPONENTS = {
   'softbody-creatures':{label:'Creatures',     words:['creature','animal','beast','walker','herd','monster','deer']},
   'ambience-engine':   {label:'Ambience',      words:['sky','clouds','atmosphere','fog','mist','ambience','sunset','night']},
   'mesh-builder':      {label:'Structures',    words:['city','buildings','structures','tower','ruins','cabin','house']},
-  'water':             {label:'Water',         words:['ocean','sea','lake','water','river','pond','shore','beach']}
+  'water':             {label:'Water',         words:['ocean','sea','lake','water','river','pond','shore','beach']},
+  'interface':         {label:'Interface',     words:['ui','interface','panel','dashboard','controls','buttons']}
 };
 var MOODS = {
   day:    {sky:['#7fb2e5','#cfe8f7'], sun:'#fff3c4', ground:['#5a7d4a','#3d5a34'], fog:'#cfe0ee'},
@@ -5850,14 +5851,23 @@ function buildDiorama(spec){
   var mood=MOODS[spec.mood]||MOODS.day;
   var nf=makeNoise(hashSeed('stream:nf:'+spec.seed),64,64);
   var d={spec:spec, cx:0, nf:nf, mood:mood, trees:[], creatures:[], structs:[],
-         water:spec.water, amp:CONFIG.terrainAmp};
+         rocks:[], grass:[], clouds:[], water:spec.water, amp:CONFIG.terrainAmp};
   if (hasComp(spec,'vegetation')){
-    var nT=Math.round((8+Math.floor(rnd()*10))*CONFIG.treeCount);
+    var nT=Math.round((16+Math.floor(rnd()*14))*CONFIG.treeCount);
+    var nR=6+Math.floor(rnd()*6);
+    for (var ri=0;ri<nR;ri++)
+      d.rocks.push({x:(rnd()-0.5)*11, z:(rnd()-0.5)*11, s:0.3+rnd()*0.7});
+    var nG=30+Math.floor(rnd()*25);
+    for (var gi=0;gi<nG;gi++)
+      d.grass.push({x:(rnd()-0.5)*11, z:(rnd()-0.5)*11, s:0.5+rnd()*0.8, phase:rnd()*7});
+    var nCl=4+Math.floor(rnd()*3);
+    for (var ci2=0;ci2<nCl;ci2++)
+      d.clouds.push({x:(rnd()-0.5)*24, z:(rnd()-0.5)*24, y:8+rnd()*5, s:1.5+rnd()*2, v:0.1+rnd()*0.25});
     for (var i=0;i<nT;i++)
       d.trees.push({x:(rnd()-0.5)*10, z:(rnd()-0.5)*10, s:(0.7+rnd()*0.8)*CONFIG.treeScale});
   }
   if (hasComp(spec,'softbody-creatures')){
-    var nC=Math.max(1,Math.round((1+Math.floor(rnd()*3))*CONFIG.creatureCount));
+    var nC=Math.max(2,Math.round((2+Math.floor(rnd()*3))*CONFIG.creatureCount));
     for (var j=0;j<nC;j++)
       d.creatures.push({x:(rnd()-0.5)*5, z:(rnd()-0.5)*5, s:(0.8+rnd()*0.7)*CONFIG.creatureScale,
         yaw:rnd()*Math.PI*2, phase:rnd()*7, tint:rnd()});
@@ -5903,8 +5913,8 @@ TOOLS.stream = { mount: function(host){
     '.stm-nudge{font-size:10px;color:#5f7a92;text-align:center;padding:4px 0 0;max-width:860px;margin:0 auto;}'+
     '</style>'+
     '<div class="stm">'+
-      '<div class="stm-head"><div><div class="stm-title">Stream</div>'+
-      '<div class="stm-sub" id="stm-sub">say what you want — worlds land in the space</div></div>'+
+      '<div class="stm-head"><div><div class="stm-title">More Ultra</div>'+
+      '<div class="stm-sub" id="stm-sub">the second project — say what you want, worlds land in the space</div></div>'+
       '<button class="stm-voice" id="stm-voice">🔊 voice off</button>'+
       '<button class="stm-dev" id="stm-boop" style="color:#7fd4ff;border-color:#7fd4ff;">boop → screen</button>'+
       '<span id="stm-tune-note" style="font-size:11px;color:#7fe0a8;opacity:0;transition:opacity .4s;"></span>'+
@@ -5918,6 +5928,7 @@ TOOLS.stream = { mount: function(host){
       '<button id="stm-ing">ingredients</button></span>'+
       '<button class="nav" id="stm-next">▶</button></div>'+
       '<div class="stm-ing" id="stm-ingbox"></div>'+
+      '<div id="stm-says" style="font-size:12px;color:#7fd4ff;padding:2px 4px;min-height:18px;opacity:0;transition:opacity .4s;"></div>'+
       '<div class="stm-ing" id="stm-tunebox" style="display:none;"></div>'+
     '</div>'+
     '<div class="stm-bar"><div class="stm-row">'+
@@ -6108,6 +6119,24 @@ TOOLS.stream = { mount: function(host){
       var g=hx(d.mood.ground[1]);
       drawMesh(mCone,mMul(m,mT(0,2.3,0)),mvp,[g[0]*0.9,g[1]*0.9,g[2]*0.9],1);
     });
+    // rocks + grass tufts
+    d.rocks.forEach(function(r){
+      var y=terrainHeightAt(d,r.x,r.z);
+      drawMesh(mBall,mMul(base,mMul(mT(r.x,y+r.s*0.2,r.z),mS(r.s,r.s*0.6,r.s))),mvp,[0.42,0.42,0.44],1);
+    });
+    d.grass.forEach(function(gr){
+      var y=terrainHeightAt(d,gr.x,gr.z);
+      var sway=Math.sin(time*2.2+gr.phase)*0.06;
+      var g2=hx(d.mood.ground[0]);
+      drawMesh(mCone,mMul(base,mMul(mT(gr.x,y+0.25*gr.s,gr.z),mMul(mRY(sway),mS(0.09*gr.s,0.5*gr.s,0.09*gr.s)))),mvp,[g2[0],g2[1],g2[2]],1);
+    });
+    // clouds drift overhead
+    d.clouds.forEach(function(cl){
+      var cx2=cl.x+time*cl.v;
+      if (cx2>16) cx2-=32;
+      drawMesh(mBall,mMul(base,mT(cx2,cl.y,cl.z)),mvp,[1,1,1],0.85);
+      drawMesh(mBall,mMul(base,mMul(mT(cx2+cl.s*0.9,cl.y-0.2,cl.z),mS(cl.s*0.7,cl.s*0.4,cl.s*0.7))),mvp,[1,1,1],0.85);
+    });
     // structures
     d.structs.forEach(function(s2){
       var y=terrainHeightAt(d,s2.x,s2.z);
@@ -6187,18 +6216,59 @@ TOOLS.stream = { mount: function(host){
     tuneNote('tuned \u00b7 '+text+' \u2192 '+se.key+' = '+fmtN(CONFIG[se.key]));
     refreshTunePanel();
   }
+  function say(msg,sticky){
+    var el=host.querySelector('#stm-says');
+    el.textContent=msg; el.style.opacity=1;
+    clearTimeout(el._t);
+    if(!sticky) el._t=setTimeout(function(){ el.style.opacity=0; },3800);
+  }
+  function respond(text){
+    var t=' '+text.toLowerCase()+' ';
+    if (/\b(what can you (build|make|do)|\bhelp\b|what do you do)\b/.test(t)){
+      say('I build worlds \u2014 terrain, forests, creatures, structures, water, skies, interfaces. Try "a forest at sunset", "give me six", or "make the trees bigger".',true);
+      return true;
+    }
+    if (/\b(do you understand|understand me|hear me|are you there)\b/.test(t)){
+      say('I hear you. Say what you want to see, or tell me how to tune it \u2014 "a misty forest", "make the trees bigger".',true);
+      return true;
+    }
+    if (/\b(thanks|thank you)\b/.test(t)){ say('anytime.'); return true; }
+    return false;
+  }
+  function openControlDeck(){
+    var d=dioramas[focusIdx]; if(!d) return;
+    var wasDev=dev;
+    if(!dev){ dev=true; }
+    buildTunePanel();
+    var tb=host.querySelector('#stm-tunebox');
+    var title=document.createElement('div');
+    title.style.cssText='color:#7fd4ff;margin-bottom:6px;';
+    title.textContent='your UI \u2014 controls for "'+d.spec.caption+'"';
+    tb.insertBefore(title,tb.firstChild);
+    if(!wasDev){ dev=false; }
+    say('built your UI \u2014 controls for this world, live.');
+    tb.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
   function flow(text){
+    if (respond(text)) return;
     var se=parseSelfEdit(text);
     if (se && !looksLikeScene(text)){ applySelfEdit(se,text); return; }
     var parsed=parseInput(text);
-    for (var i=0;i<parsed.count;i++){
-      var spec=makeScene(seedBase+':'+Date.now()+':'+Math.random(), dioramas.length, parsed, 'f'+i);
-      spec.caption=text;
-      var d=buildDiorama(spec);
-      d.cx=dioramas.length*CONFIG.spacing;
-      dioramas.push(d);
+    var wantUI=parsed.comps.indexOf('interface')>=0;
+    if (wantUI) parsed.comps.splice(parsed.comps.indexOf('interface'),1);
+    var onlyUI=wantUI&&parsed.comps.length<=1; // just ambience left = no real scene asked
+    if (!onlyUI){
+      for (var i=0;i<parsed.count;i++){
+        var spec=makeScene(seedBase+':'+Date.now()+':'+Math.random(), dioramas.length, parsed, 'f'+i);
+        spec.caption=text;
+        var d=buildDiorama(spec);
+        d.cx=dioramas.length*CONFIG.spacing;
+        dioramas.push(d);
+      }
+      setFocus(dioramas.length-1);
+      say('building '+parsed.count+' \u2014 "'+text+'"');
     }
-    setFocus(dioramas.length-1);
+    if (wantUI) openControlDeck();
   }
 
   /* UI wiring */
