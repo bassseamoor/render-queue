@@ -117,9 +117,13 @@ textarea{background:#0b1523;border:1px solid var(--line);color:var(--text);borde
 .src-code{max-height:320px;overflow:auto;background:#060c18;border-radius:8px;
   padding:10px;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
 
-/* MOOR glass system — layered glass sheets, light through them.
- * Blue + white + green. Tony Stark-clean. Supercar feel.
- * Override layer: loads after the mockup CSS, additive only. No layout changes. */
+/* MOOR glass system v2 — reads as glass on real hardware.
+ * Blur alone over flat dark doesn't read. Glass reads from:
+ *   1. light pools BEHIND the blur (something to refract),
+ *   2. a specular sheen sweeping the top of each sheet,
+ *   3. a bright top edge catching light, luminous side edges.
+ * Palette: ice blue (primary) / white / green (live) / gold (buster) / amber (dev).
+ * Override layer: additive only, no layout moves. */
 :root{
   --bg:#040810;
   --panel:rgba(17,30,48,0.52);
@@ -129,44 +133,60 @@ textarea{background:#0b1523;border:1px solid var(--line);color:var(--text);borde
   --line:rgba(130,190,255,0.16);
   --cyan:#7fd4ff;
   --green:#7fe0a8;
-  --amber:#f4cb77;
+  --gold:#ffd479;
+  --amber:#f4a86a;
   --radius:18px;
-  --glass-blur:blur(20px) saturate(1.35);
-  --glass-border:1px solid rgba(140,205,255,0.16);
-  --glass-hi:inset 0 1px 0 rgba(255,255,255,0.10);
-  --glass-shadow:0 18px 50px rgba(0,0,0,0.45);
 }
 html{ background:#040810; }
 body{
-  background:
-    radial-gradient(1200px 700px at 12% -5%, rgba(64,140,220,0.13), transparent 60%),
-    radial-gradient(900px 600px at 88% 8%, rgba(64,200,160,0.07), transparent 60%),
-    radial-gradient(1400px 900px at 50% 115%, rgba(40,90,170,0.11), transparent 60%),
-    #040810 !important;
+  background:#040810 !important;
   color:var(--text);
 }
-/* glass panels: every sheet of glass */
+/* light pools: fixed, behind everything, give the blur something to bend */
+body::before{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(520px 520px at 10% 14%, rgba(90,170,245,0.20), transparent 70%),
+    radial-gradient(620px 620px at 88% 10%, rgba(70,220,170,0.11), transparent 70%),
+    radial-gradient(760px 760px at 50% 100%, rgba(60,120,225,0.16), transparent 70%),
+    radial-gradient(420px 420px at 72% 58%, rgba(130,100,235,0.08), transparent 70%),
+    radial-gradient(300px 300px at 28% 72%, rgba(127,212,255,0.10), transparent 70%);
+}
+.app,.main,.workspace-bar{ position:relative; z-index:1; }
+/* the glass sheet recipe */
 .tool-host,.frame,.app,.window-body,.w-detail,.w-tree,.info-box,.explanation,
-.inventory,.events,.inventory{
-  background:linear-gradient(165deg, rgba(30,52,80,0.50), rgba(11,21,36,0.55)) !important;
-  -webkit-backdrop-filter:var(--glass-blur);
-  backdrop-filter:var(--glass-blur);
-  border:var(--glass-border) !important;
+.inventory,.events,.event,.src-row,.evidence-content{
+  position:relative;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,0.13), rgba(255,255,255,0.025) 38%, rgba(255,255,255,0) 62%),
+    linear-gradient(165deg, rgba(36,60,92,0.58), rgba(10,20,34,0.66)) !important;
+  -webkit-backdrop-filter:blur(24px) saturate(1.5);
+  backdrop-filter:blur(24px) saturate(1.5);
+  border:1px solid rgba(150,210,255,0.20) !important;
+  border-top-color:rgba(255,255,255,0.32) !important;
   border-radius:var(--radius) !important;
-  box-shadow:var(--glass-hi), var(--glass-shadow) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.20),
+    inset 0 -1px 0 rgba(0,0,0,0.28),
+    0 20px 55px rgba(0,0,0,0.50) !important;
 }
 .tool-host{ padding:18px !important; margin-bottom:18px !important; }
-/* header / nav glass */
+/* header / nav: darker glass shelf */
 .titlebar,.workspace-bar,.subnav,.activity-head,.section-head{
-  background:rgba(10,18,30,0.55) !important;
-  -webkit-backdrop-filter:blur(14px);
-  backdrop-filter:blur(14px);
-  border-bottom:1px solid var(--line) !important;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 45%),
+    rgba(8,15,26,0.62) !important;
+  -webkit-backdrop-filter:blur(18px) saturate(1.3);
+  backdrop-filter:blur(18px) saturate(1.3);
+  border-bottom:1px solid rgba(150,210,255,0.18) !important;
 }
-/* buttons: glass pills */
+/* buttons: glass pills with lit top edge */
 .btn,.stm-dev,.stm-voice,.icon-btn,.nav-button{
-  background:rgba(110,180,235,0.08) !important;
-  border:1px solid rgba(140,205,255,0.22) !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0) 55%),
+    rgba(110,180,235,0.10) !important;
+  border:1px solid rgba(150,210,255,0.24) !important;
+  border-top-color:rgba(255,255,255,0.30) !important;
   -webkit-backdrop-filter:blur(8px);
   backdrop-filter:blur(8px);
   border-radius:12px !important;
@@ -175,45 +195,42 @@ body{
   transition:box-shadow .18s ease, border-color .18s ease, transform .12s ease;
 }
 .btn:hover,.stm-dev:hover,.icon-btn:hover,.nav-button:hover{
-  border-color:rgba(127,212,255,0.55) !important;
-  box-shadow:0 0 20px rgba(127,212,255,0.22), var(--glass-hi) !important;
+  border-color:rgba(127,212,255,0.60) !important;
+  box-shadow:0 0 22px rgba(127,212,255,0.28), inset 0 1px 0 rgba(255,255,255,0.25) !important;
 }
 .btn:active{ transform:scale(0.97); }
-.stm-dev.on{ color:#ffd479 !important; border-color:rgba(255,212,121,0.5) !important;
-  box-shadow:0 0 16px rgba(255,212,121,0.18) !important; }
-.stm-voice.on{ color:var(--green) !important; border-color:rgba(127,224,168,0.5) !important;
-  box-shadow:0 0 16px rgba(127,224,168,0.18) !important; }
-/* inputs: frosted fields */
+.stm-dev.on{ color:var(--gold) !important; border-color:rgba(255,212,121,0.55) !important;
+  box-shadow:0 0 18px rgba(255,212,121,0.22) !important; }
+.stm-voice.on{ color:var(--green) !important; border-color:rgba(127,224,168,0.55) !important;
+  box-shadow:0 0 18px rgba(127,224,168,0.22) !important; }
+/* inputs: frosted wells (recessed, not raised) */
 input[type=text],input:not([type]),select,input[type=number],textarea,
 .t-controls input[type=text],.t-controls input:not([type]),.t-dims input,.stm-in,.stm-spec{
-  background:rgba(8,16,28,0.60) !important;
+  background:rgba(6,13,24,0.68) !important;
   border:1px solid rgba(130,190,255,0.20) !important;
   border-radius:12px !important;
   color:var(--text) !important;
-  -webkit-backdrop-filter:blur(6px);
-  backdrop-filter:blur(6px);
+  box-shadow:inset 0 2px 8px rgba(0,0,0,0.45) !important;
 }
 input:focus,select:focus,textarea:focus{
   outline:none !important;
-  border-color:rgba(127,212,255,0.55) !important;
-  box-shadow:0 0 14px rgba(127,212,255,0.18) !important;
+  border-color:rgba(127,212,255,0.60) !important;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,0.45), 0 0 16px rgba(127,212,255,0.20) !important;
 }
 input[type=range]{ accent-color:var(--cyan); }
 /* pills + tags */
 .pill,.event-tag,.category-count{
   background:rgba(127,212,255,0.10) !important;
-  border:1px solid rgba(127,212,255,0.25) !important;
+  border:1px solid rgba(127,212,255,0.28) !important;
+  border-top-color:rgba(255,255,255,0.25) !important;
   border-radius:20px !important;
-  -webkit-backdrop-filter:blur(6px);
-  backdrop-filter:blur(6px);
 }
-/* canvas frames: glass bezels */
+/* canvas: glass bezel, lit rim */
 .tool-host canvas,#stm-gl{
-  border:1px solid rgba(140,205,255,0.18) !important;
-  border-radius:14px !important;
-  box-shadow:inset 0 0 40px rgba(20,60,110,0.25), 0 10px 34px rgba(0,0,0,0.4) !important;
+  border:1px solid rgba(150,210,255,0.22) !important;
+  box-shadow:inset 0 0 46px rgba(20,60,110,0.28), 0 12px 38px rgba(0,0,0,0.45) !important;
 }
-/* typography: supercar precision */
+/* typography: precision */
 .eyebrow,.w-kind,.p-ex,.p-src{
   letter-spacing:.14em !important;
   font-weight:600 !important;
@@ -223,34 +240,18 @@ input[type=range]{ accent-color:var(--cyan); }
 .brand{ font-weight:700 !important; letter-spacing:.02em; }
 .meta,.muted{ color:var(--muted) !important; }
 .mono{ color:#bfe3ff !important; }
-/* event rows: glass slivers */
-.event{
-  background:rgba(20,36,58,0.38) !important;
-  border:1px solid rgba(130,190,255,0.10) !important;
-  border-radius:12px !important;
-  -webkit-backdrop-filter:blur(10px);
-  backdrop-filter:blur(10px);
-}
 /* tree nodes */
 .w-node:hover{ background:rgba(127,212,255,0.08) !important; }
 .w-node.sel{ background:rgba(127,212,255,0.14) !important;
   border-left:2px solid var(--cyan); }
-/* scrollbars: thin glass */
+/* scrollbars */
 ::-webkit-scrollbar{ width:9px; height:9px; }
 ::-webkit-scrollbar-track{ background:rgba(10,18,30,0.4); }
-::-webkit-scrollbar-thumb{ background:rgba(127,212,255,0.25); border-radius:6px;
+::-webkit-scrollbar-thumb{ background:rgba(127,212,255,0.28); border-radius:6px;
   border:2px solid rgba(10,18,30,0.4); }
-::-webkit-scrollbar-thumb:hover{ background:rgba(127,212,255,0.45); }
-/* green accents: go / live / settled */
+::-webkit-scrollbar-thumb:hover{ background:rgba(127,212,255,0.48); }
+/* green = live / settled */
 .available,.dot{ color:var(--green) !important; }
-/* drawer + modal glass */
-.src-row,.evidence-content{
-  background:rgba(16,30,48,0.50) !important;
-  -webkit-backdrop-filter:blur(12px);
-  backdrop-filter:blur(12px);
-  border:var(--glass-border);
-  border-radius:14px;
-}
 
 </style>
 </head>
@@ -6037,21 +6038,21 @@ TOOLS.stream = { mount: function(host){
   host.innerHTML =
     '<style>'+
     '.stm{font-family:system-ui,sans-serif;color:#f2f7ff;max-width:860px;margin:0 auto;padding:0 0 96px;}'+
-    '.stm-head{display:flex;align-items:center;gap:10px;padding:16px 18px 10px;background:linear-gradient(165deg,rgba(30,52,80,0.45),rgba(11,21,36,0.45));-webkit-backdrop-filter:blur(20px) saturate(1.35);backdrop-filter:blur(20px) saturate(1.35);border:1px solid rgba(140,205,255,0.16);border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),0 18px 50px rgba(0,0,0,0.45);margin-bottom:12px;}'+
+    '.stm-head{display:flex;align-items:center;gap:10px;padding:16px 18px 12px;background:linear-gradient(115deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02) 40%,rgba(255,255,255,0) 62%),linear-gradient(165deg,rgba(36,60,92,0.60),rgba(10,20,34,0.68));-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);border:1px solid rgba(150,210,255,0.22);border-top-color:rgba(255,255,255,0.34);box-shadow:inset 0 1px 0 rgba(255,255,255,0.22),inset 0 -1px 0 rgba(0,0,0,0.28),0 20px 55px rgba(0,0,0,0.50);border-radius:18px 18px 0 0;border-bottom:none;margin-bottom:0;}'+
     '.stm-title{font-size:20px;font-weight:700;letter-spacing:.01em;background:linear-gradient(120deg,#ffffff,#7fd4ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}'+
     '.stm-sub{font-size:12px;color:#9db4cf;letter-spacing:.04em;}'+
     '.stm-dev{margin-left:auto;font-size:11px;color:#8fa3b8;background:none;border:1px solid #2a3a4d;border-radius:20px;padding:4px 10px;cursor:pointer;}'+
     '.stm-dev.on{color:#ffd479;border-color:#ffd479;}'+
     '.stm-voice{font-size:11px;color:#8fa3b8;background:none;border:1px solid #2a3a4d;border-radius:20px;padding:4px 10px;cursor:pointer;}'+
     '.stm-voice.on{color:#7fe0a8;border-color:#7fe0a8;}'+
-    '#stm-gl{width:100%;height:440px;display:block;border-radius:12px;touch-action:none;cursor:grab;}'+
+    '#stm-gl{width:100%;height:440px;display:block;border-radius:0;margin:0;touch-action:none;cursor:grab;border-top:none!important;border-bottom:none!important;box-shadow:none!important;}'+
     '.stm-kb{animation:stmkb 24s ease-in-out infinite alternate;}'+
     '@keyframes stmkb{from{transform:scale(1) translate(0,0);}to{transform:scale(1.12) translate(-2%,1.5%);}}'+
-    '.stm-focus{display:flex;align-items:center;gap:8px;padding:8px 4px;font-size:13px;color:#c8d6e4;}'+
+    '.stm-focus{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:13px;color:#d5e5f5;background:linear-gradient(115deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02) 40%,rgba(255,255,255,0) 62%),linear-gradient(165deg,rgba(36,60,92,0.60),rgba(10,20,34,0.68));-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);border:1px solid rgba(150,210,255,0.22);border-top-color:rgba(255,255,255,0.34);box-shadow:inset 0 1px 0 rgba(255,255,255,0.22),inset 0 -1px 0 rgba(0,0,0,0.28),0 20px 55px rgba(0,0,0,0.50);border-radius:0 0 18px 18px;border-top:none;margin:0 0 14px;}'+
     '.stm-focus .nav{background:#12202f;border:1px solid #2a3a4d;color:#9fc2e0;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:14px;}'+
     '.stm-focus .acts{margin-left:auto;display:flex;gap:4px;}'+
     '.stm-focus .acts button{background:none;border:none;color:#7fd4ff;font-size:12px;cursor:pointer;padding:4px 6px;}'+
-    '.stm-ing{font-size:12px;color:#a9c2da;padding:10px 12px;border:1px solid rgba(140,205,255,0.14);border-radius:14px;margin:8px 0;background:rgba(16,30,48,0.42);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);display:none;}'+
+    '.stm-ing{font-size:12px;color:#b9d4ec;padding:12px 14px;background:linear-gradient(115deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02) 40%,rgba(255,255,255,0) 62%),linear-gradient(165deg,rgba(36,60,92,0.60),rgba(10,20,34,0.68));-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);border:1px solid rgba(150,210,255,0.22);border-top-color:rgba(255,255,255,0.34);box-shadow:inset 0 1px 0 rgba(255,255,255,0.22),inset 0 -1px 0 rgba(0,0,0,0.28),0 20px 55px rgba(0,0,0,0.50);border-radius:16px;margin:10px 0;display:none;border-left:2px solid #7fd4ff;}'+
     '.stm-ing .comp{display:flex;gap:8px;padding:3px 0;}'+
     '.stm-ing .seed{font-family:monospace;color:#5f7a92;}'+
     '.stm-spec{width:100%;min-height:80px;background:#0a1220;color:#bfe3ff;border:1px solid #2a3a4d;border-radius:8px;font-family:monospace;font-size:11px;padding:8px;margin-top:6px;}'+
@@ -6070,7 +6071,7 @@ TOOLS.stream = { mount: function(host){
       '<span id="stm-tune-note" style="font-size:11px;color:#7fe0a8;opacity:0;transition:opacity .4s;"></span>'+
       '<button class="stm-dev" id="stm-dev">dev</button></div>'+
       '<canvas id="stm-gl" width="860" height="440"></canvas>'+
-      '<canvas id="stm-screen" width="860" height="440" style="display:none;width:100%;border-radius:12px;"></canvas>'+
+      '<canvas id="stm-screen" width="860" height="440" style="display:none;width:100%;border-radius:0;margin:0;border-top:none;border-bottom:none;"></canvas>'+
       '<div class="stm-focus"><button class="nav" id="stm-prev">◀</button>'+
       '<span id="stm-cap" style="flex:1"></span>'+
       '<span class="acts"><button id="stm-more">↻ more like this</button>'+
@@ -6079,9 +6080,9 @@ TOOLS.stream = { mount: function(host){
       '<button class="nav" id="stm-next">▶</button></div>'+
       '<div class="stm-ing" id="stm-ingbox"></div>'+
       '<div id="stm-says" style="font-size:12px;color:#7fd4ff;padding:2px 4px;min-height:18px;opacity:0;transition:opacity .4s;"></div>'+
-      '<div id="stm-worlds" style="display:none;overflow-x:auto;white-space:nowrap;padding:6px 4px;"></div>'+
-      '<div id="stm-buster" style="display:none;border:1px solid #2a3a4d;border-radius:10px;padding:10px;margin:6px 0;"></div>'+
-      '<div class="stm-ing" id="stm-tunebox" style="display:none;"></div>'+
+      '<div id="stm-worlds" style="display:none;overflow-x:auto;white-space:nowrap;padding:12px 14px;margin:10px 0;background:linear-gradient(115deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02) 40%,rgba(255,255,255,0) 62%),linear-gradient(165deg,rgba(36,60,92,0.60),rgba(10,20,34,0.68));-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);border:1px solid rgba(150,210,255,0.22);border-top-color:rgba(255,255,255,0.34);box-shadow:inset 0 1px 0 rgba(255,255,255,0.22),inset 0 -1px 0 rgba(0,0,0,0.28),0 20px 55px rgba(0,0,0,0.50);border-radius:16px;border-left:2px solid #7fe0a8;"></div>'+
+      '<div id="stm-buster" style="display:none;margin:10px 0;padding:12px 14px;background:linear-gradient(115deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02) 40%,rgba(255,255,255,0) 62%),linear-gradient(165deg,rgba(36,60,92,0.60),rgba(10,20,34,0.68));-webkit-backdrop-filter:blur(24px) saturate(1.5);backdrop-filter:blur(24px) saturate(1.5);border:1px solid rgba(150,210,255,0.22);border-top-color:rgba(255,255,255,0.34);box-shadow:inset 0 1px 0 rgba(255,255,255,0.22),inset 0 -1px 0 rgba(0,0,0,0.28),0 20px 55px rgba(0,0,0,0.50);border-radius:16px;border-left:2px solid #ffd479;"></div>'+
+      '<div class="stm-ing" id="stm-tunebox" style="display:none;border-left:2px solid #f4a86a;"></div>'+
     '</div>'+
     '<div class="stm-bar"><div class="stm-row">'+
       '<input class="stm-in" id="stm-in" placeholder="a forest with creatures at sunset — or &quot;give me six&quot;" />'+
