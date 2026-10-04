@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>creature lab — genome × softbody</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { background:#0b0d12; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+  body { padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 20px);
+    max-width:560px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  h1 .mint { color:#7ef0c8; }
+  .sub { font-size:13px; color:#9aa0ae; margin:6px 0 16px; line-height:1.5; }
+  .sub b { color:#cfd4e0; }
+  .lbl { font-size:11px; font-weight:700; letter-spacing:.1em; color:#6b7180; margin:14px 0 8px; }
+  #parentWrap { position:relative; }
+  #parent { width:100%; aspect-ratio:4/3; border-radius:16px; display:block; background:#04060d; }
+  .tag { position:absolute; top:10px; left:10px; font-size:11px; font-weight:700; letter-spacing:.08em;
+    background:rgba(0,0,0,.55); color:#7ef0c8; padding:5px 12px; border-radius:999px; }
+  .traits { display:grid; grid-template-columns:1fr; gap:8px; margin-top:12px; }
+  .trait { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:8px 12px; min-height:44px; }
+  .trait .nm { font-size:12px; font-weight:700; width:74px; color:#cfd4e0; }
+  .trait input[type=range] { flex:1; height:44px; }
+  .trait .val { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#8a90a0; width:52px; text-align:right; }
+  .lock { border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05); color:#9aa0ae;
+    font-size:13px; min-width:44px; min-height:44px; border-radius:10px; cursor:pointer; }
+  .lock.on { border-color:rgba(126,240,200,.6); background:rgba(126,240,200,.14); color:#7ef0c8; }
+  .seglow { display:flex; gap:8px; }
+  .seglow .lock { flex:1; font-size:12px; font-weight:600; }
+  #controls { display:flex; gap:10px; margin:14px 0; }
+  .big { flex:1; border:0; border-radius:999px; padding:14px; font-size:15px; font-weight:700; cursor:pointer; }
+  #breed { background:#7ef0c8; color:#08130e; }
+  #wild { background:rgba(255,255,255,.08); color:#cfd4e0; border:1px solid rgba(255,255,255,.14); }
+  .big:active { transform:scale(.97); }
+  #litter { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  .child { position:relative; cursor:pointer; }
+  .child canvas { width:100%; aspect-ratio:4/3; border-radius:12px; display:block; background:#04060d; }
+  .child:active canvas { transform:scale(.95); }
+  .child .nm { font-size:11px; color:#6b7180; margin-top:4px; font-family:ui-monospace,Menlo,monospace; }
+  .prov { margin-top:18px; font-size:11px; color:#565c68; line-height:1.6; }
+  #toast { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 30px); left:50%;
+    transform:translateX(-50%) translateY(20px); background:#1a1d26; color:#7ef0c8;
+    font-size:13px; font-weight:600; padding:10px 20px; border-radius:999px; opacity:0;
+    transition:all .25s; pointer-events:none; border:1px solid rgba(126,240,200,.35); z-index:50; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<h1>creature <span class="mint">lab</span></h1>
+<p class="sub">tool-creatures' <b>genome trait list</b> × tool-wonder's <b>softbody spring-ring renderer</b>.
+Breed jitters unlocked traits ±14% of range (seed-codec math); locked traits pass down byte-exact.
+Tap a child to promote it.</p>
+
+<div id="parentWrap">
+  <canvas id="parent"></canvas>
+  <div class="tag" id="parentTag">PARENT</div>
+</div>
+
+<div class="lbl">TRAITS — genome → renderer params</div>
+<div class="traits" id="traits"></div>
+
+<div id="controls">
+  <button class="big" id="breed">♻ breed litter</button>
+  <button class="big" id="wild">🎲 wild type</button>
+</div>
+
+<div class="lbl">LITTER — tap one to promote</div>
+<div id="litter"></div>
+
+<p class="prov">Provenance: genome trait ranges verbatim from SPECIES + resolveGenome() in
+pulse-v2/tools/tool-creatures.js; softbody spring-ring renderer (ringPath, spring physics, glow)
+verbatim from TYPES 'creature' in pulse-v2/tools/tool-wonder.js; ±14% breeding math from seed-codec remixConfig().</p>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ============ PROVENANCE ============
+ * Genome traits + ranges: verbatim from SPECIES and resolveGenome() in
+ *   ~/workspace/moor-recovery/pulse-v2/tools/tool-creatures.js
+ * Softbody renderer (ringPath, spring ring physics, radial glow, sparkles):
+ *   verbatim from TYPES.push({kind:'creature'}) in
+ *   ~/workspace/moor-recovery/pulse-v2/tools/tool-wonder.js
+ * Breeding: jitter = (rand()-0.5)*range*0.28 clamped — the ±14%-of-range
+ *   math from remixConfig() in components/seed-codec/codec.js
+ */
+function mulberry32(a){ /* verbatim tool-wonder */
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function makeNoise1D(rng){ /* verbatim tool-wonder */
+  var perm = [];
+  for (var i=0;i<256;i++) perm[i]=i;
+  for (var j=255;j>0;j--){ var k=(rng()*(j+1))|0, t=perm[j]; perm[j]=perm[k]; perm[k]=t; }
+  var P = perm.concat(perm);
+  function g(i){ return P[i & 255]/255; }
+  function n1(x){
+    var i=Math.floor(x), f=x-i, u=f*f*(3-2*f);
+    return g(i)*(1-u)+g(i+1)*u;
+  }
+  return function(x, oct){
+    var s=0, a=0.5, f=1;
+    for (var o=0;o<(oct||4);o++){ s+=a*n1(x*f); f*=2.03; a*=0.5; }
+    return s;
+  };
+}
+
+/* ---- genome: SPECIES ranges verbatim from tool-creatures.js ---- */
+var SPECIES = {
+  id:'walker-terran',
+  legPairs:[2,3],            // 4 or 6 legs
+  bodyLen:[2.4,3.6], bodyW:[0.85,1.25], bodyH:[0.95,1.35],
+  legLen:[1.3,1.9],          // total leg length range
+  headScale:[0.8,1.2], tailSegs:[0,4],
+  massKg:[90,140],
+  hueShift:[0,1], marking:[0,1], markingAmt:[0,0.6],
+  strideF:[0.9,1.2], dutyF:[0.58,0.66]
+};
+/* resolveGenome adapted: deterministic streams replaced with mulberry32 draws,
+ * trait list + ranges verbatim. */
+function resolveGenome(seed){
+  var r = mulberry32(seed);
+  var g = {};
+  var legPairs = SPECIES.legPairs[Math.floor(r()*SPECIES.legPairs.length)];
+  g.legCount = legPairs*2;
+  g.bodyLen  = SPECIES.bodyLen[0]+r()*(SPECIES.bodyLen[1]-SPECIES.bodyLen[0]);
+  g.bodyW    = SPECIES.bodyW[0]+r()*(SPECIES.bodyW[1]-SPECIES.bodyW[0]);
+  g.bodyH    = SPECIES.bodyH[0]+r()*(SPECIES.bodyH[1]-SPECIES.bodyH[0]);
+  g.legLen   = SPECIES.legLen[0]+r()*(SPECIES.legLen[1]-SPECIES.legLen[0]);
+  g.upperFrac= 0.52+r()*0.1;
+  g.headScale= SPECIES.headScale[0]+r()*(SPECIES.headScale[1]-SPECIES.headScale[0]);
+  g.tailSegs = Math.floor(r()*(SPECIES.tailSegs[1]+1));
+  g.massKg   = SPECIES.massKg[0]+r()*(SPECIES.massKg[1]-SPECIES.massKg[0]);
+  g.hueShift = r(); g.marking = r(); g.markingAmt = r()*0.6;
+  g.strideF  = 0.9+r()*0.3; g.dutyF = 0.58+r()*0.08;
+  return g;
+}
+
+/* ---- trait → renderer params ----
+ * size  = bodyLen → ring radius; girth = bodyW → radius/ring N;
+ * wobble = strideF → spring wobble amplitude; hue = hueShift → hue;
+ * legs  = legCount → satellite ring count; tail = tailSegs → sparkles. */
+function paramsFromGenome(g){
+  return {
+    hue:   g.hueShift*360,
+    hue2:  (g.hueShift*360 + g.marking*120) % 360,
+    R:     (g.bodyLen/3.0 + g.bodyW/1.05) / 2,   // normalized ~1.0
+    wob:   (g.strideF-0.9)/0.3,                   // 0..1
+    N2:    g.legCount===4 ? 26 : 40,
+    sparks: 8 + g.tailSegs*3,
+    N:     Math.round(38 + g.bodyW*10)
+  };
+}
+
+/* ---- softbody spring-ring renderer — verbatim structure from tool-wonder
+ * 'creature' make(), parameterized through `opt`. ---- */
+function runCreature(cv, seed, opt){
+  var ctx = cv.getContext('2d'), Wd = cv.width, Ht = cv.height;
+  var rng = mulberry32(seed);
+  var n1 = makeNoise1D(mulberry32(seed^0x51f7));
+  var names = ['Mote','Wisp','Lumen','Drifter','Pulsar','Nixie','Vesper','Quill'];
+  var title = names[(rng()*names.length)|0]+'-'+((seed%900)+100);
+  var hue = opt.hue, hue2 = opt.hue2;
+  var N = opt.N, pts = [];
+  var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.26*opt.R;
+  for (var i=0;i<N;i++){
+    var a = i/N*Math.PI*2;
+    pts.push({a:a, r:R, vr:0, ph:rng()*10});
+  }
+  var N2 = opt.N2, pts2 = [];
+  var R2 = R*0.42;
+  for (var j=0;j<N2;j++){ var a2=j/N2*Math.PI*2; pts2.push({a:a2, r:R2, vr:0, ph:rng()*10}); }
+  var t = rng()*100, raf = 0;
+  var ox = 0, oy = 0;
+  function ringPath(Pp, ccx, ccy){ /* verbatim tool-wonder */
+    ctx.beginPath();
+    for (var k=0;k<=Pp.length;k++){
+      var p = Pp[k%Pp.length];
+      var x = ccx + Math.cos(p.a)*p.r, y = ccy + Math.sin(p.a)*p.r*0.92;
+      if (k===0) ctx.moveTo(x,y);
+      else {
+        var pp = Pp[(k-1)%Pp.length];
+        var px = ccx + Math.cos(pp.a)*pp.r, py = ccy + Math.sin(pp.a)*pp.r*0.92;
+        ctx.quadraticCurveTo(px, py, (px+x)/2, (py+y)/2);
+      }
+    }
+    ctx.closePath();
+  }
+  var wobAmp = 0.35 + opt.wob*0.45;   /* genome-mapped wobble, verbatim physics otherwise */
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ox = Math.sin(t*0.24)*Wd*0.06; oy = Math.cos(t*0.19)*Ht*0.05;
+    var bx = cx+ox, by = cy+oy;
+    for (var k=0;k<N;k++){ /* verbatim spring update */
+      var p = pts[k];
+      var wob = n1(p.ph + t*0.9, 3)-0.5;
+      var pulse = Math.sin(t*2.2 + p.a*3)*0.5+0.5;
+      var target = R*(1 + wob*wobAmp + pulse*0.10);
+      var F = (target - p.r)*0.09 - p.vr*0.82;
+      p.vr = (p.vr + F)*0.92; p.r += p.vr;
+    }
+    for (var k2=0;k2<N2;k2++){
+      var q = pts2[k2];
+      var wob2 = n1(q.ph + t*1.3, 3)-0.5;
+      var target2 = R2*(1 + wob2*0.6);
+      var F2 = (target2 - q.r)*0.10 - q.vr*0.80;
+      q.vr = (q.vr + F2)*0.92; q.r += q.vr;
+    }
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(bx,by,10,bx,by,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'hsla('+hue+',60%,14%,1)'); bg.addColorStop(1,'#04060d');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    var sx = bx + Math.cos(t*0.5)*R*1.7, sy = by + Math.sin(t*0.7)*R*1.2;
+    ctx.save();
+    ctx.shadowColor = 'hsla('+hue2+',90%,65%,.9)'; ctx.shadowBlur = 30;
+    ringPath(pts2, sx, sy);
+    var g2 = ctx.createRadialGradient(sx,sy,4,sx,sy,R2*1.6);
+    g2.addColorStop(0,'hsla('+hue2+',90%,72%,.95)'); g2.addColorStop(1,'hsla('+hue2+',90%,55%,.12)');
+    ctx.fillStyle = g2; ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.shadowColor = 'hsla('+hue+',90%,60%,.9)'; ctx.shadowBlur = 46;
+    ringPath(pts, bx, by);
+    var g = ctx.createRadialGradient(bx,by,8,bx,by,R*1.7);
+    g.addColorStop(0,'hsla('+hue+',85%,70%,.95)');
+    g.addColorStop(0.55,'hsla('+hue+',80%,52%,.55)');
+    g.addColorStop(1,'hsla('+hue+',80%,45%,.06)');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.restore();
+    var nR = R*0.30*(1+Math.sin(t*2.2)*0.08);
+    var ng = ctx.createRadialGradient(bx,by,1,bx,by,nR);
+    ng.addColorStop(0,'rgba(255,255,255,.95)'); ng.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle = ng;
+    ctx.beginPath(); ctx.arc(bx,by,nR,0,6.2832); ctx.fill();
+    ctx.fillStyle = 'hsla('+hue+',90%,75%,.8)';
+    for (var s2=0;s2<opt.sparks;s2++){
+      var sa = n1(s2*3.1+seed,2)*6.2832 + t*0.4;
+      var sr = R*(1.3 + n1(s2*7.7,2)*1.6);
+      ctx.globalAlpha = 0.25+0.55*Math.abs(Math.sin(t*3+s2*2));
+      ctx.beginPath(); ctx.arc(bx+Math.cos(sa)*sr, by+Math.sin(sa)*sr*0.9, 2, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  return { title:title,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}
+
+/* ================= lab UI ================= */
+var TRAITS = [
+  {k:'bodyLen', label:'Size',   min:SPECIES.bodyLen[0],  max:SPECIES.bodyLen[1]},
+  {k:'bodyW',   label:'Girth',  min:SPECIES.bodyW[0],    max:SPECIES.bodyW[1]},
+  {k:'strideF', label:'Wobble', min:SPECIES.strideF[0],  max:SPECIES.strideF[1]},
+  {k:'hueShift',label:'Hue',    min:0,                   max:1},
+  {k:'legCount',label:'Legs',   min:4,                   max:6, int:true, step:2},
+  {k:'tailSegs',label:'Tail',   min:0,                   max:4, int:true, step:1},
+];
+/* breeding ranges for every numeric genome trait (SPECIES verbatim where present) */
+var RANGES = {
+  bodyLen:SPECIES.bodyLen, bodyW:SPECIES.bodyW, bodyH:SPECIES.bodyH,
+  legLen:SPECIES.legLen, headScale:SPECIES.headScale, massKg:SPECIES.massKg,
+  upperFrac:[0.52,0.62], hueShift:[0,1], marking:[0,1], markingAmt:[0,0.6],
+  strideF:[0.9,1.2], dutyF:[0.58,0.66]
+};
+var locks = {};                       // k -> true
+var parent = resolveGenome(0xC1EA^0x51f7);
+var parentSeed = 0xC1EA;
+var widgets = [];
+var genCounter = 0;
+
+function toast(m){
+  var t = document.getElementById('toast');
+  t.textContent = m; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove('show'); }, 1800);
+}
+function stopAll(){ widgets.forEach(function(w){ w.stop(); }); widgets = []; }
+function sizeCanvas(cv){ var r = cv.getBoundingClientRect(); cv.width = Math.max(300, r.width*2|0); cv.height = Math.max(225, r.width*2*0.75|0); }
+
+function buildTraits(){
+  var host = document.getElementById('traits'); host.innerHTML='';
+  TRAITS.forEach(function(T){
+    var d = document.createElement('div'); d.className='trait';
+    var lock = document.createElement('button');
+    lock.className = 'lock' + (locks[T.k] ? ' on' : '');
+    lock.textContent = locks[T.k] ? '🔒' : '🔓';
+    lock.title = 'lock ' + T.k;
+    lock.onclick = function(){ locks[T.k] = !locks[T.k]; buildTraits(); };
+    var nm = document.createElement('div'); nm.className='nm'; nm.textContent = T.label;
+    var inp = document.createElement('input');
+    inp.type='range'; inp.min=T.min; inp.max=T.max;
+    inp.step = T.int ? T.step : (T.max-T.min)/1000;
+    inp.value = parent[T.k];
+    var val = document.createElement('div'); val.className='val';
+    function fmt(v){ return T.int ? String(Math.round(v)) : (+v).toFixed(2); }
+    val.textContent = fmt(parent[T.k]);
+    inp.oninput = function(){
+      var v = T.int ? Math.round(+inp.value/T.step)*T.step : +inp.value;
+      parent[T.k] = Math.min(T.max, Math.max(T.min, v));
+      val.textContent = fmt(parent[T.k]);
+      renderParent();
+    };
+    d.appendChild(lock); d.appendChild(nm); d.appendChild(inp); d.appendChild(val);
+    host.appendChild(d);
+  });
+}
+function renderParent(){
+  stopAll();
+  var cv = document.getElementById('parent'); sizeCanvas(cv);
+  var w = runCreature(cv, parentSeed>>>0, paramsFromGenome(parent));
+  w.start(); widgets.push(w);
+  document.getElementById('parentTag').textContent = 'PARENT · ' + w.title;
+}
+
+/* breeding — seed-codec remixConfig math: ±14% of range on unlocked traits */
+var NUMERIC = ['bodyLen','bodyW','bodyH','legLen','upperFrac','headScale','massKg',
+               'hueShift','marking','markingAmt','strideF','dutyF'];
+function breedGenome(base, rng){
+  var g = {};
+  NUMERIC.forEach(function(k){
+    var lo = RANGES[k][0], hi = RANGES[k][1];
+    if (locks[k]) { g[k] = base[k]; return; }
+    var v = base[k] + (rng()-0.5)*(hi-lo)*0.28;
+    g[k] = Math.min(hi, Math.max(lo, v));
+  });
+  g.legCount = locks.legCount ? base.legCount : (rng()<0.2 ? (base.legCount===4?6:4) : base.legCount);
+  if (locks.tailSegs) g.tailSegs = base.tailSegs;
+  else { var ts = Math.round(base.tailSegs + (rng()-0.5)*2.24); g.tailSegs = Math.min(4, Math.max(0, ts)); }
+  return g;
+}
+var litter = [];
+function breed(){
+  stopAll();
+  var rng = mulberry32(((parentSeed ^ (genCounter++ * 0x9e37) ^ 0xBE5D)>>>0));
+  litter = [];
+  for (var i=0;i<4;i++) litter.push(breedGenome(parent, rng));
+  var cv = document.getElementById('parent'); sizeCanvas(cv);
+  var w = runCreature(cv, parentSeed>>>0, paramsFromGenome(parent));
+  w.start(); widgets.push(w);
+  var host = document.getElementById('litter'); host.innerHTML='';
+  litter.forEach(function(g, i){
+    var d = document.createElement('div'); d.className='child';
+    var c = document.createElement('canvas'); d.appendChild(c);
+    var n = document.createElement('div'); n.className='nm';
+    var chSeed = ((parentSeed ^ ((i+1)*0x51ab))>>>0);
+    c._childIdx = i;
+    host.appendChild(d);
+    requestAnimationFrame(function(){
+      sizeCanvas(c);
+      var cw = runCreature(c, chSeed, paramsFromGenome(g));
+      cw.start(); widgets.push(cw);
+      n.textContent = cw.title;
+    });
+    d.onclick = function(){
+      parent = litter[i];
+      parentSeed = ((parentSeed ^ ((i+1)*0x51ab))>>>0);
+      buildTraits(); renderParent();
+      document.getElementById('litter').innerHTML='';
+      litter = []; stopAllButParent();
+      toast('promoted child '+(i+1)+' — breed from it');
+    };
+  });
+  toast('litter bred — unlocked traits jittered ±14%');
+}
+function stopAllButParent(){ /* children canvases removed; only parent widget remains */
+  var keep = [];
+  widgets.forEach(function(w, i){ if (i===0){ keep.push(w); } else { w.stop(); } });
+  widgets = keep;
+}
+
+document.getElementById('breed').onclick = breed;
+document.getElementById('wild').onclick = function(){
+  parentSeed = ((Math.random()*0xffffffff)>>>0);
+  parent = resolveGenome(parentSeed ^ 0x51f7);
+  locks = {};
+  buildTraits(); renderParent();
+  document.getElementById('litter').innerHTML=''; litter=[];
+  toast('wild type — fresh seed');
+};
+
+/* headless test hook */
+window.__labTest = {
+  parent: function(){ return JSON.parse(JSON.stringify(parent)); },
+  children: function(){ return litter.map(function(g){ return JSON.parse(JSON.stringify(g)); }); },
+  breed: breed,
+  setLock: function(k,v){ locks[k]=!!v; buildTraits(); },
+  getLocks: function(){ return JSON.parse(JSON.stringify(locks)); }
+};
+
+buildTraits();
+renderParent();
+</script>
+</body>
+</html>
