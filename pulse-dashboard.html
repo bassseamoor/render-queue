@@ -5582,6 +5582,135 @@ window.APP_DATA = {
 };
 </script>
 <script>
+/* Pulse Smart — on-device intelligence for the Pulse shell.
+ *
+ * Three systems, all local, nothing leaves the device:
+ *   usage  — learns what you open (count + recency decay). Powers Continue + recommendations.
+ *   search — tag-aware matching: queries match the tag graph (dep:/prov:/tool:/see:),
+ *            not just labels. "audio" finds the ambience engine; "physics" finds the lab.
+ *   recommend — "up next" from usage-weighted tag/category overlap.
+ *
+ * Tags load async from pulse-tags.json (same directory); everything degrades
+ * gracefully to keyword behavior when unavailable (e.g. file://).
+ */
+var Smart=(function(){
+'use strict';
+var LS='pulse-usage-v1';
+var usage={};
+try{ usage=JSON.parse(localStorage.getItem(LS)||'{}')||{}; }catch(e){ usage={}; }
+var COMPS=[];
+var tags=null, ready=false, waiters=[];
+
+function save(){ try{ localStorage.setItem(LS, JSON.stringify(usage)); }catch(e){} }
+
+function record(id){
+  if(!id) return;
+  var u=usage[id]||{n:0,t:0};
+  u.n+=1; u.t=Date.now();
+  usage[id]=u; save();
+}
+/* recency-weighted usage, most relevant first */
+function scored(){
+  var now=Date.now(), out=[];
+  Object.keys(usage).forEach(function(id){
+    var u=usage[id]; if(!u||!u.t) return;
+    var days=(now-u.t)/86400000;
+    out.push({id:id, s:u.n*Math.pow(0.82, Math.min(45,days)), n:u.n, t:u.t});
+  });
+  out.sort(function(a,b){ return b.s-a.s; });
+  return out;
+}
+function continueIds(n){
+  return scored().slice(0,n||4).map(function(e){ return e.id; });
+}
+function compById(id){
+  for(var i=0;i<COMPS.length;i++) if(COMPS[i].id===id) return COMPS[i];
+  return null;
+}
+
+function init(comps){
+  COMPS=comps||[];
+  if(location.protocol==='file:'){ done(null); return; }
+  setTimeout(function(){ if(!ready) done(null); }, 4000);
+  fetch('pulse-tags.json',{cache:'no-store'}).then(function(r){
+    return r.ok?r.json():null;
+  }).then(done).catch(function(){ done(null); });
+}
+function done(doc){
+  if(ready) return;
+  tags=doc; ready=true;
+  waiters.splice(0).forEach(function(fn){ try{fn();}catch(e){} });
+}
+function onReady(fn){ if(ready){ try{fn();}catch(e){} } else waiters.push(fn); }
+
+function tagText(cid){
+  if(!tags||!tags.items||!tags.items[cid]) return '';
+  var it=tags.items[cid], parts=[(it.tags||[]).join(' ')];
+  var rel=tags.relations&&tags.relations[cid];
+  if(rel&&rel.see){
+    rel.see.forEach(function(sid){
+      var o=tags.items[sid];
+      if(o&&o.label) parts.push(o.label);
+    });
+  }
+  return parts.join(' ').toLowerCase();
+}
+/* every significant word must match somewhere (label text or tag graph) */
+function matches(c, q, baseText){
+  q=(q||'').toLowerCase().trim();
+  if(!q) return true;
+  var base=((baseText||'')+' '+(c.why||'')).toLowerCase();
+  var tt=ready?tagText(c.id):'';
+  var words=q.split(/\s+/).filter(function(w){ return w.length>2; });
+  if(!words.length) return base.indexOf(q)>=0;
+  for(var i=0;i<words.length;i++){
+    if(base.indexOf(words[i])<0&&tt.indexOf(words[i])<0) return false;
+  }
+  return true;
+}
+
+function recommend(n, isEligible){
+  n=n||3;
+  var s=scored().slice(0,10);
+  if(!s.length) return [];
+  var used={};
+  s.forEach(function(e){ used[e.id]=true; });
+  var w={};
+  function bump(k,v){ w[k]=(w[k]||0)+v; }
+  s.forEach(function(e){
+    var c=compById(e.id); if(!c) return;
+    var wt=Math.min(3,e.n);
+    (c.cats||[]).forEach(function(cat){ bump('c:'+cat,wt); });
+    if(ready&&tags&&tags.items&&tags.items[c.id]){
+      (tags.items[c.id].tags||[]).forEach(function(t){
+        if(t.indexOf('dep:')===0||t.indexOf('prov:')===0||t.indexOf('tool:')===0) bump('t:'+t,wt*0.7);
+      });
+    }
+  });
+  var cands=[];
+  COMPS.forEach(function(c){
+    if(used[c.id]) return;
+    if(isEligible&&!isEligible(c)) return;
+    var score=0;
+    (c.cats||[]).forEach(function(cat){ score+=w['c:'+cat]||0; });
+    if(ready&&tags&&tags.items&&tags.items[c.id]){
+      (tags.items[c.id].tags||[]).forEach(function(t){ score+=w['t:'+t]||0; });
+    }
+    if(score>0) cands.push({id:c.id,score:score});
+  });
+  cands.sort(function(a,b){ return b.score-a.score; });
+  return cands.slice(0,n).map(function(x){ return x.id; });
+}
+
+return {
+  init:init, onReady:onReady, record:record,
+  continueIds:continueIds, matches:matches, recommend:recommend,
+  compById:compById, get tagsReady(){ return ready; }
+};
+})();
+
+</script>
+<script>
 /* Project Pulse v2 — dashboard shell.
  * Layout + visual language from MOOR-Pulse-Functional-Mockup.html (preserved).
  * Center canvas windows host real interactive tools (TOOLS registry) or
@@ -6108,8 +6237,10 @@ function binResults(q){
   var out='';
   BIN_SECTIONS.forEach(function(sec){
     var items=COMPS.filter(function(c){
-      return compTab(c)==='bin'&&binSection(c)===sec.id&&shownComp(c)&&
-        (!q||familyText(c).indexOf(q)>=0);
+      if(compTab(c)!=='bin'||binSection(c)!==sec.id||!shownComp(c)) return false;
+      if(!q) return true;
+      if(window.Smart) return Smart.matches(c,q,familyText(c));
+      return familyText(c).indexOf(q)>=0;
     });
     if(!items.length) return;
     out+='<section class="bin-sec"><h3>'+sec.name+'</h3><p>'+sec.desc+'</p><div class="trows">'+
@@ -6121,7 +6252,16 @@ function binView(){
   var t=TABS[0];
   return '<div class="tab-head"><h2>'+t.name+'</h2><p>'+t.tag+'</p>'+
     '<input id="bin-search" type="search" placeholder="Search parts\u2026" value="'+esc(UI.query||'')+'" aria-label="Search parts"></div>'+
+    continueSection()+
     '<div id="bin-results">'+binResults((UI.query||'').toLowerCase())+'</div>';
+}
+function continueSection(){
+  if(!window.Smart) return '';
+  var ids=Smart.continueIds(4).map(find).filter(Boolean)
+    .filter(function(c){ return compTab(c)==='bin'&&shownComp(c); });
+  if(!ids.length) return '';
+  return '<section class="bin-sec"><h3>Continue</h3><p>Where you left off.</p><div class="trows">'+
+    ids.map(rowHTML).join('')+'</div></section>';
 }
 function streamView(){
   var t=TABS[1];
@@ -6139,6 +6279,13 @@ function shelfData(){
     if(d&&Array.isArray(d.parts)) parts=d.parts; }catch(e){}
   return {wonders:wonders, parts:parts};
 }
+function recSection(){
+  if(!window.Smart) return '';
+  var ids=Smart.recommend(3,function(c){ return compTab(c)==='bin'&&shownComp(c); });
+  if(!ids.length) return '';
+  return '<section class="bin-sec"><h3>Up next for you</h3><p>Based on what you\u2019ve been opening.</p>'+
+    '<div class="trows">'+ids.map(function(id){ return rowHTML(find(id)); }).join('')+'</div></section>';
+}
 function youView(){
   var t=TABS[2], s=shelfData();
   function names(list, fmt, n){
@@ -6149,7 +6296,7 @@ function youView(){
   function wname(e){ var g=e&&e.genome||{};
     return (g.type||'wonder')+' \u00B7 '+(g.seed||''); }
   function pname(p){ return (p&&p.name)||'Untitled part'; }
-  var html='<div class="tab-head"><h2>'+t.name+'</h2><p>'+t.tag+'</p></div><div class="shelf">';
+  var html='<div class="tab-head"><h2>'+t.name+'</h2><p>'+t.tag+'</p></div>'+recSection()+'<div class="shelf">';
   html+='<div class="shelf-card"><div class="shelf-top"><strong>Saved wonders</strong>'+
     '<span class="count">'+s.wonders.length+'</span></div>';
   html+=s.wonders.length
@@ -6273,6 +6420,7 @@ function wireStage(){
 }
 function openComponent(id){
   var c=find(id); if(!c) return;
+  if(window.Smart) Smart.record(id);
   unmountFocus();
   if(UI.open.indexOf(id)<0) UI.open.push(id);
   if(!UI.focus) UI.fromTab=UI.tab;
@@ -6341,7 +6489,12 @@ function toast(msg){
   clearTimeout(t._h); t._h = setTimeout(function(){ t.hidden = true; }, 2600);
 }
 
+if(window.Smart) Smart.init(COMPS);
 render();
+if(window.Smart) Smart.onReady(function(){
+  var r=$('bin-results');
+  if(r&&(UI.query||'')&&UI.tab==='bin'&&!UI.focus) r.innerHTML=binResults(UI.query.toLowerCase());
+});
 
 /* Exposed for the source drawer + any external consumer. */
 window.PULSE_COMPONENTS=COMPS;
