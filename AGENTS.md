@@ -18,3 +18,8 @@ Before publishing a rebuild, verify both tools appear from the normal dashboard 
 - Tool frames use `?workspace-tool=<component-id>` to isolate DOM/global state. Never initialize another workspace inside those frames.
 - Dragging a Bin part onto a tool creates a new project; dragging into a project collects it without connecting logic automatically.
 - Project schema is `moor.component-project` version 1. Preserve component IDs, source references, connections, intent, and nested layout. Tool recipe state is separate and must not be advertised as captured automatically.
+
+## Wonder Feed recipe transformer
+- Preserve `<script src="wonder-logic.js?v=1"></script>` in both Pulse and the standalone Wonder Feed.
+- `wonder-logic.js` provides seeded idea recipes and schematics; idea genomes with `logicVersion:1` use it. Preserve legacy idea rendering for older saved genomes.
+- `?feed=ideas&seed=<text>` replays an Ideas sequence. Ideas in the default stream remain proposals, not claimed live integrations.
