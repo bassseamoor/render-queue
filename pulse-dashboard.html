@@ -2199,7 +2199,7 @@ window.FIELD_GLSL = "uniform vec3 seedOff;\nuniform vec4 uEditA[48];   /* xyz = 
 window.MESH_FRAG = "\nprecision highp float;\nvarying vec3 vPosition,vNormal,vTint;varying vec2 vTex,vBuild;varying vec4 vInfo,vShadow;varying float vFade,vProgress;\nuniform mat4 uLightMatrix;uniform highp sampler2D uShadow;uniform sampler2D uMaterial;uniform sampler2D uBlimpSign;uniform sampler2D uBillboard;uniform sampler2D uFoliage;uniform sampler2D uSignage,uGraffiti,uFlag;uniform vec3 uEye,uSun,uLandTint,uWaterTint;uniform vec4 uGeo,uMap;uniform vec2 uCenter,uSpacing,uBounds;uniform vec3 uPark;uniform float uTime,uStory,uWeather,uMist,uGlow,uRays,uPixelScale;uniform float uSunI,uAmbI,uTod;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\nfloat noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}\nfloat landDistance(vec2 p){float type=uGeo.x,phase=uGeo.y,offset=uGeo.z,water=uGeo.w;float river=offset+sin(p.y*uMap.x+phase)*uMap.y+p.y*uMap.z;\n if(type<.5)return abs(p.x-river)-water;if(type<1.5)return offset+sin(p.y*.09+phase)*4.-p.x;if(type<2.5)return length((p-uCenter)/vec2(1.50,2.4))-1.52;if(type<3.5)return 20.;if(type<4.5)return min(abs(p.x-river)-water,abs(p.y-offset*.7-sin(p.x*.12+phase)*2.)-water*.72);return p.y-offset-sin(p.x*.095+phase)*3.8;}\nfloat unpack(vec4 c){return dot(c,vec4(1.,1./255.,1./65025.,1./16581375.));}\nfloat shadow(vec3 N){\n float reach=length(vPosition.xz);if(reach>36.||dot(N,uSun)<.025)return 1.;\n vec3 q=vShadow.xyz/vShadow.w*.5+.5;if(q.x<0.||q.x>1.||q.y<0.||q.y>1.||q.z<0.||q.z>1.)return 1.;\n // Compare each sample against the RECEIVER PLANE at that sample, not the center depth.\n // Inverse-transpose normal for ortho(34, .1, 130), derived from its squared axis scales.\n vec3 lightNormal=(uLightMatrix*vec4(N,0.)).xyz*vec3(1156.,1156.,4218.5025);\n vec2 slope=clamp(-lightNormal.xy/(abs(lightNormal.z)<.0001?.0001:lightNormal.z),vec2(-12.),vec2(12.));\n vec2 grid=q.xy*1024.-.5,base=floor(grid),f=fract(grid);\n vec2 p00=(base+vec2(.5,.5))/1024.,p10=(base+vec2(1.5,.5))/1024.,p01=(base+vec2(.5,1.5))/1024.,p11=(base+vec2(1.5,1.5))/1024.;\n float bias=.00012;\n float s00=step(q.z+dot(slope,p00-q.xy)-bias,unpack(texture2D(uShadow,p00))),s10=step(q.z+dot(slope,p10-q.xy)-bias,unpack(texture2D(uShadow,p10))),s01=step(q.z+dot(slope,p01-q.xy)-bias,unpack(texture2D(uShadow,p01))),s11=step(q.z+dot(slope,p11-q.xy)-bias,unpack(texture2D(uShadow,p11)));\n float lit=mix(mix(s00,s10,f.x),mix(s01,s11,f.x),f.y);return mix(lit,1.,smoothstep(26.,36.,reach));\n}\n\nvoid main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=normalize(vNormal),V=normalize(uEye-vPosition);float footprint=length(uEye-vPosition)*uPixelScale/max(.22,abs(dot(N,V)));float mat=vInfo.x,seed=floor(vInfo.y+.5);vec3 albedo=vTint;float nightF=1.-smoothstep(.05,.55,uTod);if(mat>10.5&&mat<11.5){float shore=landDistance(vPosition.xz);mat=shore<0.?6.:5.;vec2 p=vPosition.xz;float park=uGeo.x>1.5&&uGeo.x<2.5?1.-smoothstep(4.10,4.45,length((p-uCenter)/vec2(1.15,2.2))):uGeo.x>2.5&&uGeo.x<3.5?1.-smoothstep(3.0,3.5,length(p)):1.-smoothstep(uPark.z-.25,uPark.z+.25,length(p-uPark.xy));float town=1.-smoothstep(.96,1.10,max(abs(p.x)/uBounds.x,abs(p.y)/uBounds.y));vec3 land=mix(uLandTint,mix(vec3(.30,.33,.30),uLandTint,park),town);albedo=shore<0.?uWaterTint:mix(vec3(.48,.44,.30),land,smoothstep(0.,.23,shore));}float rough=.7,metal=0.;vec3 emission=vec3(0.);float grain=texture2D(uMaterial,fract(vPosition.xz*.17)).b;albedo*=.992+.016*grain;\n // Facade detail follows floor courses; broad mineral variation precedes fine joints.\n if(mat>.5&&mat<3.5&&abs(N.y)<.5){\n  float floorHeight=max(.32,vInfo.w),bay=mat<1.5?.29:.38;\n  vec2 coord=vec2(vTex.x/bay,vPosition.y/floorHeight),cell=floor(coord),f=fract(coord);\n  float aa=clamp(footprint/bay*.6,.025,.32),nearDetail=(1.-smoothstep(.035,.16,footprint));\n  float left=mat<1.5?.08:.20,right=1.-left,low=mat<1.5?.12:.23;\n  float panes=smoothstep(left-aa,left+aa,f.x)*(1.-smoothstep(right-aa,right+aa,f.x))*smoothstep(low-aa,low+aa,f.y)*(1.-smoothstep(.86-aa,.86+aa,f.y));\n  panes=mix(panes,(right-left)*(.86-low),smoothstep(.23,.42,footprint/bay));\n  float rnd=hash(cell+seed),column=hash(vec2(cell.x,seed));\n  float windowLight=smoothstep(1.,1.20,vProgress)*step(mix(.82,.40,nightF),rnd);\n  vec3 reflection=mix(vec3(.115,.205,.245),vec3(.36,.53,.56),clamp(V.y*.65+.30,0.,1.));\n  reflection*=.80+.16*column+.045*sin(vPosition.y*.61+seed);\n  reflection+=vec3(.19,.16,.10)*pow(max(0.,dot(reflect(-V,N),uSun)),16.);\n  // Curtains and recessed upper edges give glazing depth without noisy black grids.\n  float curtain=step(.64,rnd)*smoothstep(.38,.50,f.x)*.16;\n  reflection=mix(reflection,vec3(.54,.48,.34),curtain);\n  float recess=mix(.66,1.,smoothstep(low,low+.20,f.y));\n  vec3 mineralField=texture2D(uMaterial,fract(vec2(vTex.x,vPosition.y)*.11+seed*.137)).rgb;float mineral=mineralField.r*.65+mineralField.g*.35;\n  albedo*=.95+.08*mineral;\n  if(mat<1.5){albedo=mix(vTint*.80,reflection*recess,panes);rough=.22;metal=.24;}\n  else if(mat<2.5){\n   vec2 slab=fract(vec2(vTex.x*2.1,vPosition.y/floorHeight));\n   float joint=(1.-smoothstep(.012,.035,min(slab.x,slab.y)))*nearDetail;\n   albedo*=1.-joint*.11;\n   float sill=smoothstep(.16,.21,f.y)*(1.-smoothstep(.23,.28,f.y))*smoothstep(.13,.22,f.x)*(1.-smoothstep(.78,.87,f.x));\n   albedo*=1.+sill*.12*nearDetail;albedo=mix(albedo,reflection*.58*recess,panes*.90);rough=.67;\n  }else{\n   vec2 brickCoord=vec2(vTex.x*8.,vPosition.y*15.);brickCoord.x+=mod(floor(brickCoord.y),2.)*.5;\n   vec2 joint=fract(brickCoord);float mortar=(1.-smoothstep(.035,.105,min(joint.x,joint.y)))*nearDetail;\n   float brickTone=hash(floor(brickCoord)+seed);\n   albedo*=mix(1.,.94+.08*brickTone,nearDetail);albedo=mix(albedo,albedo*1.19,mortar*.65);\n   albedo=mix(albedo,reflection*.48*recess,panes*.88);rough=.86;\n  }\n  emission=vec3(1.,.67,.28)*windowLight*panes*(.075+.95*nightF)*uGlow;\n }\n if(mat>.5&&mat<1.5&&abs(N.y)>=.5){float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(albedo,vec3(.32,.48,.52),.16+fres*.28);rough=.24;metal=.22;}\n if(mat>3.5&&mat<4.5){albedo*=.96+.04*noise(vPosition.xz*5.);rough=.92;}\n if(mat>4.5&&mat<5.5){albedo*=.96+.04*noise(vPosition.xz*3.);rough=.93;}\n if(mat>5.5&&mat<6.5){float ripple=sin(vPosition.x*4.+uTime*.21)+.43*sin(vPosition.z*6.7-uTime*.133);N=normalize(N+vec3(ripple*.025,0.,sin(vPosition.z*8.3+uTime*.091)*.014));float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(uWaterTint,mix(vec3(.28,.48,.52),vec3(.19,.33,.42),.30),fres*.74);float glint=pow(max(dot(reflect(-V,N),uSun),0.),260.);albedo+=vec3(.72,.74,.58)*glint*.22;float foam=(1.-smoothstep(.02,.16,abs(landDistance(vPosition.xz))))*(.50+.16*sin(vPosition.z*6.+uTime*.31)+.10*sin(vPosition.x*8.7-uTime*.47));albedo=mix(albedo,vec3(.69,.85,.77),foam*.42);rough=.12;metal=.3;}\n if(mat>7.5&&mat<8.5){rough=.36;metal=.24;}\n if(mat>9.5&&mat<10.5){vec2 tile=fract(vec2(vTex.x*11.,vPosition.z*16.));float nearDetail=1.-smoothstep(.025,.095,footprint);albedo*=1.-.12*(1.-smoothstep(.03,.14,min(tile.x,tile.y)))*nearDetail;rough=.81;}\n // Low contrast, multiscale surface finishes inspired by Forge's baked detail layers.\n if(mat>11.5&&mat<18.6){\n  vec2 surface=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field=texture2D(uMaterial,fract(surface*.11+seed*.137)).rgb;float broad=field.r,fine=field.b,detail=1.-smoothstep(.035,.14,footprint);\n  albedo*=.95+.075*broad+.025*fine*detail;\n  if(mat<12.5){vec2 course=fract(surface*vec2(2.,5.));float joint=1.-smoothstep(.015,.065,min(course.x,course.y));albedo*=1.-joint*.09*detail;rough=.83;}\n  else if(mat<13.5){albedo*=.98+.035*fine;rough=.90;}\n  else if(mat<14.5){float seam=1.-smoothstep(.025,.085,fract(surface.x*8.));albedo=mix(albedo,albedo*vec3(.80,1.04,.96),broad*.3);albedo*=1.-seam*.16*detail;rough=.49;metal=.28;}\n  else if(mat<15.5){albedo*=.93+.09*texture2D(uMaterial,fract(surface*vec2(.8,.04)+seed*.137)).g;rough=.85;}\n  else if(mat<16.5){albedo*=.92+.12*fine*detail;rough=.98;}\n  else if(mat<17.5){albedo*=1.-.28*(1.-smoothstep(.15,.35,fract(surface.x*26.)))*detail;rough=.68;}\n  else if(mat<18.5){vec2 panel=fract(surface*vec2(14.,18.));albedo*=mix(.97,.8+.2*smoothstep(.025,.10,min(panel.x,panel.y)),detail);rough=.25;metal=.30;}\n  else{albedo=vec3(.49,.50,.46)*(.96+.05*broad);rough=.94;}\n }\n // Blimp marquee: the scrolling canvas sign on the envelope.\n if(mat>19.5&&mat<20.5){vec3 sign=texture2D(uBlimpSign,vTex).rgb;albedo=sign;emission=sign*.32;rough=.5;metal=.1;}\n // Billboards: seeded canvas ads drifting in and out on their own schedule.\n if(mat>20.5&&mat<21.5){vec3 ad=texture2D(uBillboard,vTex).rgb;if(hash(gl_FragCoord.xy)>vFade+.001)discard;albedo=ad;emission=ad*.38*uGlow;rough=.55;}\n // Drifting clouds: soft white, shaded by normal.\n if(mat>21.5&&mat<22.5){float clUp=max(N.y,0.),clDn=max(-N.y,0.);albedo=vec3(.94,.955,.975)*(.80+.20*clUp+.16*clDn);rough=1.;}\n // Instanced foliage: leafy variation with a darker underside.\n if(mat>22.5&&mat<23.5){albedo*=.86+.28*noise(vPosition.xz*7.+vPosition.y*2.3);albedo*=.55+.45*max(N.y,0.);rough=1.;}\n if(mat>23.5&&mat<24.5){vec4 ftx=texture2D(uFoliage,vTex);if(ftx.a<.42)discard;albedo=ftx.rgb*(.72+.38*max(N.y,0.));rough=1.;}\n // Worker C materials 24-32: signage, translucent glass, interiors, beacons, smoke,\n // graffiti, brushed metal, copper, flags. Glass/interior/smoke stay LOD-cheap.\n if(mat>32.5&&mat<33.5){vec3 sg=texture2D(uSignage,vTex).rgb;albedo=sg;emission=sg*.30*uGlow;rough=.5;}\n if(mat>24.5&&mat<25.5){\n  // Translucent glass: cheap screen-door dither, denser far / sparse near.\n  float dist=length(uEye-vPosition);\n  float keep=mix(.40,.985,smoothstep(3.,17.,dist));\n  if(hash(gl_FragCoord.xy)>keep+.001)discard;\n  float bay=.29;vec2 coord=vec2(vTex.x/bay,vPosition.y/.34);vec2 cf=floor(coord),f=fract(coord);\n  float frame=1.-smoothstep(.015,.06,min(min(f.x,1.-f.x),min(f.y,1.-f.y)));\n  vec3 reflection=mix(vec3(.10,.17,.20),vec3(.44,.56,.59),clamp(V.y*.6+.35,0.,1.));\n  albedo=mix(vTint*.72,reflection,.55+.30*frame);\n  albedo*=.92+.08*hash(cf+seed);\n  rough=.16;metal=.32;\n }\n if(mat>25.5&&mat<26.5){\n  // Interior hints: warm, coarse, culled far away so they never cost a pixel at LOD.\n  float dist2=length(uEye-vPosition);\n  if(hash(gl_FragCoord.xy*1.71)<smoothstep(4.,13.,dist2))discard;\n  albedo*=.9+.1*hash(floor(vPosition.xz*20.)+seed);\n  emission=albedo*vec3(.55,.38,.22)*uGlow;rough=.9;\n }\n if(mat>26.5&&mat<27.5){float blink=step(.42,fract(uTime*.5+seed*.061));albedo=mix(vec3(.30,.03,.02),vec3(1.,.16,.10),blink);emission=vec3(1.2,.12,.06)*blink*uGlow;rough=.4;}\n if(mat>27.5&&mat<28.5){\n  // Smoke: alpha-scaled dither (vFade carries the age ramp), soft procedural noise.\n  float a=clamp(vFade,0.,1.)*.5;\n  if(hash(gl_FragCoord.xy*1.31)>a+.001)discard;\n  float nse=hash(floor(vPosition.xz*24.)+floor(vPosition.y*24.));\n  albedo=vec3(.60,.62,.65)*(.88+.24*nse);rough=1.;\n }\n if(mat>28.5&&mat<29.5){vec3 tag=texture2D(uGraffiti,vTex).rgb;if(dot(tag,vec3(.333))<.04)discard;albedo=tag;emission=tag*.12;rough=.9;}\n if(mat>29.5&&mat<30.5){\n  // Brushed metal: streaky roughness from the material atlas.\n  vec2 surface=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field=texture2D(uMaterial,fract(surface*vec2(.13,.53)+seed*.137)).rgb;\n  albedo*=.92+.16*field.g;\n  float streak=texture2D(uMaterial,fract(vec2(surface.x*3.,surface.y*36.)+seed*.137)).r;\n  albedo*=1.-streak*.10;rough=.44;metal=.82;\n }\n if(mat>30.5&&mat<31.5){\n  // Copper: subtle ribbed variation, warmer reflection.\n  vec2 surface2=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field2=texture2D(uMaterial,fract(surface2*.23+seed*.137)).rgb;\n  albedo*=.80+.30*field2.b;\n  float rib=1.-smoothstep(.10,.30,abs(fract(surface2.x*9.)-.5));\n  albedo*=1.-rib*.14;rough=.58;metal=.72;\n }\n if(mat>31.5&&mat<32.5){vec3 fl=texture2D(uFlag,vTex).rgb;albedo=fl*(.92+.08*hash(gl_FragCoord.xy));rough=.92;}\n if(mat>8.5&&mat<9.5){emission=albedo*uGlow*(.20+.95*nightF);rough=.2;}\n // Formation smoke: the ribbon pales and thins into the haze as it ages.\n if(vInfo.z>11.5&&vInfo.z<12.5){float sage=clamp(vTex.x/7.,0.,1.);albedo=mix(albedo,vec3(.45,.55,.60),sage*sage*.9);emission*=1.-sage*.75;}\n // Fresh concrete at the active frontier settles into the finished facade below it.\n if(vBuild.y>.5&&mat>.5&&mat<3.5){float finish=smoothstep(.07,.54,vBuild.x-vPosition.y);albedo=mix(vec3(.45,.47,.44),albedo,finish);emission*=finish;rough=mix(.92,rough,finish);metal*=finish;}\n float direct=max(dot(N,uSun),0.),visibility=shadow(normalize(vNormal));float sky=.58+.42*max(N.y,0.);\n // Plain lighting controls: sun strength, ambient strength, time of day (warms and lowers the sun).\n vec3 sunTint=mix(vec3(1.50,1.14,.73),vec3(1.78,.90,.48),1.-smoothstep(.05,.55,uTod));\n vec3 ambTint=vec3(.155,.255,.445)*mix(.42,1.,smoothstep(.0,.65,uTod));\n float ao=mix(.58,1.,smoothstep(0.,.8,vPosition.y));vec3 lighting=ambTint*sky*ao*uAmbI+sunTint*direct*visibility*(.32+.91*uRays)*uSunI;\n vec3 H=normalize(V+uSun);float spec=pow(max(dot(N,H),0.),mix(125.,12.,rough))*(.10+metal*.7)*visibility;vec3 col=albedo*lighting+vec3(1.0,.86,.63)*spec+emission;\n float distance=length(uEye-vPosition);float haze=1.-exp(-max(distance-16.,0.)*.010*uMist*uMist);col=mix(col,vec3(.45,.55,.60),haze);col*=1.+.022*uWeather;col*=.45+.65*uGlow;gl_FragColor=vec4(col,1.);\n}\n";
 </script>
 <script>
-var SEED_EVENTS = [{"t": 1791112153000, "title": "Furniture Foundry live: procedural furniture + common items generator", "body": "17 parametric builders (chairs, sofa, tables, bookshelf with books, lamps, bed, storage, lathe-turned vase/mug/bowl) on seeded RNG. Real dimensions, rounded-box + lathe geometry, procedural wood grain/fabric in-shader, 4", "origin": "agent-report"}, {"t": 1791108469000, "title": "Wonder Feed culmination: workshop spotlights + save\u2192feed\u2192remix loop live", "body": "Every 4th feed card now spotlights a distilled component (weighted by learned taste). Mixes saved in Moor Canvas join the workshop automatically and pull back into the canvas to remix. Canvas learns which pairs combine w", "origin": "agent-report"}, {"t": 1791082673000, "title": "Creature Lab Stage A live: deterministic creature compiler replaces 2D prototype", "body": "End-to-end walker per Creature Compiler handoff v1.0 Stage A: seeded genome -> canonical anatomy (hashed) -> validation + bounded repair -> compiled mesh/IK rig/soft belly -> procedural walking over fixture terrain. 4-le", "origin": "agent-report"}, {"t": 1791082667000, "title": "Source drawer + manifest: underlying logic exposed for AIs and builders", "body": "Non-invasive </> button in Pulse header opens drawer listing every tool's panel source, component source, dependencies. pulse-manifest.json published so any AI handed the link can fetch the full inventory and reuse tools", "origin": "agent-report"}, {"t": 1791067367000, "title": "How do private sessions connect \u2014 or how should they?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "What does the menu look like? Is there something that tells me a menu exists, or do I have to find it?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "Does it automatically sign into the account, or do I sign in myself?", "body": "", "origin": "agent-report"}, {"t": 1791067362000, "title": "More OS page added: underlying systems, open OS questions, and the hierarchical road to MVP", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "I\u2019m on my own private server. When I decide \u2018time to explore\u2019 \u2014 where am I going? What do I need to connect to?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "When it\u2019s local, do I load in as a character? With an account? Is there already a default account, quote unquote?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "Sign in or local build? My read: it\u2019s a local build \u2014 private, no sign-in needed. Confirm or correct.", "body": "", "origin": "agent-report"}, {"t": 1791066599000, "title": "Drill-down pages shipped: every component/generator/layout/decision/concept opens its own page with impact analysis and Q&A; dependency grap", "body": "", "origin": "confirmed"}, {"t": 1791066584000, "title": "Staged until Sebastian approves the install \u2014 the live-install handoff doc has the steps.", "body": "", "origin": "agent-report"}, {"t": 1791066584000, "title": "Should the dashboard live in the real MOOR or stay a staged copy?", "body": "", "origin": "agent-report"}];
+var SEED_EVENTS = [{"t": 1791114503000, "title": "Furniture Foundry: 50 item generators (33 new)", "body": "Added rocking/office chairs, sideboard, wardrobe, vanity, chaise, coat rack, room divider, pendant/desk lamps, lantern, mirrors, clock, rug, plants, kitchen, office gear, outdoor. 33 capabilities distilled (183 total).", "origin": "agent-report"}, {"t": 1791112153000, "title": "Furniture Foundry live: procedural furniture + common items generator", "body": "17 parametric builders (chairs, sofa, tables, bookshelf with books, lamps, bed, storage, lathe-turned vase/mug/bowl) on seeded RNG. Real dimensions, rounded-box + lathe geometry, procedural wood grain/fabric in-shader, 4", "origin": "agent-report"}, {"t": 1791108469000, "title": "Wonder Feed culmination: workshop spotlights + save\u2192feed\u2192remix loop live", "body": "Every 4th feed card now spotlights a distilled component (weighted by learned taste). Mixes saved in Moor Canvas join the workshop automatically and pull back into the canvas to remix. Canvas learns which pairs combine w", "origin": "agent-report"}, {"t": 1791082673000, "title": "Creature Lab Stage A live: deterministic creature compiler replaces 2D prototype", "body": "End-to-end walker per Creature Compiler handoff v1.0 Stage A: seeded genome -> canonical anatomy (hashed) -> validation + bounded repair -> compiled mesh/IK rig/soft belly -> procedural walking over fixture terrain. 4-le", "origin": "agent-report"}, {"t": 1791082667000, "title": "Source drawer + manifest: underlying logic exposed for AIs and builders", "body": "Non-invasive </> button in Pulse header opens drawer listing every tool's panel source, component source, dependencies. pulse-manifest.json published so any AI handed the link can fetch the full inventory and reuse tools", "origin": "agent-report"}, {"t": 1791067367000, "title": "How do private sessions connect \u2014 or how should they?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "What does the menu look like? Is there something that tells me a menu exists, or do I have to find it?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "Does it automatically sign into the account, or do I sign in myself?", "body": "", "origin": "agent-report"}, {"t": 1791067362000, "title": "More OS page added: underlying systems, open OS questions, and the hierarchical road to MVP", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "I\u2019m on my own private server. When I decide \u2018time to explore\u2019 \u2014 where am I going? What do I need to connect to?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "When it\u2019s local, do I load in as a character? With an account? Is there already a default account, quote unquote?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "Sign in or local build? My read: it\u2019s a local build \u2014 private, no sign-in needed. Confirm or correct.", "body": "", "origin": "agent-report"}, {"t": 1791066599000, "title": "Drill-down pages shipped: every component/generator/layout/decision/concept opens its own page with impact analysis and Q&A; dependency grap", "body": "", "origin": "confirmed"}, {"t": 1791066584000, "title": "Staged until Sebastian approves the install \u2014 the live-install handoff doc has the steps.", "body": "", "origin": "agent-report"}];
 </script>
 <script>
 window.APP_DATA = {
@@ -4985,6 +4985,582 @@ window.APP_DATA = {
    "notes": "The quality lever: rounded boxes kill the CG-cheap look; lathe gives turned legs, vases, bowls.",
    "first_seen": "2026-10-04T11:08:44Z",
    "fp": "47d6a1d10008"
+  },
+  {
+   "id": "furn-rockingChair",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric ladder-back rocking chair on smooth torus-arc rockers",
+   "knobs": [
+    "backStyle",
+    "rockerCurve"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.rockingChair",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "d572b7afd506"
+  },
+  {
+   "id": "furn-officeChair",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric office chair: 5-star base with casters, gas lift, backrest, armrests",
+   "knobs": [
+    "upholstery",
+    "armrests"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.officeChair",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "a9008046fb3a"
+  },
+  {
+   "id": "furn-sideboard",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric sideboard/credenza with doors and drawers, tapered legs",
+   "knobs": [
+    "width",
+    "doorDrawerMix"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.sideboard",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "a0bd1059d31b"
+  },
+  {
+   "id": "furn-tvStand",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric TV stand with open shelf and side cabinets",
+   "knobs": [
+    "width"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.tvStand",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "abf85169c79b"
+  },
+  {
+   "id": "furn-wardrobe",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric wardrobe with double doors, knobs, crown molding",
+   "knobs": [
+    "width"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.wardrobe",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "abf85169c79b"
+  },
+  {
+   "id": "furn-vanity",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric vanity table with drawer and round mirror on posts",
+   "knobs": [
+    "mirrorSize"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.vanity",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "0eef268e5ca1"
+  },
+  {
+   "id": "furn-ottoman",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric ottoman/pouf, round or square, upholstered",
+   "knobs": [
+    "shape",
+    "upholstery"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.ottoman",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "e19fb918a71c"
+  },
+  {
+   "id": "furn-chaiseLounge",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric chaise lounge with extended cushion and single arm",
+   "knobs": [
+    "length",
+    "upholstery"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.chaiseLounge",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "1d1560d7aba5"
+  },
+  {
+   "id": "furn-coatRack",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric coat rack: lathe base, pole, 4 hooks",
+   "knobs": [
+    "hooks"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.coatRack",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "527ec66ce607"
+  },
+  {
+   "id": "furn-roomDivider",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric 3-panel slatted folding room divider at seeded angles",
+   "knobs": [
+    "panels",
+    "foldAngle"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.roomDivider",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "46119570ca01"
+  },
+  {
+   "id": "furn-pendantLamp",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric pendant lamp: cord, dome/cone/drum shade, glowing bulb",
+   "knobs": [
+    "shadeProfile"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.pendantLamp",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "eb821b16ce92"
+  },
+  {
+   "id": "furn-deskLamp",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric articulated desk lamp: base, two arms, shade, bulb",
+   "knobs": [
+    "pose"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.deskLamp",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "38d30f499513"
+  },
+  {
+   "id": "furn-lantern",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric lantern: frame, glass panels, candle with flame, top handle",
+   "knobs": [
+    "size"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.lantern",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "bb6bd8523c21"
+  },
+  {
+   "id": "furn-wallMirror",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric round or rect wall mirror with frame, reflective surface",
+   "knobs": [
+    "shape",
+    "frame"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.wallMirror",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "126a21baf65e"
+  },
+  {
+   "id": "furn-wallClock",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric wall clock with 12 markers and true seeded time hands",
+   "knobs": [
+    "faceSize",
+    "timeSeed"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.wallClock",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "8245bbce7408"
+  },
+  {
+   "id": "furn-rug",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric two-tone flat rug with inset border panel",
+   "knobs": [
+    "size",
+    "colors"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.rug",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "a6f4d3ed657d"
+  },
+  {
+   "id": "furn-plantPot",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric lathe plant pot with soil and seeded foliage blobs",
+   "knobs": [
+    "potSize",
+    "fullness"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.plantPot",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "b5a290234a3a"
+  },
+  {
+   "id": "furn-pictureFrame",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric picture frame with seeded abstract art",
+   "knobs": [
+    "size",
+    "artSeed"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.pictureFrame",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "14de03f34b92"
+  },
+  {
+   "id": "furn-candleHolder",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric lathe candle holder with candle and flame",
+   "knobs": [
+    "height"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.candleHolder",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "96a88b3d011f"
+  },
+  {
+   "id": "furn-basket",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric tapered lathe basket with rim",
+   "knobs": [
+    "size"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.basket",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "bb6bd8523c21"
+  },
+  {
+   "id": "furn-teapot",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric lathe teapot: body, lid, spout, handle",
+   "knobs": [
+    "size",
+    "ceramic"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.teapot",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "0067262f7e71"
+  },
+  {
+   "id": "furn-plate",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric lathe plate",
+   "knobs": [
+    "radius",
+    "ceramic"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.plate",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "0ddbbae162cf"
+  },
+  {
+   "id": "furn-bottle",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric lathe wine bottle with cap",
+   "knobs": [
+    "height",
+    "glassTint"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.bottle",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "eb5aa64c8947"
+  },
+  {
+   "id": "furn-toaster",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric chrome toaster with slots and side lever",
+   "knobs": [
+    "slots"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.toaster",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "feb74e5a586e"
+  },
+  {
+   "id": "furn-cuttingBoard",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric cutting board with handle",
+   "knobs": [
+    "size"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.cuttingBoard",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "bb6bd8523c21"
+  },
+  {
+   "id": "furn-monitor",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric monitor with emissive screen, neck, base",
+   "knobs": [
+    "screenSize"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.monitor",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "37ee3fa5279a"
+  },
+  {
+   "id": "furn-laptop",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric laptop with angled emissive screen",
+   "knobs": [
+    "screenAngle"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.laptop",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "5ecd3f55273c"
+  },
+  {
+   "id": "furn-keyboard",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric keyboard slab with 48 keys",
+   "knobs": [
+    "layout"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.keyboard",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "c7d4d959e7e9"
+  },
+  {
+   "id": "furn-crate",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric slatted wooden crate",
+   "knobs": [
+    "size"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.crate",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "bb6bd8523c21"
+  },
+  {
+   "id": "furn-trashCan",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric tapered trash can with rim",
+   "knobs": [
+    "size",
+    "finish"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.trashCan",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "eb70c82f14e1"
+  },
+  {
+   "id": "furn-birdhouse",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric birdhouse on post: prism roof, hole, perch",
+   "knobs": [
+    "roofStyle"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.birdhouse",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "aaf4a46b75b5"
+  },
+  {
+   "id": "furn-mailbox",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric mailbox on post: rounded top, door, flag",
+   "knobs": [
+    "flagPose"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.mailbox",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "f20f053c2427"
+  },
+  {
+   "id": "furn-kettleGrill",
+   "component": "furniture",
+   "verb": "generates",
+   "what": "parametric kettle grill: body, lid, 3 legs, grate, handle",
+   "knobs": [
+    "size"
+   ],
+   "outputs": [
+    "furniture mesh (Group)"
+   ],
+   "code_ref": "pulse-v2/tools/tool-furniture.js BUILDERS.kettleGrill",
+   "status": "new",
+   "notes": "Seeded RNG; real-world dimensions in meters; rounded-box + lathe geometry.",
+   "first_seen": "2026-10-04T11:48:19Z",
+   "fp": "bb6bd8523c21"
   }
  ],
  "flagged_useless": [
@@ -5305,7 +5881,7 @@ var COMPS = [
    toolGap:'No THREE.js in this page — the recovered builders run against a minimal geometry/material shim (Group, Mesh, primitives, MeshStandardMaterial) on one small WebGL renderer: no shadows, no textures, one light. The parameter layer (paint/wheels/tank/bars/cage/spoiler) and the buggy body are new panel code; the physics is verbatim.'},
   {id:'comp-furniture', tool:'furniture', toolSrc:'pulse-tools/tool-furniture.js', cats:['space','generators'], icon:'\uD83E\uDE91', label:'Furniture foundry',
    short:'Procedural furniture and common items — actually good-looking.',
-   job:'Seventeen parametric builders (dining chair, armchair, sofa, tables, desk, bookshelf with books, lamps, bed, storage, stool, bench, lathe-turned vase/mug/bowl) on a seeded RNG. Real dimensions in meters, real joinery, rounded-box + lathe geometry, procedural wood grain and fabric weave in-shader, 4 style presets (Shaker, Mid-century, Scandi, Industrial). Shuffle for a random item, copy the recipe.',
+   job:'Fifty parametric builders on a seeded RNG: seating (dining/rocking/office chairs, armchair, sofa, chaise, ottoman, stools, bench), tables (coffee, dining, desk, vanity, sideboard, TV stand), storage (bookshelf with books, wardrobe, nightstand, dresser, crate), beds, lighting (floor/table/desk/pendant lamps, lantern), decor (mirrors, clock, rug, plant, frames, candles, baskets), kitchen (teapot, plate, bottle, toaster, board, mug, bowl), office (monitor, laptop, keyboard), outdoor (birdhouse, mailbox, grill). Real dimensions in meters, real joinery, rounded-box + lathe geometry, procedural wood grain and fabric weave in-shader, 4 style presets (Shaker, Mid-century, Scandi, Industrial). Shuffle for a random item, copy the recipe.',
    why:'Furniture as functions: every item is a pure function of (seed, type, style) — generate endless high-quality items for worlds, rooms, and scenes.',
    technical:'rboxGeo + latheGeo + Renderer', source:'pulse-v2/tools/tool-furniture.js', inMoor:false,
    toolGap:'No THREE.js — minimal geometry/material shim on one small WebGL renderer (from the vehicle builder pattern), upgraded with wood-grain/fabric-weave fragment shading and hemisphere studio lighting. Ground shadow is a CSS blob; no real shadow mapping.'},
@@ -16959,9 +17535,9 @@ function sphGeo(r,ws,hs){ ws=ws||18; hs=hs||12; var G=newGeo(),i,j;
   return G; }
 function torGeo(R,r,rs,ts,arc){ rs=rs||10; ts=ts||28; arc=(arc==null?TAU:arc);
   var G=newGeo(),i,j;
-  for(i=0;i<ts;i++){ if(i/ts*TAU>arc) break;
+  for(i=0;i<ts;i++){
     for(j=0;j<rs;j++){
-      var u0=i/ts*TAU,u1=(i+1)/ts*TAU,v0=j/rs*TAU,v1=(j+1)/rs*TAU;
+      var u0=i/ts*arc,u1=(i+1)/ts*arc,v0=j/rs*TAU,v1=(j+1)/rs*TAU;
       function pt(u,v){ var cu=Math.cos(u),su=Math.sin(u);
         return [(R+r*Math.cos(v))*cu,r*Math.sin(v),(R+r*Math.cos(v))*su]; }
       function nm(u,v){ var cv=Math.cos(v),sv=Math.sin(v);
@@ -17034,6 +17610,15 @@ function makeMats(style, R){
     glass:stdMat({color:hexRGB('#cfd8dc'),opacity:0.35,transparent:true}),
     bulb:stdMat({color:hexRGB('#fff2ce'),emissive:hexRGB('#ffdf9c'),emissiveIntensity:1.6}),
     shade:stdMat({color:hexRGB('#f2ead8'),fabric:1,emissive:hexRGB('#ffedbe'),emissiveIntensity:0.55}),
+    flame:stdMat({color:hexRGB('#ff9a3c'),emissive:hexRGB('#ff7a1a'),emissiveIntensity:2.2}),
+    screen:stdMat({color:hexRGB('#8fa8bd'),emissive:hexRGB('#4a6a8a'),emissiveIntensity:0.8}),
+    paper:stdMat({color:hexRGB('#f4f1e8')}),
+    leaf:stdMat({color:hexRGB('#4a7a3f')}),
+    leafDark:stdMat({color:hexRGB('#33592c')}),
+    soil:stdMat({color:hexRGB('#2e2118')}),
+    steel:stdMat({color:hexRGB('#a8adb2'),metal:1}),
+    glassGreen:stdMat({color:hexRGB('#2a4a34'),opacity:0.55,transparent:true}),
+    mirror:stdMat({color:hexRGB('#b8c8d0'),metal:1,opacity:0.92,transparent:true}),
     mattress:stdMat({color:hexRGB('#f0ece2'),fabric:1}),
     bookMats:null /* filled per-shelf */
   };
@@ -17701,6 +18286,470 @@ TOOLS.furniture={
     geoCache={}; geoSeq=0;
   }
 };
+
+
+
+/* ---------------- batch 2: more furniture ---------------- */
+Object.assign(BUILDERS,{
+
+/* ---- rocking chair: ladder-back on curved rockers ---- */
+rockingChair:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var seatH=0.44, w=0.46, d=0.44, t=0.045;
+  H.rbox(root,fm,0,seatH-t/2,0,w,t,d,0.012);
+  var lx=w/2-0.04, lz=d/2-0.04;
+  [[-lx,-lz],[lx,-lz],[-lx,lz],[lx,lz]].forEach(function(p){
+    H.turnedLeg(root,fm,p[0],p[1],seatH-0.06,0.026); });
+  /* rockers: long gentle arcs in the ZY plane, nested group so the arc centers at bottom */
+  var arcA=Math.PI*0.35, Rr=1.1;
+  [-1,1].forEach(function(s){
+    var g=new T3lite.Group(); g.position.set(s*(lx+0.02),Rr-0.01,0.03);
+    g.rotation.y=Math.PI/2; root.add(g);
+    var rk=H.tor(g,fm,0,0,0,Rr,0.024,arcA);
+    rk.rotation.z=-Math.PI/2-arcA/2;
+    /* posts from rocker up to seat */
+    H.rod(root,[s*(lx+0.02),0.05,-0.22],[s*lx,seatH-0.05,-lz],0.02,fm);
+    H.rod(root,[s*(lx+0.02),0.05,0.26],[s*lx,seatH-0.05,lz],0.02,fm); });
+  /* back */
+  var postH=0.55, px=w/2-0.04, pz=-(d/2-0.04);
+  [-px,px].forEach(function(x){
+    H.turnedLeg(root,fm,x,pz,postH,0.024).position.y=seatH; });
+  for(var i=0;i<3;i++){ var y=seatH+0.12+(postH-0.2)*i/2;
+    var s2=H.rbox(root,fm,0,y,pz,px*2-0.02,0.07,0.022,0.008); s2.rotation.x=0.06; }
+  return root; },
+
+/* ---- office chair: 5-star base, gas lift, backrest ---- */
+officeChair:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var up=R.chance(0.6)?'fabric':'leather';
+  var seatY=0.52;
+  H.rbox(root,up,0,seatY,0,0.5,0.09,0.48,0.035);
+  var bk=H.rbox(root,up,0,seatY+0.36,-0.26,0.46,0.55,0.09,0.035); bk.rotation.x=-0.1;
+  H.cyl(root,'blackMetal',0,0.32,0,0.025,0.025,0.30,12);          /* gas lift */
+  H.cyl(root,'blackMetal',0,0.16,0,0.05,0.05,0.06,12);
+  for(var i=0;i<5;i++){ var a=i/5*TAU;                            /* 5-star */
+    var x=Math.cos(a)*0.30, z=Math.sin(a)*0.30;
+    H.rod(root,[0,0.13,0],[x,0.06,z],0.02,'blackMetal');
+    H.sph(root,'blackMetal',x,0.035,z,0.035); }
+  if(R.chance(0.7)){ [-1,1].forEach(function(s){                  /* armrests */
+      H.cyl(root,'blackMetal',s*0.26,seatY-0.10,0,0.018,0.018,0.22,10);
+      H.rbox(root,up,s*0.26,seatY+0.03,0.02,0.07,0.04,0.30,0.015); }); }
+  return root; },
+
+/* ---- sideboard / credenza ---- */
+sideboard:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=R.f(1.6,2.0), h=0.62, d=0.46;
+  H.rbox(root,fm,0,h/2+0.08,0,w,h,d,0.015);
+  H.rbox(root,fm,0,h+0.095,0,w+0.03,0.035,d+0.03,0.012);
+  var n=R.i(3,4);
+  for(var i=0;i<n;i++){ var x=(i-(n-1)/2)*(w/n);
+    var door=R.chance(0.5);
+    H.rbox(root,'woodDark',x,h/2+0.08,d/2+0.004,w/n-0.05,h-0.10,0.018,0.006);
+    if(door){ H.sph(root,'brass',x+w/n/2-0.09,h/2+0.08,d/2+0.025,0.014); }
+    else { H.box(root,'brass',x,h/2+0.08,d/2+0.022,w/n-0.24,0.018,0.02); } }
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(p){
+    H.taperedLeg(root,fm,p[0]*(w/2-0.05),p[1]*(d/2-0.05),0.13,0.05,0.03); });
+  return root; },
+
+/* ---- TV stand ---- */
+tvStand:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=1.5, h=0.44, d=0.40;
+  H.rbox(root,fm,0,h/2+0.06,0,w,h,d,0.014);
+  H.box(root,fm,0,h/2+0.06,0,w-0.08,0.02,d-0.06);                 /* mid shelf */
+  [-1,1].forEach(function(s){
+    H.rbox(root,'woodDark',s*(w/4+0.02),h/2+0.06,d/2+0.004,w/4-0.06,h-0.12,0.018,0.006);
+    H.sph(root,'brass',s*(w/4+0.02),h/2+0.06,d/2+0.025,0.013); });
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(p){
+    H.taperedLeg(root,fm,p[0]*(w/2-0.05),p[1]*(d/2-0.05),0.11,0.05,0.03); });
+  return root; },
+
+/* ---- wardrobe ---- */
+wardrobe:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=1.15, h=1.95, d=0.58;
+  H.rbox(root,fm,0,h/2+0.05,0,w,h,d,0.015);
+  H.rbox(root,fm,0,h+0.075,0,w+0.05,0.05,d+0.05,0.015);           /* crown */
+  H.box(root,fm,0,0.075,0,w-0.04,0.05,d-0.04);                   /* plinth */
+  [-1,1].forEach(function(s){
+    H.rbox(root,'woodDark',s*w/4,h/2+0.05,d/2+0.004,w/2-0.05,h-0.14,0.018,0.006);
+    H.sph(root,'brass',s*0.07,h/2+0.05,d/2+0.025,0.016); });
+  return root; },
+
+/* ---- vanity + round mirror ---- */
+vanity:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=1.05, d=0.44, h=0.74, t=0.04;
+  H.rbox(root,fm,0,h-t/2,0,w,t,d,0.012);
+  [-1,1].forEach(function(s){ H.box(root,fm,s*(w/2-0.05),(h-t)/2,0,0.05,h-t,d-0.06); });
+  H.rbox(root,'woodDark',0,h-t-0.10,0.10,0.4,0.12,0.015,0.005);
+  H.sph(root,'brass',0,h-t-0.10,0.115,0.013);
+  /* mirror on posts */
+  var mr=0.30;
+  [-1,1].forEach(function(s){ H.cyl(root,fm,s*(mr+0.03),h+0.28,-d/2+0.06,0.016,0.016,0.62,10); });
+  var fr=H.tor(root,fm,0,h+0.55,-d/2+0.06,mr,0.022);
+  H.cyl(root,'mirror',0,h+0.55,-d/2+0.06,mr-0.015,mr-0.015,0.008,28);
+  return root; },
+
+/* ---- ottoman / pouf ---- */
+ottoman:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var up=R.chance(0.7)?'fabric':'leather';
+  if(R.chance(0.5)){ var r=R.f(0.26,0.32);
+    H.cyl(root,up,0,0.17,0,r,r*0.94,0.30,24);
+    H.cyl(root,up,0,0.335,0,r*0.96,r*0.96,0.05,24); }
+  else { var w=R.f(0.5,0.62);
+    H.rbox(root,up,0,0.19,0,w,0.34,w*0.9,0.09); }
+  return root; },
+
+/* ---- chaise lounge ---- */
+chaiseLounge:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var up=R.chance(0.7)?'fabric':'leather';
+  var l=1.55, w=0.68, seatY=0.38;
+  H.rbox(root,up,0,seatY-0.08,0.1,w-0.06,0.20,l-0.5,0.07);
+  H.rbox(root,up,0,seatY+0.02,0.28,w-0.20,0.13,0.95,0.055);       /* long cushion */
+  var bk=H.rbox(root,up,0,seatY+0.34,-0.52,w-0.20,0.62,0.14,0.06); bk.rotation.x=-0.35;
+  H.rbox(root,up,-(w/2-0.10),seatY+0.12,-0.05,0.16,0.30,1.05,0.07); /* one arm */
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(p){
+    H.taperedLeg(root,fm,p[0]*(w/2-0.07),p[1]*0.55,seatY-0.18,0.05,0.03); });
+  return root; },
+
+/* ---- coat rack ---- */
+coatRack:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var h=1.82;
+  H.lathe(root,fm,0,0,0,[[0.001,0],[0.17,0],[0.17,0.03],[0.05,0.06],[0.026,0.10]],20);
+  H.cyl(root,fm,0,h/2,0,0.024,0.024,h,14);
+  H.sph(root,fm,0,h+0.02,0,0.035);
+  for(var i=0;i<4;i++){ var a=i/4*TAU+TAU/8;
+    var x=Math.cos(a), z=Math.sin(a);
+    H.rod(root,[x*0.02,h-0.28,z*0.02],[x*0.20,h-0.10,z*0.20],0.014,fm);
+    H.sph(root,fm,x*0.20,h-0.10,z*0.20,0.022); }
+  return root; },
+
+/* ---- folding room divider: 3 slatted panels ---- */
+roomDivider:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var pw=0.55, ph=1.72, ang=R.f(0.3,0.5);
+  for(var p=0;p<3;p++){
+    var g=new T3lite.Group();
+    g.position.set((p-1)*pw*Math.cos(ang*0.5),0,(p===1?0:(p===0?-1:1)*pw*Math.sin(ang*0.5)*0.9));
+    g.rotation.y=(p-1)*ang; root.add(g);
+    H.box(g,fm,-pw/2+0.02,ph/2,0,0.045,ph,0.04); H.box(g,fm,pw/2-0.02,ph/2,0,0.045,ph,0.04);
+    H.box(g,fm,0,ph-0.03,0,pw,0.06,0.04); H.box(g,fm,0,0.06,0,pw,0.09,0.04);
+    for(var s=0;s<5;s++){ var y=0.28+s*(ph-0.62)/4;
+      var sl=H.box(g,fm,0,y,0,pw-0.09,0.10,0.018); sl.rotation.x=0.5; } }
+  return root; }
+});
+
+/* ---------------- batch 3: lighting + decor + kitchen ---------------- */
+Object.assign(BUILDERS,{
+
+/* ---- pendant lamp ---- */
+pendantLamp:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var cm=R.pick(['blackMetal','brass','ceramic']);
+  var shadeH=R.f(0.22,0.32), sr=R.f(0.15,0.22);
+  H.cyl(root,'blackMetal',0,1.35,0,0.008,0.008,0.7,8);            /* cord */
+  var kind=R.pick(['dome','cone','drum']);
+  if(kind==='dome') H.lathe(root,cm,0,1.02,0,[[0.02,shadeH],[sr*0.9,shadeH*0.55],[sr,0]],24);
+  else if(kind==='cone') H.lathe(root,cm,0,1.02,0,[[0.03,shadeH],[sr,0],[sr,0]],24);
+  else H.lathe(root,cm,0,1.02,0,[[sr*0.92,shadeH],[sr,0],[sr,0]],24);
+  H.sph(root,'bulb',0,1.06,0,0.035);
+  return root; },
+
+/* ---- desk lamp: articulated pose ---- */
+deskLamp:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var cm=R.pick(['blackMetal','brass']);
+  H.lathe(root,cm,0,0,0,[[0.001,0],[0.11,0],[0.11,0.025],[0.04,0.05]],20);
+  H.rod(root,[0,0.05,0],[0.10,0.42,0],0.016,cm);
+  H.rod(root,[0.10,0.42,0],[0.30,0.52,0.02],0.014,cm);
+  H.sph(root,cm,0.10,0.42,0,0.024);
+  var sh=H.lathe(root,cm,0.30,0.40,0.02,[[0.035,0.14],[0.11,0],[0.11,0]],22);
+  sh.rotation.z=0.5; sh.rotation.x=0.1;
+  H.sph(root,'bulb',0.345,0.40,0.03,0.028);
+  return root; },
+
+/* ---- lantern ---- */
+lantern:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=0.16, h=0.30;
+  H.box(root,fm,0,0.02,0,w,0.04,w); H.box(root,fm,0,h+0.03,0,w+0.02,0.04,w+0.02);
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(p){
+    H.box(root,fm,p[0]*(w/2-0.015),h/2+0.02,p[1]*(w/2-0.015),0.03,h,0.03); });
+  H.box(root,'glass',0,h/2+0.02,0,w-0.05,h-0.04,w-0.05);
+  H.cyl(root,'paper',0,0.10,0,0.035,0.035,0.12,14);
+  H.sph(root,'flame',0,0.175,0,0.014,1,1.6,1);
+  var hd=H.tor(root,fm,0,h+0.05,0,0.07,0.014,Math.PI); hd.rotation.z=0;
+  return root; },
+
+/* ---- wall mirror (product-shot floating) ---- */
+wallMirror:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var fm=R.pick(['brass','blackMetal','wood']);
+  if(R.chance(0.5)){ var r=R.f(0.3,0.42);
+    H.tor(root,fm,0,0.75,0,r,0.028);
+    H.cyl(root,'mirror',0,0.75,0,r-0.02,r-0.02,0.01,32); }
+  else { var w=R.f(0.5,0.7), h=R.f(0.7,1.0);
+    H.rbox(root,fm,0,0.8,0,w,h,0.05,0.015);
+    H.box(root,'mirror',0,0.8,0.012,w-0.09,h-0.09,0.012); }
+  return root; },
+
+/* ---- wall clock ---- */
+wallClock:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var fm=R.pick(['blackMetal','wood','brass']);
+  var r=R.f(0.16,0.24);
+  H.cyl(root,fm,0,0.8,0,r,r,0.045,28).rotation.x=Math.PI/2;
+  H.cyl(root,'paper',0,0.8,0.024,r-0.025,r-0.025,0.008,28).rotation.x=Math.PI/2;
+  for(var i=0;i<12;i++){ var a=i/12*TAU;
+    H.box(root,'blackMetal',Math.cos(a)*(r-0.05),0.8+Math.sin(a)*(r-0.05),0.028,
+      0.012,i%3?0.03:0.05,0.006); }
+  var hr=R.f(1,12), mn=R.f(0,60);
+  var ha=(hr%12+mn/60)/12*TAU, ma=mn/60*TAU;
+  var h1=H.box(root,'blackMetal',0,0.8,0.032,0.014,r*0.5,0.008);
+  h1.geometry=h1.geometry; /* pivot at center: offset trick below */
+  h1.position.set(Math.sin(ha)*r*0.22,0.8+Math.cos(ha)*r*0.22,0.032); h1.rotation.z=-ha;
+  var m1=H.box(root,'blackMetal',0,0.8,0.034,0.010,r*0.75,0.008);
+  m1.position.set(Math.sin(ma)*r*0.33,0.8+Math.cos(ma)*r*0.33,0.034); m1.rotation.z=-ma;
+  H.sph(root,'brass',0,0.8,0.036,0.012);
+  return root; },
+
+/* ---- rug: two-tone flat ---- */
+rug:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var w=R.f(1.5,1.9), d=R.f(2.1,2.6);
+  var base=R.pick(['#b09a7a','#7a8a99','#9a8a7a','#6a7a6a']);
+  var acc=R.pick(['#e8e0d0','#3a3d40','#a8503c','#2f5d50']);
+  mats.__rugBase=stdMat({color:hexRGB(base),fabric:1});
+  mats.__rugAcc=stdMat({color:hexRGB(acc),fabric:1});
+  H.rbox(root,'__rugBase',0,0.012,0,w,0.024,d,0.01);
+  H.rbox(root,'__rugAcc',0,0.024,0,w*0.78,0.026,d*0.8,0.01);
+  return root; },
+
+/* ---- plant pot + simple plant ---- */
+plantPot:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var cm=R.pick(['ceramic','ceramic2']);
+  var r=R.f(0.13,0.18), h=R.f(0.24,0.32);
+  H.lathe(root,cm,0,0,0,[[0.001,0],[r*0.72,0],[r*0.85,0.03],[r,h*0.92],[r*1.02,h]],22);
+  H.cyl(root,'soil',0,h*0.86,0,r*0.86,r*0.86,0.03,20);
+  var n=R.i(5,8);
+  for(var i=0;i<n;i++){ var a=R.f(0,TAU), rr=R.f(0,r*0.5);
+    var x=Math.cos(a)*rr, z=Math.sin(a)*rr, y=h+R.f(0.10,0.34);
+    var s=H.sph(root,R.chance(0.5)?'leaf':'leafDark',x,y,z,R.f(0.06,0.11));
+    s.scale.set(1,R.f(1.2,1.8),1); s.rotation.y=R.f(0,TAU); }
+  return root; },
+
+/* ---- picture frame ---- */
+pictureFrame:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=R.f(0.5,0.75), h=R.f(0.65,0.95), b=0.055;
+  H.box(root,fm,0,0.85+h/2-b/2,0,w,b,0.04); H.box(root,fm,0,0.85-h/2+b/2,0,w,b,0.04);
+  H.box(root,fm,-w/2+b/2,0.85,0,b,h-2*b,0.04); H.box(root,fm,w/2-b/2,0.85,0,b,h-2*b,0.04);
+  var art=R.pick(['#7a93a8','#a8b09a','#c4b49a','#8a4b5c','#5a6e7a']);
+  mats.__art=stdMat({color:hexRGB(art)});
+  H.box(root,'__art',0,0.85,-0.008,w-2*b,h-2*b,0.012);
+  /* simple horizon line on the art */
+  mats.__art2=stdMat({color:hexRGB('#e8e2d4')});
+  H.box(root,'__art2',0,0.85+h*0.1,-0.001,w-2*b,h*0.28,0.014);
+  return root; },
+
+/* ---- candle holder + candle + flame ---- */
+candleHolder:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var cm=R.pick(['brass','ceramic','blackMetal']);
+  H.lathe(root,cm,0,0,0,[[0.001,0],[0.06,0],[0.062,0.015],[0.03,0.03],[0.032,0.05]],20);
+  var ch=R.f(0.09,0.14);
+  H.cyl(root,'paper',0,0.05+ch/2,0,0.024,0.024,ch,16);
+  H.sph(root,'flame',0,0.05+ch+0.012,0,0.011,1,1.7,1);
+  return root; },
+
+/* ---- woven-look basket ---- */
+basket:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var bc=R.pick(['#a8814f','#8a6a42','#b59468']);
+  mats.__basket=stdMat({color:hexRGB(bc),fabric:1});
+  var r=R.f(0.16,0.22), h=R.f(0.22,0.30);
+  H.lathe(root,'__basket',0,0,0,[[0.001,0],[r*0.7,0],[r*0.92,h*0.9],[r,h]],24);
+  var rim=H.tor(root,'__basket',0,h,0,r,0.014); rim.rotation.x=Math.PI/2;
+  return root; },
+
+/* ---- teapot ---- */
+teapot:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var cm=R.pick(['ceramic','ceramic2']);
+  var r=R.f(0.075,0.095);
+  H.lathe(root,cm,0,0,0,[[0.001,0],[r*0.62,0],[r,0.05],[r*1.02,0.11],[r*0.72,0.17],[r*0.4,0.185]],26);
+  H.lathe(root,cm,0,0.185,0,[[r*0.4,0],[r*0.42,0.012],[0.001,0.02]],20);
+  H.sph(root,cm,0,0.215,0,0.014);
+  var sp=H.cyl(root,cm,0,0,0,0.016,0.026,0.11,14);       /* spout */
+  sp.position.set(r*0.95,0.10,0); sp.rotation.z=-0.9;
+  var hd=H.tor(root,cm,-r*0.95,0.10,0,0.05,0.012,Math.PI); /* handle */
+  hd.rotation.z=Math.PI/2;
+  return root; },
+
+/* ---- plate ---- */
+plate:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var cm=R.pick(['ceramic','ceramic2']);
+  var r=R.f(0.11,0.14);
+  H.lathe(root,cm,0,0,0,[[0.001,0],[r*0.55,0],[r*0.9,0.012],[r,0.028],[r*0.97,0.032]],26);
+  return root; },
+
+/* ---- bottle ---- */
+bottle:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var h=R.f(0.28,0.34), r=R.f(0.038,0.046);
+  H.lathe(root,'glassGreen',0,0,0,
+    [[0.001,0],[r,0],[r,h*0.55],[r*0.42,h*0.72],[r*0.36,h*0.92],[r*0.4,h]],22);
+  H.cyl(root,'blackMetal',0,h+0.008,0,r*0.36,r*0.36,0.025,14);
+  return root; },
+
+/* ---- toaster ---- */
+toaster:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var w=0.28, h=0.19, d=0.17;
+  H.rbox(root,'chrome',0,h/2+0.02,0,w,h,d,0.03);
+  H.box(root,'blackMetal',0,0.015,0,w-0.04,0.03,d-0.04);
+  [-1,1].forEach(function(s){
+    H.box(root,'blackMetal',s*0.055,h+0.015,0,0.075,0.012,d-0.07); }); /* slots */
+  H.rod(root,[w/2+0.005,0.16,0],[w/2+0.03,0.16,0],0.008,'blackMetal');
+  H.box(root,'blackMetal',w/2+0.035,0.16,0,0.02,0.045,0.03);           /* lever */
+  return root; },
+
+/* ---- cutting board ---- */
+cuttingBoard:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var w=0.30, l=0.34;
+  H.rbox(root,'wood',0,0.014,0.03,w,0.028,l,0.012);
+  H.rbox(root,'wood',0,0.014,-l/2-0.045,w*0.32,0.024,0.11,0.011);
+  return root; }
+});
+
+/* ---------------- batch 4: office + storage + outdoor ---------------- */
+Object.assign(BUILDERS,{
+
+/* ---- monitor ---- */
+monitor:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var w=0.56, h=0.34;
+  H.cyl(root,'blackMetal',0,0.02,0,0.11,0.13,0.03,20);
+  H.cyl(root,'blackMetal',0,0.16,0,0.025,0.025,0.28,12);
+  H.rbox(root,'blackMetal',0,0.42,0,w,h,0.035,0.012);
+  H.box(root,'screen',0,0.42,0.012,w-0.045,h-0.045,0.008);
+  return root; },
+
+/* ---- laptop ---- */
+laptop:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var w=0.33, d=0.23;
+  H.rbox(root,'blackMetal',0,0.014,0,w,0.024,d,0.008);
+  H.box(root,'blackMetal',0,0.028,0.02,w-0.03,0.006,d-0.05);   /* keyboard deck */
+  var sc=H.rbox(root,'blackMetal',0,0.13,-d/2+0.008,w,0.24,0.018,0.008);
+  sc.rotation.x=-0.28;
+  var face=H.box(root,'screen',0,0.13,-d/2+0.019,w-0.03,0.21,0.004);
+  face.rotation.x=-0.28;
+  return root; },
+
+/* ---- keyboard ---- */
+keyboard:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var w=0.37, d=0.135;
+  H.rbox(root,'blackMetal',0,0.012,0,w,0.024,d,0.008);
+  for(var r=0;r<4;r++) for(var c=0;c<12;c++){
+    var kw=(r===3&&c>7)?0.052:0.024;
+    H.box(root,'paper',(c-5.5)*0.028+(r===3&&c>7?0.014:0),0.026,(r-1.5)*0.03,kw-0.004,0.014,0.024); }
+  return root; },
+
+/* ---- slatted crate ---- */
+crate:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=R.f(0.4,0.55), h=R.f(0.3,0.42), d=R.f(0.3,0.4);
+  var sl=0.07, gap=0.025;
+  for(var y=0;y<h;y+=sl+gap){
+    H.box(root,fm,0,y+sl/2,-d/2,w,sl,0.02); H.box(root,fm,0,y+sl/2,d/2,w,sl,0.02);
+    H.box(root,fm,-w/2,y+sl/2,0,0.02,sl,d); H.box(root,fm,w/2,y+sl/2,0,0.02,sl,d); }
+  H.box(root,fm,0,0.01,0,w,0.02,d);
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(p){
+    H.box(root,fm,p[0]*(w/2-0.01),h/2,p[1]*(d/2-0.01),0.045,h,0.045); });
+  return root; },
+
+/* ---- trash can ---- */
+trashCan:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var cm=R.pick(['steel','blackMetal']);
+  var r=R.f(0.14,0.17), h=R.f(0.32,0.4);
+  H.lathe(root,cm,0,0,0,[[0.001,0],[r*0.78,0],[r,0.03],[r*1.04,h*0.94],[r*1.04,h]],22);
+  var rim=H.tor(root,cm,0,h,0,r*1.04,0.012); rim.rotation.x=Math.PI/2;
+  return root; },
+
+/* ---- birdhouse ---- */
+birdhouse:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var w=0.19, h=0.24, d=0.17;
+  H.cyl(root,fm,0,0.55,0,0.025,0.025,1.1,10);                     /* post */
+  H.box(root,fm,0,1.10+h/2,0,w,h,d);
+  var r1=H.box(root,'woodDark',0,1.10+h+0.045,-d/4-0.01,w+0.05,0.03,d/2+0.08);
+  r1.rotation.x=0.5;
+  var r2=H.box(root,'woodDark',0,1.10+h+0.045,d/4+0.01,w+0.05,0.03,d/2+0.08);
+  r2.rotation.x=-0.5;
+  H.cyl(root,'blackMetal',0,1.10+h*0.62,0.088,0.028,0.028,0.012,16).rotation.x=Math.PI/2; /* hole */
+  H.cyl(root,fm,0,1.10+h*0.42,0.10,0.008,0.008,0.07,8).rotation.x=Math.PI/2;               /* perch */
+  return root; },
+
+/* ---- mailbox ---- */
+mailbox:function(R,H,mats,style){
+  var root=new T3lite.Group(), fm=frameMat(style);
+  var h=1.05, w=0.24, d=0.5;
+  H.box(root,fm,0,h/2,0,0.09,h,0.09);
+  H.box(root,fm,0,h+0.10,0,w,0.20,d);
+  var top=H.cyl(root,fm,0,h+0.20,0,w/2,w/2,d,20); top.rotation.x=Math.PI/2;
+  H.box(root,'blackMetal',0,h+0.10,d/2+0.004,0.16,0.14,0.015);   /* door */
+  H.rod(root,[w/2+0.01,h+0.28,0.1],[w/2+0.01,h+0.48,0.1],0.012,'blackMetal');
+  H.box(root,'blackMetal',w/2+0.01,h+0.50,0.1,0.03,0.05,0.09);   /* flag */
+  return root; },
+
+/* ---- kettle grill ---- */
+kettleGrill:function(R,H,mats,style){
+  var root=new T3lite.Group();
+  var r=0.28, y=0.62;
+  H.sph(root,'blackMetal',0,y,0,r,1,0.72,1);
+  var lid=H.sph(root,'blackMetal',0,y+0.10,0,r*0.98,1,0.5,1);
+  H.cyl(root,'blackMetal',0,y+0.30,0,0.02,0.02,0.10,10);
+  var hd=H.tor(root,'blackMetal',0,y+0.36,0,0.07,0.012,Math.PI);
+  for(var i=0;i<3;i++){ var a=i/3*TAU;
+    H.rod(root,[Math.cos(a)*r*0.7,y-0.12,Math.sin(a)*r*0.7],
+               [Math.cos(a)*r*1.15,0.02,Math.sin(a)*r*1.15],0.016,'blackMetal'); }
+  H.cyl(root,'steel',0,y+0.02,0,r*0.8,r*0.8,0.015,20);           /* grate */
+  return root; }
+});
+
+/* register the new types in the picker */
+ITEM_TYPES.push(
+  {id:'rockingChair',name:'Rocking chair'},{id:'officeChair',name:'Office chair'},
+  {id:'sideboard',name:'Sideboard'},{id:'tvStand',name:'TV stand'},
+  {id:'wardrobe',name:'Wardrobe'},{id:'vanity',name:'Vanity'},
+  {id:'ottoman',name:'Ottoman'},{id:'chaiseLounge',name:'Chaise lounge'},
+  {id:'coatRack',name:'Coat rack'},{id:'roomDivider',name:'Room divider'},
+  {id:'pendantLamp',name:'Pendant lamp'},{id:'deskLamp',name:'Desk lamp'},
+  {id:'lantern',name:'Lantern'},{id:'wallMirror',name:'Wall mirror'},
+  {id:'wallClock',name:'Wall clock'},{id:'rug',name:'Rug'},
+  {id:'plantPot',name:'Plant pot'},{id:'pictureFrame',name:'Picture frame'},
+  {id:'candleHolder',name:'Candle holder'},{id:'basket',name:'Basket'},
+  {id:'teapot',name:'Teapot'},{id:'plate',name:'Plate'},{id:'bottle',name:'Bottle'},
+  {id:'toaster',name:'Toaster'},{id:'cuttingBoard',name:'Cutting board'},
+  {id:'monitor',name:'Monitor'},{id:'laptop',name:'Laptop'},{id:'keyboard',name:'Keyboard'},
+  {id:'crate',name:'Crate'},{id:'trashCan',name:'Trash can'},
+  {id:'birdhouse',name:'Birdhouse'},{id:'mailbox',name:'Mailbox'},
+  {id:'kettleGrill',name:'Kettle grill'}
+);
+/* small-item camera framing */
+Object.assign(PROP_TYPES,{plate:1,bottle:1,teapot:1,candleHolder:1,lantern:1,
+  keyboard:1,laptop:1,basket:1});
 
 })();
 
