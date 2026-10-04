@@ -1,0 +1,413 @@
+{
+  "name": "MOOR Project Pulse",
+  "version": "2.1",
+  "generated": "2026-10-04T02:57:59Z",
+  "page": "https://bassseamoor.github.io/render-queue/pulse-dashboard.html",
+  "manifest_url": "https://bassseamoor.github.io/render-queue/pulse-manifest.json",
+  "repo": "bassseamoor/render-queue",
+  "branch": "main",
+  "for_ai": "You were handed the Project Pulse link. This manifest is the underlying logic map. Each tool has a panel_source_url (the interactive implementation, plain browser JavaScript, fetch it and read it) and a component_source (the recovered/original software it builds on). depends_on lists the globals a panel source needs. To reuse a tool as a dependency, fetch its panel source and provide the listed globals. Shared libs live under pulse-tools/. The dashboard page itself is assembled by build_pulse_v2.py from pulse-v2/dashboard.js, pulse-v2/tools/*.js, and verbatim component sources.",
+  "build": {
+    "script": "build_pulse_v2.py",
+    "description": "Assembles pulse-dashboard.html from the mockup skeleton, dashboard.js (component inventory), tools/*.js (interactive panels), and verbatim recovered component sources. Nothing is modified; panel code is additive.",
+    "sources": {
+      "dashboard": "pulse-v2/dashboard.js",
+      "tools": "pulse-v2/tools/tool-*.js",
+      "components": "components/<name>/ (verbatim recovered sources)"
+    }
+  },
+  "shared_libs": {
+    "seed-rng": {
+      "provides": [
+        "streamFrom(name, seed)",
+        "hashStr(s)"
+      ],
+      "source": "components/seed-rng/rng.js",
+      "note": "Deterministic named streams. Every procedural tool depends on this."
+    },
+    "moorworld": {
+      "provides": [
+        "MoorWorld",
+        "planetType(planet)"
+      ],
+      "source": "components/moorworld/moorworld.js",
+      "note": "Canonical world/planet data: 8 sectors, 57 systems, 254 planets."
+    },
+    "palettes": {
+      "provides": [
+        "MAT (10 planet-type palettes)",
+        "PTEX"
+      ],
+      "source": "components/palettes/palettes.js",
+      "note": "Procedural material/color tables keyed by planet type."
+    },
+    "moor-wasm": {
+      "provides": [
+        "MoorWasm.initSync(wasmBytes)",
+        "MoorWasm.handle(requestJson)"
+      ],
+      "source": "moor-core-v0/crates/moor-web/web/pkg/moor_web_bg.wasm",
+      "note": "Real Rust intent compiler compiled to WASM. Reference only; production is js-create-pipeline."
+    }
+  },
+  "tools": [
+    {
+      "id": "terrain-core",
+      "label": "Terrain sculpting",
+      "what_it_does": "Generate land, shape it, and save it.",
+      "panel_source": "pulse-tools/tool-terrain.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-terrain.js",
+      "component": "terrain-core",
+      "component_source": "components/terrain-core/source/terrain-core.mjs",
+      "in_moor": false,
+      "honest_limits": "No built-in renderer â the 2D heightmap painter in this panel is new panel code, copied from the proven pattern in the previous dashboard. Save/load uses the component’s own strict pack/unpack.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "terrain-field",
+      "label": "Detailed terrain",
+      "what_it_does": "Draw ridges, roughness, and small ground detail.",
+      "panel_source": "pulse-tools/tool-field.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-field.js",
+      "component": "terrain-field",
+      "component_source": "components/terrain-field/field.glsl",
+      "in_moor": false,
+      "honest_limits": "The component is shader functions only â the host page (canvas, compile, controls) is panel code copied from its two working hosts. Brush-edit uniforms never had a UI before this panel. No save format for edits exists in the component; exporting them is panel-owned.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "mesh-builder",
+      "label": "City geometry builder",
+      "what_it_does": "Build 3D shapes and give them materials.",
+      "panel_source": "pulse-tools/tool-mesh.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-mesh.js",
+      "component": "mesh-builder",
+      "component_source": "components/mesh-builder/mesh-builder.js",
+      "in_moor": false,
+      "honest_limits": "Materials 20 (blimp marquee) and 21 (billboard) need texture painters that were not recovered â they render flat grey here, labeled honestly. No save/load in the component; the shape list is panel state.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "moorworld",
+      "label": "Universe explorer",
+      "what_it_does": "Browse sectors, systems, planets, and zones.",
+      "panel_source": "pulse-tools/tool-world.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-world.js",
+      "component": "moorworld",
+      "component_source": "components/moorworld/moorworld.js",
+      "in_moor": false,
+      "honest_limits": "The component is data only â no renderer. The tree browser is new panel code over its query API. Prose summaries exist for planets only.",
+      "depends_on": [
+        "moorworld: MoorWorld, planetType",
+        "palettes: MAT",
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "palettes",
+      "label": "Planet color sets",
+      "what_it_does": "Ten coordinated color sets for planet types.",
+      "panel_source": "pulse-tools/tool-palettes.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-palettes.js",
+      "component": "palettes",
+      "component_source": "components/palettes/palettes.js",
+      "in_moor": false,
+      "honest_limits": "Pure data â no renderer and no edit model. The planet preview and the temporary-experiment overrides are panel code, clearly labeled as panel state, not component behavior.",
+      "depends_on": [
+        "palettes: MAT",
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "ambience-engine",
+      "label": "Ambient sound generator",
+      "what_it_does": "Create repeatable background soundscapes.",
+      "panel_source": "pulse-tools/tool-ambience.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-ambience.js",
+      "component": "ambience-engine",
+      "component_source": "components/ambience-engine/ambience.js",
+      "in_moor": false,
+      "honest_limits": "Recipes are fixed cards â no knobs beyond seed, recipe, and length. No audio export in the component. The waveform is panel code drawn from the real rendered samples.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "spawn-director",
+      "label": "Enemy wave director",
+      "what_it_does": "Choose enemies, wave timing, and difficulty.",
+      "panel_source": "pulse-tools/tool-spawn.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-spawn.js",
+      "component": "spawn-director",
+      "component_source": "components/spawn-director/spawn-director.js",
+      "in_moor": false,
+      "honest_limits": "No fixed wave schedule to display (swarms are random-timed) and no explicit difficulty number â the panel derives a difficulty readout from the real interval/batch/stat curves and labels it as derived.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "perf-governor",
+      "label": "Automatic graphics quality",
+      "what_it_does": "Reduce detail when frame times get too high.",
+      "panel_source": "pulse-tools/tool-perf.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-perf.js",
+      "component": "perf-governor",
+      "component_source": "components/perf-governor/perf-governor.js",
+      "in_moor": false,
+      "honest_limits": "It only reports a quality number â applying it (fewer particles, lower resolution) is the host’s job. Thresholds are hardcoded in the component. The quality-over-time chart is a panel-side sample buffer.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "planet-vegetation",
+      "label": "Plant generator",
+      "what_it_does": "Grow the planet’s plants from a seed.",
+      "panel_source": "pulse-tools/tool-vegetation.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-vegetation.js",
+      "component": "planet-vegetation",
+      "component_source": "your_files/moor-planet-demo.html (plant builders)",
+      "in_moor": false,
+      "honest_limits": "The plant shapes are the real builders from the planet demo (run against a minimal geometry shim â no THREE.js here). The orbit camera, ground, and this wind sway are panel viewing code; the real placement shader is planet-field-specific.",
+      "depends_on": [
+        "moorworld: MoorWorld, planetType",
+        "palettes: MAT",
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "terrain-pipeline",
+      "label": "Generator pipeline inspector",
+      "what_it_does": "See inside the terrain generator, add layers.",
+      "panel_source": "pulse-tools/tool-pipeline.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-pipeline.js",
+      "component": "terrain-pipeline",
+      "component_source": "components/terrain-core (pipeline) + panel layers",
+      "in_moor": false,
+      "honest_limits": "The base pipeline is the untouched component. Added layers are panel composition â real seeded math, but not part of the component.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "softbody-creatures",
+      "label": "Creature Lab",
+      "what_it_does": "Stage A: end-to-end procedural walker.",
+      "panel_source": "pulse-tools/tool-creatures.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-creatures.js",
+      "component": "softbody-creatures",
+      "component_source": "new: Creature Lab (handoff v1.0 Stage A)",
+      "in_moor": false,
+      "honest_limits": "Stage A only: bilateral walkers (4/6 legs) on fixture terrain. Swimming, flight, climbing, burrowing, breeding, damage, ecosystems are planned (Stages B–G), explicitly not present.",
+      "depends_on": [
+        "moorworld: MoorWorld, planetType",
+        "palettes: MAT",
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "canvas-shell",
+      "label": "MOOR canvas",
+      "what_it_does": "The MOOR workspace itself.",
+      "panel_source": "",
+      "panel_source_url": null,
+      "component": "canvas-shell",
+      "component_source": "moor-v1 shell",
+      "in_moor": true,
+      "honest_limits": "",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "wrangler-catalog",
+      "label": "App Wrangler",
+      "what_it_does": "The registry of shipped apps.",
+      "panel_source": "",
+      "panel_source_url": null,
+      "component": "wrangler-catalog",
+      "component_source": "tools/colony/app-wrangler/",
+      "in_moor": true,
+      "honest_limits": "",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "js-create-pipeline",
+      "label": "Creation pipeline",
+      "what_it_does": "The production way MOOR builds apps.",
+      "panel_source": "",
+      "panel_source_url": null,
+      "component": "js-create-pipeline",
+      "component_source": "moor-v1 pipeline",
+      "in_moor": true,
+      "honest_limits": "",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "rust-intent-compiler",
+      "label": "Intent compiler (reference)",
+      "what_it_does": "Verified reference software, not production.",
+      "panel_source": "pulse-tools/tool-intent.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-intent.js",
+      "component": "rust-intent-compiler",
+      "component_source": "moor-core-v0 (Rust, via WASM)",
+      "in_moor": false,
+      "honest_limits": "The compiler runs here as WebAssembly (bytes fetched from this site). Your thumbs up/down build a local log of how well it reads intent.",
+      "depends_on": [
+        "moor-web WASM: MoorWasm.handle",
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "seed-lab",
+      "label": "Seed Lab",
+      "what_it_does": "Proves recovered parts work inside MOOR.",
+      "panel_source": "",
+      "panel_source_url": null,
+      "component": "seed-lab",
+      "component_source": "moor-v1/apps/seed-lab.html",
+      "in_moor": true,
+      "honest_limits": "",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "project-pulse",
+      "label": "Project Pulse",
+      "what_it_does": "This dashboard.",
+      "panel_source": "",
+      "panel_source_url": null,
+      "component": "project-pulse",
+      "component_source": "this page",
+      "in_moor": true,
+      "honest_limits": "",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "seed-rng",
+      "label": "Seeded random numbers",
+      "what_it_does": "Deterministic randomness, no Math.random.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "seed-rng",
+      "component_source": "components/seed-rng/rng.js",
+      "in_moor": false,
+      "honest_limits": "Pure functions â the stream viewer and noise-field painter are panel code around the real mulberry32/hash/makeNoise.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "seed-codec",
+      "label": "Seed codes",
+      "what_it_does": "Short codes that capture a full setup.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "seed-codec",
+      "component_source": "components/seed-codec/",
+      "in_moor": false,
+      "honest_limits": "The demo controls table is panel-defined; codeOf/parseCode/remixConfig are the real component.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "seed-console",
+      "label": "Seed console",
+      "what_it_does": "The standard generation bar.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "seed-console",
+      "component_source": "components/seed-console/",
+      "in_moor": false,
+      "honest_limits": "The console mounts to its own page by design, so it runs in a frame here against a demo studio. The console itself is verbatim.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "save-shape",
+      "label": "Autosave",
+      "what_it_does": "Autosave that survives corruption.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "save-shape",
+      "component_source": "components/save-shape/",
+      "in_moor": false,
+      "honest_limits": "The demo app (clicks + note) is panel code; the save manager is the real component on its own save slot.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "release-gate",
+      "label": "Release checks",
+      "what_it_does": "Verify before you announce.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "release-gate",
+      "component_source": "components/release-gate/",
+      "in_moor": false,
+      "honest_limits": "The gate is a Python script and cannot run in this page â its real gates are presented as a runnable checklist.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "registry-triple",
+      "label": "Catalog checker",
+      "what_it_does": "Keeps the catalog honest.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "registry-triple",
+      "component_source": "components/registry-triple/",
+      "in_moor": false,
+      "honest_limits": "The check logic runs here against this page’s own inventory â the scan/build halves need a repo checkout and stay in Node.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "replace-file",
+      "label": "Safe file editing",
+      "what_it_does": "Edits only what it verified first.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "replace-file",
+      "component_source": "components/replace-file/",
+      "in_moor": false,
+      "honest_limits": "The protocol runs here against a demo document; the hash precondition and refusal behavior are the real logic.",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    },
+    {
+      "id": "idempotent-upload",
+      "label": "Safe uploads",
+      "what_it_does": "Look before you leap.",
+      "panel_source": "pulse-tools/tool-shared.js",
+      "panel_source_url": "https://bassseamoor.github.io/render-queue/pulse-tools/tool-shared.js",
+      "component": "idempotent-upload",
+      "component_source": "components/idempotent-upload/",
+      "in_moor": false,
+      "honest_limits": "The real Drive adapter runs against a pretend Drive (mock SDK honoring its sealed contract).",
+      "depends_on": [
+        "seed-rng: streamFrom, hashStr"
+      ]
+    }
+  ]
+}

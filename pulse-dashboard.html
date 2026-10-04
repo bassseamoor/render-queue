@@ -92,10 +92,35 @@ header{height:66px;display:flex;align-items:center;gap:14px;padding:0 20px;borde
 .t-species .btn{min-height:34px;padding:6px 12px;font-size:.82rem}
 textarea{background:#0b1523;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px;font:inherit}
 
+/* Source drawer (</> button) — non-invasive, additive only */
+#src-toggle{margin-left:8px}
+.src-drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,94vw);z-index:1200;
+  background:#0a1424;border-left:1px solid rgba(91,216,255,.25);
+  transform:translateX(102%);transition:transform .25s ease;
+  display:flex;flex-direction:column;box-shadow:-12px 0 40px rgba(0,0,0,.5)}
+.src-drawer.open{transform:none}
+.src-drawer-head{display:flex;align-items:center;gap:10px;padding:14px 16px;
+  border-bottom:1px solid rgba(255,255,255,.08)}
+.src-drawer-head strong{font-size:15px}
+.src-drawer-sub{font-size:11px;opacity:.6;flex:1}
+.src-close{margin-left:auto}
+.src-drawer-body{overflow-y:auto;padding:14px 16px;flex:1}
+.src-sec{margin-bottom:20px}
+.src-row{display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap}
+.src-url{font-size:11px;word-break:break-all;flex:1;min-width:200px}
+.src-tool{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;margin:8px 0}
+.src-tool-head{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.src-tool-id{font-size:10px;opacity:.5}
+.src-tool .meta{font-size:12px}
+.src-notes{opacity:.75;margin-top:4px}
+.src-codewrap{margin-top:8px}
+.src-code{max-height:320px;overflow:auto;background:#060c18;border-radius:8px;
+  padding:10px;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+
 </style>
 </head>
 <body>
-<header><button id="menu" class="icon-btn menu-btn" aria-label="Open project navigation" aria-expanded="false">☰</button><div class="brand"><strong>MOOR</strong><span>/ Project Pulse</span></div><div class="head-right"><span class="desktop-status"><i class="dot"></i>Snapshot · no live connection</span><span class="pill">Functional prototype</span><button id="activity-toggle" class="btn" aria-expanded="true" aria-controls="activity">Activity</button></div></header>
+<header><button id="menu" class="icon-btn menu-btn" aria-label="Open project navigation" aria-expanded="false">☰</button><div class="brand"><strong>MOOR</strong><span>/ Project Pulse</span></div><div class="head-right"><span class="desktop-status"><i class="dot"></i>Snapshot · no live connection</span><span class="pill">Functional prototype</span><button id="src-toggle" class="btn" aria-label="Underlying source and logic" title="Underlying source and logic — for builders and AIs">&lt;/&gt;</button><button id="activity-toggle" class="btn" aria-expanded="true" aria-controls="activity">Activity</button></div></header>
 <div id="app" class="app"><button class="scrim" id="scrim" aria-label="Close project navigation"></button>
 <nav class="nav frame" aria-label="Project categories"><div class="nav-label eyebrow">Project</div><div class="root-label"><span class="symbol">◇</span> MOOR</div><div id="categories"></div><div class="nav-foot"><span class="pill amber">Snapshot records</span><p>Recovered software, running live in each page. Opening a page never integrates it into MOOR.</p><button id="restore" class="btn">Restore starting layout</button></div></nav>
 <main id="main" class="main frame"><div class="category-top"><div><h1 id="category-name"></h1><p id="category-description"></p></div><span id="category-count" class="pill category-count"></span></div>
@@ -1596,7 +1621,7 @@ window.FIELD_GLSL = "uniform vec3 seedOff;\nuniform vec4 uEditA[48];   /* xyz = 
 window.MESH_FRAG = "\nprecision highp float;\nvarying vec3 vPosition,vNormal,vTint;varying vec2 vTex,vBuild;varying vec4 vInfo,vShadow;varying float vFade,vProgress;\nuniform mat4 uLightMatrix;uniform highp sampler2D uShadow;uniform sampler2D uMaterial;uniform sampler2D uBlimpSign;uniform sampler2D uBillboard;uniform sampler2D uFoliage;uniform sampler2D uSignage,uGraffiti,uFlag;uniform vec3 uEye,uSun,uLandTint,uWaterTint;uniform vec4 uGeo,uMap;uniform vec2 uCenter,uSpacing,uBounds;uniform vec3 uPark;uniform float uTime,uStory,uWeather,uMist,uGlow,uRays,uPixelScale;uniform float uSunI,uAmbI,uTod;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\nfloat noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}\nfloat landDistance(vec2 p){float type=uGeo.x,phase=uGeo.y,offset=uGeo.z,water=uGeo.w;float river=offset+sin(p.y*uMap.x+phase)*uMap.y+p.y*uMap.z;\n if(type<.5)return abs(p.x-river)-water;if(type<1.5)return offset+sin(p.y*.09+phase)*4.-p.x;if(type<2.5)return length((p-uCenter)/vec2(1.50,2.4))-1.52;if(type<3.5)return 20.;if(type<4.5)return min(abs(p.x-river)-water,abs(p.y-offset*.7-sin(p.x*.12+phase)*2.)-water*.72);return p.y-offset-sin(p.x*.095+phase)*3.8;}\nfloat unpack(vec4 c){return dot(c,vec4(1.,1./255.,1./65025.,1./16581375.));}\nfloat shadow(vec3 N){\n float reach=length(vPosition.xz);if(reach>36.||dot(N,uSun)<.025)return 1.;\n vec3 q=vShadow.xyz/vShadow.w*.5+.5;if(q.x<0.||q.x>1.||q.y<0.||q.y>1.||q.z<0.||q.z>1.)return 1.;\n // Compare each sample against the RECEIVER PLANE at that sample, not the center depth.\n // Inverse-transpose normal for ortho(34, .1, 130), derived from its squared axis scales.\n vec3 lightNormal=(uLightMatrix*vec4(N,0.)).xyz*vec3(1156.,1156.,4218.5025);\n vec2 slope=clamp(-lightNormal.xy/(abs(lightNormal.z)<.0001?.0001:lightNormal.z),vec2(-12.),vec2(12.));\n vec2 grid=q.xy*1024.-.5,base=floor(grid),f=fract(grid);\n vec2 p00=(base+vec2(.5,.5))/1024.,p10=(base+vec2(1.5,.5))/1024.,p01=(base+vec2(.5,1.5))/1024.,p11=(base+vec2(1.5,1.5))/1024.;\n float bias=.00012;\n float s00=step(q.z+dot(slope,p00-q.xy)-bias,unpack(texture2D(uShadow,p00))),s10=step(q.z+dot(slope,p10-q.xy)-bias,unpack(texture2D(uShadow,p10))),s01=step(q.z+dot(slope,p01-q.xy)-bias,unpack(texture2D(uShadow,p01))),s11=step(q.z+dot(slope,p11-q.xy)-bias,unpack(texture2D(uShadow,p11)));\n float lit=mix(mix(s00,s10,f.x),mix(s01,s11,f.x),f.y);return mix(lit,1.,smoothstep(26.,36.,reach));\n}\n\nvoid main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=normalize(vNormal),V=normalize(uEye-vPosition);float footprint=length(uEye-vPosition)*uPixelScale/max(.22,abs(dot(N,V)));float mat=vInfo.x,seed=floor(vInfo.y+.5);vec3 albedo=vTint;float nightF=1.-smoothstep(.05,.55,uTod);if(mat>10.5&&mat<11.5){float shore=landDistance(vPosition.xz);mat=shore<0.?6.:5.;vec2 p=vPosition.xz;float park=uGeo.x>1.5&&uGeo.x<2.5?1.-smoothstep(4.10,4.45,length((p-uCenter)/vec2(1.15,2.2))):uGeo.x>2.5&&uGeo.x<3.5?1.-smoothstep(3.0,3.5,length(p)):1.-smoothstep(uPark.z-.25,uPark.z+.25,length(p-uPark.xy));float town=1.-smoothstep(.96,1.10,max(abs(p.x)/uBounds.x,abs(p.y)/uBounds.y));vec3 land=mix(uLandTint,mix(vec3(.30,.33,.30),uLandTint,park),town);albedo=shore<0.?uWaterTint:mix(vec3(.48,.44,.30),land,smoothstep(0.,.23,shore));}float rough=.7,metal=0.;vec3 emission=vec3(0.);float grain=texture2D(uMaterial,fract(vPosition.xz*.17)).b;albedo*=.992+.016*grain;\n // Facade detail follows floor courses; broad mineral variation precedes fine joints.\n if(mat>.5&&mat<3.5&&abs(N.y)<.5){\n  float floorHeight=max(.32,vInfo.w),bay=mat<1.5?.29:.38;\n  vec2 coord=vec2(vTex.x/bay,vPosition.y/floorHeight),cell=floor(coord),f=fract(coord);\n  float aa=clamp(footprint/bay*.6,.025,.32),nearDetail=(1.-smoothstep(.035,.16,footprint));\n  float left=mat<1.5?.08:.20,right=1.-left,low=mat<1.5?.12:.23;\n  float panes=smoothstep(left-aa,left+aa,f.x)*(1.-smoothstep(right-aa,right+aa,f.x))*smoothstep(low-aa,low+aa,f.y)*(1.-smoothstep(.86-aa,.86+aa,f.y));\n  panes=mix(panes,(right-left)*(.86-low),smoothstep(.23,.42,footprint/bay));\n  float rnd=hash(cell+seed),column=hash(vec2(cell.x,seed));\n  float windowLight=smoothstep(1.,1.20,vProgress)*step(mix(.82,.40,nightF),rnd);\n  vec3 reflection=mix(vec3(.115,.205,.245),vec3(.36,.53,.56),clamp(V.y*.65+.30,0.,1.));\n  reflection*=.80+.16*column+.045*sin(vPosition.y*.61+seed);\n  reflection+=vec3(.19,.16,.10)*pow(max(0.,dot(reflect(-V,N),uSun)),16.);\n  // Curtains and recessed upper edges give glazing depth without noisy black grids.\n  float curtain=step(.64,rnd)*smoothstep(.38,.50,f.x)*.16;\n  reflection=mix(reflection,vec3(.54,.48,.34),curtain);\n  float recess=mix(.66,1.,smoothstep(low,low+.20,f.y));\n  vec3 mineralField=texture2D(uMaterial,fract(vec2(vTex.x,vPosition.y)*.11+seed*.137)).rgb;float mineral=mineralField.r*.65+mineralField.g*.35;\n  albedo*=.95+.08*mineral;\n  if(mat<1.5){albedo=mix(vTint*.80,reflection*recess,panes);rough=.22;metal=.24;}\n  else if(mat<2.5){\n   vec2 slab=fract(vec2(vTex.x*2.1,vPosition.y/floorHeight));\n   float joint=(1.-smoothstep(.012,.035,min(slab.x,slab.y)))*nearDetail;\n   albedo*=1.-joint*.11;\n   float sill=smoothstep(.16,.21,f.y)*(1.-smoothstep(.23,.28,f.y))*smoothstep(.13,.22,f.x)*(1.-smoothstep(.78,.87,f.x));\n   albedo*=1.+sill*.12*nearDetail;albedo=mix(albedo,reflection*.58*recess,panes*.90);rough=.67;\n  }else{\n   vec2 brickCoord=vec2(vTex.x*8.,vPosition.y*15.);brickCoord.x+=mod(floor(brickCoord.y),2.)*.5;\n   vec2 joint=fract(brickCoord);float mortar=(1.-smoothstep(.035,.105,min(joint.x,joint.y)))*nearDetail;\n   float brickTone=hash(floor(brickCoord)+seed);\n   albedo*=mix(1.,.94+.08*brickTone,nearDetail);albedo=mix(albedo,albedo*1.19,mortar*.65);\n   albedo=mix(albedo,reflection*.48*recess,panes*.88);rough=.86;\n  }\n  emission=vec3(1.,.67,.28)*windowLight*panes*(.075+.95*nightF)*uGlow;\n }\n if(mat>.5&&mat<1.5&&abs(N.y)>=.5){float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(albedo,vec3(.32,.48,.52),.16+fres*.28);rough=.24;metal=.22;}\n if(mat>3.5&&mat<4.5){albedo*=.96+.04*noise(vPosition.xz*5.);rough=.92;}\n if(mat>4.5&&mat<5.5){albedo*=.96+.04*noise(vPosition.xz*3.);rough=.93;}\n if(mat>5.5&&mat<6.5){float ripple=sin(vPosition.x*4.+uTime*.21)+.43*sin(vPosition.z*6.7-uTime*.133);N=normalize(N+vec3(ripple*.025,0.,sin(vPosition.z*8.3+uTime*.091)*.014));float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(uWaterTint,mix(vec3(.28,.48,.52),vec3(.19,.33,.42),.30),fres*.74);float glint=pow(max(dot(reflect(-V,N),uSun),0.),260.);albedo+=vec3(.72,.74,.58)*glint*.22;float foam=(1.-smoothstep(.02,.16,abs(landDistance(vPosition.xz))))*(.50+.16*sin(vPosition.z*6.+uTime*.31)+.10*sin(vPosition.x*8.7-uTime*.47));albedo=mix(albedo,vec3(.69,.85,.77),foam*.42);rough=.12;metal=.3;}\n if(mat>7.5&&mat<8.5){rough=.36;metal=.24;}\n if(mat>9.5&&mat<10.5){vec2 tile=fract(vec2(vTex.x*11.,vPosition.z*16.));float nearDetail=1.-smoothstep(.025,.095,footprint);albedo*=1.-.12*(1.-smoothstep(.03,.14,min(tile.x,tile.y)))*nearDetail;rough=.81;}\n // Low contrast, multiscale surface finishes inspired by Forge's baked detail layers.\n if(mat>11.5&&mat<18.6){\n  vec2 surface=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field=texture2D(uMaterial,fract(surface*.11+seed*.137)).rgb;float broad=field.r,fine=field.b,detail=1.-smoothstep(.035,.14,footprint);\n  albedo*=.95+.075*broad+.025*fine*detail;\n  if(mat<12.5){vec2 course=fract(surface*vec2(2.,5.));float joint=1.-smoothstep(.015,.065,min(course.x,course.y));albedo*=1.-joint*.09*detail;rough=.83;}\n  else if(mat<13.5){albedo*=.98+.035*fine;rough=.90;}\n  else if(mat<14.5){float seam=1.-smoothstep(.025,.085,fract(surface.x*8.));albedo=mix(albedo,albedo*vec3(.80,1.04,.96),broad*.3);albedo*=1.-seam*.16*detail;rough=.49;metal=.28;}\n  else if(mat<15.5){albedo*=.93+.09*texture2D(uMaterial,fract(surface*vec2(.8,.04)+seed*.137)).g;rough=.85;}\n  else if(mat<16.5){albedo*=.92+.12*fine*detail;rough=.98;}\n  else if(mat<17.5){albedo*=1.-.28*(1.-smoothstep(.15,.35,fract(surface.x*26.)))*detail;rough=.68;}\n  else if(mat<18.5){vec2 panel=fract(surface*vec2(14.,18.));albedo*=mix(.97,.8+.2*smoothstep(.025,.10,min(panel.x,panel.y)),detail);rough=.25;metal=.30;}\n  else{albedo=vec3(.49,.50,.46)*(.96+.05*broad);rough=.94;}\n }\n // Blimp marquee: the scrolling canvas sign on the envelope.\n if(mat>19.5&&mat<20.5){vec3 sign=texture2D(uBlimpSign,vTex).rgb;albedo=sign;emission=sign*.32;rough=.5;metal=.1;}\n // Billboards: seeded canvas ads drifting in and out on their own schedule.\n if(mat>20.5&&mat<21.5){vec3 ad=texture2D(uBillboard,vTex).rgb;if(hash(gl_FragCoord.xy)>vFade+.001)discard;albedo=ad;emission=ad*.38*uGlow;rough=.55;}\n // Drifting clouds: soft white, shaded by normal.\n if(mat>21.5&&mat<22.5){float clUp=max(N.y,0.),clDn=max(-N.y,0.);albedo=vec3(.94,.955,.975)*(.80+.20*clUp+.16*clDn);rough=1.;}\n // Instanced foliage: leafy variation with a darker underside.\n if(mat>22.5&&mat<23.5){albedo*=.86+.28*noise(vPosition.xz*7.+vPosition.y*2.3);albedo*=.55+.45*max(N.y,0.);rough=1.;}\n if(mat>23.5&&mat<24.5){vec4 ftx=texture2D(uFoliage,vTex);if(ftx.a<.42)discard;albedo=ftx.rgb*(.72+.38*max(N.y,0.));rough=1.;}\n // Worker C materials 24-32: signage, translucent glass, interiors, beacons, smoke,\n // graffiti, brushed metal, copper, flags. Glass/interior/smoke stay LOD-cheap.\n if(mat>32.5&&mat<33.5){vec3 sg=texture2D(uSignage,vTex).rgb;albedo=sg;emission=sg*.30*uGlow;rough=.5;}\n if(mat>24.5&&mat<25.5){\n  // Translucent glass: cheap screen-door dither, denser far / sparse near.\n  float dist=length(uEye-vPosition);\n  float keep=mix(.40,.985,smoothstep(3.,17.,dist));\n  if(hash(gl_FragCoord.xy)>keep+.001)discard;\n  float bay=.29;vec2 coord=vec2(vTex.x/bay,vPosition.y/.34);vec2 cf=floor(coord),f=fract(coord);\n  float frame=1.-smoothstep(.015,.06,min(min(f.x,1.-f.x),min(f.y,1.-f.y)));\n  vec3 reflection=mix(vec3(.10,.17,.20),vec3(.44,.56,.59),clamp(V.y*.6+.35,0.,1.));\n  albedo=mix(vTint*.72,reflection,.55+.30*frame);\n  albedo*=.92+.08*hash(cf+seed);\n  rough=.16;metal=.32;\n }\n if(mat>25.5&&mat<26.5){\n  // Interior hints: warm, coarse, culled far away so they never cost a pixel at LOD.\n  float dist2=length(uEye-vPosition);\n  if(hash(gl_FragCoord.xy*1.71)<smoothstep(4.,13.,dist2))discard;\n  albedo*=.9+.1*hash(floor(vPosition.xz*20.)+seed);\n  emission=albedo*vec3(.55,.38,.22)*uGlow;rough=.9;\n }\n if(mat>26.5&&mat<27.5){float blink=step(.42,fract(uTime*.5+seed*.061));albedo=mix(vec3(.30,.03,.02),vec3(1.,.16,.10),blink);emission=vec3(1.2,.12,.06)*blink*uGlow;rough=.4;}\n if(mat>27.5&&mat<28.5){\n  // Smoke: alpha-scaled dither (vFade carries the age ramp), soft procedural noise.\n  float a=clamp(vFade,0.,1.)*.5;\n  if(hash(gl_FragCoord.xy*1.31)>a+.001)discard;\n  float nse=hash(floor(vPosition.xz*24.)+floor(vPosition.y*24.));\n  albedo=vec3(.60,.62,.65)*(.88+.24*nse);rough=1.;\n }\n if(mat>28.5&&mat<29.5){vec3 tag=texture2D(uGraffiti,vTex).rgb;if(dot(tag,vec3(.333))<.04)discard;albedo=tag;emission=tag*.12;rough=.9;}\n if(mat>29.5&&mat<30.5){\n  // Brushed metal: streaky roughness from the material atlas.\n  vec2 surface=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field=texture2D(uMaterial,fract(surface*vec2(.13,.53)+seed*.137)).rgb;\n  albedo*=.92+.16*field.g;\n  float streak=texture2D(uMaterial,fract(vec2(surface.x*3.,surface.y*36.)+seed*.137)).r;\n  albedo*=1.-streak*.10;rough=.44;metal=.82;\n }\n if(mat>30.5&&mat<31.5){\n  // Copper: subtle ribbed variation, warmer reflection.\n  vec2 surface2=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field2=texture2D(uMaterial,fract(surface2*.23+seed*.137)).rgb;\n  albedo*=.80+.30*field2.b;\n  float rib=1.-smoothstep(.10,.30,abs(fract(surface2.x*9.)-.5));\n  albedo*=1.-rib*.14;rough=.58;metal=.72;\n }\n if(mat>31.5&&mat<32.5){vec3 fl=texture2D(uFlag,vTex).rgb;albedo=fl*(.92+.08*hash(gl_FragCoord.xy));rough=.92;}\n if(mat>8.5&&mat<9.5){emission=albedo*uGlow*(.20+.95*nightF);rough=.2;}\n // Formation smoke: the ribbon pales and thins into the haze as it ages.\n if(vInfo.z>11.5&&vInfo.z<12.5){float sage=clamp(vTex.x/7.,0.,1.);albedo=mix(albedo,vec3(.45,.55,.60),sage*sage*.9);emission*=1.-sage*.75;}\n // Fresh concrete at the active frontier settles into the finished facade below it.\n if(vBuild.y>.5&&mat>.5&&mat<3.5){float finish=smoothstep(.07,.54,vBuild.x-vPosition.y);albedo=mix(vec3(.45,.47,.44),albedo,finish);emission*=finish;rough=mix(.92,rough,finish);metal*=finish;}\n float direct=max(dot(N,uSun),0.),visibility=shadow(normalize(vNormal));float sky=.58+.42*max(N.y,0.);\n // Plain lighting controls: sun strength, ambient strength, time of day (warms and lowers the sun).\n vec3 sunTint=mix(vec3(1.50,1.14,.73),vec3(1.78,.90,.48),1.-smoothstep(.05,.55,uTod));\n vec3 ambTint=vec3(.155,.255,.445)*mix(.42,1.,smoothstep(.0,.65,uTod));\n float ao=mix(.58,1.,smoothstep(0.,.8,vPosition.y));vec3 lighting=ambTint*sky*ao*uAmbI+sunTint*direct*visibility*(.32+.91*uRays)*uSunI;\n vec3 H=normalize(V+uSun);float spec=pow(max(dot(N,H),0.),mix(125.,12.,rough))*(.10+metal*.7)*visibility;vec3 col=albedo*lighting+vec3(1.0,.86,.63)*spec+emission;\n float distance=length(uEye-vPosition);float haze=1.-exp(-max(distance-16.,0.)*.010*uMist*uMist);col=mix(col,vec3(.45,.55,.60),haze);col*=1.+.022*uWeather;col*=.45+.65*uGlow;gl_FragColor=vec4(col,1.);\n}\n";
 </script>
 <script>
-var SEED_EVENTS = [{"t": 1791067367000, "title": "How do private sessions connect \u2014 or how should they?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "What does the menu look like? Is there something that tells me a menu exists, or do I have to find it?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "Does it automatically sign into the account, or do I sign in myself?", "body": "", "origin": "agent-report"}, {"t": 1791067362000, "title": "More OS page added: underlying systems, open OS questions, and the hierarchical road to MVP", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "I\u2019m on my own private server. When I decide \u2018time to explore\u2019 \u2014 where am I going? What do I need to connect to?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "When it\u2019s local, do I load in as a character? With an account? Is there already a default account, quote unquote?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "Sign in or local build? My read: it\u2019s a local build \u2014 private, no sign-in needed. Confirm or correct.", "body": "", "origin": "agent-report"}, {"t": 1791066599000, "title": "Drill-down pages shipped: every component/generator/layout/decision/concept opens its own page with impact analysis and Q&A; dependency grap", "body": "", "origin": "confirmed"}, {"t": 1791066584000, "title": "Staged until Sebastian approves the install \u2014 the live-install handoff doc has the steps.", "body": "", "origin": "agent-report"}, {"t": 1791066584000, "title": "Should the dashboard live in the real MOOR or stay a staged copy?", "body": "", "origin": "agent-report"}, {"t": 1791066022000, "title": "How-things-work section added: 10 real layouts (servers, geometry, doctrine, compiler, craft, release) with approach history and bring-back ", "body": "", "origin": "confirmed"}, {"t": 1791065856000, "title": "Generator atlas added: 6 real procedural systems separated out (terrain, terrain renderer, tree builder, planet vegetation, world conditions", "body": "", "origin": "confirmed"}, {"t": 1791065835000, "title": "Procedural soft-body creatures", "body": "Creatures generated from the terrain and the specific world's conditions \u2014 body plan follows the environment they spawn in. No generator exists for this yet; it is a design target, not inventory.", "origin": "agent-report"}, {"t": 1791065736000, "title": "seed-lab integrated into this copy: four batch-1 components plus ambience-engine, live in the Apps drawer.", "body": "", "origin": "confirmed"}];
+var SEED_EVENTS = [{"t": 1791082673000, "title": "Creature Lab Stage A live: deterministic creature compiler replaces 2D prototype", "body": "End-to-end walker per Creature Compiler handoff v1.0 Stage A: seeded genome -> canonical anatomy (hashed) -> validation + bounded repair -> compiled mesh/IK rig/soft belly -> procedural walking over fixture terrain. 4-le", "origin": "agent-report"}, {"t": 1791082667000, "title": "Source drawer + manifest: underlying logic exposed for AIs and builders", "body": "Non-invasive </> button in Pulse header opens drawer listing every tool's panel source, component source, dependencies. pulse-manifest.json published so any AI handed the link can fetch the full inventory and reuse tools", "origin": "agent-report"}, {"t": 1791067367000, "title": "How do private sessions connect \u2014 or how should they?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "What does the menu look like? Is there something that tells me a menu exists, or do I have to find it?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "Does it automatically sign into the account, or do I sign in myself?", "body": "", "origin": "agent-report"}, {"t": 1791067362000, "title": "More OS page added: underlying systems, open OS questions, and the hierarchical road to MVP", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "I\u2019m on my own private server. When I decide \u2018time to explore\u2019 \u2014 where am I going? What do I need to connect to?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "When it\u2019s local, do I load in as a character? With an account? Is there already a default account, quote unquote?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "Sign in or local build? My read: it\u2019s a local build \u2014 private, no sign-in needed. Confirm or correct.", "body": "", "origin": "agent-report"}, {"t": 1791066599000, "title": "Drill-down pages shipped: every component/generator/layout/decision/concept opens its own page with impact analysis and Q&A; dependency grap", "body": "", "origin": "confirmed"}, {"t": 1791066584000, "title": "Staged until Sebastian approves the install \u2014 the live-install handoff doc has the steps.", "body": "", "origin": "agent-report"}, {"t": 1791066584000, "title": "Should the dashboard live in the real MOOR or stay a staged copy?", "body": "", "origin": "agent-report"}, {"t": 1791066022000, "title": "How-things-work section added: 10 real layouts (servers, geometry, doctrine, compiler, craft, release) with approach history and bring-back ", "body": "", "origin": "confirmed"}, {"t": 1791065856000, "title": "Generator atlas added: 6 real procedural systems separated out (terrain, terrain renderer, tree builder, planet vegetation, world conditions", "body": "", "origin": "confirmed"}];
 </script>
 <script>
 /* Project Pulse v2 — dashboard shell.
@@ -1623,67 +1648,67 @@ var CATS = [
  * Gaps listed in toolGap are reported in the UI, never silently worked around. */
 var COMPS = [
   /* --- 3D space: real interactive tools --- */
-  {id:'terrain-core', tool:'terrain', cats:['space','generators'], icon:'\u25B3', label:'Terrain sculpting',
+  {id:'terrain-core', tool:'terrain', toolSrc:'pulse-tools/tool-terrain.js', cats:['space','generators'], icon:'\u25B3', label:'Terrain sculpting',
    short:'Generate land, shape it, and save it.',
    job:'Creates a landscape from a seed, lets you sculpt it with brushes, and saves the resulting ground shape.',
    why:'The foundation for any terrain-editing tool in MOOR. Sculpting changes the land itself.',
    technical:'terrain-core', source:'components/terrain-core/source/terrain-core.mjs', inMoor:false,
    toolGap:'No built-in renderer — the 2D heightmap painter in this panel is new panel code, copied from the proven pattern in the previous dashboard. Save/load uses the component\u2019s own strict pack/unpack.'},
-  {id:'terrain-field', tool:'field', cats:['space','generators'], icon:'\u224B', label:'Detailed terrain',
+  {id:'terrain-field', tool:'field', toolSrc:'pulse-tools/tool-field.js', cats:['space','generators'], icon:'\u224B', label:'Detailed terrain',
    short:'Draw ridges, roughness, and small ground detail.',
    job:'A reusable graphics recipe that makes ground look rugged — ridged mountains, warped patterns, fine surface relief — drawn by your graphics card.',
    why:'Drop it into a terrain material to reuse the detailed ground look everywhere. The 48 brush-edit slots let you reshape it live.',
    technical:'terrain-field', source:'components/terrain-field/field.glsl', inMoor:false,
    toolGap:'The component is shader functions only — the host page (canvas, compile, controls) is panel code copied from its two working hosts. Brush-edit uniforms never had a UI before this panel. No save format for edits exists in the component; exporting them is panel-owned.'},
-  {id:'mesh-builder', tool:'mesh', cats:['space'], icon:'\u25B1', label:'City geometry builder',
+  {id:'mesh-builder', tool:'mesh', toolSrc:'pulse-tools/tool-mesh.js', cats:['space'], icon:'\u25B1', label:'City geometry builder',
    short:'Build 3D shapes and give them materials.',
    job:'Creates the surfaces of 3D city geometry — boxes, domes, cylinders, towers — and shades them with a library of 32 materials.',
    why:'Reuse the shape helpers and material library when building city scenes instead of writing geometry code again.',
    technical:'mesh-builder', source:'components/mesh-builder/mesh-builder.js', inMoor:false,
    toolGap:'Materials 20 (blimp marquee) and 21 (billboard) need texture painters that were not recovered — they render flat grey here, labeled honestly. No save/load in the component; the shape list is panel state.'},
-  {id:'moorworld', tool:'world', cats:['space'], icon:'\u25C9', label:'Universe explorer',
+  {id:'moorworld', tool:'world', toolSrc:'pulse-tools/tool-world.js', cats:['space'], icon:'\u25C9', label:'Universe explorer',
    short:'Browse sectors, systems, planets, and zones.',
    job:'A fixed, deterministic universe: 8 sectors, 57 star systems, 254 named planets, 745 zones — identical on every machine, each with a permanent address.',
    why:'The map every world-building tool can share. Look anything up by address; planets carry a full dossier.',
    technical:'moorworld', source:'components/moorworld/moorworld.js', inMoor:false,
    toolGap:'The component is data only — no renderer. The tree browser is new panel code over its query API. Prose summaries exist for planets only.'},
-  {id:'palettes', tool:'palettes', cats:['space'], icon:'\u25CD', label:'Planet color sets',
+  {id:'palettes', tool:'palettes', toolSrc:'pulse-tools/tool-palettes.js', cats:['space'], icon:'\u25CD', label:'Planet color sets',
    short:'Ten coordinated color sets for planet types.',
    job:'The art direction tables: for each of ten planet types, the exact land, water, sky, atmosphere, and vegetation colors.',
    why:'One shared source of truth for how each planet type should look, instead of colors scattered through code.',
    technical:'palettes', source:'components/palettes/palettes.js', inMoor:false,
    toolGap:'Pure data — no renderer and no edit model. The planet preview and the temporary-experiment overrides are panel code, clearly labeled as panel state, not component behavior.'},
-  {id:'ambience-engine', tool:'ambience', cats:['space'], icon:'\u266A', label:'Ambient sound generator',
+  {id:'ambience-engine', tool:'ambience', toolSrc:'pulse-tools/tool-ambience.js', cats:['space'], icon:'\u266A', label:'Ambient sound generator',
    short:'Create repeatable background soundscapes.',
    job:'Renders deterministic stereo sound beds — rainforest, canal, aquarium, and eleven more recipes — from a seed. Same seed, same sound, every time.',
    why:'Background audio for worlds and apps without shipping audio files: re-derive any bed from its seed.',
    technical:'ambience-engine', source:'components/ambience-engine/ambience.js', inMoor:false,
    toolGap:'Recipes are fixed cards — no knobs beyond seed, recipe, and length. No audio export in the component. The waveform is panel code drawn from the real rendered samples.'},
-  {id:'spawn-director', tool:'spawn', cats:['space'], icon:'\u2623', label:'Enemy wave director',
+  {id:'spawn-director', tool:'spawn', toolSrc:'pulse-tools/tool-spawn.js', cats:['space'], icon:'\u2623', label:'Enemy wave director',
    short:'Choose enemies, wave timing, and difficulty.',
    job:'The horde brain: spawn intervals shrink, batches grow, tougher enemies unlock, and swarms strike every 45\u201370 seconds. Difficulty is real math, not a script.',
    why:'Drop-in pacing for any survival game — it decides what spawns and when, you decide what spawning means visually.',
    technical:'spawn-director', source:'components/spawn-director/spawn-director.js', inMoor:false,
    toolGap:'No fixed wave schedule to display (swarms are random-timed) and no explicit difficulty number — the panel derives a difficulty readout from the real interval/batch/stat curves and labels it as derived.'},
-  {id:'perf-governor', tool:'perf', cats:['space'], icon:'\u2699', label:'Automatic graphics quality',
+  {id:'perf-governor', tool:'perf', toolSrc:'pulse-tools/tool-perf.js', cats:['space'], icon:'\u2699', label:'Automatic graphics quality',
    short:'Reduce detail when frame times get too high.',
    job:'A frame-time watchdog: it watches every frame, and when frames stay slow it eases quality down (never below 28%), then creeps back up when things are smooth.',
    why:'Keeps 3D scenes playable on weak hardware without anyone tuning settings by hand.',
    technical:'perf-governor', source:'components/perf-governor/perf-governor.js', inMoor:false,
    toolGap:'It only reports a quality number — applying it (fewer particles, lower resolution) is the host\u2019s job. Thresholds are hardcoded in the component. The quality-over-time chart is a panel-side sample buffer.'},
-  {id:'planet-vegetation', tool:'vegetation', cats:['space','generators'], icon:'\u2740', label:'Plant generator',
+  {id:'planet-vegetation', tool:'vegetation', toolSrc:'pulse-tools/tool-vegetation.js', cats:['space','generators'], icon:'\u2740', label:'Plant generator',
    short:'Grow the planet\u2019s plants from a seed.',
    job:'Procedural plant geometry — conifers, broadleaf trees, soft ground plants, grass, flowers — scattered with wind sway, exactly as they grow in the planet scenes.',
    why:'The living layer of every world. Same seed, same forest.',
    technical:'planet-vegetation', source:'your_files/moor-planet-demo.html (plant builders)', inMoor:false,
    toolGap:'The plant shapes are the real builders from the planet demo (run against a minimal geometry shim — no THREE.js here). The orbit camera, ground, and this wind sway are panel viewing code; the real placement shader is planet-field-specific.'},
-  {id:'terrain-pipeline', tool:'pipeline', cats:['generators'], icon:'\u224B', label:'Generator pipeline inspector',
+  {id:'terrain-pipeline', tool:'pipeline', toolSrc:'pulse-tools/tool-pipeline.js', cats:['generators'], icon:'\u224B', label:'Generator pipeline inspector',
    short:'See inside the terrain generator, add layers.',
    job:'The terrain generator\u2019s real pipeline as equations — no code — plus your own composable layers (terrace, amplify, ridge, smooth, grain) applied to the real output, seeded and deterministic.',
    why:'Understand what a generator does, then shape it without touching code.',
    technical:'terrain-pipeline', source:'components/terrain-core (pipeline) + panel layers', inMoor:false,
    toolGap:'The base pipeline is the untouched component. Added layers are panel composition — real seeded math, but not part of the component.'},
-  {id:'softbody-creatures', tool:'creatures', cats:['space','generators'], icon:'\u25CF', label:'Creature Lab',
+  {id:'softbody-creatures', tool:'creatures', toolSrc:'pulse-tools/tool-creatures.js', cats:['space','generators'], icon:'\u25CF', label:'Creature Lab',
    short:'Stage A: end-to-end procedural walker.',
    job:'Deterministic creature compiler, first stage: seeded genome \u2192 canonical anatomy \u2192 validation + repair \u2192 compiled mesh, IK rig, and soft belly \u2192 procedural walking over fixture terrain. Generate, remix, inspect, export, import.',
    why:'The creature system per the build handoff \u2014 one canonical anatomy, multiple compiled representations. No hand-modeling, no hand-animation.',
@@ -1703,7 +1728,7 @@ var COMPS = [
    short:'The production way MOOR builds apps.',
    job:'MOOR\u2019s working \u201cmake me X\u201d path: ask bar \u2192 harness router \u2192 generation rounds \u2192 a kept app in the Apps drawer.',
    why:'This is the pipeline that ships. Per standing decision, no replacement compiler gets built.', technical:'js-create-pipeline', source:'moor-v1 pipeline', inMoor:true},
-  {id:'rust-intent-compiler', tool:'intent', cats:['creation'], icon:'\u2692', label:'Intent compiler (reference)',
+  {id:'rust-intent-compiler', tool:'intent', toolSrc:'pulse-tools/tool-intent.js', cats:['creation'], icon:'\u2692', label:'Intent compiler (reference)',
    short:'Verified reference software, not production.',
    job:'Deterministic rule-based compiler: plain request \u2192 application definition. Type a request, see what it heard, vote on whether it got your intent right.',
    why:'Kept available as verified reference software. Production routing stays on the JS pipeline unless separately authorized.', technical:'rust-intent-compiler', source:'moor-core-v0 (Rust, via WASM)', inMoor:false,
@@ -1716,42 +1741,42 @@ var COMPS = [
    short:'This dashboard.',
    job:'The project workspace you are looking at: inventory, tools, and activity for the MOOR recovery work.',
    why:'So the state of the work is visible in one place.', technical:'project-pulse', source:'this page', inMoor:true},
-  {id:'seed-rng', tool:'rng', cats:['shared'], icon:'\u2684', label:'Seeded random numbers',
+  {id:'seed-rng', tool:'rng', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'\u2684', label:'Seeded random numbers',
    short:'Deterministic randomness, no Math.random.',
    job:'Deterministic RNG, hashes, and 2D noise — the foundation; nothing in MOOR generates from Math.random().',
    why:'Same seed, same output, on every device, every run.', technical:'seed-rng', source:'components/seed-rng/rng.js', inMoor:false,
    toolGap:'Pure functions — the stream viewer and noise-field painter are panel code around the real mulberry32/hash/makeNoise.'},
-  {id:'seed-codec', tool:'codec', cats:['shared'], icon:'#', label:'Seed codes',
+  {id:'seed-codec', tool:'codec', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'#', label:'Seed codes',
    short:'Short codes that capture a full setup.',
    job:'URL-safe seed codes with strict parsing, remix, and deep links (?seed=).',
    why:'Share an exact generation as a short string.', technical:'seed-codec', source:'components/seed-codec/', inMoor:false,
    toolGap:'The demo controls table is panel-defined; codeOf/parseCode/remixConfig are the real component.'},
-  {id:'seed-console', tool:'console', cats:['shared'], icon:'\u2328', label:'Seed console',
+  {id:'seed-console', tool:'console', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'\u2328', label:'Seed console',
    short:'The standard generation bar.',
    job:'Standard generation UI: random, remix, favorites, history, recording.',
    why:'Every generator gets the same controls.', technical:'seed-console', source:'components/seed-console/', inMoor:false,
    toolGap:'The console mounts to its own page by design, so it runs in a frame here against a demo studio. The console itself is verbatim.'},
-  {id:'save-shape', tool:'save', cats:['shared'], icon:'\u2714', label:'Autosave',
+  {id:'save-shape', tool:'save', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'\u2714', label:'Autosave',
    short:'Autosave that survives corruption.',
    job:'Debounced versioned autosave with corrupt-save fallback.',
    why:'Never lose work to a bad write.', technical:'save-shape', source:'components/save-shape/', inMoor:false,
    toolGap:'The demo app (clicks + note) is panel code; the save manager is the real component on its own save slot.'},
-  {id:'release-gate', tool:'release', cats:['shared'], icon:'\u26F3', label:'Release checks',
+  {id:'release-gate', tool:'release', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'\u26F3', label:'Release checks',
    short:'Verify before you announce.',
    job:'Verify-before-advertising: the checks a build must pass before it ships.',
    why:'Stops broken builds from reaching the user.', technical:'release-gate', source:'components/release-gate/', inMoor:false,
    toolGap:'The gate is a Python script and cannot run in this page — its real gates are presented as a runnable checklist.'},
-  {id:'registry-triple', tool:'registry', cats:['shared'], icon:'\u2261', label:'Catalog checker',
+  {id:'registry-triple', tool:'registry', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'\u2261', label:'Catalog checker',
    short:'Keeps the catalog honest.',
    job:'Catalog check/scan/build tooling that keeps the component registry truthful.',
    why:'The reason the inventory on this page can be trusted.', technical:'registry-triple', source:'components/registry-triple/', inMoor:false,
    toolGap:'The check logic runs here against this page\u2019s own inventory — the scan/build halves need a repo checkout and stay in Node.'},
-  {id:'replace-file', tool:'replace', cats:['shared'], icon:'\u270E', label:'Safe file editing',
+  {id:'replace-file', tool:'replace', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'\u270E', label:'Safe file editing',
    short:'Edits only what it verified first.',
    job:'Safe remote-edit protocol: replaces a file only if it still matches the expected content — aborts otherwise.',
    why:'Edits never silently clobber newer work.', technical:'replace-file', source:'components/replace-file/', inMoor:false,
    toolGap:'The protocol runs here against a demo document; the hash precondition and refusal behavior are the real logic.'},
-  {id:'idempotent-upload', tool:'upload', cats:['shared'], icon:'\u21E7', label:'Safe uploads',
+  {id:'idempotent-upload', tool:'upload', toolSrc:'pulse-tools/tool-shared.js', cats:['shared'], icon:'\u21E7', label:'Safe uploads',
    short:'Look before you leap.',
    job:'Lookup-before-write uploads: checks what is already there before sending anything.',
    why:'Uploads that can be retried safely.', technical:'idempotent-upload', source:'components/idempotent-upload/', inMoor:false,
@@ -1966,6 +1991,9 @@ function toast(msg){
 }
 
 render();
+
+/* Exposed for the source drawer + any external consumer. */
+window.PULSE_COMPONENTS=COMPS;
 
 </script>
 <script>
@@ -5079,6 +5107,204 @@ TOOLS.creatures = { mount: function(host){
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
+})();
+
+</script>
+<script>
+/* Project Pulse — Source drawer (non-invasive).
+ * One button in the header (</>) opens this drawer. It exposes the
+ * underlying logic for AI/human reuse: the machine-readable manifest,
+ * per-tool panel sources, component sources, and dependency notes.
+ * No dashboard restructuring; purely additive. */
+(function(){
+'use strict';
+var MANIFEST_URL='pulse-manifest.json';
+var RAW_BASE='https://bassseamoor.github.io/render-queue/';
+
+function el(tag, cls, html){
+  var e=document.createElement(tag);
+  if (cls) e.className=cls;
+  if (html!=null) e.innerHTML=html;
+  return e;
+}
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; });
+}
+
+var drawer=null, manifest=null, manifestFailed=false;
+
+function ensureDrawer(){
+  if (drawer) return drawer;
+  drawer=el('div','src-drawer');
+  drawer.setAttribute('role','dialog');
+  drawer.setAttribute('aria-label','Underlying source and logic');
+  drawer.innerHTML=
+    '<div class="src-drawer-head">'+
+      '<strong>&lt;/&gt; Underlying logic</strong>'+
+      '<span class="src-drawer-sub">For builders &amp; AIs: what each tool is made of, and how to reuse it.</span>'+
+      '<button class="btn src-close" aria-label="Close">&times;</button>'+
+    '</div>'+
+    '<div class="src-drawer-body">'+
+      '<div class="src-sec"><div class="eyebrow">Machine-readable manifest</div>'+
+      '<p class="meta">One JSON file describes every tool, its sources, and its dependencies. '+
+      'Hand this URL to any AI with the Pulse link:</p>'+
+      '<div class="src-row"><code class="mono src-url" id="src-manifest-url"></code>'+
+      '<button class="btn" id="src-copy-manifest">Copy URL</button>'+
+      '<a class="btn" id="src-open-manifest" target="_blank" rel="noopener">Open</a></div>'+
+      '<div class="meta" id="src-manifest-status">Loading manifest&hellip;</div></div>'+
+      '<div class="src-sec"><div class="eyebrow">Tools &amp; their sources</div>'+
+      '<div class="meta">Panel source = the interactive page code (runs in Pulse). '+
+      'Component source = the recovered/original software it is built on, verbatim where noted.</div>'+
+      '<div id="src-tool-list"></div></div>'+
+      '<div class="src-sec"><div class="eyebrow">How to reuse</div>'+
+      '<div class="meta" id="src-reuse"></div></div>'+
+    '</div>';
+  document.body.appendChild(drawer);
+  drawer.querySelector('.src-close').onclick=function(){ drawer.classList.remove('open'); };
+  var url=RAW_BASE+MANIFEST_URL;
+  drawer.querySelector('#src-manifest-url').textContent=url;
+  drawer.querySelector('#src-open-manifest').href=url;
+  drawer.querySelector('#src-copy-manifest').onclick=function(){
+    var done=function(){ this.textContent='Copied'; }.bind(this);
+    if (navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(done, done);
+    } else {
+      var t=document.createElement('textarea'); t.value=url;
+      document.body.appendChild(t); t.select();
+      try{ document.execCommand('copy'); }catch(e){}
+      document.body.removeChild(t); done();
+    }
+  };
+  loadManifest();
+  return drawer;
+}
+
+function loadManifest(){
+  fetch(MANIFEST_URL,{cache:'no-store'}).then(function(r){
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(m){
+    manifest=m; renderManifest(m);
+  }).catch(function(err){
+    manifestFailed=true;
+    var st=document.querySelector('#src-manifest-status');
+    if (st) st.textContent='Manifest not reachable ('+err.message+'). Tool sources below still work.';
+    renderToolListFallback();
+  });
+}
+
+function renderManifest(m){
+  var st=document.querySelector('#src-manifest-status');
+  if (st) st.textContent='Manifest v'+esc(m.version)+' · generated '+esc(m.generated)+' · '+
+    (m.tools?m.tools.length:0)+' tools described.';
+  var reuse=document.querySelector('#src-reuse');
+  if (reuse){
+    reuse.innerHTML=
+      '<p><b>For an AI handed the Pulse link:</b> fetch <span class="mono">'+esc(RAW_BASE+MANIFEST_URL)+'</span> '+
+      'for the full inventory. Each tool lists its <span class="mono">panel_source_url</span> '+
+      '(the interactive implementation, plain browser JS) and its <span class="mono">component_source</span> '+
+      '(the underlying recovered software, verbatim).</p>'+
+      '<p><b>To reuse a tool as a dependency:</b> take its panel source file; the manifest\'s '+
+      '<span class="mono">depends_on</span> lists the globals it needs '+
+      '(e.g. <span class="mono">streamFrom</span> from seed-rng, <span class="mono">MoorWorld</span>, '+
+      '<span class="mono">MAT</span> palettes). Shared libs are also published under '+
+      '<span class="mono">pulse-tools/</span>.</p>'+
+      '<p><b>Build:</b> '+esc(m.build&&m.build.description||'assembled single-file page')+'</p>';
+  }
+  renderToolList(m.tools||[]);
+}
+
+function toolEntries(){
+  // dashboard.js exposes the component inventory as PULSE_COMPONENTS if present,
+  // otherwise fall back to window.__PULSE_COMPONENTS set by the build.
+  return (window.PULSE_COMPONENTS||window.__PULSE_COMPONENTS||[]);
+}
+
+function renderToolList(tools){
+  var host=document.querySelector('#src-tool-list');
+  if (!host) return;
+  var comps=toolEntries();
+  var byId={};
+  comps.forEach(function(c){ byId[c.id]=c; });
+  // Prefer manifest tools; fall back to dashboard inventory
+  var list=tools.length?tools:comps.map(function(c){
+    return {id:c.id,label:c.label,panel_source:c.toolSrc,
+      panel_source_url:c.toolSrc?RAW_BASE+c.toolSrc:null,
+      component_source:c.source, depends_on:[], reuse_notes:c.toolGap||''};
+  });
+  host.innerHTML='';
+  list.forEach(function(t){
+    var c=byId[t.id]||{};
+    var d=el('div','src-tool');
+    var deps=(t.depends_on||[]).map(function(x){return '<code class="mono">'+esc(x)+'</code>';}).join(' ');
+    d.innerHTML=
+      '<div class="src-tool-head"><b>'+esc(t.label||t.id)+'</b>'+
+      '<span class="mono src-tool-id">'+esc(t.id)+'</span></div>'+
+      (t.panel_source_url?
+        '<div class="src-row"><span class="meta">Panel source:</span> '+
+        '<a class="mono" target="_blank" rel="noopener" href="'+esc(t.panel_source_url)+'">'+esc(t.panel_source||'')+'</a>'+
+        '<button class="btn src-view" data-src="'+esc(t.panel_source_url)+'">View</button></div>' : '')+
+      (t.component_source?
+        '<div class="src-row"><span class="meta">Component:</span> '+
+        '<span class="mono">'+esc(t.component_source)+'</span></div>' : '')+
+      (deps? '<div class="src-row"><span class="meta">Needs:</span> '+deps+'</div>' : '')+
+      (t.reuse_notes? '<div class="meta src-notes">'+esc(t.reuse_notes)+'</div>' : '')+
+      '<div class="src-codewrap" style="display:none"><div class="src-row">'+
+      '<span class="meta">Source preview</span>'+
+      '<button class="btn src-copy-code">Copy code</button></div>'+
+      '<pre class="mono src-code"></pre></div>';
+    host.appendChild(d);
+  });
+  host.querySelectorAll('.src-view').forEach(function(b){
+    b.onclick=function(){ viewSource(b.getAttribute('data-src'), b); };
+  });
+}
+
+function renderToolListFallback(){
+  renderToolList([]);
+}
+
+function viewSource(url, btn){
+  var wrap=btn.closest('.src-tool').querySelector('.src-codewrap');
+  var pre=wrap.querySelector('.src-code');
+  if (wrap.style.display!=='none'){ wrap.style.display='none'; btn.textContent='View'; return; }
+  btn.textContent='Loading…';
+  fetch(url,{cache:'no-store'}).then(function(r){
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    return r.text();
+  }).then(function(txt){
+    pre.textContent=txt.slice(0,60000)+(txt.length>60000?'\n… (truncated, full file at URL)':'');
+    wrap.style.display='';
+    btn.textContent='Hide';
+    wrap.querySelector('.src-copy-code').onclick=function(){
+      var done=function(){ this.textContent='Copied'; }.bind(this);
+      if (navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(txt).then(done, done);
+      } else done();
+    };
+  }).catch(function(err){
+    pre.textContent='Could not load: '+err.message;
+    wrap.style.display='';
+    btn.textContent='Hide';
+  });
+}
+
+// Wire the header button (injected by the build as #src-toggle)
+function init(){
+  function wire(){
+    var b=document.getElementById('src-toggle');
+    if (!b){ setTimeout(wire, 500); return; }
+    b.addEventListener('click', function(){
+      var d=ensureDrawer();
+      d.classList.toggle('open');
+    });
+  }
+  if (document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', wire);
+  } else wire();
+}
+init();
 })();
 
 </script>
