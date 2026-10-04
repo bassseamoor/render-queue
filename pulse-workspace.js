@@ -84,18 +84,18 @@ body.pw-active #main>#tabview,body.pw-active #main>#windows{display:none!importa
 .pw-viewport{flex:1;min-width:0;min-height:0;overflow:auto;position:relative;border:1px solid var(--line);border-radius:12px;background:#090c16;overscroll-behavior:contain}
 .pw-board{position:relative;width:1800px;height:1200px;min-width:100%;min-height:100%;background-image:radial-gradient(#a2aace25 1px,transparent 1px);background-size:24px 24px}
 .pw-empty{position:absolute;left:28px;top:26px;max-width:380px;color:var(--muted);font-size:14px;line-height:1.6;pointer-events:none}.pw-empty strong{display:block;color:var(--text);font-size:18px;margin-bottom:7px}
-.pw-window{position:absolute;display:flex;flex-direction:column;min-width:300px;min-height:240px;border:1px solid #777294;border-radius:12px;background:#111422;box-shadow:0 16px 36px #0005;overflow:hidden}
+.pw-window{position:absolute;display:flex;flex-direction:column;min-width:280px;min-height:240px;border:1px solid #777294;border-radius:12px;background:#111422;box-shadow:0 16px 36px #0005;overflow:hidden}
 .pw-window.is-selected{border-color:var(--cyan);box-shadow:0 0 0 1px #7fd4ff55,0 16px 36px #0005}
 .pw-window.drop-target{outline:3px solid var(--cyan);outline-offset:3px}
 .pw-window-head{display:flex;align-items:center;gap:8px;padding:7px 9px;min-height:44px;flex:none;background:#252139;border-bottom:1px solid var(--line);cursor:move;touch-action:none;user-select:none}
 .pw-window-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;font-weight:600}
 .pw-window-head button{height:30px;min-width:30px;border:1px solid var(--line);border-radius:7px;background:#ffffff08;color:var(--text);cursor:pointer;font-size:16px}
 .pw-window-head button:hover{background:#ffffff18}.pw-window-body{flex:1;min-height:0;position:relative;overflow:hidden}
-.pw-window-body>iframe{width:100%;height:100%;border:0;display:block;background:#0b101b}
+.pw-window-body>iframe{width:100%;height:100%;min-width:0;min-height:0;border:0;display:block;background:#0b101b}
 .pw-resize{position:absolute;bottom:0;right:0;width:24px;height:24px;z-index:10;border:0!important;background:linear-gradient(135deg,transparent 48%,#7fd4ff88 49%,#7fd4ff88 55%,transparent 56%,transparent 65%,#7fd4ff 66%,#7fd4ff 72%,transparent 73%)!important;cursor:nwse-resize;touch-action:none}
 .pw-project-body{display:flex;flex-direction:column;height:100%;min-height:0}
 .pw-project-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:9px 12px;background:#101523;border-bottom:1px solid var(--line);font-size:13px;flex:none}
-.pw-project-bar span{flex:1;color:var(--muted)}.pw-project-bar .btn{min-height:32px;font-size:13px;padding:5px 9px}
+.pw-project-bar span{flex:1 1 150px;min-width:0;overflow-wrap:anywhere;color:var(--muted)}.pw-project-bar .btn{min-height:32px;font-size:13px;padding:5px 9px}
 .pw-project-viewport{flex:1;overflow:auto;min-height:0;position:relative}.pw-project-board{position:relative;min-width:100%;min-height:100%;width:1600px;height:1000px;background-image:radial-gradient(#a2aace20 1px,transparent 1px);background-size:24px 24px}
 body.pw-dragging iframe,body.pw-part-drag iframe{pointer-events:none!important}body.pw-dragging{user-select:none!important}
 .pw-status{font-size:12px;color:var(--muted);flex:none;padding:0 3px;min-height:18px}
@@ -105,14 +105,14 @@ body.pw-dragging iframe,body.pw-part-drag iframe{pointer-events:none!important}b
 @media(max-width:760px){body.pw-active #main{padding:6px!important}body.pw-active .pw-shell{padding-bottom:78px}.pw-bin{position:absolute;left:6px;top:100px;bottom:84px;width:min(280px,82vw);z-index:50;box-shadow:20px 0 50px #0008}.pw-window{min-width:280px}.pw-toolbar .pw-name{flex-basis:100%}.pw-toolbar .btn{font-size:13px;min-height:36px}.pw-status{font-size:11px}.pw-board{width:1500px}.pw-dialog{padding:16px}}
 `;document.head.appendChild(css);
 if(child)document.body.classList.add('pw-child');
-setTimeout(init,0);
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else queueMicrotask(init);
 function init(){
  if(typeof COMPS==='undefined'||typeof openComponent!=='function')return;
  if(child){
   if(typeof unmountFocus==='function')unmountFocus();
   UI.focus=null;UI.open=[];persist=function(){};
   const c=COMPS.find(c=>c.id===child);
-  if(c){openComponent(child);document.title=c.label+' · Pulse panel';}
+  if(c){openComponent(child);document.title=c.label+' · Pulse panel';const fit=document.createElement('script');fit.src='pulse-panel-fit.js?v=20261004-1';document.body.append(fit);}
   else document.querySelector('#tabview').textContent='This component is unavailable: '+child;
   return;
  }
