@@ -4,6 +4,62 @@
 const params=new URLSearchParams(location.search), child=params.get('workspace-tool');
 const css=document.createElement('style');css.id='pulse-workspace-style';
 css.textContent=`
+/* Desktop shell: retired category nav must never determine stage placement. */
+.tabs-on #main{min-height:0}
+.tabs-on #windows:empty{display:none}
+@media(min-width:761px){
+  body.tabs-on{height:100dvh;overflow:hidden}
+  body.tabs-on>header{position:fixed;inset:0 0 auto;height:66px;transform:none!important}
+  body.tabs-on #app,
+  body.tabs-on.chrome-hidden #app,
+  body.tabs-on #app.independent-focus{
+    margin-top:66px;height:calc(100dvh - 66px);
+    display:grid;grid-template-columns:210px minmax(0,1fr)!important;
+    grid-template-rows:minmax(0,1fr);gap:14px;padding:14px;
+    transition:none;
+  }
+  body.tabs-on #main{
+    grid-column:2;grid-row:1;width:100%;height:100%;min-width:0;
+    padding:24px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+    background:rgba(12,14,28,.88)!important;
+  }
+  body.tabs-on #tabbar{
+    display:flex!important;position:fixed;left:14px;top:80px;bottom:14px;
+    right:auto;width:210px;flex-direction:column;justify-content:flex-start;
+    align-items:stretch;gap:8px;padding:14px 10px;
+    border:1px solid var(--line);border-radius:18px;background:rgba(20,15,36,.94);
+  }
+  body.tabs-on #tabbar button{
+    flex:0 0 auto;max-width:none;min-height:52px;flex-direction:row;
+    justify-content:flex-start;gap:14px;padding:12px 16px;
+    font-size:.95rem;letter-spacing:0;text-align:left;
+  }
+  body.tabs-on #tabbar button.on{background:rgba(127,212,255,.12);box-shadow:inset 3px 0 var(--cyan)}
+  body.tabs-on #tabbar button:hover{background:rgba(255,255,255,.07)}
+  body.tabs-on #tabview{padding:0 0 24px}
+  body.tabs-on #tabview.focus-mode{padding:0}
+  body.tabs-on #chrome-pull{display:none}
+  body.tabs-on #bin-results .trows{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:10px}
+  body.tabs-on .trow{min-height:76px;align-items:flex-start}
+  body.tabs-on .trow-ic{padding-top:4px}
+  body.tabs-on .trow-tx strong{font-size:.95rem;line-height:1.4}
+  body.tabs-on .trow-tx span{font-size:.875rem;line-height:1.45;white-space:normal;overflow-wrap:anywhere}
+  body.tabs-on .bin-sec>p{font-size:.875rem}
+  body.tabs-on .focus-nav{position:sticky;top:-24px;z-index:4;padding:4px 0 8px;background:#0c0e1c}
+  body.tabs-on .tool-host.bare{padding:0!important;border:0!important;box-shadow:none!important;background:transparent!important;backdrop-filter:none;-webkit-backdrop-filter:none}
+  body.tabs-on .focus-about{max-width:none}
+  body.tabs-on .vault-grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+  body.tabs-on .app:not(.activity-hidden) aside.activity{top:80px;right:14px;bottom:14px;width:min(380px,calc(100vw - 28px))}
+}
+@media(min-width:761px) and (max-width:1000px){
+  body.tabs-on #app, body.tabs-on.chrome-hidden #app, body.tabs-on #app.independent-focus{grid-template-columns:160px minmax(0,1fr)!important;gap:10px;padding:10px}
+  body.tabs-on #tabbar{left:10px;top:76px;bottom:10px;width:160px}
+  body.tabs-on #tabbar button{padding:12px 10px;gap:10px}
+  body.tabs-on #main{padding:18px}
+}
+
+
 body.pw-child{overflow:hidden!important;height:100dvh!important}
 body.pw-child>header,body.pw-child #tabbar,body.pw-child #chrome-pull,body.pw-child #activity,body.pw-child .focus-nav,body.pw-child .focus-about{display:none!important}
 body.pw-child #app,body.pw-child #app.independent-focus,body.pw-child.chrome-hidden #app{display:block!important;margin:0!important;padding:0!important;height:100dvh!important}
@@ -62,6 +118,9 @@ function init(){
  }
  const pendingComponent=params.get('component')||UI.focus;
  const KEY='moor-pulse-component-projects-v1',DRAFT='moor-pulse-workspace-v1';
+ document.getElementById('app').classList.add('activity-hidden');
+ document.getElementById('activity').style.display='none';
+ document.getElementById('activity-toggle').setAttribute('aria-expanded','false');
  const main=document.getElementById('main');let z=10,selected=null,manifest=null;
  const originalOpen=openComponent,originalTab=selectTab,originalBar=ensureTabbar,originalBin=binView;
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
