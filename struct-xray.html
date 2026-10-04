@@ -67,6 +67,38 @@
   #hint { text-align:center; font-size:10px; color:#48657f; letter-spacing:.06em; margin-top:5px; }
   #nogl { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
     color:#9fc6e8; font-size:14px; padding:40px; text-align:center; z-index:9; }
+  /* ---------- volumes view ---------- */
+  #viewRow .chip.on { border-color:rgba(178,255,196,.85); color:#eafff1;
+    background:rgba(40,140,80,.30); box-shadow:0 0 14px rgba(90,255,160,.30); }
+  body.vol #layerRow, body.vol #hint { display:none; }
+  #takeoff { position:fixed; z-index:5; right:14px; top:64px; width:252px; max-height:62vh;
+    overflow-y:auto; display:none; padding:12px 12px 10px; border-radius:14px;
+    background:rgba(6,12,20,.78); border:1px solid rgba(120,200,255,.28);
+    backdrop-filter:blur(8px); box-shadow:0 8px 30px rgba(0,0,0,.5); }
+  body.vol #takeoff { display:block; }
+  #takeoff .tt { font-size:11px; font-weight:800; letter-spacing:.24em; color:#bfe6ff;
+    text-shadow:0 0 12px rgba(90,200,255,.5); margin-bottom:2px; }
+  #takeoff .ts { font-size:10px; color:#8fb4d4; letter-spacing:.05em; margin-bottom:8px;
+    font-variant-numeric:tabular-nums; }
+  #takeoff .ts b { color:#eaf7ff; }
+  .trow { display:flex; align-items:center; gap:8px; padding:5px 7px; border-radius:8px;
+    cursor:pointer; border:1px solid transparent; }
+  .trow:active { transform:scale(.97); }
+  .trow .dot { width:10px; height:10px; border-radius:50%; flex:none;
+    box-shadow:0 0 8px currentColor; }
+  .trow .nm { flex:1; font-size:10.5px; font-weight:700; letter-spacing:.06em; color:#cfe6f7; }
+  .trow .m3 { font-size:10.5px; color:#eaf7ff; font-variant-numeric:tabular-nums;
+    font-family:ui-monospace,Menlo,monospace; }
+  .trow .pc { font-size:9.5px; color:#5f7f9d; width:40px; text-align:right;
+    font-variant-numeric:tabular-nums; }
+  .trow.zero .nm,.trow.zero .m3 { color:#3f5568; }
+  .trow.zero .dot { opacity:.35; box-shadow:none; }
+  .trow.iso { border-color:rgba(140,220,255,.7); background:rgba(40,90,140,.30);
+    box-shadow:0 0 12px rgba(80,180,255,.25); }
+  #takeoff .tnote { font-size:9px; color:#48657f; letter-spacing:.05em; margin-top:8px; }
+  @media (max-width:700px){
+    #takeoff { left:10px; right:10px; width:auto; top:auto; bottom:236px; max-height:26vh; }
+  }
 </style>
 </head>
 <body>
@@ -81,6 +113,10 @@
   <div class="row" id="seedRow">
     <input id="seedIn" value="xray-01" spellcheck="false" autocomplete="off" aria-label="seed">
     <button id="dice" aria-label="shuffle seed">&#127922;</button>
+  </div>
+  <div class="row chips" id="viewRow">
+    <button class="chip on" data-view="xray">XRAY</button>
+    <button class="chip" data-view="volumes">VOLUMES</button>
   </div>
   <div class="row chips" id="themeRow">
     <button class="chip" data-theme="craftsman">CRAFTSMAN</button>
@@ -104,6 +140,12 @@
   <div id="hint">drag to orbit &nbsp;&middot;&nbsp; pinch to zoom</div>
 </div>
 <div id="nogl">WebGL unavailable on this device.</div>
+<aside id="takeoff" aria-label="volume takeoff">
+  <div class="tt">TAKEOFF</div>
+  <div class="ts" id="toSum"></div>
+  <div id="toRows"></div>
+  <div class="tnote">tap a material to isolate its mass &middot; tap again to clear</div>
+</aside>
 <script>
 /* mesh-builder — immediate-mode procedural 3D mesh builder.
  * CityMesh class extracted verbatim from canal-metropolis.html:648-661.
@@ -137,6 +179,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { CityMesh
 
 </script>
 <script>
+
 /* STRUCT v1 — layered structural system for MOOR.
  * Spec: components/struct/SPEC.md (law).
  * Zero dependencies except CityMesh from ../mesh-builder/mesh-builder.js.
@@ -211,6 +254,7 @@ var MATERIALS = [
   { id: 'drywall',     name: 'Painted drywall',  kind: 'inner',  color: '#e8e4da' },
   { id: 'wallpaper',   name: 'Pattern wallpaper',kind: 'inner',  color: '#c9b8a3' },
   { id: 'plaster',     name: 'Lime plaster',     kind: 'inner',  color: '#ded5c4' },
+  { id: 'stucco',      name: 'Adobe stucco',       kind: 'outer',  color: '#d8c5a5' },
   { id: 'brick',       name: 'Fired brick',       kind: 'outer',  color: '#9a4f38' },
   { id: 'siding',      name: 'Lap siding',        kind: 'outer',  color: '#b8c4cc' },
   { id: 'concrete',    name: 'Poured concrete',   kind: 'both',   color: '#a3a5a8' },
@@ -275,14 +319,68 @@ var ROOM_TYPES = {
   civic:   { floor: 'tile',     min: 16 }
 };
 
-/* ---------------- themes v1 ---------------- */
-var THEMES = {
-  craftsman: { frame: 'wood-frame',  outer: 'siding',   roof: 'gable', win: ['double-hung', 'double-hung', 'picture'] },
-  modern:    { frame: 'metal-frame', outer: 'concrete', roof: 'flat',  win: ['picture', 'slider', 'picture'] },
-  'brick-row':{ frame: 'wood-frame', outer: 'brick',    roof: 'gable', win: ['double-hung'] },
-  civic:     { frame: 'metal-frame', outer: 'stone',    roof: 'hip',   win: ['picture', 'picture', 'slider'] }
-};
-function themeOf(name) { return THEMES[name] || THEMES.craftsman; }
+/* ---------------- theme registry (v2: open-ended) ----------------
+ * Themes are DATA. Anyone can add one via registerTheme. Built-ins below.
+ * v1's THEMES object is now a live view over the registry (same reference). */
+var THEME_REGISTRY = {};
+var THEMES = THEME_REGISTRY;
+function normalizeFrame(f) {
+  if (f === 'wood') return 'wood-frame';
+  if (f === 'metal') return 'metal-frame';
+  return f;
+}
+function registerTheme(id, def) {
+  def = def || {};
+  var roof = def.roof || {};
+  var d = {
+    id: id,
+    name: def.name || id,
+    frame: mat(normalizeFrame(def.frame), 'frame').id,
+    inner: mat(def.inner, 'inner').id,
+    outer: mat(def.outer, 'outer').id,
+    roof: {
+      type: roof.type || 'gable',
+      mat: mat(roof.mat, 'roof').id
+    },
+    win: def.win && def.win.length ? def.win.slice() : ['double-hung'],
+    floorByRoom: def.floorByRoom || {},
+    trim: def.trim || '#f5f2ea',
+    accent: def.accent || '#b0492f',
+    texturePatterns: def.texturePatterns || [],
+    lighting: def.lighting || 'warm',
+    detail: def.detail == null ? 0.5 : def.detail,
+    vigas: !!def.vigas
+  };
+  THEME_REGISTRY[id] = d;
+  return d;
+}
+function listThemes() { return Object.keys(THEME_REGISTRY); }
+registerTheme('craftsman', { name: 'Craftsman', frame: 'wood', inner: 'drywall',
+  outer: 'siding', roof: { type: 'gable', mat: 'shingle' },
+  win: ['double-hung', 'double-hung', 'picture'],
+  floorByRoom: { living: 'hardwood', bed: 'hardwood', bath: 'tile', kitchen: 'tile' },
+  trim: '#f5f2ea', accent: '#7a4a2b', lighting: 'warm', detail: 0.7 });
+registerTheme('modern', { name: 'Modern', frame: 'metal', inner: 'drywall',
+  outer: 'concrete', roof: { type: 'flat', mat: 'metal-roof' },
+  win: ['picture', 'slider', 'picture'],
+  floorByRoom: { living: 'concrete', bed: 'hardwood', bath: 'tile', kitchen: 'tile' },
+  trim: '#e8e8e8', accent: '#2b2f36', lighting: 'cool', detail: 0.4 });
+registerTheme('brick-row', { name: 'Brick Row', frame: 'wood', inner: 'plaster',
+  outer: 'brick', roof: { type: 'gable', mat: 'shingle' },
+  win: ['double-hung'],
+  floorByRoom: { living: 'hardwood', bed: 'hardwood', bath: 'tile', kitchen: 'tile' },
+  trim: '#efe9dc', accent: '#5d2f24', lighting: 'warm', detail: 0.5 });
+registerTheme('civic', { name: 'Civic', frame: 'metal', inner: 'plaster',
+  outer: 'stone', roof: { type: 'hip', mat: 'metal-roof' },
+  win: ['picture', 'picture', 'slider'],
+  floorByRoom: { living: 'tile', bed: 'tile', bath: 'tile', kitchen: 'tile' },
+  trim: '#ddd6c4', accent: '#4a5560', lighting: 'cool', detail: 0.8 });
+registerTheme('adobe', { name: 'Desert Adobe', frame: 'wood', inner: 'plaster',
+  outer: 'stucco', roof: { type: 'flat', mat: 'metal-roof' },
+  win: ['double-hung', 'picture'],
+  floorByRoom: { living: 'tile', bed: 'tile', bath: 'tile', kitchen: 'tile' },
+  trim: '#f7ead2', accent: '#a85b2a', lighting: 'warm', detail: 0.6, vigas: true });
+function themeOf(name) { return THEME_REGISTRY[name] || THEME_REGISTRY.craftsman; }
 
 /* ---------------- small math ---------------- */
 function snap(v) { return Math.round(v / GRID) * GRID; }
@@ -421,25 +519,13 @@ function emitOpening(mesh, wall, o, y0, n) {
   }
 }
 
-/* Non-axis-aligned walls: approximate with stepped axis-aligned boxes along
- * the dominant axis (documented approximation; generator only makes axis
- * walls). Sockets are ignored on diagonal walls (validate warns). */
-function emitDiagonal(mesh, wall, y0) {
-  var steps = Math.max(2, Math.ceil(wallLen(wall) / GRID));
-  var frameC = matColor(wall.frame, 'frame');
-  for (var i = 0; i < steps; i++) {
-    var p0 = ptAt(wall, i / steps), p1 = ptAt(wall, (i + 1) / steps);
-    var xa = Math.min(p0.x, p1.x), za = Math.min(p0.z, p1.z);
-    var w = Math.max(Math.abs(p1.x - p0.x), 0.05), d = Math.max(Math.abs(p1.z - p0.z), 0.05);
-    mesh.box(xa - WALL_T / 4, y0, za - WALL_T / 4, w + WALL_T / 2, wall.h || WALL_H, d + WALL_T / 2, frameC);
-  }
-}
-
-/* emitWall(mesh, wall, opts) — full layered wall with sockets. */
+/* emitWall(mesh, wall, opts) — full layered wall with sockets.
+ * v2: non-axis walls take the true diagonal path (obox); axis walls keep the
+ * v1 mesh.box path bit-identical. */
 function emitWall(mesh, wall, opts) {
   opts = opts || {};
   var y0 = wall.y0 || opts.y0 || 0;
-  if (!isAxisAligned(wall)) { emitDiagonal(mesh, wall, y0); return; }
+  if (!isAxisAligned(wall)) { emitDiagWall(mesh, wall, y0); return; }
   var n = opts.inward || leftNormal(wall);
   var cut = cutRuns(wall);
   cut.runs.forEach(function (r) { emitRun(mesh, wall, r.t0, r.t1, y0 + r.yLo, y0 + r.yHi, n); });
@@ -447,9 +533,25 @@ function emitWall(mesh, wall, opts) {
 }
 
 /* ---------------- floor slabs ---------------- */
-/* Slab per room rect: 0.12 thick, top at room floor level (y0). */
+/* Slab per room: rect rooms 0.12 thick box; polygon rooms fan-triangulated
+ * (convex; documented). Top at room floor level (y0). */
 function emitSlab(mesh, room) {
   var y0 = room.y0 || 0;
+  if (room.polygon && room.polygon.length >= 3) {
+    var col = matColor(room.floor, 'floor');
+    var p0 = room.polygon[0];
+    for (var i = 1; i < room.polygon.length - 1; i++) {
+      var p1 = room.polygon[i], p2 = room.polygon[i + 1];
+      // top face + bottom face + skirt via two tris each (fan)
+      tri(mesh, [p0.x, y0, p0.z], [p1.x, y0, p1.z], [p2.x, y0, p2.z], col);
+      tri(mesh, [p0.x, y0 - SLAB_T, p0.z], [p2.x, y0 - SLAB_T, p2.z], [p1.x, y0 - SLAB_T, p1.z], col);
+    }
+    if (mesh.solids) {
+      var bb = aabbOf(room.polygon.map(function (p) { return [p.x, y0 - SLAB_T, p.z]; }));
+      pushAABB(mesh, bb.lo, [bb.hi[0], y0, bb.hi[2]], col);
+    }
+    return;
+  }
   var r = room.rect;
   mesh.box(r.x, y0 - SLAB_T, r.z, r.w, SLAB_T, r.d, matColor(room.floor, 'floor'));
 }
@@ -515,6 +617,13 @@ function emitRoof(mesh, building) {
     mesh.box(x0 - oh, py, z1 + oh - pt, fp.w + 2 * oh, ph, pt, col);
     mesh.box(x0 - oh, py, z0 - oh, pt, ph, fp.d + 2 * oh, col);
     mesh.box(x1 + oh - pt, py, z0 - oh, pt, ph, fp.d + 2 * oh, col);
+    if (themeOf(building.theme).vigas) { // adobe vigas: wood beam row, both eaves
+      var vgC = matColor('wood-frame', 'frame');
+      for (var vx = x0 + 0.4; vx < x1 - 0.2; vx += 0.6) {
+        mesh.box(vx, top - 0.03, z0 - oh - 0.2, 0.12, 0.14, 0.55, vgC);
+        mesh.box(vx, top - 0.03, z1 + oh - 0.35, 0.12, 0.14, 0.55, vgC);
+      }
+    }
     return;
   }
   if (type === 'gable') {
@@ -588,6 +697,8 @@ function emitRoof(mesh, building) {
  * Type heuristic (documented): aspect > 2.5 → hall; area < 6 → bath;
  * area < 14 → bed; else living. */
 function roomsFromWalls(walls) {
+  // v2: any diagonal wall → polygon detection; axis-only keeps the v1 rect path.
+  if (walls.some(function (w) { return !isAxisAligned(w); })) return roomsFromWallsPoly(walls);
   var xs = {}, zs = {};
   var hWalls = [], vWalls = []; // h: constant z (x-span), v: constant x (z-span)
   walls.forEach(function (w, i) {
@@ -662,18 +773,18 @@ function wkey(a, b, y0) {
  * segment (within 0.01, not near its own ends) becomes a split point.
  * After this, every endpoint coincides with another wall's endpoint —
  * no orphan ends, no mid-wall T stems. Sockets must be added AFTER. */
+/* Split walls at T-junctions: any other wall's endpoint lying on this wall's
+ * segment (within 0.01, not near its own ends) becomes a split point.
+ * v2: angle-general (projection + perpendicular distance). Axis behavior identical.
+ * After this, every endpoint coincides with another wall's endpoint —
+ * no orphan ends, no mid-wall T stems. Sockets must be added AFTER. */
 function pointOnWallT(w, p) {
-  if (isXWall(w)) {
-    if (Math.abs(p.z - w.a.z) > PERIM_TOL) return -1;
-    var t = (p.x - w.a.x) / (w.b.x - w.a.x);
-    return (t > 0.001 && t < 0.999) ? t : -1;
-  }
-  if (isZWall(w)) {
-    if (Math.abs(p.x - w.a.x) > PERIM_TOL) return -1;
-    var t2 = (p.z - w.a.z) / (w.b.z - w.a.z);
-    return (t2 > 0.001 && t2 < 0.999) ? t2 : -1;
-  }
-  return -1;
+  var dx = w.b.x - w.a.x, dz = w.b.z - w.a.z, L2 = dx * dx + dz * dz;
+  if (L2 < 1e-12) return -1;
+  var t = ((p.x - w.a.x) * dx + (p.z - w.a.z) * dz) / L2;
+  if (t <= 0.001 || t >= 0.999) return -1;
+  var px = w.a.x + dx * t, pz = w.a.z + dz * t;
+  return Math.hypot(p.x - px, p.z - pz) <= PERIM_TOL ? t : -1;
 }
 function splitWalls(walls) {
   var out = [];
@@ -692,7 +803,7 @@ function splitWalls(walls) {
       var sub = {
         a: ptAt(w, uniq[i]), b: ptAt(w, uniq[i + 1]),
         h: w.h, y0: w.y0, frame: w.frame, inner: w.inner, outer: w.outer,
-        sockets: [], rooms: w.rooms.slice(), exterior: true
+        sockets: [], rooms: (w.rooms || []).slice(), exterior: w.exterior
       };
       out.push(sub);
     }
@@ -853,11 +964,12 @@ function makeBuilding(seed, theme, footprint, stories) {
   });
 
   // --- roof ---
-  var roofMat = th.roof === 'flat' ? 'metal-roof' : th.roof === 'hip' ? 'metal-roof' : 'shingle';
+  var roofType = (th.roof && th.roof.type) || 'gable';
+  var roofMat = (th.roof && th.roof.mat) || 'shingle';
   var building = {
     seed: seed, theme: theme in THEMES ? theme : 'craftsman',
     frame: th.frame, rooms: rooms, walls: walls,
-    roof: { type: th.roof, mat: roofMat }, stories: stories,
+    roof: { type: roofType, mat: roofMat }, stories: stories,
     footprint: { w: W, d: D }
   };
   return building;
@@ -866,7 +978,7 @@ function makeBuilding(seed, theme, footprint, stories) {
 /* ---------------- emission entry points ---------------- */
 function emitInto(mesh, building) {
   if (!CityMeshCtor) throw new Error('STRUCT: CityMesh not loaded (need mesh-builder.js first, or node require).');
-  var walls = resolveJunctions(building.walls || []);
+  var walls = miterJoints(resolveJunctions(building.walls || [])); // v2: mitered joints
   walls.forEach(function (w) { emitWall(mesh, w); });
   (building.rooms || []).forEach(function (r) { emitSlab(mesh, r); });
   emitRoof(mesh, building);
@@ -912,11 +1024,10 @@ function validate(building) {
       if (!(L >= MIN_WALL_LEN)) E(tag + ' length ' + L.toFixed(2) + ' < 1.0');
       [w.a, w.b].forEach(function (p, k) {
         ['x', 'z'].forEach(function (ax) {
-          var g = p[ax] / GRID;
-          if (Math.abs(g - Math.round(g)) > 1e-6) E(tag + ' endpoint ' + (k ? 'b' : 'a') + '.' + ax + '=' + p[ax] + ' off 0.5 grid');
+          if (typeof p[ax] !== 'number' || !isFinite(p[ax])) E(tag + ' endpoint ' + (k ? 'b' : 'a') + '.' + ax + ' not a number');
         });
       });
-      if (!isAxisAligned(w)) E(tag + ' not axis-aligned (diagonal approx, sockets ignored)');
+      // v2: diagonals are first-class (true obox emission + sockets). No axis requirement.
     }
     if (!(w.h > 0)) E(tag + ' bad height ' + w.h);
     if (!MAT_BY_ID[w.frame]) E(tag + ' unknown frame material ' + w.frame);
@@ -940,12 +1051,421 @@ function validate(building) {
   });
   (rooms).forEach(function (r, i) {
     var tag = 'room[' + i + ']';
-    var rc = r.rect || {};
-    if (!(rc.w > 0 && rc.d > 0)) E(tag + ' bad rect');
+    if (r.polygon) { // v2 polygon rooms
+      if (!(r.polygon.length >= 3)) E(tag + ' bad polygon');
+      else if (!(polyArea(r.polygon) > 0.5)) E(tag + ' degenerate polygon');
+    } else {
+      var rc = r.rect || {};
+      if (!(rc.w > 0 && rc.d > 0)) E(tag + ' bad rect');
+    }
     if (!ROOM_TYPES[r.type]) E(tag + ' unknown type ' + r.type);
     if (!MAT_BY_ID[r.floor]) E(tag + ' unknown floor material ' + r.floor);
   });
+  // v2: foldback joint warning (φ < 15° at a shared endpoint)
+  (function () {
+    var pts = [];
+    walls.forEach(function (w, i) {
+      if (!w.a || !w.b) return;
+      pts.push({ x: w.a.x, z: w.a.z, wi: i, end: 0 });
+      pts.push({ x: w.b.x, z: w.b.z, wi: i, end: 1 });
+    });
+    var t2 = JUNCTION_TOL * JUNCTION_TOL;
+    for (var i = 0; i < pts.length; i++) for (var j = i + 1; j < pts.length; j++) {
+      var A = pts[i], B = pts[j];
+      if (A.wi === B.wi || dist2(A.x, A.z, B.x, B.z) > t2) continue;
+      var wa = walls[A.wi], wb = walls[B.wi];
+      if ((wa.y0 || 0) !== (wb.y0 || 0)) continue; // different stories stack — not a joint
+      var oa = A.end ? wa.a : wa.b, ob = B.end ? wb.a : wb.b;
+      var d1x = oa.x - A.x, d1z = oa.z - A.z, d2x = ob.x - B.x, d2z = ob.z - B.z;
+      var l1 = Math.hypot(d1x, d1z), l2 = Math.hypot(d2x, d2z);
+      if (l1 < 1e-9 || l2 < 1e-9) continue;
+      var dot = (d1x * d2x + d1z * d2z) / (l1 * l2);
+      var cross = Math.abs(d1x * d2z - d1z * d2x) / (l1 * l2);
+      if (Math.atan2(cross, dot) < 15 * Math.PI / 180)
+        E('foldback joint <15° at wall[' + A.wi + ']/wall[' + B.wi + ']');
+    }
+  })();
   return errs;
+}
+
+/* ================= STRUCT v2 additions =================
+ * Free-angle walls, miter joints, true diagonal emission, polygon rooms,
+ * volume takeoff, theme registry (above). Additive: v1 paths untouched. */
+
+/* ---------------- v2 snapping laws ---------------- */
+var SNAP_ANGLE_DEG = 15;   // angle snap increment (law)
+var SNAP_RADIUS = 0.25;    // endpoint snap radius (law)
+function snapAngle(dx, dz) {
+  var l = Math.hypot(dx, dz);
+  if (l < 1e-9) return { dx: dx, dz: dz };
+  var deg = Math.atan2(dz, dx) * 180 / Math.PI;
+  var s = Math.round(deg / SNAP_ANGLE_DEG) * SNAP_ANGLE_DEG;
+  var r = s * Math.PI / 180;
+  return { dx: Math.cos(r) * l, dz: Math.sin(r) * l };
+}
+function snapLen(L) { return Math.round(L * 10) / 10; } // 0.1m length snap
+function snapPoint(p, walls) {
+  var best = null, best2 = SNAP_RADIUS * SNAP_RADIUS, i, e, d2;
+  for (i = 0; i < walls.length; i++) {
+    var w = walls[i];
+    for (var k = 0; k < 2; k++) {
+      e = k ? w.b : w.a;
+      d2 = dist2(p.x, p.z, e.x, e.z);
+      if (d2 < best2) { best2 = d2; best = e; }
+    }
+  }
+  return best ? { x: best.x, z: best.z } : { x: p.x, z: p.z };
+}
+
+/* ---------------- miter joints ----------------
+ * At a cluster of exactly 2 wall ends, extend each wall past the shared
+ * point by e = (WALL_T/2)*tan((π-φ)/2), φ = angle between away-directions.
+ * Fills the outer wedge gap (v1 left a 0.075² notch at every 90° corner).
+ * Collinear (φ→180°) → e→0, no-op. Foldback (φ<15°) → skipped + validate warns.
+ * 3+ ends at a cluster (T-junctions post-split): left as butt/overlap. */
+function miterJoints(walls) {
+  var n = walls.length, i, j;
+  var parent = [];
+  for (i = 0; i < n * 2; i++) parent[i] = i;
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function pt(i2) { return i2 % 2 ? walls[(i2 / 2) | 0].b : walls[(i2 / 2) | 0].a; }
+  var tol2 = JUNCTION_TOL * JUNCTION_TOL;
+  for (i = 0; i < n * 2; i++) for (j = i + 1; j < n * 2; j++) {
+    var a = pt(i), b = pt(j);
+    if (dist2(a.x, a.z, b.x, b.z) <= tol2) parent[find(i)] = find(j);
+  }
+  var clusters = {};
+  for (i = 0; i < n * 2; i++) {
+    var r = find(i);
+    (clusters[r] || (clusters[r] = [])).push(i);
+  }
+  var out = walls.map(function (w) {
+    return { a: { x: w.a.x, z: w.a.z }, b: { x: w.b.x, z: w.b.z },
+             h: w.h, y0: w.y0, frame: w.frame, inner: w.inner, outer: w.outer,
+             sockets: w.sockets, rooms: w.rooms, exterior: w.exterior };
+  });
+  Object.keys(clusters).forEach(function (r) {
+    var ends = clusters[r];
+    if (ends.length !== 2) return;
+    var wi = [(ends[0] / 2) | 0, (ends[1] / 2) | 0];
+    if (wi[0] === wi[1]) return; // same wall, degenerate
+    var P = pt(ends[0]);
+    function away(k) { // unit direction from P toward the wall's other end
+      var w = walls[wi[k]], other = (ends[k] % 2) ? w.a : w.b;
+      var dx = other.x - P.x, dz = other.z - P.z, l = Math.hypot(dx, dz);
+      return l < 1e-9 ? null : { x: dx / l, z: dz / l };
+    }
+    var d1 = away(0), d2 = away(1);
+    if (!d1 || !d2) return;
+    var cross = d1.x * d2.z - d1.z * d2.x, dot = d1.x * d2.x + d1.z * d2.z;
+    var phi = Math.atan2(Math.abs(cross), dot); // 0..π
+    if (phi < 15 * Math.PI / 180 || phi > 165 * Math.PI / 180) return;
+    var e = (WALL_T / 2) * Math.tan((Math.PI - phi) / 2);
+    e = Math.min(e, WALL_T * 2);
+    for (var k = 0; k < 2; k++) {
+      var w = out[wi[k]], d = k ? d2 : d1;
+      var np = { x: P.x - d.x * e, z: P.z - d.z * e };
+      // never let a miter shrink a wall below 0.5m
+      var other2 = (ends[k] % 2) ? w.a : w.b;
+      if (Math.hypot(np.x - other2.x, np.z - other2.z) < 0.5) return;
+      if (ends[k] % 2) w.b = np; else w.a = np;
+    }
+  });
+  return out;
+}
+
+/* ---------------- oriented box (true diagonal emission) ----------------
+ * obox: center (cx,cz), vertical yLo..yHi, unit axis (ux,uz),
+ * half-extents hu (along axis), hd (across). Triangle mode: 6 faces with
+ * explicit outward normals (face() orients winding to match). Collision
+ * mode: exactly one AABB — dual-mode parity holds per box. */
+function obox(mesh, cx, cz, yLo, yHi, ux, uz, hu, hd, col) {
+  if (mesh.solids) {
+    var ex = Math.abs(ux) * hu + Math.abs(uz) * hd;
+    var ez = Math.abs(uz) * hu + Math.abs(ux) * hd;
+    pushAABB(mesh, [cx - ex, yLo, cz - ez], [cx + ex, yHi, cz + ez], col);
+    return;
+  }
+  var nx = -uz, nz = ux;
+  function C(su, sv, y) { return [cx + ux * hu * su + nx * hd * sv, y, cz + uz * hu * su + nz * hd * sv]; }
+  mesh.face(C(-1, -1, yHi), C(1, -1, yHi), C(1, 1, yHi), C(-1, 1, yHi), col, [0, 1, 0]);
+  mesh.face(C(-1, 1, yLo), C(1, 1, yLo), C(1, -1, yLo), C(-1, -1, yLo), col, [0, -1, 0]);
+  mesh.face(C(-1, 1, yLo), C(-1, 1, yHi), C(1, 1, yHi), C(1, 1, yLo), col, [nx, 0, nz]);
+  mesh.face(C(1, -1, yLo), C(1, -1, yHi), C(-1, -1, yHi), C(-1, -1, yLo), col, [-nx, 0, -nz]);
+  mesh.face(C(-1, -1, yLo), C(-1, -1, yHi), C(-1, 1, yHi), C(-1, 1, yLo), col, [-ux, 0, -uz]);
+  mesh.face(C(1, 1, yLo), C(1, 1, yHi), C(1, -1, yHi), C(1, -1, yLo), col, [ux, 0, uz]);
+}
+/* Diagonal wall run: layered oboxes along the true wall direction. */
+function emitDiagRun(mesh, wall, t0, t1, yLo, yHi, n) {
+  var p0 = ptAt(wall, t0), p1 = ptAt(wall, t1);
+  var dx = p1.x - p0.x, dz = p1.z - p0.z, L = Math.hypot(dx, dz);
+  if (L < 1e-6 || yHi - yLo <= 0) return;
+  var ux = dx / L, uz = dz / L;
+  var cx = (p0.x + p1.x) / 2, cz = (p0.z + p1.z) / 2;
+  var frameC = matColor(wall.frame, 'frame');
+  var innerC = matColor(wall.inner, 'inner');
+  var outerC = matColor(wall.outer, wall.exterior === false ? 'inner' : 'outer');
+  // interior side sign: project n onto left normal
+  var s = (n.x * -uz + n.z * ux) >= 0 ? 1 : -1;
+  obox(mesh, cx, cz, yLo, yHi, ux, uz, L / 2, WALL_T / 2, frameC);
+  obox(mesh, cx + s * -uz * (WALL_T / 2 + SKIN_T / 2), cz + s * ux * (WALL_T / 2 + SKIN_T / 2),
+       yLo, yHi, ux, uz, L / 2, SKIN_T / 2, innerC);
+  obox(mesh, cx - s * -uz * (WALL_T / 2 + SKIN_T / 2), cz - s * ux * (WALL_T / 2 + SKIN_T / 2),
+       yLo, yHi, ux, uz, L / 2, SKIN_T / 2, outerC);
+}
+/* Diagonal opening: oriented trim + glazing along the wall direction. */
+function emitDiagOpening(mesh, wall, o, y0, n) {
+  var frameC = matColor(wall.frame, 'frame');
+  var c0 = ptAt(wall, o.t0), c1 = ptAt(wall, o.t1);
+  var dx = c1.x - c0.x, dz = c1.z - c0.z, L = Math.hypot(dx, dz);
+  if (L < 1e-6) return;
+  var ux = dx / L, uz = dz / L;
+  var cx = (c0.x + c1.x) / 2, cz = (c0.z + c1.z) / 2;
+  var base = y0 + o.sill, top = y0 + o.sill + o.h, tw = 0.08, td = WALL_T + 0.04;
+  function hbox(du, w, d, yA, yB) {
+    obox(mesh, cx + ux * du, cz + uz * du, yA, yB, ux, uz, w / 2, d / 2, frameC);
+  }
+  hbox(-L / 2, tw, td, base, top);            // jamb A
+  hbox(L / 2, tw, td, base, top);             // jamb B
+  hbox(0, L + tw, td, top, top + tw);         // head
+  if (o.kind === 'window') hbox(0, L + tw, td, base - tw, base); // sill trim
+  else hbox(0, L + tw, td, base, base + 0.02);                   // threshold
+  if (o.kind === 'window')
+    obox(mesh, cx, cz, base, top, ux, uz, L / 2, 0.01, matColor('glass-pane', 'socket'));
+}
+function emitDiagWall(mesh, wall, y0) {
+  var n = leftNormal(wall);
+  var cut = cutRuns(wall);
+  cut.runs.forEach(function (r) { emitDiagRun(mesh, wall, r.t0, r.t1, y0 + r.yLo, y0 + r.yHi, n); });
+  cut.openings.forEach(function (o) { emitDiagOpening(mesh, wall, o, y0, n); });
+}
+
+/* ---------------- polygon rooms (non-axis walls) ----------------
+ * Half-edge face walk on the wall graph. Only used when at least one wall
+ * is non-axis-aligned; axis-only input keeps the v1 rect path (bit-identical). */
+function roomsFromWallsPoly(walls) {
+  var i, j;
+  // cluster endpoints
+  var pts = [];
+  walls.forEach(function (w, k) {
+    pts.push({ x: w.a.x, z: w.a.z, wi: k, end: 0 });
+    pts.push({ x: w.b.x, z: w.b.z, wi: k, end: 1 });
+  });
+  var parent = pts.map(function (_, k) { return k; });
+  function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  var t2 = JUNCTION_TOL * JUNCTION_TOL;
+  for (i = 0; i < pts.length; i++) for (j = i + 1; j < pts.length; j++)
+    if (dist2(pts[i].x, pts[i].z, pts[j].x, pts[j].z) <= t2) parent[find(i)] = find(j);
+  var nodeId = {}, nodes = [];
+  pts.forEach(function (p, k) {
+    var r = find(k);
+    if (!(r in nodeId)) { nodeId[r] = nodes.length; nodes.push({ x: p.x, z: p.z }); }
+    p.node = nodeId[r];
+  });
+  // directed half-edges
+  var hedges = [];
+  walls.forEach(function (w, k) {
+    var a = pts[k * 2].node, b = pts[k * 2 + 1].node;
+    if (a === b) return;
+    hedges.push({ from: a, to: b, wi: k });
+    hedges.push({ from: b, to: a, wi: k });
+  });
+  function ang(h) {
+    var A = nodes[h.from], B = nodes[h.to];
+    return Math.atan2(B.z - A.z, B.x - A.x);
+  }
+  var used = {}, faces = [];
+  hedges.forEach(function (h0, hi) {
+    if (used[hi]) return;
+    var face = [], cur = hi, guard = 0;
+    do {
+      used[cur] = true;
+      face.push(cur);
+      var h = hedges[cur], best = -1, bestTurn = 1e9;
+      var aIn = ang(h);
+      hedges.forEach(function (g, gi) {
+        if (g.from !== h.to || gi === (cur ^ 1)) return;
+        // left turn measured from the TWIN (reverse) direction: keeps the face
+        // on the left while walking. (Measuring from the forward direction
+        // traces clockwise faces that the area filter then discards — any
+        // layout with a branch detected 0 rooms. Fixed 2026-10-04.)
+        var turn = (aIn + Math.PI) - ang(g);
+        while (turn < 0) turn += Math.PI * 2;
+        while (turn >= Math.PI * 2) turn -= Math.PI * 2;
+        if (turn < bestTurn) { bestTurn = turn; best = gi; }
+      });
+      if (best < 0) { face = []; break; }
+      cur = best;
+      if (++guard > hedges.length + 2) { face = []; break; }
+    } while (cur !== hi);
+    if (face.length >= 3) faces.push(face);
+  });
+  var rooms = [], n2 = 0;
+  faces.forEach(function (f) {
+    var poly = f.map(function (hi) { return nodes[hedges[hi].from]; });
+    var area = 0;
+    for (var k = 0; k < poly.length; k++) {
+      var p1 = poly[k], p2 = poly[(k + 1) % poly.length];
+      area += p1.x * p2.z - p2.x * p1.z;
+    }
+    area /= 2;
+    if (area < 2) return; // too small or clockwise (outer face)
+    var type = area < 6 ? 'bath' : area < 14 ? 'bed' : 'living';
+    var wallIds = [];
+    f.forEach(function (hi) {
+      var wi = hedges[hi].wi;
+      if (wallIds.indexOf(wi) < 0) wallIds.push(wi);
+    });
+    rooms.push({ id: 'room-' + (n2++), type: type, polygon: poly,
+                 area: Math.round(area * 10) / 10,
+                 floor: ROOM_TYPES[type].floor, wallIds: wallIds });
+  });
+  return rooms;
+}
+
+/* ---------------- volume takeoff (analytic, deterministic) ----------------
+ * Mirrors emission math: runs from cutRuns, roof panels, slabs, openings.
+ * NO pricing — volumes only. Units m³ (3dp). surfaceM2 is exposed-face est. */
+var TAKEOFF_BUCKETS = ['wood', 'metal', 'brick', 'concrete', 'stone', 'glass',
+  'drywall', 'plaster', 'wallpaper', 'siding', 'shingle', 'hardwood', 'tile', 'carpet'];
+var MAT_BUCKET = {
+  'wood-frame': 'wood', 'metal-frame': 'metal', drywall: 'drywall',
+  wallpaper: 'wallpaper', plaster: 'plaster', stucco: 'plaster', brick: 'brick',
+  siding: 'siding', concrete: 'concrete', stone: 'stone', 'glass-pane': 'glass',
+  shingle: 'shingle', 'metal-roof': 'metal', hardwood: 'hardwood',
+  tile: 'tile', carpet: 'carpet'
+};
+function bucketOf(id, role) {
+  var m = mat(id, role);
+  return MAT_BUCKET[m.id] || 'wood';
+}
+function polyArea(poly) {
+  var a = 0;
+  for (var i = 0; i < poly.length; i++) {
+    var p = poly[i], q = poly[(i + 1) % poly.length];
+    a += p.x * q.z - q.x * p.z;
+  }
+  return Math.abs(a) / 2;
+}
+function takeoff(building) {
+  var byMaterial = {}, byPart = { walls: 0, roof: 0, floor: 0, openings: 0, fixtures: 0 };
+  TAKEOFF_BUCKETS.forEach(function (b) { byMaterial[b] = 0; });
+  var surfaceM2 = 0;
+  function add(bucket, m3, part) {
+    if (!(m3 > 0)) return;
+    if (!byMaterial[bucket]) byMaterial[bucket] = 0;
+    byMaterial[bucket] += m3;
+    byPart[part] += m3;
+  }
+  var r3 = function (v) { return Math.round(v * 1000) / 1000; };
+  var walls = miterJoints(resolveJunctions(building.walls || []));
+  walls.forEach(function (w) {
+    var fb = bucketOf(w.frame, 'frame');
+    var ib = bucketOf(w.inner, 'inner');
+    var ob = bucketOf(w.outer, w.exterior === false ? 'inner' : 'outer');
+    var cut = cutRuns(w), L = wallLen(w);
+    cut.runs.forEach(function (ru) {
+      var l = (ru.t1 - ru.t0) * L, h = ru.yHi - ru.yLo;
+      add(fb, l * h * WALL_T, 'walls');
+      add(ib, l * h * SKIN_T, 'walls');
+      add(ob, l * h * SKIN_T, 'walls');
+      surfaceM2 += 2 * l * h;
+    });
+    cut.openings.forEach(function (o) {
+      var trimV = 2 * (o.w + o.h) * 0.08 * (WALL_T + 0.04);
+      add(fb, trimV, 'openings');
+      if (o.kind === 'window') add('glass', o.w * o.h * 0.02, 'openings');
+      surfaceM2 -= o.w * o.h;
+    });
+  });
+  (building.rooms || []).forEach(function (r) {
+    var area = r.polygon ? polyArea(r.polygon) : (r.rect ? r.rect.w * r.rect.d : 0);
+    if (area > 0) {
+      add(bucketOf(r.floor, 'floor'), area * SLAB_T, 'floor');
+      surfaceM2 += area;
+    }
+  });
+  // roof (analytic panel equivalents)
+  var fp = building.footprint || { w: 8, d: 8 };
+  var rb = bucketOf(building.roof.mat, 'roof');
+  var top = (building.stories || 1) * WALL_H, oh = 0.3;
+  if (building.roof.type === 'flat') {
+    add(rb, (fp.w + 2 * oh) * (fp.d + 2 * oh) * 0.15, 'roof');
+    add(rb, 2 * (fp.w + 2 * oh) * 0.4 * 0.12 + 2 * (fp.d + 2 * oh) * 0.4 * 0.12, 'roof');
+    surfaceM2 += fp.w * fp.d;
+    var th = themeOf(building.theme);
+    if (th.vigas) { // adobe vigas — mirrors emitRoof exactly
+      var nV = 0, vx;
+      for (vx = -fp.w / 2 + 0.4; vx < fp.w / 2 - 0.2; vx += 0.6) nV++;
+      add('wood', nV * 2 * 0.12 * 0.14 * 0.55, 'roof');
+    }
+  } else {
+    var pitch = building.roof.type === 'hip' ? 28 * Math.PI / 180 : Math.PI / 6;
+    var half = Math.min(fp.w, fp.d) / 2 + oh;
+    var slope = half / Math.cos(pitch);
+    var ridge = Math.max(fp.w, fp.d) + 2 * oh;
+    add(rb, 2 * slope * ridge * 0.12, 'roof'); // two main panels
+    if (building.roof.type === 'hip') add(rb, 2 * slope * half * 0.12, 'roof');
+    surfaceM2 += 2 * slope * ridge;
+  }
+  (building.fixtures || []).forEach(function (f) {
+    add(f._bucket || 'metal', f._volumeM3 || 0, 'fixtures');
+  });
+  // furnishings (placed furniture) ride the fixtures part — spec's 5 parts fixed
+  (building.furnishings || []).forEach(function (f) {
+    add(f._bucket || 'wood', f._volumeM3 || 0, 'fixtures');
+  });
+  var totalM3 = 0;
+  TAKEOFF_BUCKETS.forEach(function (b) { byMaterial[b] = r3(byMaterial[b]); totalM3 += byMaterial[b]; });
+  Object.keys(byPart).forEach(function (p) { byPart[p] = r3(byPart[p]); });
+  return { totalM3: r3(totalM3), surfaceM2: r3(Math.max(0, surfaceM2)),
+           byMaterial: byMaterial, byPart: byPart };
+}
+
+/* ---------------- furnish adapter hook (v2) ----------------
+ * Furniture Foundry geometry core (furnish.js). Soft load: browser picks up
+ * window.Furnish from a prior script tag, node requires ./furnish.js.
+ * Absence throws a clear error only when actually used. */
+var FurnishMod = (function () {
+  try { if (typeof Furnish !== 'undefined' && Furnish) return Furnish; } catch (e) {}
+  if (typeof require === 'function') {
+    try { return require('./furnish.js'); } catch (e) {}
+  }
+  try { if (typeof window !== 'undefined' && window.Furnish) return window.Furnish; } catch (e) {}
+  return null;
+})();
+function needFurnish() {
+  if (!FurnishMod) throw new Error('STRUCT: furnish.js not loaded (need components/struct/furnish.js before struct.js, or node require).');
+  return FurnishMod;
+}
+/* spec name 'pendant' -> foundry builder name 'pendantLamp' */
+function fixtureType(t) { return t === 'pendant' ? 'pendantLamp' : t; }
+function furnish(type, opts) { return needFurnish().furnish(type, opts); }
+function makeFixture(type, opts) { return needFurnish().makeFixture(fixtureType(type), opts); }
+/* emitFixtures(mesh, fixtures) -> {lightPoints:[{x,y,z,r,color,intensity}]}.
+ * Fixture: {type, x,y,z, rotY, material, glow, seed}. Emits geometry via
+ * Furnish.emitTris; bulb positions become light points for renderers. */
+function emitFixtures(mesh, fixtures) {
+  var F = needFurnish();
+  var lightPoints = [];
+  (fixtures || []).forEach(function (fx) {
+    var built = F.makeFixture(fixtureType(fx.type), fx);
+    F.emitTris(mesh, built.tris, built.colorFor);
+    (built.lights || []).forEach(function (L) {
+      lightPoints.push({ x: L.x, y: L.y, z: L.z, r: L.r, color: L.color, intensity: 1 });
+    });
+    if (built.particle)
+      lightPoints.push({ x: fx.x || 0, y: fx.y || 0, z: fx.z || 0,
+                         r: 0.5, color: built.particle.color, intensity: 1,
+                         particle: built.particle });
+  });
+  return { lightPoints: lightPoints };
+}
+/* emitFurnishings(mesh, items) — placed furniture items from furnish(). */
+function emitFurnishings(mesh, items) {
+  var F = needFurnish();
+  (items || []).forEach(function (it) { F.emitTris(mesh, it.tris, it.colorFor); });
+  return mesh;
 }
 
 /* ---------------- exports ---------------- */
@@ -963,15 +1483,33 @@ var Struct = {
   makeBuilding: makeBuilding,
   roomsFromWalls: roomsFromWalls,
   resolveJunctions: resolveJunctions,
+  splitWalls: splitWalls, // builders: split at T-junctions BEFORE adding sockets
   emit: emit, emitCollision: emitCollision,
   emitWall: emitWall, emitSlab: emitSlab, emitRoof: emitRoof,
   validate: validate,
   // utils
   snap: snap, wallLen: wallLen, socketDims: socketDims,
+  isAxisAligned: isAxisAligned, leftNormal: leftNormal, ptAt: ptAt,
+  // v2: diagonals + snapping
+  snapAngle: snapAngle, snapPoint: snapPoint, snapLen: snapLen,
+  SNAP_ANGLE_DEG: SNAP_ANGLE_DEG, SNAP_RADIUS: SNAP_RADIUS,
+  miterJoints: miterJoints, obox: obox, emitDiagWall: emitDiagWall,
+  roomsFromWallsPoly: roomsFromWallsPoly, polyArea: polyArea,
+  // v2: takeoff
+  takeoff: takeoff, TAKEOFF_BUCKETS: TAKEOFF_BUCKETS, MAT_BUCKET: MAT_BUCKET,
+  bucketOf: bucketOf,
+  // v2: theme registry
+  registerTheme: registerTheme, listThemes: listThemes, THEME_REGISTRY: THEME_REGISTRY,
+  // v2: furnish adapter (Furniture Foundry geometry core)
+  // (empty when furnish.js wasn't loaded first — furnish()/makeFixture() throw a clear error then)
+  furnish: furnish, makeFixture: makeFixture,
+  emitFixtures: emitFixtures, emitFurnishings: emitFurnishings,
+  FURNITURE_TYPES: FurnishMod ? FurnishMod.TYPES.slice() : [],
+  FURNITURE_SKIPPED: FurnishMod ? FurnishMod.SKIPPED : {},
+  FIXTURE_TYPES: FurnishMod ? FurnishMod.FIXTURE_TYPES.slice() : [],
   CityMesh: function () { return CityMeshCtor; }
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = Struct;
-
 </script>
 <script>
 'use strict';
@@ -1145,6 +1683,60 @@ function emitLayered(b){
   return {tri:tri,col:col};
 }
 
+/* ---------------- volumes view (STRUCT v2) ----------------
+ * Emit the whole building once with real material colors, then partition
+ * triangles into per-bucket masses by matching vertex color back through
+ * Struct.matColor exactly as the engine emitted it. Unmatched colors fall
+ * back to the nearest bucket tint so nothing vanishes. */
+var VOL_TINT={
+  wood:[0.72,0.48,0.22], metal:[0.52,0.57,0.63], brick:[0.78,0.30,0.20],
+  concrete:[0.70,0.71,0.73], stone:[0.58,0.55,0.47], glass:[0.62,0.85,1.0],
+  drywall:[0.90,0.88,0.80], plaster:[0.83,0.78,0.68], wallpaper:[0.75,0.60,0.45],
+  siding:[0.60,0.68,0.76], shingle:[0.32,0.34,0.38], hardwood:[0.75,0.52,0.28],
+  tile:[0.78,0.75,0.68], carpet:[0.52,0.45,0.62]};
+var VOL_CSS={wood:'#b87a38',metal:'#85909e',brick:'#c74d33',concrete:'#b3b6ba',
+  stone:'#948d79',glass:'#9ed9ff',drywall:'#e6e0cc',plaster:'#d4c6ae',
+  wallpaper:'#c09973',siding:'#99adc2',shingle:'#52575f',hardwood:'#c08547',
+  tile:'#c7bfae',carpet:'#85779e'};
+var VOL_NAME={wood:'WOOD',metal:'METAL',brick:'BRICK',concrete:'CONCRETE',stone:'STONE',
+  glass:'GLASS',drywall:'DRYWALL',plaster:'PLASTER',wallpaper:'WALLPAPER',siding:'SIDING',
+  shingle:'SHINGLE',hardwood:'HARDWOOD',tile:'TILE',carpet:'CARPET'};
+var _colBucketCache=null;
+function colBucketMap(){
+  if(_colBucketCache)return _colBucketCache;
+  var m={};
+  Struct.MATERIALS.forEach(function(mat){
+    ['frame','inner','outer','floor','roof','socket'].forEach(function(role){
+      m[key3(Struct.matColor(mat.id,role))]=Struct.bucketOf(mat.id,role);
+    });
+  });
+  _colBucketCache=m;return m;
+}
+function nearestBucket(c){
+  var best='wood',bd=1e9,bk;
+  for(bk in VOL_TINT){var t=VOL_TINT[bk];
+    var d=(c[0]-t[0])*(c[0]-t[0])+(c[1]-t[1])*(c[1]-t[1])+(c[2]-t[2])*(c[2]-t[2]);
+    if(d<bd){bd=d;best=bk;}}
+  return best;
+}
+function buildVolumeMeshes(b){
+  var src=new CityMesh();
+  Struct.emit(src,b); /* mesh first, per engine API */
+  var cbm=colBucketMap(), buckets={};
+  Struct.TAKEOFF_BUCKETS.forEach(function(k){buckets[k]=new CityMesh();});
+  var idx=src.indices,dat=src.data, n=idx.length, i, j, f, vi;
+  for(i=0;i<n;i+=3){
+    vi=idx[i]*23;
+    var c=[dat[vi+6],dat[vi+7],dat[vi+8]];
+    var bk=cbm[key3(c)]||nearestBucket(c);
+    var dst=buckets[bk], base=dst.data.length/23;
+    for(j=0;j<3;j++){vi=idx[i+j]*23;
+      for(f=0;f<23;f++)dst.data.push(dat[vi+f]);
+      dst.indices.push(base+j);}
+  }
+  return buckets;
+}
+
 var ROOM_CSS={living:'#3dff88',bed:'#6aa2ff',bath:'#4de3ff',kitchen:'#ff9c33',
   hall:'#9aa0ab',garage:'#ffd94d',civic:'#c07dff'};
 var ROOM_RGB={living:[0.24,1.0,0.53],bed:[0.42,0.63,1.0],bath:[0.30,0.89,1.0],
@@ -1249,6 +1841,7 @@ var LAYERS={
   collision:{on:false}
 };
 var building=null,G=null,curSeed='xray-01',curTheme='craftsman',peelVal=2;
+var viewMode='xray',isolateBucket=null,TO=null;
 var labelDivs=[];
 var gridBuf=(function(){
   var E=60;
@@ -1285,17 +1878,61 @@ function rebuild(seed,theme){
   var roomLines=aabbLines(R.solids,true); bufs.push(roomLines.buf,roomLines.cbuf);
   var allSolids=[].concat(L.col.frame.solids,L.col.inner.solids,L.col.outer.solids);
   var collision=aabbLines(allSolids,false); bufs.push(collision.buf);
+  /* volumes: one emit, partitioned into 14 bucket masses */
+  var V=buildVolumeMeshes(b), vol={};
+  Struct.TAKEOFF_BUCKETS.forEach(function(k){vol[k]=keep(toGL(V[k]));});
+  TO=Struct.takeoff(b);
+  isolateBucket=null; /* rebuild clears isolation */
   building=b;curSeed=seed;curTheme=theme;
   G={shell:shell,lines:lines,rooms:rooms,roomLines:roomLines,collision:collision,
-     collisionBoxes:nCol,roomCount:b.rooms.length,
+     collisionBoxes:nCol,roomCount:b.rooms.length,vol:vol,
      stats:{frame:{tris:shell.frame.tris,edges:lines.frame.count},
             inner:{tris:shell.inner.tris,edges:lines.inner.count},
             outer:{tris:shell.outer.tris,edges:lines.outer.count},
             rooms:{tris:rooms.tris,edges:roomLines.count},
             collision:{boxes:nCol}},
      dispose:function(){bufs.forEach(function(x){gl.deleteBuffer(x);});}};
-  buildLabels(b);
+  buildLabels(b);buildTakeoffTable();
   syncChips();updateReadout();updatePeelLabel();
+}
+
+/* ---------------- takeoff table UI ---------------- */
+var toRowsBox=document.getElementById('toRows');
+var toSumEl=document.getElementById('toSum');
+function buildTakeoffTable(){
+  if(!TO)return;
+  toSumEl.innerHTML='TOTAL <b>'+TO.totalM3.toFixed(3)+'</b> m&sup3; &middot; SURFACE <b>'+
+    TO.surfaceM2.toFixed(1)+'</b> m&sup2;';
+  toRowsBox.innerHTML='';
+  Struct.TAKEOFF_BUCKETS.forEach(function(bk){
+    var m3=TO.byMaterial[bk]||0;
+    var pct=TO.totalM3>0?100*m3/TO.totalM3:0;
+    var el=document.createElement('div');
+    el.className='trow'+(m3<=0?' zero':'');
+    el.dataset.bucket=bk;
+    el.innerHTML='<span class="dot" style="color:'+VOL_CSS[bk]+';background:'+VOL_CSS[bk]+'"></span>'+
+      '<span class="nm">'+VOL_NAME[bk]+'</span>'+
+      '<span class="m3">'+m3.toFixed(3)+'</span>'+
+      '<span class="pc">'+pct.toFixed(1)+'%</span>';
+    el.addEventListener('click',function(){setIsolate(isolateBucket===bk?null:bk);});
+    toRowsBox.appendChild(el);
+  });
+  markIsoRows();
+}
+function markIsoRows(){
+  toRowsBox.querySelectorAll('.trow').forEach(function(el){
+    el.classList.toggle('iso',el.dataset.bucket===isolateBucket);
+  });
+}
+function setIsolate(bk){
+  isolateBucket=bk||null;markIsoRows();
+}
+function setView(v){
+  viewMode=(v==='volumes')?'volumes':'xray';
+  document.body.classList.toggle('vol',viewMode==='volumes');
+  document.querySelectorAll('#viewRow .chip').forEach(function(el){
+    el.classList.toggle('on',el.dataset.view===viewMode);
+  });
 }
 
 /* ---------------- UI ---------------- */
@@ -1313,7 +1950,7 @@ function buildLabels(b){
   });
 }
 function updateLabels(m){
-  var show=LAYERS.rooms.on,py=peelHeight();
+  var show=viewMode==='xray'&&LAYERS.rooms.on,py=peelHeight();
   var rect=cv.getBoundingClientRect();
   labelDivs.forEach(function(o){
     var r=o.room,vis=show&&(r.y0||0)+Struct.WALL_H<=py+0.01;
@@ -1334,6 +1971,9 @@ function updateReadout(){
 }
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function syncChips(){
+  document.querySelectorAll('#viewRow .chip').forEach(function(el){
+    el.classList.toggle('on',el.dataset.view===viewMode);
+  });
   document.querySelectorAll('#layerRow .chip').forEach(function(el){
     el.classList.toggle('on',!!LAYERS[el.dataset.layer].on);
   });
@@ -1345,6 +1985,9 @@ function updatePeelLabel(){
   var t=peelVal>=2?'FULL':(peelVal<=0?'SLAB':'STORY '+peelVal);
   document.getElementById('peelVal').textContent=peelVal+'/2 · '+t;
 }
+document.querySelectorAll('#viewRow .chip').forEach(function(el){
+  el.addEventListener('click',function(){setView(el.dataset.view);});
+});
 document.querySelectorAll('#layerRow .chip').forEach(function(el){
   el.addEventListener('click',function(){
     var k=el.dataset.layer;LAYERS[k].on=!LAYERS[k].on;syncChips();
@@ -1424,6 +2067,34 @@ function render(){
   drawGrid(m);lastPasses.push('grid');
   if(!G){updateLabels(m);return;}
   var i;
+  /* volumes view: color-coded translucent material masses.
+   * Drawn largest-first so thin outer skins and small-volume materials
+   * layer on top of the dominant mass instead of being buried under it. */
+  if(viewMode==='volumes'){
+    var order=Struct.TAKEOFF_BUCKETS.slice().sort(function(a,b){
+      return (TO.byMaterial[b]||0)-(TO.byMaterial[a]||0);});
+    gl.useProgram(pShell);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(false);gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniformMatrix4fv(uShell.uMVP,false,m);
+    gl.uniform3fv(uShell.uCam,eye);
+    gl.uniform1f(uShell.uPeelY,py);
+    order.forEach(function(bk){
+      var g=G.vol[bk];
+      if(!g||g.count<=0)return;
+      var alpha=0.26;
+      if(isolateBucket)alpha=(bk===isolateBucket)?0.55:0.02;
+      else if(bk==='glass')alpha=0.20;
+      bindMesh(pShell,g,[['aPos',0,3],['aNorm',3,3]]);
+      gl.uniform3fv(uShell.uTint,VOL_TINT[bk]);
+      gl.uniform1f(uShell.uAlpha,alpha);
+      gl.drawElements(gl.TRIANGLES,g.count,g.type,0);
+      lastPasses.push('vol-'+bk);
+    });
+    gl.depthMask(true);gl.disable(gl.BLEND);
+    updateLabels(m);return;
+  }
   /* room volumes */
   if(LAYERS.rooms.on){
     gl.useProgram(pRoom);
@@ -1516,7 +2187,21 @@ window.__xray={
   building:function(){return building?{walls:building.walls.length,rooms:building.rooms.length,
     aabbs:Struct.emitCollision(building).length,drawnAabbs:G.collisionBoxes,
     seed:curSeed,theme:curTheme}:null;},
-  cam:function(){return {yaw:yaw,pitch:pitch,radius:radius};}
+  cam:function(){return {yaw:yaw,pitch:pitch,radius:radius};},
+  setView:function(v){setView(v);},
+  view:function(){return viewMode;},
+  isolate:function(b){setIsolate(b||null);return isolateBucket;},
+  isolated:function(){return isolateBucket;},
+  takeoff:function(){
+    if(!TO)return null;
+    var rows=Struct.TAKEOFF_BUCKETS.map(function(bk){
+      var m3=TO.byMaterial[bk]||0;
+      return {bucket:bk,m3:m3,pct:TO.totalM3>0?100*m3/TO.totalM3:0,
+              tris:G.vol[bk]?G.vol[bk].tris:0};
+    });
+    return {totalM3:TO.totalM3,surfaceM2:TO.surfaceM2,byMaterial:TO.byMaterial,
+            byPart:TO.byPart,rows:rows,tableRows:document.querySelectorAll('#toRows .trow').length};
+  }
 };
 })();
 
