@@ -7191,5 +7191,98 @@ init();
 })();
 
 </script>
+<script>
+/* Carved-glass trim sheet: procedural material textures baked once at runtime.
+ * One tileable micro-surface (chisel streaks + machine-sanded grain) sampled
+ * by every tile, plus chipped-edge clip paths cycled across tiles.
+ * This is what sells carved glass to the eye — not ray tracing the DOM
+ * (browsers can't), but real micro-surface response. */
+(function(){
+  'use strict';
+
+  /* ---- the trim sheet: 256px tileable carved-glass micro-surface ---- */
+  function makeCarveTexture(){
+    var s = 256, cv = document.createElement('canvas');
+    cv.width = cv.height = s;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#808080'; ctx.fillRect(0,0,s,s);
+    /* chisel streaks: fine directional cuts, alternating light/dark */
+    var i, x, y, len, a, v;
+    for (i=0;i<260;i++){
+      x = Math.random()*s; y = Math.random()*s;
+      len = 18+Math.random()*64; a = (Math.random()-0.5)*0.55;
+      v = Math.random()<0.5 ? 255 : 0;
+      ctx.strokeStyle = 'rgba('+v+','+v+','+v+','+(Math.random()*0.07+0.025).toFixed(3)+')';
+      ctx.lineWidth = Math.random()*1.7+0.4;
+      ctx.beginPath(); ctx.moveTo(x,y);
+      ctx.quadraticCurveTo(x+Math.cos(a)*len*0.5, y+Math.sin(a)*len*0.5+(Math.random()-0.5)*6,
+                           x+Math.cos(a)*len, y+Math.sin(a)*len);
+      ctx.stroke();
+    }
+    /* a few deeper cuts */
+    for (i=0;i<26;i++){
+      x = Math.random()*s; y = Math.random()*s;
+      len = 30+Math.random()*80; a = (Math.random()-0.5)*0.4;
+      v = Math.random()<0.5 ? 255 : 0;
+      ctx.strokeStyle = 'rgba('+v+','+v+','+v+','+(Math.random()*0.10+0.06).toFixed(3)+')';
+      ctx.lineWidth = Math.random()*1.1+0.6;
+      ctx.beginPath(); ctx.moveTo(x,y);
+      ctx.lineTo(x+Math.cos(a)*len, y+Math.sin(a)*len); ctx.stroke();
+    }
+    /* machine-sanded grain: fine uniform noise */
+    var img = ctx.getImageData(0,0,s,s), d = img.data, n, p;
+    for (p=0;p<d.length;p+=4){
+      n = (Math.random()-0.5)*24;
+      d[p]+=n; d[p+1]+=n; d[p+2]+=n;
+    }
+    ctx.putImageData(img,0,0);
+    return cv.toDataURL('image/png');
+  }
+
+  /* ---- chipped edges: jittered rounded-rect clip paths ---- */
+  function chipPath(){
+    var pts = [], i, t, jx, jy;
+    function P(x,y){ pts.push(x.toFixed(2)+'% '+y.toFixed(2)+'%'); }
+    var j = function(){ return (Math.random()-0.5)*2.4; };
+    /* walk the perimeter: top, right, bottom, left — 6 points per edge */
+    for (i=0;i<=6;i++){ t=i/6; P(4+t*92+j()*0.4, j()); }
+    for (i=1;i<=6;i++){ t=i/6; P(100+j(), 4+t*92+j()*0.4); }
+    for (i=1;i<=6;i++){ t=i/6; P(96-t*92+j()*0.4, 100+j()); }
+    for (i=1;i<6;i++){ t=i/6; P(j(), 96-t*92+j()*0.4); }
+    return 'polygon('+pts.join(',')+')';
+  }
+
+  try{
+    var tex = makeCarveTexture();
+    var css = [];
+    /* tiles: transparent shell — the carved slab lives in ::before */
+    css.push('.tile{ background:transparent !important; box-shadow:none !important; overflow:visible !important; }');
+    css.push('.tile > span{ position:relative; z-index:1; }');
+    css.push('.tile::before{'+
+      'content:""; position:absolute; inset:0; pointer-events:none;'+
+      'background:'+
+        'linear-gradient(115deg, rgba(255,255,255,0.85), rgba(255,255,255,0.30) 38%, rgba(255,255,255,0.05) 62%),'+
+        'url("'+tex+'"),'+
+        'linear-gradient(165deg, #ffffff, #efeaf7 55%, #d8d1e8);'+
+      'background-size:auto, 170px 170px, auto;'+
+      'background-blend-mode:normal, overlay, normal;'+
+      'box-shadow:inset 0 2px 3px rgba(255,255,255,1), inset 0 -3px 8px rgba(120,90,160,0.20);'+
+    '}');
+    /* chipped edges cycle across tiles; drop-shadow follows the chipped shape */
+    var chips = [chipPath(), chipPath(), chipPath(), chipPath()];
+    for (var k=0;k<4;k++){
+      css.push('.tile:nth-child(4n+'+(k+1)+'){ clip-path:'+chips[k]+'; }');
+    }
+    css.push('.tile{ filter:drop-shadow(0 18px 26px rgba(0,0,0,0.55)); }');
+    css.push('.tile:nth-child(even){ filter:drop-shadow(0 5px 12px rgba(0,0,0,0.35)); }');
+    var st = document.createElement('style');
+    st.textContent = css.join('\n');
+    document.head.appendChild(st);
+  }catch(e){ /* material pass is cosmetic — never break the page */
+    if (window.console) console.warn('material.js:', e);
+  }
+})();
+
+</script>
 </body>
 </html>
