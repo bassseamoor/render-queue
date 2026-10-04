@@ -22,6 +22,7 @@ window.addEventListener('message',function(event){
  openComponent('living-garden');
 });
 window.PULSE_COMPONENTS=COMPS;
+if(typeof hideOldChrome==='function')hideOldChrome();
 var id=new URLSearchParams(location.search).get('component');
 if(entries.some(function(c){return c.id===id;}))openComponent(id);
 else if(typeof renderStage==='function')renderStage();
