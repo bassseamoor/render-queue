@@ -116,6 +116,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0e14;color:#e8ecf5;
   border-radius:12px;padding:10px;font-size:.85rem;cursor:pointer}
 #claim-pop button.go{background:#5bd8ff;border:0;color:#06121c;font-weight:700}
 
+#reset-btn{pointer-events:auto;display:flex;align-items:center;justify-content:center;width:34px;height:34px;
+  border-radius:50%;border:1px solid rgba(255,255,255,.14);background:rgba(10,14,20,.72);
+  backdrop-filter:blur(10px);color:#e8ecf5;font-size:1rem;cursor:pointer}
+#reset-btn.armed{background:#c0392b;border-color:#c0392b;color:#fff;width:auto;padding:0 12px;border-radius:17px;font-size:.8rem}
+
 </style>
 </head>
 <body>
@@ -125,6 +130,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0e14;color:#e8ecf5;
     <button id="world-chip" aria-label="Worlds"><span class="wic">🌍</span><span id="world-name">…</span></button>
     <span style="display:flex;gap:8px;pointer-events:auto">
       <button id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo">↩</button>
+      <button id="reset-btn" title="Reset world" aria-label="Reset world">↺</button>
       <span id="save-state" title="All changes saved">✓</span>
     </span>
   </div>
@@ -3305,6 +3311,99 @@ function inClaim(x,z,m){
   return false;
 }
 
+/* ---------------- player avatar: a visible body for walk mode ----------------
+ * Built in local space (feet at y=0, facing +z), then rotated/translated to the
+ * walker each frame. Third-person camera looks at it from behind. */
+var avBuf=null, avPrevX=0, avPrevZ=0, avT=0;
+var avPos=[], avNrm=[], avCol=[], avIdx=[];
+function avV(x,y,z,nx,ny,nz,r,g,b){
+  avPos.push(x,y,z); avNrm.push(nx,ny,nz); avCol.push(r,g,b);
+}
+/* vertical cylinder, swung about X at pivY (limb swing while walking) */
+function avCyl(cx,y0,cz, r,h,seg, cr,cg,cb, pivY,swing){
+  var base=avPos.length/3, ca=Math.cos(swing), sa=Math.sin(swing);
+  for(var j=0;j<=1;j++){
+    var dy=(y0+h*j)-pivY;
+    for(var i=0;i<=seg;i++){
+      var a=i/seg*Math.PI*2, ox=Math.cos(a)*r, oz=Math.sin(a)*r;
+      var wy=pivY+dy*ca-oz*sa, wz=cz+dy*sa+oz*ca;
+      var nx=Math.cos(a), nz=Math.sin(a);
+      avV(cx+ox,wy,wz, nx,-nz*sa,nz*ca, cr,cg,cb);
+    }
+  }
+  for(var k=0;k<seg;k++){
+    var a0=base+k, b0=base+k+1, c0=base+seg+1+k, d0=c0+1;
+    avIdx.push(a0,c0,b0, b0,c0,d0);
+  }
+}
+function avBall(cx,cy,cz, r,seg, cr,cg,cb){
+  var base=avPos.length/3;
+  for(var j=0;j<=seg;j++){
+    var ph=j/seg*Math.PI, sp=Math.sin(ph), cp=Math.cos(ph);
+    for(var i=0;i<=seg;i++){
+      var th=i/seg*Math.PI*2, nx=sp*Math.cos(th), nz=sp*Math.sin(th);
+      avV(cx+nx*r,cy+cp*r,cz+nz*r, nx,cp,nz, cr,cg,cb);
+    }
+  }
+  for(var jj=0;jj<seg;jj++) for(var ii=0;ii<seg;ii++){
+    var a=base+jj*(seg+1)+ii, b=a+1, c=a+seg+1, d=c+1;
+    avIdx.push(a,b,c, b,d,c);
+  }
+}
+function buildAvatar(moving,t){
+  avPos=[]; avNrm=[]; avCol=[]; avIdx=[];
+  var sw=moving?Math.sin(t*9)*0.55:0;
+  var bob=moving?Math.abs(Math.sin(t*9))*0.05:Math.sin(t*1.6)*0.015;
+  var SKIN=[0.96,0.78,0.62], SHIRT=[0.20,0.65,0.72], PANTS=[0.22,0.26,0.34];
+  avCyl(-0.11,0.02,0, 0.085,0.76,7, PANTS[0],PANTS[1],PANTS[2], 0.78, sw);
+  avCyl( 0.11,0.02,0, 0.085,0.76,7, PANTS[0],PANTS[1],PANTS[2], 0.78,-sw);
+  avCyl(0,0.78,0, 0.155,0.58,9, SHIRT[0],SHIRT[1],SHIRT[2], 0.78,0);
+  avCyl(-0.235,0.72,0, 0.06,0.56,6, SHIRT[0],SHIRT[1],SHIRT[2], 1.28,-sw*0.8);
+  avCyl( 0.235,0.72,0, 0.06,0.56,6, SHIRT[0],SHIRT[1],SHIRT[2], 1.28, sw*0.8);
+  avBall(0,1.52,0, 0.135,8, SKIN[0],SKIN[1],SKIN[2]);
+  return bob;
+}
+function uploadAvatar(){
+  var n=avPos.length/3, data=new Float32Array(n*9);
+  for(var i=0;i<n;i++){
+    data[i*9]=avPos[i*3]; data[i*9+1]=avPos[i*3+1]; data[i*9+2]=avPos[i*3+2];
+    data[i*9+3]=avNrm[i*3]; data[i*9+4]=avNrm[i*3+1]; data[i*9+5]=avNrm[i*3+2];
+    data[i*9+6]=avCol[i*3]; data[i*9+7]=avCol[i*3+1]; data[i*9+8]=avCol[i*3+2];
+  }
+  if(!avBuf){
+    var vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+    gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
+    var ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(avIdx),gl.STATIC_DRAW);
+    avBuf={vb:vb,ib:ib,count:avIdx.length};
+  }else{
+    gl.bindBuffer(gl.ARRAY_BUFFER,avBuf.vb);
+    gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);
+    avBuf.count=avIdx.length;
+  }
+}
+/* called every frame in walk mode: animate + place the body at the walker */
+function tickAvatar(dt){
+  var spd=Math.hypot(cam.wx-avPrevX,cam.wz-avPrevZ)/Math.max(dt,1e-4);
+  avPrevX=cam.wx; avPrevZ=cam.wz;
+  var moving=spd>0.6;
+  avT+=dt;
+  var bob=buildAvatar(moving,avT);
+  var gy=heightAt(cam.wx,cam.wz)+cam.air;
+  var ca=Math.cos(cam.wyaw), sa=Math.sin(cam.wyaw);
+  for(var i=0;i<avPos.length;i+=3){
+    var x=avPos[i], y=avPos[i+1]+bob, z=avPos[i+2];
+    avPos[i]  =cam.wx + x*ca + z*sa;
+    avPos[i+1]=gy + y;
+    avPos[i+2]=cam.wz - x*sa + z*ca;
+    var nx=avNrm[i], ny=avNrm[i+1], nz=avNrm[i+2];
+    avNrm[i]  =nx*ca + nz*sa;
+    avNrm[i+1]=ny;
+    avNrm[i+2]=-nx*sa + nz*ca;
+  }
+  uploadAvatar();
+}
+
 
 /* ---------------- matrix ---------------- */
 function mPerspective(fovy,asp,n,f){
@@ -3351,8 +3450,11 @@ var cam={mode:'orbit', tx:0, tz:0, yaw:0.7, pitch:0.85, dist:70,
          wx:8, wz:8, wyaw:0, wpitch:0.05, air:0, vy:0, grounded:true};
 function camEye(){
   if(cam.mode==='walk'){
-    var y=heightAt(cam.wx,cam.wz)+1.7+cam.air;
-    return [cam.wx,y,cam.wz];
+    /* third-person: camera behind + above the body */
+    var fx=Math.sin(cam.wyaw), fz=Math.cos(cam.wyaw);
+    var ay=heightAt(cam.wx,cam.wz)+cam.air;
+    var ex=cam.wx-fx*6.5, ez=cam.wz-fz*6.5;
+    return [ex, Math.max(ay+3.1,heightAt(ex,ez)+0.9), ez];
   }
   var gy=heightAt(cam.tx,cam.tz);
   return [cam.tx+cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw),
@@ -3361,8 +3463,9 @@ function camEye(){
 }
 function camAt(){
   if(cam.mode==='walk'){
-    var cp=Math.cos(cam.wpitch), sp=Math.sin(cam.wpitch);
-    return [cam.wx+cp*Math.sin(cam.wyaw), heightAt(cam.wx,cam.wz)+1.7+cam.air-sp*3, cam.wz+cp*Math.cos(cam.wyaw)];
+    var fx=Math.sin(cam.wyaw), fz=Math.cos(cam.wyaw);
+    var ay=heightAt(cam.wx,cam.wz)+cam.air;
+    return [cam.wx+fx*2.5, ay+1.25, cam.wz+fz*2.5];
   }
   return [cam.tx,heightAt(cam.tx,cam.tz)+2,cam.tz];
 }
@@ -3672,6 +3775,22 @@ function bindUI(){
   var btns=document.querySelectorAll('#modebar button');
   for(var i=0;i<btns.length;i++) btns[i].addEventListener('click',function(){ setMode(this.dataset.mode); });
   $('undo-btn').addEventListener('click',function(){ undo(); });
+  $('reset-btn').addEventListener('click',function(){
+    var b=$('reset-btn');
+    if(!b.classList.contains('armed')){
+      b.classList.add('armed'); b.textContent='Sure?';
+      setTimeout(function(){ if(b.isConnected){ b.classList.remove('armed'); b.textContent='↺'; } },3500);
+      return;
+    }
+    b.classList.remove('armed'); b.textContent='↺';
+    mutate(function(){
+      var w=activeWorld();
+      w.buildings=[]; w.items=[]; w.paths=[]; w.claims=[];
+    });
+    selected=null; hideSel(); moveMode=null; hideMoveBar();
+    drawing=null; previewPath=null; claiming=null; previewClaim=null;
+    toast('World cleared — ↩ undoes it');
+  });
   window.addEventListener('keydown',function(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); }
   });
@@ -3777,6 +3896,7 @@ function frame(t){
     var gy=heightAt(nx,nz), feet=gy+cam.air;
     var res=collideXZ(nx,feet,feet+1.7,nz,0.35);
     cam.wx=res[0]; cam.wz=res[1];
+    tickAvatar(dt);
   }
   computeVP();
   var cv=$('gl');
@@ -3788,6 +3908,11 @@ function frame(t){
   bindBuf(terrainBuf); gl.drawElements(gl.TRIANGLES,terrainBuf.count,gl.UNSIGNED_INT,0);
   bindBuf(waterBuf); gl.drawElements(gl.TRIANGLES,waterBuf.count,gl.UNSIGNED_INT,0);
   if(objBuf){ bindBuf(objBuf); gl.drawElements(gl.TRIANGLES,objBuf.count,gl.UNSIGNED_INT,0); }
+  if(cam.mode==='walk'&&avBuf){
+    gl.disable(gl.CULL_FACE);
+    bindBuf(avBuf); gl.drawElements(gl.TRIANGLES,avBuf.count,gl.UNSIGNED_INT,0);
+    gl.enable(gl.CULL_FACE);
+  }
 }
 function boot(){
   if(!initGL()) return;
