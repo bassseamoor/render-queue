@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Spawn Warp — flat-to-circular morph</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;background:#0a0d13;color:#e8eef4;font-family:-apple-system,system-ui,sans-serif;}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:block;}
+#top{position:fixed;top:0;left:0;right:0;z-index:5;padding:calc(12px + env(safe-area-inset-top)) 16px 0;pointer-events:none;}
+#top h1{font-size:17px;font-weight:800;letter-spacing:1px;}
+#top p{font-size:12px;color:#9fb2c8;margin-top:2px;}
+#legend{position:fixed;top:calc(84px + env(safe-area-inset-top));left:12px;z-index:5;pointer-events:none;
+  background:rgba(10,14,20,.7);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:8px 12px;font-size:11.5px;line-height:1.7;}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline;}
+#ctl{position:fixed;left:0;right:0;bottom:0;z-index:6;padding:12px 18px calc(16px + env(safe-area-inset-bottom));
+  background:linear-gradient(transparent,rgba(5,8,12,.94) 35%);}
+#tval{text-align:center;font-size:13px;color:#9fb2c8;margin-bottom:6px;font-variant-numeric:tabular-nums;}
+#tval b{color:#ffcf4d;font-size:16px;}
+input[type=range]{width:100%;height:48px;appearance:none;-webkit-appearance:none;background:transparent;touch-action:none;}
+input[type=range]::-webkit-slider-runnable-track{height:10px;border-radius:5px;
+  background:linear-gradient(90deg,#3a5a8a,#8a5ac8);}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:44px;height:44px;border-radius:50%;margin-top:-17px;
+  background:radial-gradient(circle at 35% 30%,#ffe9a8,#e8a83a);border:3px solid #fff;box-shadow:0 2px 12px rgba(0,0,0,.5);}
+input[type=range]::-moz-range-track{height:10px;border-radius:5px;background:linear-gradient(90deg,#3a5a8a,#8a5ac8);}
+input[type=range]::-moz-range-thumb{width:38px;height:38px;border-radius:50%;background:#ffcf4d;border:3px solid #fff;}
+#btnrow{display:flex;gap:10px;margin-top:4px;}
+.ctlbtn{flex:1;height:52px;border-radius:14px;font-size:15px;font-weight:700;border:1px solid rgba(255,255,255,.2);
+  background:rgba(24,34,48,.9);color:#e8eef4;touch-action:none;}
+.ctlbtn.on{background:#9fe870;color:#0b0e12;border:none;}
+.lbl{font-size:10px;color:#cfe0f2;text-shadow:0 1px 3px #000;}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="top"><h1>SPAWN WARP</h1><p>flat authored layout → circular spawn, interpolated by the real warp math</p></div>
+<div id="legend">
+  <div><span class="dot" style="background:#ff9d4d"></span>stations</div>
+  <div><span class="dot" style="background:#ffcf4d"></span>crate pedestals</div>
+  <div><span class="dot" style="background:#9fe870"></span>gardens</div>
+</div>
+<div id="ctl">
+  <div id="tval">MORPH <b id="tpct">0%</b> — <span id="tstate">flat</span></div>
+  <input type="range" id="morph" min="0" max="1000" value="0" aria-label="morph between flat and circular">
+  <div id="btnrow">
+    <button class="ctlbtn" id="anim">▶ ANIMATE</button>
+    <button class="ctlbtn" id="snap0">FLAT</button>
+    <button class="ctlbtn" id="snap1">CIRCULAR</button>
+  </div>
+</div>
+
+<script type="module">
+// =====================================================================
+// PROVENANCE: the warp math below is copied VERBATIM from the MOOR
+// sky-islands components (never reimplemented or weakened):
+//   - circular-spawn.mjs: SPAWN_STRUCTURE_SCALE, CIRCULAR_SPAWN,
+//     curveSpawnWing, uncurveSpawnWing, onCircularSpawn
+//     (the THREE-dependent curveSpawnArchitecture baker is excluded —
+//     it needs a 3D scene; everything pose-related is intact)
+//   - spawn-layout.mjs: SPAWN_CENTER, SPAWN_AUTHORED_LAYOUT, CRATE_PEDESTALS,
+//     SPAWN_LAYOUT, turns, stationPose, authoredStationPose,
+//     courtyardAssetPose, SPAWN_GARDENS, SPAWN_TREES, SPAWN_LAMPS
+// The morph UI (slider, markers, bent grid) is new; every marker position
+// is computed by these exact functions.
+// =====================================================================
+
+export const SPAWN_STRUCTURE_SCALE=1.1;
+export const CIRCULAR_SPAWN=Object.freeze({x:0,z:-32,radius:64*SPAWN_STRUCTURE_SCALE,sourceCenterZ:-33,radialScale:64/56*SPAWN_STRUCTURE_SCALE,angleScale:Math.PI/128});
+export function curveSpawnWing(x,z){
+ const c=CIRCULAR_SPAWN,a=(z-c.sourceCenterZ)*c.angleScale,r=Math.abs(x)*c.radialScale;
+ return {x:Math.sign(x)*r*Math.cos(a),z:c.z+r*Math.sin(a)};
+}
+export function uncurveSpawnWing(x,z){
+ const c=CIRCULAR_SPAWN,dz=z-c.z;
+ return {x:(x<0?-1:1)*Math.hypot(x,dz)/c.radialScale,z:c.sourceCenterZ+Math.atan2(dz,Math.abs(x))/c.angleScale};
+}
+export function onCircularSpawn(x,z,margin=0){return Math.hypot(x,z-CIRCULAR_SPAWN.z)<=CIRCULAR_SPAWN.radius+margin;}
+
+export const SPAWN_CENTER=Object.freeze({x:0,z:-32});
+export const SPAWN_AUTHORED_LAYOUT=Object.freeze({crates:{x:-22,z:-38},exchange:{x:22,z:-15},island:{x:22,z:-47},stage:{x:0,z:-65}});
+export const CRATE_PEDESTALS=Object.freeze([-55.5,-40.5,-25.5,-10.5].map((z,i)=>{const pose=curveSpawnWing(-35.5,z);return Object.freeze({...pose,yaw:Math.atan2(-pose.x,-32-pose.z),id:['loot','contraband','wasteland','moor'][i]});}));
+export const SPAWN_LAYOUT=Object.freeze({arrival:{x:0,z:-32},court:{x:0,z:-32},stage:{x:0,z:-4},crates:CRATE_PEDESTALS[1],exchange:{x:24,z:-12},island:{x:0,z:-60},descent:{x:0,z:26}});
+const turns={crates:Math.PI/2,exchange:-Math.PI/2,island:0,stage:Math.PI};
+export function stationPose(key,x,z){const a=SPAWN_AUTHORED_LAYOUT[key],b=SPAWN_LAYOUT[key],yaw=turns[key],c=Math.cos(yaw),s=Math.sin(yaw),dx=x-a.x,dz=z-a.z;return {x:b.x+c*dx+s*dz,z:b.z-s*dx+c*dz,yaw};}
+export function authoredStationPose(key,x,z){const a=SPAWN_AUTHORED_LAYOUT[key],b=SPAWN_LAYOUT[key],yaw=turns[key],c=Math.cos(yaw),s=Math.sin(yaw),dx=x-b.x,dz=z-b.z;return {x:a.x+c*dx-s*dz,z:a.z+s*dx+c*dz};}
+export function courtyardAssetPose(x,z){
+ const key=x>=-29.5&&x<=-14&&z>=-46&&z<=-32?'crates':x>=15&&x<=29&&z>=-22&&z<=-9?'exchange':x>=15&&x<=29&&z>=-54&&z<=-41?'island':Math.abs(x)<=11&&z>=-76&&z<=-55?'stage':null;
+ return key?stationPose(key,x,z):{x,z,yaw:0};
+}
+export const SPAWN_GARDENS=Object.freeze([-1,1].flatMap(sx=>[-1,1].map(sz=>{const x=sx*22,z=-32+sz*22;return Object.freeze({x,z,yaw:Math.atan2(-x,-(z+32)),scale:1.7});})));
+export const SPAWN_TREES=Object.freeze([-1,1].flatMap(sx=>[-1,1].map(sz=>Object.freeze({x:sx*16,z:-32+sz*16}))));
+export const SPAWN_LAMPS=Object.freeze([-1,1].flatMap(sx=>[-1,1].map(sz=>Object.freeze({x:sx*10,z:-32+sz*22}))));
+export function spawnFloorOffset(x,z){
+ if(Math.hypot(x,z+32)<17)return .08*Math.min(1,(17-Math.hypot(x,z+32))/.2);
+ for(const p of CRATE_PEDESTALS)if(Math.hypot(x-p.x,z-p.z)<1.935)return 1.025;
+ const p=SPAWN_LAYOUT.exchange;if(Math.hypot(x-p.x,z-p.z)<2.4)return 1.16;
+ return 0;
+}
+export function spawnObstacleAt(x,z,height){
+ const exchange=authoredStationPose('exchange',x,z);
+ for(const p of CRATE_PEDESTALS)if(height<4.5&&Math.hypot(x-p.x,z-p.z)<1.8)return true;
+ if(height<2&&Math.abs(exchange.x-22)<4.3&&Math.abs(exchange.z+18)<1.15)return true;
+ if(height<3)for(const px of [18,26])if(Math.abs(exchange.x-px)<.95&&Math.abs(exchange.z+17.4)<1.05)return true;
+ return false;
+}
+export function atCrateStation(area,position,deckHeight){return area==='skyblock-spawn'&&Math.abs(position.y-deckHeight)<4&&CRATE_PEDESTALS.some(p=>Math.hypot(position.x-p.x,position.z-p.z)<=6);}
+
+
+// ================= demo harness =================
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const DPR=Math.min(2,window.devicePixelRatio||1);
+let W=0,H=0;
+function resize(){W=window.innerWidth;H=window.innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+// ---- marker set: every marker = {authored pose, warped pose} ----
+// stations: authored anchor from SPAWN_AUTHORED_LAYOUT, warped anchor from
+// SPAWN_LAYOUT — stationPose(key, ax, az) maps authored→warped exactly.
+const markers=[];
+for(const k of ['arrival','court','stage','crates','exchange','island','descent']){
+  const a=SPAWN_AUTHORED_LAYOUT[k]||SPAWN_LAYOUT[k], b=SPAWN_LAYOUT[k];
+  markers.push({label:k,ax:a.x,az:a.z,wx:b.x,wz:b.z,ayaw:0,wyaw:turns[k]||0,kind:'station'});
+}
+// crate pedestals: warped pose is curveSpawnWing output; authored = module's own inverse
+CRATE_PEDESTALS.forEach(p=>{
+  const a=uncurveSpawnWing(p.x,p.z);
+  markers.push({label:'ped·'+p.id,ax:a.x,az:a.z,wx:p.x,wz:p.z,
+    ayaw:Math.atan2(-a.x,-(a.z+32)),wyaw:p.yaw,kind:'pedestal'});
+});
+// gardens: same treatment
+SPAWN_GARDENS.forEach((g,i)=>{
+  const a=uncurveSpawnWing(g.x,g.z);
+  markers.push({label:'garden '+(i+1),ax:a.x,az:a.z,wx:g.x,wz:g.z,
+    ayaw:Math.atan2(-a.x,-(a.z+32)),wyaw:g.yaw,kind:'garden'});
+});
+
+const lerp=(a,b,t)=>a+(b-a)*t;
+function poseAt(m,t){return {x:lerp(m.ax,m.wx,t),z:lerp(m.az,m.wz,t),yaw:lerp(m.ayaw,m.wyaw,t)};}
+
+let t=0,animating=false,adir=1;
+const slider=document.getElementById('morph'),tpct=document.getElementById('tpct'),tstate=document.getElementById('tstate');
+function setT(v){t=Math.max(0,Math.min(1,v));slider.value=Math.round(t*1000);
+  tpct.textContent=Math.round(t*100)+'%';
+  tstate.textContent=t<0.02?'flat':t>0.98?'circular':'warping…';}
+slider.addEventListener('input',()=>{stopAnim();setT(slider.value/1000);});
+const animBtn=document.getElementById('anim');
+function stopAnim(){animating=false;animBtn.classList.remove('on');animBtn.textContent='▶ ANIMATE';}
+animBtn.addEventListener('click',()=>{
+  animating=!animating;
+  animBtn.classList.toggle('on',animating);
+  animBtn.textContent=animating?'⏸ PAUSE':'▶ ANIMATE';
+});
+document.getElementById('snap0').addEventListener('click',()=>{stopAnim();setT(0);});
+document.getElementById('snap1').addEventListener('click',()=>{stopAnim();setT(1);});
+
+// world→screen: fit x[-50,50], z[-88,40]
+const X0=-50,X1=50,Z0=-88,Z1=40;
+function w2s(x,z){const s=Math.min(W/(X1-X0),H/(Z1-Z0));
+  return [(x-(X0+X1)/2)*s+W/2,(z-(Z0+Z1)/2)*s+H/2];}
+function sc(v){return v*Math.min(W/(X1-X0),H/(Z1-Z0));}
+
+const KIND_C={station:'#ff9d4d',pedestal:'#ffcf4d',garden:'#9fe870'};
+
+function render(now){
+  if(animating){let nt=t+adir*0.0035;if(nt>=1){nt=1;adir=-1;}if(nt<=0){nt=0;adir=1;}setT(nt);}
+  ctx.fillStyle='#0a0d13';ctx.fillRect(0,0,W,H);
+  // bent grid: flat lines through curveSpawnWing, interpolated by t
+  ctx.strokeStyle='rgba(120,150,200,.16)';ctx.lineWidth=1;
+  for(let gx=-40;gx<=40;gx+=5){
+    ctx.beginPath();
+    for(let z=-76;z<=-4;z+=4){const w=curveSpawnWing(gx,z);
+      const [sx,sy]=w2s(lerp(gx,w.x,t),lerp(z,w.z,t));z===-76?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);}
+    ctx.stroke();
+  }
+  for(let gz=-76;gz<=-4;gz+=8){
+    ctx.beginPath();
+    for(let x=-40;x<=40;x+=4){const w=curveSpawnWing(x,gz);
+      const [sx,sy]=w2s(lerp(x,w.x,t),lerp(gz,w.z,t));x===-40?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);}
+    ctx.stroke();
+  }
+  // circular radius ring of the warp
+  ctx.strokeStyle='rgba(200,140,255,.25)';ctx.setLineDash([6,6]);ctx.lineWidth=1.5;
+  {const [sx,sy]=w2s(CIRCULAR_SPAWN.x,CIRCULAR_SPAWN.z);
+   ctx.beginPath();ctx.arc(sx,sy,CIRCULAR_SPAWN.radius*sc(1),0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+  // warp center crosshair
+  {const [sx,sy]=w2s(SPAWN_CENTER.x,SPAWN_CENTER.z);
+   ctx.strokeStyle='rgba(255,255,255,.35)';ctx.beginPath();
+   ctx.moveTo(sx-8,sy);ctx.lineTo(sx+8,sy);ctx.moveTo(sx,sy-8);ctx.lineTo(sx,sy+8);ctx.stroke();}
+  // markers: ghost end-states + live pose
+  for(const m of markers){
+    const c=KIND_C[m.kind];
+    const [ax,ay]=w2s(m.ax,m.az),[bx,by]=w2s(m.wx,m.wz);
+    ctx.globalAlpha=.3;ctx.strokeStyle=c;ctx.lineWidth=1.5;
+    ctx.strokeRect(ax-4,ay-4,8,8);                       // authored ghost
+    ctx.beginPath();ctx.arc(bx,by,5,0,Math.PI*2);ctx.stroke(); // warped ghost
+    ctx.globalAlpha=1;
+    const p=poseAt(m,t),[sx,sy]=w2s(p.x,p.z);
+    ctx.fillStyle=c;ctx.beginPath();ctx.arc(sx,sy,7,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#0a0d13';ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.moveTo(sx,sy);
+    ctx.lineTo(sx+Math.sin(p.yaw)*13,sy+Math.cos(p.yaw)*13);ctx.stroke(); // yaw tick
+    if(m.kind==='station'){ctx.fillStyle='#cfe0f2';ctx.font='10px system-ui';
+      ctx.fillText(m.label,sx+10,sy-8);}
+  }
+  requestAnimationFrame(render);
+}
+setT(0);requestAnimationFrame(render);
+
+window.__warp={curveSpawnWing,uncurveSpawnWing,stationPose,authoredStationPose,
+  SPAWN_LAYOUT,SPAWN_AUTHORED_LAYOUT,SPAWN_CENTER,turns,CRATE_PEDESTALS,SPAWN_GARDENS,
+  markers,poseAt,setT,t:()=>t};
+</script>
+</body>
+</html>
