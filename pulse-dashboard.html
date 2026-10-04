@@ -5248,6 +5248,12 @@ var COMPS = [
    why:'The fastest way to understand what each physics number does — change grip mid-drift and feel it.',
    technical:'buggy-motion.mjs', source:'moor-city/sky-islands/buggy-motion.mjs', inMoor:false,
    toolGap:'The stepVehicle core is verbatim. Coast drag, handbrake strength, and quadratic air drag are extra exposed knobs (defaults reproduce the original exactly). The lot, cones, skid marks, telemetry, and presets are panel code.'},
+  {id:'comp-idea-quiz', tool:'quiz', toolSrc:'pulse-tools/tool-quiz.js', cats:['creation','interface'], icon:'\u2753', label:'Idea Funnel',
+   short:'Quiz your way to a build-ready master doc for a new component.',
+   job:'Three quiz funnels — Combine parts, New idea, Fit check — that turn answers into a scored master doc (job, capabilities, scope guards, seed rules, acceptance checks) plus a copy-paste build brief. Completed docs are shelved for review.',
+   why:'Turns vague component ideas into sharp, scoped, buildable specs — and the brief is the work order for the builder.',
+   technical:'idea-funnel', source:'pulse-v2/tools/tool-quiz.js', inMoor:false,
+   toolGap:'The quiz, scoring rubric, and doc templates are panel code. It reads the live component catalog for part-picking. The "automation" is the build brief: paste it to your builder and the component gets built.'},
   
   
   
@@ -18016,6 +18022,381 @@ TOOLS.sculptplay = {
       '<p class="meta" style="margin-top:10px;">Showcase embedding the live demo. generate/brush/pack/unpack verbatim terrain-core.mjs; the isometric renderer is panel demo code.</p>';
   }
 };
+})();
+
+</script>
+<script>
+/* Idea Funnel — quiz funnels that produce build-ready master docs for OS components.
+ *
+ * Three funnels:
+ *   combine — pick 2+ existing parts, fuse them into one component
+ *   new     — describe a new idea in one sentence, scope it against the bin
+ *   fit     — check whether a component is too much, too little, or just right
+ *
+ * Each funnel ends with a quality score, a master doc (markdown), and a
+ * build brief you can copy and paste to your builder (me) — that's the
+ * "automation": the brief is the work order. Completed docs are shelved
+ * in localStorage so you can review, trim, or expand them later.
+ *
+ * TAGS: tool:quiz | cat:creation cat:interface | dep:localstorage | prov:idea-funnel prov:master-doc | see:stream see:more-canvas
+ */
+(function(){
+'use strict';
+
+var LS_DOCS='pulse-quiz-docs-v1';
+
+function loadDocs(){ try{ var d=JSON.parse(localStorage.getItem(LS_DOCS)||'[]'); return Array.isArray(d)?d:[]; }catch(e){ return []; } }
+function saveDocs(d){ try{ localStorage.setItem(LS_DOCS, JSON.stringify(d.slice(0,60))); }catch(e){} }
+function comps(){
+  try{ return window.PULSE_COMPONENTS||[]; }catch(e){ return []; }
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+
+var FUNNELS=[
+  {id:'combine', icon:'\u29C9', name:'Combine parts',
+   desc:'Pick parts from the bin and fuse them into one stronger component.'},
+  {id:'new', icon:'\u2726', name:'New idea',
+   desc:'One sentence about what it should do. We scope it against the bin.'},
+  {id:'fit', icon:'\u25C9', name:'Fit check',
+   desc:'Too much? Too little? Find out what to cut, keep, or add.'}
+];
+
+/* ---------------- master doc + scoring ---------------- */
+function scoreDoc(a){
+  var s=0, notes=[];
+  var job=(a.job||'').trim();
+  if(job.length>8){ s+=2; if(job.length<=140) notes.push('one-sentence job, clear'); else notes.push('job is a paragraph — sharpen it'); }
+  else notes.push('no clear job yet');
+  var n=(a.parts||[]).length;
+  if(n>=2){ s+=2; notes.push('built from '+n+' real parts'); }
+  else if(n===1){ s+=1; notes.push('touches one existing part'); }
+  else notes.push('stands alone — nothing reused');
+  if((a.guard||'').trim()){ s+=1; notes.push('scope guard set'); }
+  var acc=(a.accept||[]).length;
+  if(acc>=2){ s+=1; notes.push(acc+' acceptance checks'); }
+  if(a.funnel==='combine'&&a.lead){ s+=1; notes.push(a.lead+' leads'); }
+  return {score:Math.min(7,s), notes:notes};
+}
+function verdict(score){
+  if(score>=6) return {t:'Build it', d:'Sharp, scoped, reusable. Paste the brief and it gets built.'};
+  if(score>=4) return {t:'Needs shaping', d:'Good bones. Tighten the sentence or the scope, then build.'};
+  return {t:'Too fuzzy', d:'Not ready. Answer the hard question first: what does it do in one sentence?'};
+}
+function fitVerdict(a){
+  if(a.dup==='yes') return {t:'Merge it', d:'It duplicates something in the bin. Fold it into the existing part instead of adding a new one.'};
+  if(a.jobs==='yes') return {t:'Split it', d:'More than one job means more than one component. Break it apart and run each through Combine.'};
+  if(a.simple==='no') return {t:'Sharpen it', d:'If you can\u2019t explain it in one sentence, nobody can use it. Cut until you can.'};
+  return {t:'Ship it', d:'Single job, explainable, no duplicate. It fits.'};
+}
+function slug(s){ return (s||'idea').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'idea'; }
+function buildDoc(a){
+  var c=comps(), parts=(a.parts||[]).map(function(id){
+    for(var i=0;i<c.length;i++) if(c[i].id===id) return c[i]; return null;
+  }).filter(Boolean);
+  var L=[];
+  L.push('# '+a.title);
+  L.push('> '+(a.job||'—'));
+  L.push('');
+  L.push('## Funnel: '+a.funnel+' · Score '+a.score+'/7 — '+a.verdictT);
+  L.push('');
+  if(parts.length){
+    L.push('## Built from');
+    parts.forEach(function(p){ L.push('- **'+p.label+'** — '+p.short); });
+    L.push('');
+  }
+  if(a.lead){
+    var lp=null; for(var i=0;i<parts.length;i++) if(parts[i].id===a.lead) lp=parts[i];
+    if(lp) L.push('Lead part: **'+lp.label+'**\n');
+  }
+  if(a.guard&&a.guard.trim()){ L.push('## Won\u2019t do'); L.push('- '+a.guard.trim()); L.push(''); }
+  if(a.who) L.push('Made for: '+a.who+'\n');
+  L.push('## Seed & determinism');
+  L.push('- Seeded RNG only, no Math.random. Same seed = same result.');
+  L.push('- Seed travels in the URL where it makes sense.');
+  L.push('');
+  var acc=a.accept||[];
+  if(acc.length){ L.push('## Acceptance'); acc.forEach(function(x){ L.push('- [ ] '+x); }); L.push(''); }
+  L.push('## Review notes');
+  (a.notes||[]).forEach(function(n){ L.push('- '+n); });
+  L.push('');
+  L.push('_'+a.funnel+' funnel · '+new Date(a.ts).toLocaleDateString()+'_');
+  return L.join('\n');
+}
+function buildBrief(a, doc){
+  return 'Build this as a Pulse tool (pulse-v2/tools/tool-'+slug(a.title)+'.js, TOOLS with mount(host, comp)/unmount()):\n\n'+
+    doc+'\n\nConventions: seeded RNG only (no Math.random), mobile-first touch controls, '+
+    'plain-language UI with zero jargon, zero console errors, headless-verifiable via readPixels.';
+}
+
+/* ---------------- the tool ---------------- */
+TOOLS.quiz={
+  mount:function(host){
+    var S={screen:'home', funnel:null, step:0, a:{}, docs:loadDocs()};
+    var clean=[];
+
+    var CSS=
+      '.qz{--acc:#5bd8ff;max-width:640px;margin:0 auto;padding:6px 4px 30px;color:#eef1f6}'+
+      '.qz h2{margin:8px 2px 4px;font-size:1.4rem}'+
+      '.qz .sub{color:#8b94a3;margin:0 2px 16px;font-size:.9rem;line-height:1.5}'+
+      '.qz .dots{display:flex;gap:6px;margin:0 2px 18px}'+
+      '.qz .dots i{width:26px;height:4px;border-radius:2px;background:#232c3b}'+
+      '.qz .dots i.on{background:var(--acc)}'+
+      '.qz .card{background:#0d1219;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:18px;margin-bottom:12px}'+
+      '.qz .card h3{margin:0 0 6px;font-size:1.02rem}'+
+      '.qz .card p{margin:0;color:#8b94a3;font-size:.86rem;line-height:1.5}'+
+      '.qz .frow{display:flex;gap:10px;margin-top:16px}'+
+      '.qz .btn{flex:1;border:1px solid rgba(255,255,255,.14);background:#16202e;color:#eef1f6;border-radius:12px;padding:13px;font:inherit;font-size:.92rem;cursor:pointer}'+
+      '.qz .btn.primary{background:var(--acc);border-color:var(--acc);color:#06121c;font-weight:700}'+
+      '.qz .btn.ghost{background:transparent;color:#8b94a3}'+
+      '.qz .btn:active{transform:scale(.98)}'+
+      '.qz textarea,.qz input[type=text]{width:100%;box-sizing:border-box;background:#0a1220;border:1px solid rgba(255,255,255,.12);color:#eef1f6;border-radius:12px;padding:12px 14px;font:inherit;font-size:.92rem;margin-top:10px}'+
+      '.qz textarea{min-height:86px;resize:vertical}'+
+      '.qz textarea:focus,.qz input[type=text]:focus{outline:none;border-color:var(--acc)}'+
+      '.qz .qlab{font-size:.82rem;font-weight:700;letter-spacing:.06em;color:#8b94a3;text-transform:uppercase;margin:0 2px 4px}'+
+      '.qz .q{font-size:1.12rem;margin:6px 2px 4px;line-height:1.45}'+
+      '.qz .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}'+
+      '.qz .chip{border:1px solid rgba(255,255,255,.14);background:#101825;color:#c6cdd8;border-radius:999px;padding:8px 14px;font-size:.82rem;cursor:pointer}'+
+      '.qz .chip.on{background:rgba(91,216,255,.16);border-color:var(--acc);color:#fff}'+
+      '.qz .radio{display:block;width:100%;text-align:left;margin:8px 0;padding:13px 15px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:#101825;color:#eef1f6;font:inherit;font-size:.9rem;cursor:pointer}'+
+      '.qz .radio.on{border-color:var(--acc);background:rgba(91,216,255,.1)}'+
+      '.qz .score{font-size:3rem;font-weight:200;color:var(--acc);line-height:1}'+
+      '.qz .verdict{font-size:1.25rem;margin:8px 0 4px}'+
+      '.qz pre.doc{background:#080d15;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:16px;white-space:pre-wrap;font-size:.8rem;line-height:1.6;color:#c6cdd8;max-height:380px;overflow:auto;margin:12px 0}'+
+      '.qz .shelfrow{display:flex;align-items:center;gap:10px;padding:12px 4px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer}'+
+      '.qz .shelfrow b{font-size:.9rem}'+
+      '.qz .shelfrow span{margin-left:auto;color:#8b94a3;font-size:.78rem}'+
+      '.qz .pill{display:inline-block;background:#1c2534;border-radius:999px;padding:2px 10px;font-size:.72rem;color:var(--acc);margin-left:8px}'+
+      '.qz .note{color:#8b94a3;font-size:.82rem;margin:10px 2px;line-height:1.5}';
+
+    function el(html){ var d=document.createElement('div'); d.innerHTML=html; return d.firstChild; }
+    function copyText(t, btn){
+      function done(ok){ var o=btn.textContent; btn.textContent=ok?'Copied':'Copy failed';
+        setTimeout(function(){ btn.textContent=o; },1400); }
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function(){done(true);},function(){done(false);});
+      else done(false);
+    }
+
+    /* ----- question definitions ----- */
+    function questions(){
+      var f=S.funnel, a=S.a;
+      if(f==='combine') return [
+        {id:'parts', q:'Which parts are you fusing?', type:'parts'},
+        {id:'job', q:'In one sentence, what does the combined thing do?', type:'text', ph:'e.g. Tune a vehicle\u2019s physics live, then feel it on a test lot'},
+        {id:'guard', q:'What should it NOT do? (keeps the scope honest)', type:'text', ph:'Optional — e.g. no 3D, no saving', optional:true},
+        {id:'lead', q:'Which part leads — the one the others plug into?', type:'lead'}
+      ];
+      if(f==='new') return [
+        {id:'job', q:'One sentence: what should it do?', type:'text', ph:'e.g. Breed two terrain seeds into a child landscape'},
+        {id:'parts', q:'Which existing parts is it most like, or built from?', type:'parts'},
+        {id:'who', q:'Who is it for?', type:'radio', opts:['Me','Other builders','Players inside a world']},
+        {id:'accept', q:'How will you know it works? (pick all that apply)', type:'checks',
+         opts:['It renders something visible','It responds to touch and keys','Same seed gives the same result','It saves or exports its work']}
+      ];
+      return [ /* fit */
+        {id:'target', q:'Which component are we checking?', type:'target'},
+        {id:'jobs', q:'Does it do more than one job?', type:'radio', opts:['yes','no']},
+        {id:'simple', q:'Could a beginner use it from one sentence?', type:'radio', opts:['yes','no']},
+        {id:'dup', q:'Does it duplicate something already in the bin?', type:'radio', opts:['yes','no']}
+      ];
+    }
+
+    /* ----- screens ----- */
+    function render(){
+      host.innerHTML='<style>'+CSS+'</style><div class="qz" id="qz"></div>';
+      var root=host.querySelector('#qz');
+      if(S.screen==='home') root.appendChild(vHome());
+      else if(S.screen==='ask') root.appendChild(vAsk());
+      else root.appendChild(vResult());
+    }
+
+    function vHome(){
+      var d=el('<div><h2>Idea Funnel</h2><p class="sub">Answer a few questions, get a build-ready master doc. '+
+        'Good ones go straight to the build brief — paste it to your builder and it gets made.</p><div id="flist"></div>'+
+        '<div id="shelf"></div></div>');
+      var fl=d.querySelector('#flist');
+      FUNNELS.forEach(function(f){
+        var c=el('<button class="card" style="display:block;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit">'+
+          '<h3>'+f.icon+' '+f.name+'</h3><p>'+f.desc+'</p></button>');
+        c.onclick=function(){ S.funnel=f.id; S.step=0; S.a={funnel:f.id}; S.screen='ask'; render(); };
+        fl.appendChild(c);
+      });
+      if(S.docs.length){
+        var sh=d.querySelector('#shelf');
+        sh.appendChild(el('<h2 style="font-size:1.05rem;margin-top:22px">Your master docs</h2>'));
+        S.docs.forEach(function(doc){
+          var r=el('<div class="shelfrow"><b>'+esc(doc.title)+'</b><span class="pill">'+doc.score+'/7</span><span>'+esc(doc.funnel)+'</span></div>');
+          r.onclick=function(){ S.a=doc.a; S.screen='result'; render(); };
+          sh.appendChild(r);
+        });
+      }
+      return d;
+    }
+
+    function partChips(container, selected, onPick, searchBox){
+      var list=comps();
+      function draw(filter){
+        container.innerHTML='';
+        var q=(filter||'').toLowerCase(), shown=0;
+        list.forEach(function(c){
+          if(q&&(c.label+' '+c.short).toLowerCase().indexOf(q)<0) return;
+          if(shown++>60) return;
+          var b=el('<button class="chip'+(selected.indexOf(c.id)>=0?' on':'')+'">'+esc(c.icon+' '+c.label)+'</button>');
+          b.onclick=function(){ onPick(c.id); };
+          container.appendChild(b);
+        });
+        if(!shown) container.appendChild(el('<span class="note">No parts match.</span>'));
+      }
+      if(searchBox) searchBox.oninput=function(){ draw(searchBox.value); };
+      draw('');
+    }
+
+    function vAsk(){
+      var qs=questions(), q=qs[S.step], a=S.a;
+      var d=el('<div><div class="dots">'+qs.map(function(_,i){
+        return '<i class="'+(i<=S.step?'on':'')+'"></i>'; }).join('')+'</div>'+
+        '<div class="qlab">Step '+(S.step+1)+' of '+qs.length+'</div>'+
+        '<div class="q">'+esc(q.q)+'</div><div id="qbody"></div>'+
+        '<div class="frow"><button class="btn ghost" id="qb">\u2190 Back</button>'+
+        '<button class="btn primary" id="qn">'+(S.step===qs.length-1?'Finish \u2192':'Next \u2192')+'</button></div></div>');
+      var body=d.querySelector('#qbody');
+
+      if(q.type==='text'){
+        var t=el('<textarea placeholder="'+esc(q.ph||'')+'">'+esc(a[q.id]||'')+'</textarea>');
+        t.oninput=function(){ a[q.id]=t.value; };
+        body.appendChild(t);
+      } else if(q.type==='parts'){
+        var s=el('<input type="text" placeholder="Search the bin\u2026">');
+        var chips=el('<div class="chips"></div>');
+        var sel=el('<p class="note"></p>');
+        body.appendChild(s); body.appendChild(chips); body.appendChild(sel);
+        a.parts=a.parts||[];
+        function updSel(){ sel.textContent=a.parts.length?a.parts.length+' picked':'None picked yet'; }
+        function onPick(id){
+          var i=a.parts.indexOf(id);
+          if(i>=0) a.parts.splice(i,1); else a.parts.push(id);
+          s.value='';
+          partChips(chips, a.parts, onPick, s);
+          updSel();
+        }
+        partChips(chips, a.parts, onPick, s);
+        updSel();
+      } else if(q.type==='radio'){
+        q.opts.forEach(function(o){
+          var b=el('<button class="radio'+(a[q.id]===o?' on':'')+'">'+esc(o)+'</button>');
+          b.onclick=function(){ a[q.id]=o;
+            Array.prototype.forEach.call(body.querySelectorAll('.radio'),function(x){x.classList.remove('on');});
+            b.classList.add('on'); };
+          body.appendChild(b);
+        });
+      } else if(q.type==='checks'){
+        a.accept=a.accept||[];
+        q.opts.forEach(function(o){
+          var b=el('<button class="radio'+(a.accept.indexOf(o)>=0?' on':'')+'">'+esc(o)+'</button>');
+          b.onclick=function(){ var i=a.accept.indexOf(o);
+            if(i>=0){a.accept.splice(i,1);b.classList.remove('on');} else {a.accept.push(o);b.classList.add('on');} };
+          body.appendChild(b);
+        });
+      } else if(q.type==='lead'){
+        var parts=(a.parts||[]).map(function(id){
+          var cs=comps(); for(var i=0;i<cs.length;i++) if(cs[i].id===id) return cs[i]; return null;
+        }).filter(Boolean);
+        if(!parts.length) body.appendChild(el('<p class="note">Pick parts first — go back a step.</p>'));
+        parts.forEach(function(p){
+          var b=el('<button class="radio'+(a.lead===p.id?' on':'')+'">'+esc(p.icon+' '+p.label)+'</button>');
+          b.onclick=function(){ a.lead=p.id;
+            Array.prototype.forEach.call(body.querySelectorAll('.radio'),function(x){x.classList.remove('on');});
+            b.classList.add('on'); };
+          body.appendChild(b);
+        });
+      } else if(q.type==='target'){
+        var s2=el('<input type="text" placeholder="Search the bin\u2026">');
+        var chips2=el('<div class="chips"></div>');
+        body.appendChild(s2); body.appendChild(chips2);
+        function onPick2(id){
+          a.target=id; a.targetLabel=null;
+          var cs=comps(); for(var i=0;i<cs.length;i++) if(cs[i].id===id) a.targetLabel=cs[i].label;
+          s2.value='';
+          partChips(chips2, [id], onPick2, s2);
+        }
+        partChips(chips2, a.target?[a.target]:[], onPick2, s2);
+        var custom=el('<textarea placeholder="Or describe it here if it\u2019s new\u2026">'+esc(a.custom||'')+'</textarea>');
+        custom.oninput=function(){ a.custom=custom.value; if(custom.value.trim()){a.target=null;} };
+        body.appendChild(custom);
+      }
+
+      d.querySelector('#qb').onclick=function(){
+        if(S.step>0){ S.step--; render(); } else { S.screen='home'; render(); }
+      };
+      d.querySelector('#qn').onclick=function(){
+        if(q.type==='parts'&&(a.parts||[]).length===0&&S.funnel==='combine'){ toast('Pick at least one part to fuse.'); return; }
+        if(q.type==='text'&&!q.optional&&!(a[q.id]||'').trim()){ toast('Give it one sentence.'); return; }
+        if(S.step<qs.length-1){ S.step++; render(); }
+        else finish();
+      };
+      return d;
+    }
+
+    function toast(msg){
+      var r=host.querySelector('#qz');
+      var t=el('<p class="note" style="color:#ffb0b0">'+esc(msg)+'</p>');
+      r.appendChild(t); setTimeout(function(){ t.remove(); },2200);
+    }
+
+    function finish(){
+      var a=S.a;
+      if(S.funnel==='fit'){
+        var v=fitVerdict(a);
+        a.title=(a.targetLabel||(a.custom||'Untitled').slice(0,42)||'Fit check');
+        a.score=a.jobs==='no'&&a.simple==='yes'&&a.dup==='no'?6:(a.dup==='yes'?2:4);
+        a.verdictT=v.t; a.notes=[v.d];
+        a.job=a.custom||('Review of '+a.targetLabel);
+      } else {
+        var sc=scoreDoc(a), vd=verdict(sc.score);
+        a.score=sc.score; a.notes=sc.notes; a.verdictT=vd.t; a.verdictD=vd.d;
+        if(!a.title){
+          var sug=(a.job||'').trim().split(/\s+/).slice(0,4).join(' ');
+          a.title=sug||(S.funnel==='combine'?'Fused component':'New component');
+        }
+      }
+      a.ts=Date.now();
+      a.doc=buildDoc(a);
+      a.brief=buildBrief(a, a.doc);
+      S.docs.unshift({title:a.title, funnel:a.funnel, score:a.score, ts:a.ts, a:JSON.parse(JSON.stringify(a))});
+      saveDocs(S.docs);
+      S.screen='result'; render();
+    }
+
+    function vResult(){
+      var a=S.a;
+      var d=el('<div><div class="qlab">Master doc</div>'+
+        '<div class="card"><div class="score">'+a.score+'<span style="font-size:1.1rem;color:#8b94a3">/7</span></div>'+
+        '<div class="verdict">'+esc(a.verdictT)+'</div>'+
+        '<p>'+esc(a.verdictD||(a.notes||[]).join(' · '))+'</p></div>'+
+        '<input type="text" id="qtitle" value="'+esc(a.title||'')+'" aria-label="Doc title">'+
+        '<pre class="doc" id="qdoc"></pre>'+
+        '<div class="frow"><button class="btn" id="qcopy">Copy doc</button>'+
+        '<button class="btn primary" id="qbrief">Copy build brief</button></div>'+
+        '<div class="frow"><button class="btn ghost" id="qagain">New quiz</button>'+
+        '<button class="btn ghost" id="qhome">All docs</button></div>'+
+        '<p class="note">The build brief is the work order — paste it to your builder and the component gets built, then reviewed for fit.</p></div>');
+      d.querySelector('#qdoc').textContent=a.doc;
+      d.querySelector('#qtitle').oninput=function(e){
+        a.title=e.target.value; a.doc=buildDoc(a); a.brief=buildBrief(a,a.doc);
+        d.querySelector('#qdoc').textContent=a.doc;
+      };
+      d.querySelector('#qcopy').onclick=function(e){ copyText(a.doc, e.target); };
+      d.querySelector('#qbrief').onclick=function(e){ copyText(a.brief, e.target); };
+      d.querySelector('#qagain').onclick=function(){ S.screen='home'; S.a={}; S.step=0; render(); };
+      d.querySelector('#qhome').onclick=function(){ S.screen='home'; render(); };
+      return d;
+    }
+
+    render();
+    this._S=S;
+  },
+  unmount:function(){ /* stateless between mounts; docs persist in localStorage */ }
+};
+
 })();
 
 </script>
