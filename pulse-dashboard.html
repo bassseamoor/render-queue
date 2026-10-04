@@ -2086,6 +2086,972 @@ window.MESH_FRAG = "\nprecision highp float;\nvarying vec3 vPosition,vNormal,vTi
 var SEED_EVENTS = [{"t": 1791082673000, "title": "Creature Lab Stage A live: deterministic creature compiler replaces 2D prototype", "body": "End-to-end walker per Creature Compiler handoff v1.0 Stage A: seeded genome -> canonical anatomy (hashed) -> validation + bounded repair -> compiled mesh/IK rig/soft belly -> procedural walking over fixture terrain. 4-le", "origin": "agent-report"}, {"t": 1791082667000, "title": "Source drawer + manifest: underlying logic exposed for AIs and builders", "body": "Non-invasive </> button in Pulse header opens drawer listing every tool's panel source, component source, dependencies. pulse-manifest.json published so any AI handed the link can fetch the full inventory and reuse tools", "origin": "agent-report"}, {"t": 1791067367000, "title": "How do private sessions connect \u2014 or how should they?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "What does the menu look like? Is there something that tells me a menu exists, or do I have to find it?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "Does it automatically sign into the account, or do I sign in myself?", "body": "", "origin": "agent-report"}, {"t": 1791067362000, "title": "More OS page added: underlying systems, open OS questions, and the hierarchical road to MVP", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "I\u2019m on my own private server. When I decide \u2018time to explore\u2019 \u2014 where am I going? What do I need to connect to?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "When it\u2019s local, do I load in as a character? With an account? Is there already a default account, quote unquote?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "Sign in or local build? My read: it\u2019s a local build \u2014 private, no sign-in needed. Confirm or correct.", "body": "", "origin": "agent-report"}, {"t": 1791066599000, "title": "Drill-down pages shipped: every component/generator/layout/decision/concept opens its own page with impact analysis and Q&A; dependency grap", "body": "", "origin": "confirmed"}, {"t": 1791066584000, "title": "Staged until Sebastian approves the install \u2014 the live-install handoff doc has the steps.", "body": "", "origin": "agent-report"}, {"t": 1791066584000, "title": "Should the dashboard live in the real MOOR or stay a staged copy?", "body": "", "origin": "agent-report"}, {"t": 1791066022000, "title": "How-things-work section added: 10 real layouts (servers, geometry, doctrine, compiler, craft, release) with approach history and bring-back ", "body": "", "origin": "confirmed"}, {"t": 1791065856000, "title": "Generator atlas added: 6 real procedural systems separated out (terrain, terrain renderer, tree builder, planet vegetation, world conditions", "body": "", "origin": "confirmed"}];
 </script>
 <script>
+window.APP_DATA = {
+  "meta": {
+    "distilled_at": "2026-10-04T08:35:54Z",
+    "components_scanned": 18,
+    "capabilities": 53,
+    "new": 0,
+    "known": 40,
+    "marginal": 13,
+    "review": 0,
+    "unreviewed": 0
+  },
+  "capabilities": [
+    {
+      "id": "e854166f722f",
+      "component": "terrain-core",
+      "verb": "generates",
+      "what": "seeded 2D heightfield (81x81) + biome map from string seed",
+      "knobs": [
+        "seed",
+        "preset",
+        "relief"
+      ],
+      "outputs": [
+        "Float32Array heights",
+        "Uint8Array biomes",
+        "JSON doc"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> generate()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e854166f722f",
+      "notes": "General-purpose 2D scalar field generator, not terrain-specific. Preset radial-shape math is separable shape-masking logic."
+    },
+    {
+      "id": "6f852f74f3bb",
+      "component": "terrain-core",
+      "verb": "transforms",
+      "what": "spherical-falloff brush edits (raise/lower/flatten/smooth/paint-biome)",
+      "knobs": [
+        "tool",
+        "radius",
+        "strength",
+        "target",
+        "biome",
+        "x",
+        "z"
+      ],
+      "outputs": [
+        "mutated heights/biomes in place"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> brush()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "6f852f74f3bb",
+      "notes": "Falloff kernel w=(1-d/r)^2 is reusable smooth radial weighting. Flatten = exponential approach-to-target, a generic lerp smoother. Smooth reads from snapshot to avoid feedback — correct in-place convolution pattern."
+    },
+    {
+      "id": "916b40d3cf06",
+      "component": "terrain-core",
+      "verb": "encodes",
+      "what": "typed-array terrain into JSON-safe object",
+      "knobs": [],
+      "outputs": [
+        "plain object with array heights/biomes"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> pack()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "916b40d3cf06",
+      "notes": "Trivial serializer; the value is in the unpack contract."
+    },
+    {
+      "id": "13752070080e",
+      "component": "terrain-core",
+      "verb": "decodes",
+      "what": "JSON back into typed-array terrain with strict validation",
+      "knobs": [],
+      "outputs": [
+        "Float32Array",
+        "Uint8Array",
+        "throws on violation"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> unpack()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "13752070080e",
+      "notes": "Versioned data contract template: format tag + bounds validation + friendly error. Copy-paste for any import guard."
+    },
+    {
+      "id": "dc9edf6d36cb",
+      "component": "terrain-field",
+      "verb": "generates",
+      "what": "ridged domain-warped fBm noise field (planet-scale detail)",
+      "knobs": [
+        "seedOff"
+      ],
+      "outputs": [
+        "GLSL float 0..1 per 3D position"
+      ],
+      "code_ref": "tool-field.js field.glsl -> fieldRaw()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "dc9edf6d36cb",
+      "notes": "High-quality ridgeline noise reusable for clouds, nebulae, wood grain. seedOff re-seeds without recompile — N variants of one shader."
+    },
+    {
+      "id": "fc0aeb55436a",
+      "component": "terrain-field",
+      "verb": "generates",
+      "what": "multi-scale micro-relief displacement (36m/9m/2.4m + ridged spine)",
+      "knobs": [
+        "uMicroK"
+      ],
+      "outputs": [
+        "meters of vertex displacement"
+      ],
+      "code_ref": "tool-field.js field.glsl -> microH()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "fc0aeb55436a",
+      "notes": "Vertex-displacement detail shared by terrain AND props. One uniform scales all detail to zero. Ridged-spine trick reusable for machined surfaces."
+    },
+    {
+      "id": "ee28789d785c",
+      "component": "terrain-field",
+      "verb": "transforms",
+      "what": "persistent sparse brush edits addressed by surface direction",
+      "knobs": [
+        "uEditA[48]",
+        "uEditB[48]",
+        "uEditCount"
+      ],
+      "outputs": [
+        "GLSL displacement delta"
+      ],
+      "code_ref": "tool-field.js field.glsl -> editDelta()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ee28789d785c",
+      "notes": "NON-OBVIOUS GEM: generic 48-slot sparse-override pattern. Edits addressed by direction (angular distance), seamless on spheres. Reusable for any CPU-editable GPU-applied sparse deltas."
+    },
+    {
+      "id": "ab3ea9830874",
+      "component": "mesh-builder",
+      "verb": "generates",
+      "what": "23-channel procedural meshes (box, bevelBox, dome, cylinder, sphere)",
+      "knobs": [
+        "position",
+        "size",
+        "segments",
+        "rings",
+        "taper",
+        "mat",
+        "color"
+      ],
+      "outputs": [
+        "CityMesh (float array + indices)"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> box()/dome()/cylinder()/sphere()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ab3ea9830874",
+      "notes": "Pure-JS immediate-mode builder, no WebGL until upload(). Extra vertex channels carry shader-domain metadata — mesh doubles as animation/LOD instruction packet."
+    },
+    {
+      "id": "ff7b1e16f6ff",
+      "component": "mesh-builder",
+      "verb": "transforms",
+      "what": "baked pivot rotation of vertices at build time",
+      "knobs": [
+        "turn",
+        "pivot"
+      ],
+      "outputs": [
+        "rotated positions + normals"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> vertex()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ff7b1e16f6ff",
+      "notes": "Bakes instance rotation into mesh; niche optimization."
+    },
+    {
+      "id": "52af9d9bafea",
+      "component": "mesh-builder",
+      "verb": "generates",
+      "what": "bounding-volume solids instead of triangles (dual-mode box)",
+      "knobs": [
+        "solids"
+      ],
+      "outputs": [
+        "AABB records {lo,hi,c,mat,kind,anchor}"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> box() solids branch",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "52af9d9bafea",
+      "notes": "One call emits render geometry OR collision AABBs. Render/physics unification pattern."
+    },
+    {
+      "id": "f15537a311bb",
+      "component": "mesh-builder",
+      "verb": "renders",
+      "what": "mesh to WebGL buffers with auto 16/32-bit index strategy",
+      "knobs": [
+        "gl"
+      ],
+      "outputs": [
+        "GPU buffers"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> upload()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "f15537a311bb",
+      "notes": "Handles >65535 verts via triangle-soup expansion. Standard practice, well executed."
+    },
+    {
+      "id": "71931c9e2c24",
+      "component": "palettes",
+      "verb": "stores",
+      "what": "10 planet-type color tables (land/water/atmo/sea/spec/mode)",
+      "knobs": [
+        "type key"
+      ],
+      "outputs": [
+        "PTEX object"
+      ],
+      "code_ref": "tool-palettes.js palettes.js -> PTEX",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "71931c9e2c24",
+      "notes": "Schema is the value: compact planet-look descriptor. mode 0/1/2 switches shader behavior; null = graceful absence. Could skin non-planet things."
+    },
+    {
+      "id": "d06adb2fa3d4",
+      "component": "palettes",
+      "verb": "stores",
+      "what": "per-type vegetation color tables (grass/leaf/bark/rock/flower/soil)",
+      "knobs": [
+        "type key"
+      ],
+      "outputs": [
+        "MAT object"
+      ],
+      "code_ref": "tool-palettes.js palettes.js -> MAT",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "d06adb2fa3d4",
+      "notes": "Zero-logic data; two-stop gradient convention is mildly reusable."
+    },
+    {
+      "id": "19aa4c42c603",
+      "component": "moorworld",
+      "verb": "generates",
+      "what": "deterministic universe: 8 sectors, 57 systems, 254 planets, 745 zones",
+      "knobs": [
+        "UNIVERSE_SEED"
+      ],
+      "outputs": [
+        "nested sector/system/planet/zone objects"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> generation block",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "19aa4c42c603",
+      "notes": "Burned-draw stream preservation keeps old worlds byte-identical across generator evolution. Per-planet names from separate stream with uniqueness set — deterministic unique-name generator from arbitrary IDs."
+    },
+    {
+      "id": "f64aeb34b2f6",
+      "component": "moorworld",
+      "verb": "queries",
+      "what": "any world node by id or hierarchical address string",
+      "knobs": [
+        "id",
+        "addr"
+      ],
+      "outputs": [
+        "node object or null"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> findById/findByAddress",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "f64aeb34b2f6",
+      "notes": "URI-like identity scheme (universe:prime/sector:S01/...) — could address any hierarchical catalog."
+    },
+    {
+      "id": "a7eba816e163",
+      "component": "moorworld",
+      "verb": "generates",
+      "what": "per-planet dossier: materials table, climate, species, prose summary",
+      "knobs": [
+        "planet id"
+      ],
+      "outputs": [
+        "materials/climate/species/summary"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> materials()/climate()/species()/summary()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "a7eba816e163",
+      "notes": "Independent per-subsystem streams (hashStr(pid+suffix)) decouple generators. Materials table is a generic loot/resource engine. MAT_SIG = archetype-to-signature-item mapping."
+    },
+    {
+      "id": "090e4ee8fe71",
+      "component": "moorworld",
+      "verb": "stores",
+      "what": "append-only capped event log of world mutations",
+      "knobs": [
+        "by",
+        "type",
+        "target",
+        "payload"
+      ],
+      "outputs": [
+        "event records (5000 cap)"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> logEvent()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "090e4ee8fe71",
+      "notes": "'No event, no mutation' — generic audit-trail pattern, but thin."
+    },
+    {
+      "id": "ea8c285f57c2",
+      "component": "comp-vehicle-physics",
+      "verb": "simulates",
+      "what": "arcade vehicle dynamics (throttle/steer/grip/drift)",
+      "knobs": [
+        "throttle",
+        "steer",
+        "dt"
+      ],
+      "outputs": [
+        "vehicle state {pos, vel, yaw}"
+      ],
+      "code_ref": "moor-city/sky-islands/buggy-motion.mjs buggy-motion.mjs -> createVehicle/stepVehicle",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ea8c285f57c2",
+      "notes": "Zero-dependency vehicle sim. Drop into any driving game."
+    },
+    {
+      "id": "e1d517a34eec",
+      "component": "comp-model-loader",
+      "verb": "decodes",
+      "what": ".moor.json model documents into Three.js groups",
+      "knobs": [
+        "doc"
+      ],
+      "outputs": [
+        "THREE.Group"
+      ],
+      "code_ref": "moor-city/model-importer/model-loader.js model-loader.js -> fromMoor()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e1d517a34eec",
+      "notes": "Pure function of doc + three.js. The model component for MOOR's object system."
+    },
+    {
+      "id": "2d9dd9ffaec7",
+      "component": "comp-model-kit",
+      "verb": "generates",
+      "what": "code-built 3D models (buggy, motorcycle, harvester)",
+      "knobs": [
+        "part params"
+      ],
+      "outputs": [
+        "normalized project",
+        "exported .moor.json"
+      ],
+      "code_ref": "moor-city/model-studio/recipes.mjs recipes.mjs -> part()/makeStarter()/exportModel()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "2d9dd9ffaec7",
+      "notes": "Models as code: versionable, remixable. Single source of truth with the editor."
+    },
+    {
+      "id": "d6a3c4406c9d",
+      "component": "comp-maze",
+      "verb": "generates",
+      "what": "seeded polar-grid maze (365x24) + endless coordinate extension",
+      "knobs": [
+        "seed"
+      ],
+      "outputs": [
+        "mazeBlocked()",
+        "mazeWallDistance()"
+      ],
+      "code_ref": "moor-city/sky-islands/wasteland-maze-layout.mjs wasteland-maze-layout.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "d6a3c4406c9d",
+      "notes": "Zero 3D deps. Data-first maze for vehicles, mobs, or level layout."
+    },
+    {
+      "id": "5ec0e2a877f2",
+      "component": "comp-spawn",
+      "verb": "generates",
+      "what": "spawn station layouts + flat-to-circular warp math",
+      "knobs": [
+        "layout params"
+      ],
+      "outputs": [
+        "station poses",
+        "warped architecture"
+      ],
+      "code_ref": "moor-city/sky-islands/spawn-layout.mjs spawn-layout.mjs + circular-spawn.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "5ec0e2a877f2",
+      "notes": "Pure spawn data + warp math. 4s cinematic arrival reveal pattern."
+    },
+    {
+      "id": "49f7158d44dd",
+      "component": "comp-proc-vehicles",
+      "verb": "generates",
+      "what": "procedural chopper/touring-bike builders",
+      "knobs": [
+        "T (three)"
+      ],
+      "outputs": [
+        "{root, front, rear, update}"
+      ],
+      "code_ref": "moor-city/sky-islands/chopper-model.mjs chopper-model.mjs -> createChopper()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "49f7158d44dd",
+      "notes": "Vehicles as functions: parametrize, remix, generate variants."
+    },
+    {
+      "id": "e0ca82e96d14",
+      "component": "comp-billboards",
+      "verb": "renders",
+      "what": "canvas-painted billboard sprites (signs, leaderboards)",
+      "knobs": [
+        "text",
+        "data"
+      ],
+      "outputs": [
+        "sprite textures"
+      ],
+      "code_ref": "moor-city/sky-islands/dev-billboards.mjs dev-billboards.mjs -> createDevBillboards()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e0ca82e96d14",
+      "notes": "Signage without texture files. Data-driven canvas sprites — a real content capability."
+    },
+    {
+      "id": "d611fec62a96",
+      "component": "comp-tablets",
+      "verb": "renders",
+      "what": "canvas-2D data-driven UI panels",
+      "knobs": [
+        "data dict"
+      ],
+      "outputs": [
+        "painted UI"
+      ],
+      "code_ref": "moor-city/sky-islands/tablet-*.mjs tablet-*.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "d611fec62a96",
+      "notes": "Portable UI painters, no framework. Data-in, painted-panel-out is a real generative UI capability."
+    },
+    {
+      "id": "da5920815bdc",
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "seeded stereo ambient bed (noise + washes + tones + drops + pads + drones)",
+      "knobs": [
+        "seedStr",
+        "kind",
+        "seconds",
+        "sr"
+      ],
+      "outputs": [
+        "Float32Array mixL",
+        "Float32Array mixR"
+      ],
+      "code_ref": "tool-ambience.js ambience.js -> renderBed() / ambBuild()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "da5920815bdc",
+      "notes": "Event-scatter composition: ev(n, fn) scatters n events at random times. Biquad filter design in pure JS (ambBiquadCoefs). Kinds are recipe functions — new ambience kinds = new recipes."
+    },
+    {
+      "id": "515b396e8824",
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "seeded white-noise buffer",
+      "knobs": [
+        "sr",
+        "L",
+        "seedStr"
+      ],
+      "outputs": [
+        "Float32Array noise"
+      ],
+      "code_ref": "tool-ambience.js ambience.js -> ambContext()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "515b396e8824",
+      "notes": "Thin primitive under renderBed."
+    },
+    {
+      "id": "55405f136abf",
+      "component": "spawn-director",
+      "verb": "simulates",
+      "what": "enemy wave pacing (spawn/swarm curves, unlock schedule, kill reporting)",
+      "knobs": [
+        "types",
+        "maxAlive",
+        "swarmType"
+      ],
+      "outputs": [
+        "spawn events",
+        "{t, alive} state"
+      ],
+      "code_ref": "tool-spawn.js spawn-director.js -> createSpawnDirector()/update()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "55405f136abf",
+      "notes": "Time-based unlock pool + swarm timer. Generic pacing engine for any wave/queue system — not just enemies."
+    },
+    {
+      "id": "a9a95f41207f",
+      "component": "perf-governor",
+      "verb": "simulates",
+      "what": "adaptive quality governor from frame times",
+      "knobs": [
+        "frame dt"
+      ],
+      "outputs": [
+        "quality 0.28..1"
+      ],
+      "code_ref": "tool-perf.js perf-governor.js -> createGovernor()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "a9a95f41207f",
+      "notes": "Generic adaptive-feedback controller. Reusable for any frame-budgeted system."
+    },
+    {
+      "id": "dc86afcbb408",
+      "component": "seed-rng",
+      "verb": "generates",
+      "what": "deterministic named random streams (mulberry32 + hashing)",
+      "knobs": [
+        "stream name",
+        "seed"
+      ],
+      "outputs": [
+        "function rng() -> [0,1)"
+      ],
+      "code_ref": "tool-shared.js rng.js -> streamFrom()/hashStr()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "dc86afcbb408",
+      "notes": "Foundation: every procedural tool depends on this. Named streams give independent reproducible sequences."
+    },
+    {
+      "id": "578c93688396",
+      "component": "seed-rng",
+      "verb": "generates",
+      "what": "2D value-noise fields from seed",
+      "knobs": [
+        "seed",
+        "w",
+        "h"
+      ],
+      "outputs": [
+        "noise function (x,y) -> [0,1)"
+      ],
+      "code_ref": "tool-shared.js rng.js -> makeNoise()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "578c93688396",
+      "notes": "Seeded 2D noise usable for heightfields, textures, audio modulation — anything needing coherent randomness."
+    },
+    {
+      "id": "751105e87bca",
+      "component": "seed-codec",
+      "verb": "encodes",
+      "what": "control state into short shareable seed-code strings",
+      "knobs": [
+        "controls"
+      ],
+      "outputs": [
+        "short code string"
+      ],
+      "code_ref": "tool-shared.js codec.js -> makeCodec()/codeOf()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "751105e87bca",
+      "notes": "Base-36 packed lens codes. Could encode any small JSON state, not just seeds."
+    },
+    {
+      "id": "2b9b46aba1b0",
+      "component": "seed-codec",
+      "verb": "decodes",
+      "what": "seed-code strings back into control state",
+      "knobs": [
+        "code"
+      ],
+      "outputs": [
+        "controls object"
+      ],
+      "code_ref": "tool-shared.js codec.js -> parseCode()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "2b9b46aba1b0",
+      "notes": "Inverse of codeOf; strict format validation."
+    },
+    {
+      "id": "b79a7d0d0e4a",
+      "component": "seed-console",
+      "verb": "generates",
+      "what": "interactive seeded console (REPL over component APIs)",
+      "knobs": [
+        "adapter"
+      ],
+      "outputs": [
+        "console UI + command results"
+      ],
+      "code_ref": "tool-shared.js seed-console.js",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "b79a7d0d0e4a",
+      "notes": "Pluggable command adapter. A REPL pattern for live component introspection."
+    },
+    {
+      "id": "84aaf92a9240",
+      "component": "save-shape",
+      "verb": "stores",
+      "what": "versioned shape documents to localStorage",
+      "knobs": [
+        "doc"
+      ],
+      "outputs": [
+        "saved record"
+      ],
+      "code_ref": "tool-shared.js save-shape.js",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "84aaf92a9240",
+      "notes": "Thin persistence wrapper. The value is the doc schema convention."
+    },
+    {
+      "id": "4f7e66ddfd5b",
+      "component": "registry-triple",
+      "verb": "validates",
+      "what": "app registry catalog schema (kebab-case ids, uniqueness)",
+      "knobs": [
+        "registry.json"
+      ],
+      "outputs": [
+        "validation diagnostics"
+      ],
+      "code_ref": "tool-shared.js wrangle.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "4f7e66ddfd5b",
+      "notes": "Schema-guard for the app catalog. Kebab-case + uniqueness rules are a reusable catalog hygiene pattern."
+    },
+    {
+      "id": "dadaa7ca5673",
+      "component": "release-gate",
+      "verb": "validates",
+      "what": "release readiness checks before publish",
+      "knobs": [
+        "bundle"
+      ],
+      "outputs": [
+        "pass/fail report"
+      ],
+      "code_ref": "tool-shared.js release.py",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "dadaa7ca5673",
+      "notes": "Checklist automation. Thin but honest."
+    },
+    {
+      "id": "3d9198a39b96",
+      "component": "replace-file",
+      "verb": "transforms",
+      "what": "deterministic file replace with hash guard",
+      "knobs": [
+        "path",
+        "expected_sha256",
+        "content"
+      ],
+      "outputs": [
+        "replaced file or abort"
+      ],
+      "code_ref": "tool-shared.js replace-file SCHEMA",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "3d9198a39b96",
+      "notes": "Atomic temp+replace with hash-mismatch abort. The safe-remote-edit primitive."
+    },
+    {
+      "id": "616b42ee73d7",
+      "component": "idempotent-upload",
+      "verb": "transforms",
+      "what": "idempotent file upload (invoke/check)",
+      "knobs": [
+        "payload"
+      ],
+      "outputs": [
+        "upload receipt"
+      ],
+      "code_ref": "tool-shared.js adapter.js -> invoke()/check()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "616b42ee73d7",
+      "notes": "Idempotency-key upload pattern. Standard but correct."
+    },
+    {
+      "id": "90449ccf3d0f",
+      "component": "stream",
+      "verb": "generates",
+      "what": "3D diorama scenes from intent specs (trees/rocks/grass/clouds/creatures/structs)",
+      "knobs": [
+        "spec {seed, mood, comps}"
+      ],
+      "outputs": [
+        "diorama {trees, rocks, grass, clouds, creatures, structs}"
+      ],
+      "code_ref": "tool-stream.js tool-stream.js -> buildDiorama()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "90449ccf3d0f",
+      "notes": "One-way water: text spec -> populated 3D scene. Component flags (hasComp) compose scene contents. A scene-composition algebra."
+    },
+    {
+      "id": "557c410b8db2",
+      "component": "stream",
+      "verb": "generates",
+      "what": "continuous scene stream from voice/text (intent -> N dioramas)",
+      "knobs": [
+        "utterance"
+      ],
+      "outputs": [
+        "scene specs downstream"
+      ],
+      "code_ref": "tool-stream.js tool-stream.js -> stream pipeline",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "557c410b8db2",
+      "notes": "Coherence gate ignores non-requests. Never throttled — ask for 40, get 40."
+    },
+    {
+      "id": "1d440ca0a7d1",
+      "component": "softbody-creatures",
+      "verb": "generates",
+      "what": "creature anatomy from seeded genome (validator + bounded repair)",
+      "knobs": [
+        "genome traits"
+      ],
+      "outputs": [
+        "canonical anatomy JSON (hashed)"
+      ],
+      "code_ref": "tool-creatures.js tool-creatures.js -> genome pipeline",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "1d440ca0a7d1",
+      "notes": "Genome -> anatomy -> validation/repair -> compiled mesh + IK rig + soft tissue. The creature compiler pattern."
+    },
+    {
+      "id": "7f605cf17364",
+      "component": "softbody-creatures",
+      "verb": "simulates",
+      "what": "procedural bilateral walking over fixture terrain",
+      "knobs": [
+        "anatomy",
+        "terrain"
+      ],
+      "outputs": [
+        "walking animation"
+      ],
+      "code_ref": "tool-creatures.js tool-creatures.js -> walker",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "7f605cf17364",
+      "notes": "No hand-animation: gait emerges from leg count + terrain height."
+    },
+    {
+      "id": "da668240c544",
+      "component": "planet-vegetation",
+      "verb": "generates",
+      "what": "procedural plant geometry (verbatim builders, minimal THREE shim)",
+      "knobs": [
+        "type",
+        "seed"
+      ],
+      "outputs": [
+        "BufferGeometry plants"
+      ],
+      "code_ref": "tool-vegetation.js tool-vegetation.js -> plant builders",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "da668240c544",
+      "notes": "Real plant builders running without THREE.js loaded. Wind sway is panel composition."
+    },
+    {
+      "id": "3e038c165e1c",
+      "component": "terrain-pipeline",
+      "verb": "transforms",
+      "what": "user-added math layers over real terrain-core output",
+      "knobs": [
+        "layer fns"
+      ],
+      "outputs": [
+        "modified heightfield"
+      ],
+      "code_ref": "tool-pipeline.js tool-pipeline.js -> layer stack",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "3e038c165e1c",
+      "notes": "Pipeline inspector: see the generator as equation boxes, add your own seeded layers. Deterministic composition."
+    },
+    {
+      "id": "1da4f8ecd3ee",
+      "component": "rust-intent-compiler",
+      "verb": "transforms",
+      "what": "plain request -> application definition (WASM)",
+      "knobs": [
+        "request text"
+      ],
+      "outputs": [
+        "intent JSON"
+      ],
+      "code_ref": "tool-intent.js moor_web.wasm -> handle()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "1da4f8ecd3ee",
+      "notes": "Deterministic rule-based compiler in Rust/WASM. Reference only; production is the JS pipeline."
+    },
+    {
+      "id": "b2bf3557f681",
+      "component": "wonder-feed",
+      "verb": "generates",
+      "what": "serializable wonder genomes (type+seed+params) with mutate/crossover",
+      "knobs": [
+        "rng"
+      ],
+      "outputs": [
+        "genome {type, seed, p}"
+      ],
+      "code_ref": "tool-wonder.js tool-wonder.js -> randomGenome()/mutateGenome()/crossoverGenomes()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "b2bf3557f681",
+      "notes": "The content instrument: every wonder is a pure function of its genome. RANGES drives mutation jitter. 15% cross-type jumps."
+    },
+    {
+      "id": "3d242ae91ee6",
+      "component": "wonder-feed",
+      "verb": "stores",
+      "what": "taste profile + wonder library (localStorage, local-first)",
+      "knobs": [
+        "genome"
+      ],
+      "outputs": [
+        "taste list",
+        "library entries"
+      ],
+      "code_ref": "tool-wonder.js tool-wonder.js -> Taste/Library",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "3d242ae91ee6",
+      "notes": "60/40 random/taste sampling. Thin storage, but the sampling policy is the value."
+    },
+    {
+      "id": "38642fd53190",
+      "component": "redwood-drive",
+      "verb": "renders",
+      "what": "embedded Redwood Drive experience (iframe)",
+      "knobs": [],
+      "outputs": [
+        "iframe"
+      ],
+      "code_ref": "tool-redwood.js tool-redwood.js",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "38642fd53190",
+      "notes": "Showcase wrapper around the live build, not a capability."
+    },
+    {
+      "id": "420296ac1ab1",
+      "component": "render-studio",
+      "verb": "generates",
+      "what": "studio hub cards linking the 8 studios",
+      "knobs": [],
+      "outputs": [
+        "hub UI"
+      ],
+      "code_ref": "tool-rstudio.js tool-rstudio.js",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "420296ac1ab1",
+      "notes": "Navigation hub; the studios are the capabilities."
+    },
+    {
+      "id": "73e02dff147e",
+      "component": "component-distiller",
+      "verb": "generates",
+      "what": "distilled capability catalog from component sources (fingerprint + merge)",
+      "knobs": [
+        "tools/"
+      ],
+      "outputs": [
+        "app-data.json"
+      ],
+      "code_ref": "pulse-v2/tools/tool-distiller.js distill.py",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "73e02dff147e",
+      "notes": "The pipeline stage itself: scans components, fingerprints capabilities, merges without dropping. Judgment stays agentic."
+    },
+    {
+      "id": "e76bed72a9bc",
+      "component": "component-distiller",
+      "verb": "queries",
+      "what": "searchable capability catalog (new/known/marginal)",
+      "knobs": [
+        "query"
+      ],
+      "outputs": [
+        "capability atoms"
+      ],
+      "code_ref": "pulse-v2/tools/tool-distiller.js tool-distiller.js",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e76bed72a9bc",
+      "notes": "The visible stage: components in, capabilities out, flagged-useless reported."
+    },
+    {
+      "id": "e28eedc76b54",
+      "component": "more-canvas",
+      "verb": "generates",
+      "what": "part-mixing compositions from catalog parts",
+      "knobs": [
+        "part A",
+        "part B",
+        "intent"
+      ],
+      "outputs": [
+        "recipe + brief"
+      ],
+      "code_ref": "more-canvas.html more-canvas.html",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e28eedc76b54",
+      "notes": "Mix parts -> live preview -> save as part. Recipe + brief output for builders."
+    }
+  ],
+  "flagged_useless": [
+    "idempotent-upload",
+    "redwood-drive",
+    "release-gate",
+    "render-studio",
+    "save-shape"
+  ]
+};
+</script>
+<script>
 /* Project Pulse v2 — dashboard shell.
  * Layout + visual language from MOOR-Pulse-Functional-Mockup.html (preserved).
  * Center canvas windows host real interactive tools (TOOLS registry) or
@@ -2208,6 +3174,12 @@ var COMPS = [
    job:'Deterministic rule-based compiler: plain request \u2192 application definition. Type a request, see what it heard, vote on whether it got your intent right.',
    why:'Kept available as verified reference software. Production routing stays on the JS pipeline unless separately authorized.', technical:'rust-intent-compiler', source:'moor-core-v0 (Rust, via WASM)', inMoor:false,
    toolGap:'The compiler runs here as WebAssembly (bytes fetched from this site). Your thumbs up/down build a local log of how well it reads intent.'},
+  {id:'component-distiller', tool:'distiller', toolSrc:'pulse-tools/tool-distiller.js', cats:['creation','compdata'], icon:'\u2697', label:'Component Distiller',
+   short:'Crunch every component into its real capabilities.',
+   job:'The creation-pipeline stage that looks at all components across Pulse, distills each one into capability atoms (what it really generates, transforms, simulates — with knobs and outputs), dedupes against what is already known, and feeds the distilled catalog into app data for content generators to sample.',
+   why:'The Wonder Feed was starving for content. The distiller finds every real capability hiding in the component logic — including non-obvious reuse — so generators sample from everything the system can actually do.',
+   technical:'component-distiller', source:'pulse-v2/app-data.json + distill.py', inMoor:false,
+   toolGap:'First distillation pass is agentic judgment (new vs known vs marginal). distill.py re-runs the mechanical merge; judgment stays human.'},
   {id:'seed-lab', tool:null, cats:['experiences'], icon:'\u2697', label:'Seed Lab',
    short:'Proves recovered parts work inside MOOR.',
    job:'Integration app proving recovery components work inside the real MOOR: seeded terrain, seed codes, remix, console, ambient beds.',
@@ -7316,7 +8288,8 @@ var RANGES = {
   pal:[0,6,1], pick:[0,1000000000,1],
   hue:[0,360,0], layers:[5,9,1], hue2:[0,120,0],
   mode:[0,2,1], semi:[0,11,1], name:[0,3,1],
-  waves:[3,7,1]
+  waves:[3,7,1],
+  rings:[6,12,1], intensity:[1,5,1], flow:[0,2,1]
 };
 function clampJit(v, key, rng){
   var r = RANGES[key]; if (!r) return v;
@@ -7471,6 +8444,17 @@ function makeCanvas(w, h){
   return {cv:cv, ctx:cv.getContext('2d'), dpr:dpr, w:w, h:h};
 }
 
+var PALS = [
+  {deep:'#0a1a3a',shallow:'#1a4a6a',land:['#2a4a2a','#5a7a3a'],atmo:'#88bbff',sea:0.42},
+  {deep:'#1a0a2a',shallow:'#3a1a4a',land:['#4a2a1a','#8a5a2a'],atmo:'#ff9a66',sea:-1},
+  {deep:'#0a2a2a',shallow:'#1a5a4a',land:['#1a4a2a','#3a7a3a'],atmo:'#aaffcc',sea:0.35},
+  {deep:'#0a0a1a',shallow:'#1a1a3a',land:['#3a3a4a','#6a6a7a'],atmo:'#aaaaff',sea:-1},
+  {deep:'#2a1a0a',shallow:'#5a3a1a',land:['#6a4a1a','#a87a3a'],atmo:'#ffcc88',sea:-1},
+  {deep:'#0a1a2a',shallow:'#1a3a5a',land:['#2a5a6a','#4a8a9a'],atmo:'#88ddff',sea:0.5},
+  {deep:'#1a0a1a',shallow:'#4a1a3a',land:['#3a1a2a','#6a2a4a'],atmo:'#ff88cc',sea:-1},
+  {deep:'#0a0a2a',shallow:'#2a2a5a',land:['#4a4a8a','#7a7acc'],atmo:'#aaaaff',sea:-1}
+];
+
 /* ---------- 1. PLANET — WebGL UV sphere, seeded relief, atmosphere rim ----------
  * genome.p: {pal: palette family 0-6, pick: planet index pick} */
 (function(){
@@ -7505,16 +8489,6 @@ var FS='precision mediump float;'+
  ' float rim=pow(1.0-abs(dot(N,V)),2.5);'+
  ' lit+=uAtmo*rim*0.9;'+
  ' gl_FragColor=vec4(lit,1.0);}';
-var PALS = [
-  {deep:'#0a1a3a',shallow:'#1a4a6a',land:['#2a4a2a','#5a7a3a'],atmo:'#88bbff',sea:0.42},
-  {deep:'#1a0a2a',shallow:'#3a1a4a',land:['#4a2a1a','#8a5a2a'],atmo:'#ff9a66',sea:-1},
-  {deep:'#0a2a2a',shallow:'#1a5a4a',land:['#1a4a2a','#3a7a3a'],atmo:'#aaffcc',sea:0.35},
-  {deep:'#0a0a1a',shallow:'#1a1a3a',land:['#3a3a4a','#6a6a7a'],atmo:'#aaaaff',sea:-1},
-  {deep:'#2a1a0a',shallow:'#5a3a1a',land:['#6a4a1a','#a87a3a'],atmo:'#ffcc88',sea:-1},
-  {deep:'#0a1a2a',shallow:'#1a3a5a',land:['#2a5a6a','#4a8a9a'],atmo:'#88ddff',sea:0.5},
-  {deep:'#1a0a1a',shallow:'#4a1a3a',land:['#3a1a2a','#6a2a4a'],atmo:'#ff88cc',sea:-1},
-  {deep:'#0a0a2a',shallow:'#2a2a5a',land:['#4a4a8a','#7a7acc'],atmo:'#aaaaff',sea:-1}
-];
 TYPES.push({kind:'planet', icon:'🪐', label:'Planet',
  params: function(r){ return {pal:(r()*PALS.length)|0, pick:(r()*1000000000)|0}; },
  make: function(genome){
@@ -8121,6 +9095,236 @@ TYPES.push({kind:'tide', icon:'🌊', label:'Tide',
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
 
+
+/* ---------- 8. MAZE — seeded polar labyrinth, glowing walls ----------
+ * from: comp-maze (wasteland-maze-layout.mjs) — distilled capability:
+ * "seeded polar-grid maze + endless coordinate extension, zero 3D deps"
+ * genome.p: {rings:6-12, hue:0-360} */
+TYPES.push({kind:'maze', icon:'\u{1F300}', label:'Maze',
+ params: function(r){ return {rings:6+((r()*7)|0), hue:r()*360}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Maze '+((seed%900)+100), sub = 'polar labyrinth — from the maze layout';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.46;
+  var NR = Math.round(P.rings), NS = 24;
+  /* carve a spanning tree on the polar grid (randomized DFS) */
+  var walls = [];
+  for (var ri=0;ri<NR;ri++){ walls[ri]=[]; for (var si=0;si<NS;si++) walls[ri][si]={r:true,t:true}; }
+  var visited = [];
+  for (var vi=0;vi<NR;vi++){ visited[vi]=[]; for (var vj=0;vj<NS;vj++) visited[vi][vj]=false; }
+  var stack = [[0,(rng()*NS)|0]];
+  visited[stack[0][0]][stack[0][1]] = true;
+  while (stack.length){
+    var cur = stack[stack.length-1], cr = cur[0], cs = cur[1];
+    var nbs = [];
+    if (cr+1<NR && !visited[cr+1][cs]) nbs.push([cr+1,cs,'r']);
+    if (cr-1>=0 && !visited[cr-1][cs]) nbs.push([cr-1,cs,'r2']);
+    if (!visited[cr][(cs+1)%NS]) nbs.push([cr,(cs+1)%NS,'t']);
+    if (!visited[cr][(cs-1+NS)%NS]) nbs.push([cr,(cs-1+NS)%NS,'t2']);
+    if (!nbs.length){ stack.pop(); continue; }
+    var nx = nbs[(rng()*nbs.length)|0];
+    if (nx[2]==='r') walls[cr][cs].r = false;
+    else if (nx[2]==='r2') walls[nx[0]][nx[1]].r = false;
+    else if (nx[2]==='t') walls[cr][cs].t = false;
+    else walls[nx[0]][nx[1]].t = false;
+    visited[nx[0]][nx[1]] = true;
+    stack.push([nx[0],nx[1]]);
+  }
+  /* pulse path: random walk through carved passages */
+  var pr = 0, ps = (rng()*NS)|0, pt = 0;
+  var hue = P.hue, raf = 0, t = 0;
+  function ringR(r){ return R*(r+1)/NR; }
+  function cellXY(r, s){
+    var a = (s/NS)*Math.PI*2, rr = ringR(r)- (R/NR)*0.5;
+    return [cx+Math.cos(a)*rr, cy+Math.sin(a)*rr];
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(cx,cy,10,cx,cy,R*1.3);
+    bg.addColorStop(0,'#060a14'); bg.addColorStop(1,'#020308');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.strokeStyle = 'hsla('+hue+',80%,60%,.85)';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = 'hsla('+hue+',90%,60%,.9)';
+    ctx.shadowBlur = 10;
+    for (var ri2=0;ri2<NR;ri2++){
+      for (var si2=0;si2<NS;si2++){
+        var a0=(si2/NS)*Math.PI*2, a1=((si2+1)/NS)*Math.PI*2;
+        var r0=ringR(ri2);
+        if (walls[ri2][si2].r){
+          ctx.beginPath();
+          ctx.arc(cx,cy,r0,a0,a1);
+          ctx.stroke();
+        }
+        if (walls[ri2][si2].t){
+          ctx.beginPath();
+          ctx.moveTo(cx+Math.cos(a0)* (ri2? ringR(ri2-1):0), cy+Math.sin(a0)*(ri2?ringR(ri2-1):0));
+          ctx.lineTo(cx+Math.cos(a0)*r0, cy+Math.sin(a0)*r0);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+    /* move pulse every few frames */
+    pt += 0.016;
+    if (pt > 0.12){
+      pt = 0;
+      var opts = [];
+      if (!walls[pr][ps].r && pr+1<NR) opts.push([pr+1,ps]);
+      if (pr>0 && !walls[pr-1][ps].r) opts.push([pr-1,ps]);
+      if (!walls[pr][ps].t) opts.push([pr,(ps+1)%NS]);
+      if (!walls[pr][(ps-1+NS)%NS].t) opts.push([pr,(ps-1+NS)%NS]);
+      if (opts.length){ var o = opts[(rng()*opts.length)|0]; pr=o[0]; ps=o[1]; }
+    }
+    var pp = cellXY(pr,ps);
+    var pg = ctx.createRadialGradient(pp[0],pp[1],1,pp[0],pp[1],26);
+    pg.addColorStop(0,'hsla('+((hue+60)%360)+',100%,80%,1)');
+    pg.addColorStop(1,'hsla('+((hue+60)%360)+',100%,70%,0)');
+    ctx.fillStyle = pg;
+    ctx.beginPath(); ctx.arc(pp[0],pp[1],26,0,6.2832); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(pp[0],pp[1],4,0,6.2832); ctx.fill();
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 9. SWARM — wave-directed particle bursts ----------
+ * from: spawn-director — distilled capability:
+ * "enemy wave pacing (spawn/swarm curves, unlock schedule, kill reporting)"
+ * genome.p: {hue:0-360, intensity:1-5} */
+TYPES.push({kind:'swarm', icon:'\u{1F41D}', label:'Swarm',
+ params: function(r){ return {hue:r()*360, intensity:1+((r()*5)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Swarm '+((seed%900)+100), sub = 'wave pacing — from the spawn director';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, inten = Math.round(P.intensity);
+  /* simplified director: unlock schedule + swarm timer */
+  var t = 0, spawnT = 0, swarmT = 8, wave = 0;
+  var parts = [];
+  function spawnBurst(n, big){
+    for (var i=0;i<n;i++){
+      var a = rng()*6.2832, sp = (big? 60:20)+rng()*(big?140:60);
+      parts.push({x:Wd/2+(rng()-0.5)*40, y:Ht/2+(rng()-0.5)*40,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+        life:1, decay:0.25+rng()*0.4, r:big?2+rng()*4:1+rng()*2.5,
+        hue:(hue+rng()*50)%360});
+    }
+  }
+  var raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt;
+    /* director tick */
+    spawnT -= dt; swarmT -= dt;
+    if (spawnT <= 0){ spawnBurst(4+inten*3, false); spawnT = Math.max(0.25, 1.2 - wave*0.08); }
+    if (swarmT <= 0){ wave++; spawnBurst(20+inten*12, true); swarmT = 6+wave*0.8; }
+    ctx.clearRect(0,0,Wd,Ht);
+    var bg = ctx.createRadialGradient(Wd/2,Ht/2,10,Wd/2,Ht/2,Math.max(Wd,Ht)*0.7);
+    bg.addColorStop(0,'#0a0714'); bg.addColorStop(1,'#030208');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=parts.length-1;i>=0;i--){
+      var p = parts[i];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.vx *= 0.985; p.vy *= 0.985;
+      p.life -= p.decay*dt;
+      if (p.life <= 0){ parts.splice(i,1); continue; }
+      var g = ctx.createRadialGradient(p.x,p.y,0.5,p.x,p.y,p.r*4);
+      g.addColorStop(0,'hsla('+p.hue+',95%,70%,'+(0.8*p.life)+')');
+      g.addColorStop(1,'hsla('+p.hue+',95%,65%,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r*4,0,6.2832); ctx.fill();
+    }
+    ctx.restore();
+    /* wave banner */
+    ctx.fillStyle = 'rgba(200,180,255,.5)';
+    ctx.font = '12px system-ui';
+    ctx.fillText('wave '+wave+' · next swarm in '+Math.max(0,swarmT).toFixed(1)+'s', 14, Ht-14);
+    if (parts.length > 900) parts.splice(0, parts.length-900);
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 10. SPECTRUM — flowing planet-palette gradients ----------
+ * from: palettes (PTEX/MAT) — distilled capability:
+ * "10 planet-type color tables; schema is the value"
+ * genome.p: {pal:0-7, flow:0-2} */
+TYPES.push({kind:'spectrum', icon:'\u{1F308}', label:'Spectrum',
+ params: function(r){ return {pal:(r()*PALS.length)|0, flow:(r()*3)|0}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Spectrum '+((seed%900)+100), sub = 'palette fields — from the color tables';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var pal = PALS[P.pal % PALS.length];
+  var flow = P.flow;
+  /* collect palette colors into a band */
+  var cols = [pal.deep, pal.shallow, pal.land[0], pal.land[1], pal.atmo];
+  var t = rng()*100, raf = 0;
+  var NB = 7, bands = [];
+  for (var i=0;i<NB;i++){
+    bands.push({c:cols[i%cols.length], y0:i/NB, th:0.5+rng()*0.9,
+      f:0.8+rng()*2.2, sp:0.2+rng()*0.8, ph:rng()*6.28, amp:Ht*(0.02+rng()*0.05)});
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    t += 0.016;
+    ctx.clearRect(0,0,Wd,Ht);
+    ctx.fillStyle = '#04060c'; ctx.fillRect(0,0,Wd,Ht);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i=0;i<NB;i++){
+      var b = bands[i];
+      ctx.beginPath();
+      for (var x=0;x<=Wd;x+=6){
+        var y;
+        if (flow===0) y = Ht*(b.y0 + Math.sin(x/Wd*6.28*b.f + t*b.sp + b.ph)*0.06);
+        else if (flow===1) y = Ht*(b.y0 + Math.sin(x/Wd*6.28*b.f - t*b.sp*1.4 + b.ph)*0.09 + Math.sin(t*0.7+b.ph)*0.03);
+        else y = Ht*(0.5 + (b.y0-0.5)*0.7 + Math.sin(x/Wd*12.56*b.f*0.5 + t*b.sp*2 + b.ph)*b.amp/Ht*3);
+        if (x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      for (var x2=Wd;x2>=0;x2-=6){
+        var y2;
+        if (flow===0) y2 = Ht*(b.y0 + Math.sin(x2/Wd*6.28*b.f + t*b.sp + b.ph)*0.06) + Ht*0.09*b.th;
+        else if (flow===1) y2 = Ht*(b.y0 + Math.sin(x2/Wd*6.28*b.f - t*b.sp*1.4 + b.ph)*0.09 + Math.sin(t*0.7+b.ph)*0.03) + Ht*0.11*b.th;
+        else y2 = Ht*(0.5 + (b.y0-0.5)*0.7 + Math.sin(x2/Wd*12.56*b.f*0.5 + t*b.sp*2 + b.ph)*b.amp/Ht*3) + Ht*0.07*b.th;
+        ctx.lineTo(x2,y2);
+      }
+      ctx.closePath();
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = b.c;
+      ctx.shadowColor = b.c; ctx.shadowBlur = 24;
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
 /* ================= WONDER FACTORY ================= */
 function makeWonder(genome){
   var g = sanitizeGenome(genome);
@@ -8468,6 +9672,93 @@ if (typeof TOOLS !== 'undefined'){
     unmount: function(){ window.WonderFeed.unmount(); }
   };
 }
+})();
+
+</script>
+<script>
+/* Component Distiller — the creation-pipeline stage that turns components
+ * into a distilled capability catalog (window.APP_DATA, inlined by build).
+ * Shows: components in -> capabilities out, new/known/marginal counts,
+ * searchable catalog, and the flagged-useless list (report only). */
+(function(){
+'use strict';
+TOOLS.distiller = {
+  mount: function(host){
+    var D = window.APP_DATA || {meta:{}, capabilities:[], flagged_useless:[]};
+    var caps = D.capabilities || [];
+    var meta = D.meta || {};
+
+    function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+    var counts = {new:0, known:0, marginal:0, review:0, unreviewed:0};
+    caps.forEach(function(c){ if (counts[c.status]!==undefined) counts[c.status]++; });
+
+    host.innerHTML =
+      '<div class="t-controls"><span class="meta">Distilled '+(meta.distilled_at||'—')+
+      ' · '+caps.length+' capabilities from '+(meta.components_scanned||'?')+' components</span></div>'+
+      '<div class="d-counts">'+
+        '<div class="d-count"><b>'+counts['new']+'</b><span>new</span></div>'+
+        '<div class="d-count"><b>'+counts.known+'</b><span>known</span></div>'+
+        '<div class="d-count"><b>'+counts.marginal+'</b><span>marginal</span></div>'+
+        '<div class="d-count"><b>'+counts.review+'</b><span>needs review</span></div>'+
+        '<div class="d-count"><b>'+counts.unreviewed+'</b><span>unreviewed</span></div>'+
+      '</div>'+
+      '<div class="t-controls"><input id="d-search" placeholder="search capabilities… (e.g. noise, audio, maze)" '+
+      'spellcheck="false" style="width:min(420px,90%)"></div>'+
+      '<div id="d-list"></div>'+
+      ((D.flagged_useless||[]).length ?
+        '<div class="eyebrow" style="margin-top:18px">Flagged — zero unique capabilities (report only, nothing deleted)</div>'+
+        '<div class="d-flagged">'+D.flagged_useless.map(function(f){return '<span class="d-chip">'+esc(f)+'</span>';}).join('')+'</div>'
+        : '');
+
+    var st = document.createElement('style');
+    st.textContent =
+      '.d-counts{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 12px}'+
+      '.d-count{flex:1;min-width:88px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);'+
+      'border-radius:12px;padding:10px 12px;text-align:center}'+
+      '.d-count b{display:block;font-size:22px;color:#eef}'+
+      '.d-count span{font-size:11px;opacity:.6;text-transform:uppercase;letter-spacing:.06em}'+
+      '.d-cap{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:12px;'+
+      'padding:12px 14px;margin:8px 0}'+
+      '.d-cap h4{margin:0 0 4px;font-size:14px;color:#eef}'+
+      '.d-cap h4 .d-verb{color:#8fd0ff;font-weight:400}'+
+      '.d-cap .meta{font-size:12px}'+
+      '.d-cap .d-knobs{margin:6px 0 0;font-size:12px;color:#9ab}'+
+      '.d-cap .d-notes{margin:6px 0 0;font-size:12px;color:#c9b8e8;font-style:italic}'+
+      '.d-st{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;'+
+      'padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}'+
+      '.d-st-new{background:rgba(120,255,170,.14);color:#8fe8ab}'+
+      '.d-st-known{background:rgba(140,170,255,.12);color:#9ab8ff}'+
+      '.d-st-marginal{background:rgba(255,255,255,.07);color:#8a9ab0}'+
+      '.d-st-review{background:rgba(255,190,90,.14);color:#ffcf8a}'+
+      '.d-st-unreviewed{background:rgba(255,120,120,.12);color:#ff9a9a}'+
+      '.d-flagged{margin-top:8px}'+
+      '.d-chip{display:inline-block;background:rgba(255,120,120,.08);border:1px solid rgba(255,120,120,.25);'+
+      'color:#e8a0a0;border-radius:999px;padding:4px 12px;font-size:12px;margin:0 6px 6px 0}';
+    host.appendChild(st);
+
+    var list = host.querySelector('#d-list');
+    function render(filter){
+      var f = (filter||'').toLowerCase();
+      var h = '';
+      caps.forEach(function(c){
+        var hay = (c.verb+' '+c.what+' '+c.component+' '+(c.knobs||[]).join(' ')+' '+(c.outputs||[]).join(' ')+' '+(c.notes||'')).toLowerCase();
+        if (f && hay.indexOf(f)<0) return;
+        h += '<div class="d-cap"><h4><span class="d-verb">'+esc(c.verb)+'</span> '+esc(c.what)+
+             '<span class="d-st d-st-'+esc(c.status)+'">'+esc(c.status)+'</span></h4>'+
+             '<div class="meta">'+esc(c.component)+' · '+esc(c.code_ref)+'</div>'+
+             (c.knobs&&c.knobs.length ? '<div class="d-knobs">knobs: '+c.knobs.map(esc).join(', ')+'</div>' : '')+
+             (c.outputs&&c.outputs.length ? '<div class="d-knobs">outputs: '+c.outputs.map(esc).join(', ')+'</div>' : '')+
+             (c.notes ? '<div class="d-notes">'+esc(c.notes)+'</div>' : '')+
+             '</div>';
+      });
+      list.innerHTML = h || '<p class="meta">No capabilities match.</p>';
+    }
+    host.querySelector('#d-search').addEventListener('input', function(e){ render(e.target.value); });
+    render('');
+  },
+  unmount: function(){}
+};
 })();
 
 </script>
