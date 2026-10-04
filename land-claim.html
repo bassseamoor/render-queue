@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>land claim — prototype</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overflow:hidden; background:#0e1420; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+    user-select:none; -webkit-user-select:none; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  #topbar { position:fixed; top:0; left:0; right:0; z-index:5; display:flex; align-items:center;
+    padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 0; pointer-events:none; }
+  #coins { background:rgba(10,14,22,.72); border:1px solid rgba(232,163,61,.4); color:#f0c884;
+    font-weight:800; font-size:15px; padding:8px 16px; border-radius:999px;
+    font-variant-numeric:tabular-nums; backdrop-filter:blur(6px); }
+  #plotinfo { margin:0 auto; background:rgba(10,14,22,.72); border:1px solid rgba(255,255,255,.12);
+    color:#cfd4e0; font-size:12.5px; padding:8px 16px; border-radius:999px; backdrop-filter:blur(6px);
+    max-width:62vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #plotinfo b { color:#fff; }
+  #helpBtn { pointer-events:auto; background:rgba(10,14,22,.72); border:1px solid rgba(255,255,255,.16);
+    color:#9aa0ae; font-size:15px; font-weight:700; width:38px; height:38px; border-radius:50%;
+    cursor:pointer; backdrop-filter:blur(6px); }
+  #claimBtn { position:fixed; z-index:6; left:50%; transform:translateX(-50%) translateY(20px);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 92px);
+    background:#e8a33d; color:#14100a; border:0; font-size:17px; font-weight:800;
+    padding:15px 38px; border-radius:999px; cursor:pointer; opacity:0; pointer-events:none;
+    transition:all .22s; box-shadow:0 6px 24px rgba(232,163,61,.4); }
+  #claimBtn.show { opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0); }
+  #claimBtn:active { transform:translateX(-50%) scale(.95); }
+  #cmdbar { position:fixed; z-index:6; left:12px; right:12px;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 14px); display:flex; gap:8px; }
+  #cmd { flex:1; background:rgba(10,14,22,.82); border:1px solid rgba(255,255,255,.16);
+    border-radius:12px; color:#e8eaf0; font-size:15px; padding:13px 14px; outline:none;
+    font-family:ui-monospace, Menlo, monospace; backdrop-filter:blur(6px); }
+  #cmd:focus { border-color:rgba(232,163,61,.55); }
+  #sendBtn { background:rgba(232,163,61,.16); border:1px solid rgba(232,163,61,.5); color:#f0c884;
+    font-size:15px; font-weight:700; padding:0 20px; border-radius:12px; cursor:pointer; }
+  #log { position:fixed; z-index:5; left:14px; right:14px;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 66px); pointer-events:none;
+    display:flex; flex-direction:column-reverse; gap:4px; max-height:30vh; overflow:hidden; }
+  #log div { font-family:ui-monospace, Menlo, monospace; font-size:12px; color:#cfd4e0;
+    background:rgba(10,14,22,.78); border-radius:8px; padding:7px 11px; width:fit-content;
+    max-width:100%; animation:fadein .2s; border:1px solid rgba(255,255,255,.07); }
+  #log div.err { color:#ff9a9a; border-color:rgba(255,120,120,.25); }
+  #log div.good { color:#a8e6a3; border-color:rgba(120,255,140,.2); }
+  #log div.sys { color:#8a90a0; }
+  @keyframes fadein { from { opacity:0; transform:translateY(6px);} }
+  #deny { position:fixed; inset:0; z-index:4; pointer-events:none; opacity:0;
+    box-shadow:inset 0 0 120px 40px rgba(255,60,60,.45); transition:opacity .3s; }
+  #help { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
+    background:rgba(4,6,10,.7); padding:24px; backdrop-filter:blur(4px); }
+  #help.show { display:flex; }
+  #helpCard { background:#141821; border:1px solid rgba(255,255,255,.12); border-radius:18px;
+    padding:22px; max-width:420px; width:100%; max-height:80vh; overflow-y:auto; }
+  #helpCard h2 { font-size:18px; margin-bottom:10px; }
+  #helpCard h3 { font-size:13px; color:#e8a33d; margin:14px 0 6px; letter-spacing:.06em; }
+  #helpCard p, #helpCard li { font-size:13px; color:#9aa0ae; line-height:1.6; }
+  #helpCard ul { padding-left:18px; }
+  #helpCard code { font-family:ui-monospace,Menlo,monospace; color:#f0c884; font-size:12px;
+    background:rgba(232,163,61,.1); padding:1px 6px; border-radius:5px; }
+  #helpClose { margin-top:16px; width:100%; background:#e8a33d; color:#14100a; border:0;
+    font-size:15px; font-weight:800; padding:12px; border-radius:12px; cursor:pointer; }
+  #buildMenu { position:fixed; z-index:15; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 150px);
+    transform:translateX(-50%) translateY(16px); background:#141821; border:1px solid rgba(255,255,255,.14);
+    border-radius:16px; padding:14px; display:none; gap:8px; width:min(92vw,380px); }
+  #buildMenu.show { display:block; transform:translateX(-50%) translateY(0); transition:all .2s; }
+  #buildMenu h3 { font-size:14px; margin-bottom:10px; color:#f0c884; }
+  .bp { display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:#e8eaf0;
+    border-radius:12px; padding:12px; margin-bottom:8px; cursor:pointer; font-size:14px; }
+  .bp:active { transform:scale(.98); }
+  .bp .ico { font-size:26px; }
+  .bp .pr { margin-left:auto; color:#f0c884; font-weight:700; font-variant-numeric:tabular-nums; }
+  .bp small { display:block; color:#8a90a0; font-size:11px; margin-top:2px; }
+  #joy { position:fixed; z-index:6; width:110px; height:110px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.2); background:rgba(255,255,255,.05); display:none;
+    pointer-events:none; }
+  #stick { position:absolute; left:50%; top:50%; width:48px; height:48px; border-radius:50%;
+    background:rgba(232,163,61,.75); transform:translate(-50%,-50%); }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="deny"></div>
+<div id="topbar">
+  <div id="coins">◉ <span id="coinN">500</span></div>
+  <div id="plotinfo">wilderness</div>
+  <button id="helpBtn">?</button>
+</div>
+<button id="claimBtn">CLAIM · ◉100</button>
+<div id="log"></div>
+<div id="cmdbar">
+  <input id="cmd" placeholder='type /help for commands' autocomplete="off" autocapitalize="off" spellcheck="false">
+  <button id="sendBtn">⏎</button>
+</div>
+<div id="joy"><div id="stick"></div></div>
+<div id="buildMenu">
+  <h3>🏗 Build on this plot</h3>
+  <div id="bpList"></div>
+</div>
+<div id="help">
+  <div id="helpCard">
+    <h2>Land claim — how it works</h2>
+    <p>Walk the grid. Unclaimed plots are <b>wilderness</b> — claim one for ◉100. Amber = yours, red = someone else's. Their land blocks you: you can't claim or build on it.</p>
+    <h3>COMMANDS</h3>
+    <ul>
+      <li><code>/claim</code> — claim the plot you're standing on</li>
+      <li><code>/unclaim</code> — release your plot (50% refund)</li>
+      <li><code>/build</code> — blueprint menu for this plot</li>
+      <li><code>/balance</code> — your coins</li>
+      <li><code>/give 500</code> — debug coins</li>
+    </ul>
+    <h3>OPEN DESIGN QUESTIONS</h3>
+    <ul>
+      <li><b>Building:</b> blueprints (pick a house, pay, it appears) vs free wall-by-wall building vs describe-it ("a cabin with a porch") and the system prices the resources?</li>
+      <li><b>Pricing:</b> flat ◉100/plot, or scale with distance from spawn / plot size / neighbors?</li>
+      <li><b>Upkeep:</b> do claims decay if you never visit? Can claims be sold or traded?</li>
+      <li><b>Plot size:</b> one fixed grid size, or let players merge adjacent plots?</li>
+    </ul>
+    <button id="helpClose">back to the land</button>
+  </div>
+</div>
+<script>
+'use strict';
+/* ================= land-claim prototype =================
+ * Grid plots, walk-to-claim, currency, blueprint building.
+ * Knobs at top of CONFIG. No dependencies. */
+
+/* ---------- config ---------- */
+const GRID = 24;            // plots per side
+const PLOT = 52;            // world px per plot
+const WORLD = GRID * PLOT;
+const CLAIM_COST = 100;
+const UNCLAIM_REFUND = 0.5;
+const BLUEPRINTS = [
+  {id:'hut',   name:'Hut',   ico:'🛖', cost:150, desc:'4×4, thatch roof. Starter shelter.'},
+  {id:'house', name:'House', ico:'🏠', cost:300, desc:'6×5, hearth + windows. A real home.'},
+  {id:'tower', name:'Tower', ico:'🗼', cost:500, desc:'3×3, three floors. See everything.'},
+];
+
+/* ---------- state ---------- */
+const plots = new Map(); // "x,y" -> {owner, name, building}
+function pkey(x,y){ return x+','+y; }
+function getPlot(x,y){ return plots.get(pkey(x,y)) || null; }
+const player = { x: WORLD/2, y: WORLD/2, vx:0, vy:0, dir:0, coins:500, name:'you' };
+// seed some neighbors so "already claimed" is real
+[['Mara',9,9],['Mara',10,9],['Mara',9,10],['Mara',10,10],
+ ['Juno',14,8],['Theo',7,14],['Theo',15,15]
+].forEach(([n,x,y])=>plots.set(pkey(x,y),{owner:n,name:n,building:null}));
+
+/* ---------- canvas ---------- */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let DPR=1, VW=0, VH=0;
+function resize(){ DPR=Math.min(devicePixelRatio||1,2); VW=innerWidth; VH=innerHeight;
+  cv.width=VW*DPR; cv.height=VH*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); }
+addEventListener('resize',resize); resize();
+
+/* pre-render terrain */
+const terr = document.createElement('canvas');
+terr.width = terr.height = WORLD;
+(function(){
+  const t = terr.getContext('2d');
+  // value noise
+  const g = 32, vals = [];
+  let s = 12345;
+  const rnd = ()=>{ s=(s*16807)%2147483647; return s/2147483647; };
+  for(let i=0;i<g*g;i++) vals.push(rnd());
+  function noise(x,y){
+    const xi=Math.floor(x), yi=Math.floor(y), xf=x-xi, yf=y-yi;
+    const s2=(a,b)=>vals[((b%g)*g+(a%g))];
+    const u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf);
+    return s2(xi,yi)*(1-u)*(1-v)+s2(xi+1,yi)*u*(1-v)+s2(xi,yi+1)*(1-u)*v+s2(xi+1,yi+1)*u*v;
+  }
+  const img = t.createImageData(WORLD,WORLD), d = img.data;
+  for(let y=0;y<WORLD;y+=2)for(let x=0;x<WORLD;x+=2){
+    const n = noise(x/WORLD*g, y/WORLD*g)*0.6 + noise(x/WORLD*g*3, y/WORLD*g*3)*0.4;
+    let r=44+n*26, gg=74+n*36, b=52+n*22;
+    for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+      const i=(((y+dy)*WORLD)+(x+dx))*4;
+      d[i]=r; d[i+1]=gg; d[i+2]=b; d[i+3]=255;
+    }
+  }
+  t.putImageData(img,0,0);
+})();
+
+/* ---------- input: keys + touch joystick ---------- */
+const keys = {};
+addEventListener('keydown',e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(e.key==='/' ){ e.preventDefault(); cmdInput.focus(); }
+  if(e.key.toLowerCase()==='b'){ openBuild(); }
+});
+addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+const joy = document.getElementById('joy'), stick = document.getElementById('stick');
+let joyId=null, joyOX=0, joyOY=0, joyDX=0, joyDY=0;
+cv.addEventListener('pointerdown',e=>{
+  joyId=e.pointerId; joyOX=e.clientX; joyOY=e.clientY; joyDX=joyDY=0;
+  joy.style.display='block'; joy.style.left=(joyOX-55)+'px'; joy.style.top=(joyOY-55)+'px';
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointermove',e=>{
+  if(e.pointerId!==joyId)return;
+  let dx=e.clientX-joyOX, dy=e.clientY-joyOY;
+  const m=Math.hypot(dx,dy), max=44;
+  if(m>max){ dx=dx/m*max; dy=dy/m*max; }
+  joyDX=dx/max; joyDY=dy/max;
+  stick.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+});
+const joyEnd=e=>{ if(e.pointerId===joyId){ joyId=null; joyDX=joyDY=0; joy.style.display='none';
+  stick.style.transform='translate(-50%,-50%)'; } };
+cv.addEventListener('pointerup',joyEnd); cv.addEventListener('pointercancel',joyEnd);
+
+/* ---------- camera ---------- */
+const cam = {x:player.x, y:player.y};
+
+/* ---------- ui ---------- */
+const coinN=document.getElementById('coinN'), plotinfo=document.getElementById('plotinfo');
+const claimBtn=document.getElementById('claimBtn'), logEl=document.getElementById('log');
+const cmdInput=document.getElementById('cmd'), denyEl=document.getElementById('deny');
+function log(msg, cls){ const d=document.createElement('div'); if(cls)d.className=cls;
+  d.textContent=msg; logEl.prepend(d);
+  while(logEl.children.length>4) logEl.lastChild.remove();
+  setTimeout(()=>{ if(d.parentNode) d.style.opacity='0.55'; }, 5000); }
+function denyPulse(){ denyEl.style.opacity='1'; setTimeout(()=>denyEl.style.opacity='0',350); }
+function plotAt(x,y){ return [Math.floor(x/PLOT), Math.floor(y/PLOT)]; }
+function refreshCoins(){ coinN.textContent = player.coins; }
+
+/* ---------- actions ---------- */
+function doClaim(){
+  const [px,py]=plotAt(player.x,player.y);
+  if(px<0||py<0||px>=GRID||py>=GRID){ log('outside the claimable world','err'); return; }
+  const p=getPlot(px,py);
+  if(p){ log(p.owner===player.name?'you already own this plot':'⛔ claimed by '+p.owner+' — you can\'t claim this','err');
+    if(p.owner!==player.name) denyPulse(); return; }
+  if(player.coins<CLAIM_COST){ log('not enough coins (need ◉'+CLAIM_COST+')','err'); return; }
+  player.coins-=CLAIM_COST; refreshCoins();
+  plots.set(pkey(px,py),{owner:player.name,name:player.name,building:null});
+  log('✔ plot claimed — ◉'+CLAIM_COST,'good');
+}
+function doUnclaim(){
+  const [px,py]=plotAt(player.x,player.y);
+  const p=getPlot(px,py);
+  if(!p||p.owner!==player.name){ log('you don\'t own this plot','err'); return; }
+  const refund=Math.floor(CLAIM_COST*UNCLAIM_REFUND);
+  player.coins+=refund; refreshCoins();
+  plots.delete(pkey(px,py));
+  log('plot released — +◉'+refund+(p.building?' (building demolished)':''),'sys');
+}
+function doBuild(id){
+  const [px,py]=plotAt(player.x,player.y);
+  const p=getPlot(px,py);
+  if(!p||p.owner!==player.name){ log('build on your own claimed land first','err'); return; }
+  if(p.building){ log('this plot already has a '+p.building,'err'); return; }
+  const bp=BLUEPRINTS.find(b=>b.id===(id||'').toLowerCase());
+  if(!bp){ openBuild(); return; }
+  if(player.coins<bp.cost){ log('not enough coins for '+bp.name+' (◉'+bp.cost+')','err'); return; }
+  player.coins-=bp.cost; refreshCoins(); p.building=bp.id;
+  closeBuild(); log('🏗 '+bp.name+' raised — ◉'+bp.cost,'good');
+}
+function openBuild(){
+  const [px,py]=plotAt(player.x,player.y);
+  const p=getPlot(px,py);
+  if(!p||p.owner!==player.name){ log('claim a plot first, then build on it','err'); return; }
+  if(p.building){ log('already a '+p.building+' here — /unclaim clears it','err'); return; }
+  const list=document.getElementById('bpList'); list.innerHTML='';
+  BLUEPRINTS.forEach(bp=>{
+    const b=document.createElement('button'); b.className='bp';
+    b.innerHTML=`<span class="ico">${bp.ico}</span><span>${bp.name}<small>${bp.desc}</small></span><span class="pr">◉${bp.cost}</span>`;
+    b.onclick=()=>doBuild(bp.id); list.appendChild(b);
+  });
+  document.getElementById('buildMenu').classList.add('show');
+}
+function closeBuild(){ document.getElementById('buildMenu').classList.remove('show'); }
+
+function runCmd(raw){
+  const parts=raw.trim().split(/\s+/), cmd=(parts[0]||'').toLowerCase(), arg=parts[1];
+  if(!cmd) return;
+  if(cmd==='/claim')doClaim();
+  else if(cmd==='/unclaim')doUnclaim();
+  else if(cmd==='/build')doBuild(arg);
+  else if(cmd==='/balance')log('◉'+player.coins,'sys');
+  else if(cmd==='/give'){ const n=Math.max(0,parseInt(arg)||0); player.coins+=n; refreshCoins(); log('+◉'+n+' (debug)','sys'); }
+  else if(cmd==='/help')document.getElementById('help').classList.add('show');
+  else log('unknown command — /help','err');
+}
+document.getElementById('sendBtn').onclick=()=>{ runCmd(cmdInput.value); cmdInput.value=''; cmdInput.blur(); };
+cmdInput.addEventListener('keydown',e=>{ if(e.key==='Enter'){ runCmd(cmdInput.value); cmdInput.value=''; cmdInput.blur(); }
+  e.stopPropagation(); });
+claimBtn.onclick=doClaim;
+document.getElementById('helpBtn').onclick=()=>document.getElementById('help').classList.add('show');
+document.getElementById('helpClose').onclick=()=>document.getElementById('help').classList.remove('show');
+cv.addEventListener('pointerdown',()=>closeBuild());
+
+/* ---------- render ---------- */
+function drawBuilding(x,y,id,t){
+  const cx=x+PLOT/2, by=y+PLOT-8;
+  ctx.fillStyle='rgba(0,0,0,.3)';
+  ctx.beginPath(); ctx.ellipse(cx,by+4,20,7,0,0,7); ctx.fill();
+  if(id==='hut'){
+    ctx.fillStyle='#8a6f4d'; ctx.fillRect(cx-16,by-22,32,22);
+    ctx.fillStyle='#5d4a33'; ctx.beginPath();
+    ctx.moveTo(cx-20,by-22); ctx.lineTo(cx,by-36); ctx.lineTo(cx+20,by-22); ctx.fill();
+    ctx.fillStyle='#2c2118'; ctx.fillRect(cx-5,by-14,10,14);
+  }else if(id==='house'){
+    ctx.fillStyle='#a0855e'; ctx.fillRect(cx-20,by-30,40,30);
+    ctx.fillStyle='#6e3b32'; ctx.beginPath();
+    ctx.moveTo(cx-24,by-30); ctx.lineTo(cx,by-48); ctx.lineTo(cx+24,by-30); ctx.fill();
+    ctx.fillStyle='#ffe9a8'; ctx.fillRect(cx-15,by-24,8,8); ctx.fillRect(cx+7,by-24,8,8);
+    ctx.fillStyle='#2c2118'; ctx.fillRect(cx-5,by-16,10,16);
+  }else{ // tower
+    ctx.fillStyle='#7d7f8a'; ctx.fillRect(cx-12,by-64,24,64);
+    for(let i=0;i<3;i++){ ctx.fillRect(cx-12+i*9,by-72,6,8); }
+    ctx.fillStyle='#ffe9a8'; ctx.fillRect(cx-6,by-52,12,8); ctx.fillRect(cx-6,by-34,12,8);
+  }
+}
+
+let lastT=performance.now(), bob=0, wasIn=null;
+function frame(t){
+  const dt=Math.min(.05,(t-lastT)/1000); lastT=t; bob+=dt;
+  // movement
+  let ix=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0)+joyDX;
+  let iy=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0)+joyDY;
+  const m=Math.hypot(ix,iy);
+  if(m>1){ ix/=m; iy/=m; }
+  const sp=230;
+  player.vx=ix*sp; player.vy=iy*sp;
+  player.x=Math.max(PLOT/2,Math.min(WORLD-PLOT/2,player.x+player.vx*dt));
+  player.y=Math.max(PLOT/2,Math.min(WORLD-PLOT/2,player.y+player.vy*dt));
+  if(m>0.1)player.dir=Math.atan2(iy,ix);
+  cam.x+=(player.x-cam.x)*Math.min(1,dt*6);
+  cam.y+=(player.y-cam.y)*Math.min(1,dt*6);
+
+  // draw
+  ctx.fillStyle='#0e1420'; ctx.fillRect(0,0,VW,VH);
+  const ox=VW/2-cam.x, oy=VH/2-cam.y;
+  ctx.drawImage(terr,ox,oy);
+  // grid
+  const x0=Math.max(0,Math.floor((cam.x-VW/2)/PLOT)), x1=Math.min(GRID-1,Math.ceil((cam.x+VW/2)/PLOT));
+  const y0=Math.max(0,Math.floor((cam.y-VH/2)/PLOT)), y1=Math.min(GRID-1,Math.ceil((cam.y+VH/2)/PLOT));
+  ctx.strokeStyle='rgba(255,255,255,.06)'; ctx.lineWidth=1; ctx.beginPath();
+  for(let x=x0;x<=x1+1;x++){ ctx.moveTo(x*PLOT+ox, y0*PLOT+oy); ctx.lineTo(x*PLOT+ox,(y1+1)*PLOT+oy); }
+  for(let y=y0;y<=y1+1;y++){ ctx.moveTo(x0*PLOT+ox, y*PLOT+oy); ctx.lineTo((x1+1)*PLOT+ox, y*PLOT+oy); }
+  ctx.stroke();
+  // plots
+  const [ppx,ppy]=plotAt(player.x,player.y);
+  plots.forEach((p,k)=>{
+    const [x,y]=k.split(',').map(Number);
+    if(x<x0-1||x>x1+1||y<y0-1||y>y1+1)return;
+    const mine=p.owner===player.name;
+    const X=x*PLOT+ox, Y=y*PLOT+oy;
+    ctx.fillStyle=mine?'rgba(232,163,61,.16)':'rgba(255,80,80,.13)';
+    ctx.fillRect(X+1,Y+1,PLOT-2,PLOT-2);
+    ctx.strokeStyle=mine?'rgba(232,163,61,.85)':'rgba(255,90,90,.7)';
+    ctx.lineWidth=(x===ppx&&y===ppy)?3:1.5;
+    ctx.strokeRect(X+1,Y+1,PLOT-2,PLOT-2);
+    // corner posts
+    ctx.fillStyle=mine?'#e8a33d':'#ff6b6b';
+    [[4,4],[PLOT-4,4],[4,PLOT-4],[PLOT-4,PLOT-4]].forEach(([cx,cy])=>{
+      ctx.beginPath(); ctx.arc(X+cx,Y+cy,3,0,7); ctx.fill(); });
+    if(p.building)drawBuilding(X,Y,p.building,t);
+    // owner label when near
+    const dxp=Math.abs(x-ppx), dyp=Math.abs(y-ppy);
+    if(!mine&&dxp<=2&&dyp<=2){
+      ctx.font='700 11px -apple-system,sans-serif'; ctx.textAlign='center';
+      ctx.fillStyle='rgba(0,0,0,.55)';
+      const w=ctx.measureText(p.owner).width+14;
+      ctx.beginPath(); ctx.roundRect(X+PLOT/2-w/2, Y-20, w, 18, 9); ctx.fill();
+      ctx.fillStyle='#ffb3b3'; ctx.fillText(p.owner, X+PLOT/2, Y-7);
+    }
+  });
+  // highlight current plot if wilderness
+  if(ppx>=0&&ppy>=0&&ppx<GRID&&ppy<GRID&&!getPlot(ppx,ppy)){
+    ctx.strokeStyle='rgba(255,255,255,.4)'; ctx.setLineDash([6,5]); ctx.lineWidth=2;
+    ctx.strokeRect(ppx*PLOT+ox+1,ppy*PLOT+oy+1,PLOT-2,PLOT-2); ctx.setLineDash([]);
+  }
+  // player
+  const px=player.x+ox, py=player.y+oy;
+  const b=Math.sin(bob*10)*1.5;
+  ctx.fillStyle='rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.ellipse(px,py+10,11,4.5,0,0,7); ctx.fill();
+  ctx.fillStyle='#4da3ff';
+  ctx.beginPath(); ctx.arc(px,py+b,10,0,7); ctx.fill();
+  ctx.fillStyle='#2b6cb8';
+  ctx.beginPath(); ctx.arc(px+Math.cos(player.dir)*6,py+b+Math.sin(player.dir)*6,4,0,7); ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.arc(px,py+b,10,0,7); ctx.stroke();
+
+  // plot info + claim button
+  const cur=getPlot(ppx,ppy);
+  let info='wilderness — unclaimed', showClaim=false;
+  if(cur){
+    if(cur.owner===player.name){ info='<b>your plot</b>'+(cur.building?' · '+cur.building:' · /build to raise something'); }
+    else { info='⛔ claimed by <b>'+cur.owner+'</b>'; }
+  } else if(ppx>=0&&ppy>=0&&ppx<GRID&&ppy<GRID){ info='wilderness — claim for ◉'+CLAIM_COST; showClaim=player.coins>=CLAIM_COST; }
+  if(plotinfo._h!==info){ plotinfo.innerHTML=info; plotinfo._h=info; }
+  claimBtn.classList.toggle('show',showClaim);
+  // entering someone's land
+  const curKey=ppx+','+ppy;
+  if(curKey!==wasIn){
+    if(cur&&cur.owner!==player.name){ denyPulse(); log('⛔ claimed by '+cur.owner+' — hands off','err'); }
+    wasIn=curKey;
+  }
+  requestAnimationFrame(frame);
+}
+refreshCoins();
+log('welcome. walk to a glowing plot and CLAIM it — or type /help','sys');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
