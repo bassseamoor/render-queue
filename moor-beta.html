@@ -207,6 +207,22 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0e14;color:#e8ecf5;
 #map-close{position:absolute;top:calc(18px + env(safe-area-inset-top));right:18px;width:42px;height:42px;
   border-radius:50%;border:1px solid rgba(255,255,255,.16);background:rgba(10,14,20,.85);color:#fff;
   font-size:1.1rem;cursor:pointer}
+/* verse map tiers */
+#map-tiers{position:absolute;top:calc(128px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+  display:flex;gap:4px;background:rgba(10,14,20,.88);border:1px solid rgba(91,216,255,.35);
+  border-radius:14px;padding:5px 6px;z-index:5;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+#map-tiers button{background:transparent;border:1px solid transparent;color:#9fb3c8;border-radius:10px;
+  padding:6px 12px;font-size:.78rem;cursor:pointer;white-space:nowrap}
+#map-tiers button.on{background:rgba(91,216,255,.18);border-color:rgba(91,216,255,.55);color:#fff}
+#verse-label{position:absolute;transform:translate(-50%,-160%);font-size:.8rem;color:#bfe6ff;
+  text-shadow:0 0 8px rgba(91,216,255,.9),0 1px 2px #000;white-space:nowrap;pointer-events:none;z-index:4}
+#verse-pop{position:fixed;z-index:60;background:rgba(10,16,24,.96);border:1px solid rgba(91,216,255,.4);
+  border-radius:14px;padding:12px;color:#e8ecf5;box-shadow:0 12px 40px rgba(0,0,0,.6);min-width:200px}
+#verse-pop b{font-size:.95rem}
+#verse-pop small{color:#9fb3c8}
+#verse-pop .prow{display:flex;gap:6px;margin-top:8px}
+#verse-pop button{background:rgba(91,216,255,.14);border:1px solid rgba(91,216,255,.45);color:#fff;
+  border-radius:8px;padding:7px 12px;cursor:pointer}
 
 </style>
 </head>
@@ -242,10 +258,17 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a0e14;color:#e8ecf5;
     </div>
     <div id="map-layers" hidden></div>
     <div id="map-labels"></div>
+    <div id="verse-label" hidden></div>
+    <div id="map-tiers">
+      <button data-tier="surface" class="on">🌍 Surface</button>
+      <button data-tier="planet">🪐 Planet</button>
+      <button data-tier="verse">✨ Verse</button>
+    </div>
     <div id="map-read">Tap the map to read coordinates</div>
     <button id="map-close" aria-label="Close map">✕</button>
   </div>
   <div id="wp-pop" hidden></div>
+  <div id="verse-pop" hidden></div>
   <button id="jump" hidden aria-label="Jump">⬆</button>
   <button id="fly" hidden aria-label="Fly">🕊</button>
   <button id="zoomout" hidden aria-label="Zoom out to orbit">⤢</button>
@@ -3845,11 +3868,19 @@ function norm3(v){ var l=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/l,v[1]/l,v[
 function cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
 
 /* ---------- shaders ---------- */
+/* uPlanetR>0 warps flat world XZ onto a sphere (planet view); uWarpOn=0 skips it */
+var WARP_GLSL=[
+'uniform float uPlanetR; uniform float uWarpOn;',
+'vec3 pwarp(vec3 p){',
+' if(uWarpOn<0.5||uPlanetR<1.0) return p;',
+' vec3 d=normalize(vec3(p.x,uPlanetR,p.z));',
+' return vec3(0.0,-uPlanetR,0.0)+d*(uPlanetR+p.y); }'].join('\n');
 var MESH_VS=[
 'attribute vec3 p; attribute vec3 n; attribute vec3 c;',
 'uniform mat4 uMVP; uniform float uLift;',
 'varying vec3 vN; varying vec3 vC; varying float vY;',
-'void main(){ vec3 q=p; q.y+=uLift; vN=n; vC=c; vY=q.y;',
+WARP_GLSL,
+'void main(){ vec3 q=pwarp(p); q.y+=uLift; vN=n; vC=c; vY=q.y;',
 ' gl_Position=uMVP*vec4(q,1.0); }'].join('\n');
 var MESH_FS=[
 'precision mediump float;',
@@ -3870,7 +3901,8 @@ var LINE_VS=[
 'attribute vec3 p; attribute vec4 c;',
 'uniform mat4 uMVP; uniform float uLift; uniform vec3 uEye; uniform vec2 uDepth;',
 'varying vec4 vC; varying float vD;',
-'void main(){ vec3 q=p; q.y+=uLift; vC=c; gl_Position=uMVP*vec4(q,1.0);',
+WARP_GLSL,
+'void main(){ vec3 q=pwarp(p); q.y+=uLift; vC=c; gl_Position=uMVP*vec4(q,1.0);',
 ' vD=clamp((distance(q,uEye)-uDepth.x)/(uDepth.y-uDepth.x),0.0,1.0); }'].join('\n');
 var LINE_FS=[
 'precision mediump float;',
@@ -3881,10 +3913,11 @@ var LINE_FS=[
 /* lattice nodes: soft glowing points */
 var POINT_VS=[
 'attribute vec3 p; attribute vec4 c;',
-'uniform mat4 uMVP; uniform float uPtScale;',
+'uniform mat4 uMVP; uniform float uPtScale; uniform float uPtSize;',
 'varying vec4 vC;',
-'void main(){ vec4 mv=uMVP*vec4(p,1.0); gl_Position=mv;',
-' gl_PointSize=uPtScale*4.2/max(1.0,mv.w); vC=c; }'].join('\n');
+WARP_GLSL,
+'void main(){ vec4 mv=uMVP*vec4(pwarp(p),1.0); gl_Position=mv;',
+' gl_PointSize=uPtScale*uPtSize/max(1.0,mv.w); vC=c; }'].join('\n');
 var POINT_FS=[
 'precision mediump float; varying vec4 vC;',
 'void main(){ vec2 q=gl_PointCoord-0.5; float d=length(q);',
@@ -3955,12 +3988,16 @@ function create(cv,hooks){
   A.mp_mvp=gl.getUniformLocation(meshP,'uMVP'); A.mp_t=gl.getUniformLocation(meshP,'uTime');
   A.mp_add=gl.getUniformLocation(meshP,'uAdditive'); A.mp_lift=gl.getUniformLocation(meshP,'uLift');
   A.mp_alpha=gl.getUniformLocation(meshP,'uAlpha');
+  A.mp_pr=gl.getUniformLocation(meshP,'uPlanetR'); A.mp_wo=gl.getUniformLocation(meshP,'uWarpOn');
   A.lp_p=gl.getAttribLocation(lineP,'p'); A.lp_c=gl.getAttribLocation(lineP,'c');
   A.lp_mvp=gl.getUniformLocation(lineP,'uMVP'); A.lp_a=gl.getUniformLocation(lineP,'uAlpha');
   A.lp_lift=gl.getUniformLocation(lineP,'uLift');
   A.lp_eye=gl.getUniformLocation(lineP,'uEye'); A.lp_depth=gl.getUniformLocation(lineP,'uDepth');
+  A.lp_pr=gl.getUniformLocation(lineP,'uPlanetR'); A.lp_wo=gl.getUniformLocation(lineP,'uWarpOn');
   A.pp_p=gl.getAttribLocation(pointP,'p'); A.pp_c=gl.getAttribLocation(pointP,'c');
   A.pp_mvp=gl.getUniformLocation(pointP,'uMVP'); A.pp_scale=gl.getUniformLocation(pointP,'uPtScale');
+  A.pp_sz=gl.getUniformLocation(pointP,'uPtSize');
+  A.pp_pr=gl.getUniformLocation(pointP,'uPlanetR'); A.pp_wo=gl.getUniformLocation(pointP,'uWarpOn');
 
   function mkBuf(pos,nrm,col,idx,stride){
     var vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
@@ -3987,9 +4024,16 @@ function create(cv,hooks){
     gl.vertexAttribPointer(A.pp_p,3,gl.FLOAT,false,28,0); gl.enableVertexAttribArray(A.pp_p);
     gl.vertexAttribPointer(A.pp_c,4,gl.FLOAT,false,28,12); gl.enableVertexAttribArray(A.pp_c);
   }
+  function setWarp(kind,on){
+    gl.uniform1f(A[kind+'_pr'],planetR);
+    gl.uniform1f(A[kind+'_wo'],on?1:0);
+  }
+
+  /* ---------- tiers: surface | planet | verse ---------- */
+  var tier='surface', planetR=0, verseMode=false;
 
   /* ---------- static geometry ---------- */
-  var S={key:null,terrain:null,disc:null,glass:null,grid:null,contours:null,nodes:null};
+  var S={key:null,terrain:null,disc:null,glass:null,grid:null,contours:null,nodes:null,planet:null};
   var GLASS_Y=[-4,1,6,11,16,22,30];
   var worldKey=null, lens='normal';
   function buildStatic(key){
@@ -4099,6 +4143,65 @@ function create(cv,hooks){
       cinter.push(cs.pos[k*3],cs.pos[k*3+1],cs.pos[k*3+2],cs.col[k*4],cs.col[k*4+1],cs.col[k*4+2],cs.col[k*4+3]);
     if(S.contours) gl.deleteBuffer(S.contours.vb);
     S.contours=mkBuf(cinter,null,null,null,7);
+  }
+
+  /* ---------- planet backing sphere (drawn in final coords, warp off) ---------- */
+  function buildPlanetSphere(){
+    if(S.planet){ gl.deleteBuffer(S.planet.vb); gl.deleteBuffer(S.planet.ib); S.planet=null; }
+    if(planetR<1) return;
+    var R=planetR-3, SEG=48, ST=24, pos=[],nrm=[],col=[],idx=[], i, j;
+    for(j=0;j<=ST;j++) for(i=0;i<=SEG;i++){
+      var th=i/SEG*Math.PI*2, ph=j/ST*Math.PI;
+      var sx=Math.sin(ph)*Math.cos(th), sy=Math.cos(ph), sz=Math.sin(ph)*Math.sin(th);
+      pos.push(sx*R,-planetR+sy*R,sz*R);
+      nrm.push(sx,sy,sz);
+      var kk=0.5+0.5*sy;
+      col.push(0.05+0.05*kk,0.10+0.07*kk,0.20+0.12*kk);
+    }
+    for(j=0;j<ST;j++) for(i=0;i<SEG;i++){
+      var a=j*(SEG+1)+i, b=a+1, c=a+SEG+1, d=c+1;
+      idx.push(a,c,b, b,c,d);
+    }
+    var inter=[], k;
+    for(k=0;k<pos.length/3;k++)
+      inter.push(pos[k*3],pos[k*3+1],pos[k*3+2],nrm[k*3],nrm[k*3+1],nrm[k*3+2],
+        col[k*3],col[k*3+1],col[k*3+2]);
+    S.planet=mkBuf(inter,null,null,idx,9);
+  }
+
+  /* ---------- verse scene: the whole verse as a star map ---------- */
+  var V={planets:[],currentId:null,buf:null,stars:null,selId:null};
+  function setVerseData(d){
+    V.planets=d.planets||[]; V.currentId=d.currentId||null; V.selId=null;
+    var parr=[];
+    V.planets.forEach(function(pl){ parr.push(pl.x,pl.y,pl.z, pl.r,pl.g,pl.b,1); });
+    if(V.buf) gl.deleteBuffer(V.buf.vb);
+    V.buf=mkBuf(parr,null,null,null,7);
+    if(!V.stars){
+      var sp=[], seed=1234567, i;
+      function rnd(){ seed=(seed*16807)%2147483647; return seed/2147483647; }
+      for(i=0;i<700;i++){
+        var th=rnd()*Math.PI*2, ph=Math.acos(2*rnd()-1), rr=11000+rnd()*2000;
+        sp.push(rr*Math.sin(ph)*Math.cos(th), rr*Math.cos(ph)*0.55, rr*Math.sin(ph)*Math.sin(th));
+      }
+      var sinter=[], k;
+      for(k=0;k<sp.length/3;k++){
+        var b2=0.2+((k*37)%10)/10*0.65;
+        sinter.push(sp[k*3],sp[k*3+1],sp[k*3+2], 0.55,0.65,0.85, b2);
+      }
+      V.stars=mkBuf(sinter,null,null,null,7);
+    }
+  }
+  function pickVerse(sx,sy){
+    var best=null, bd=34, i;
+    for(i=0;i<V.planets.length;i++){
+      var pl=V.planets[i], s=project(pl.x,pl.y,pl.z);
+      if(!s[2]) continue;
+      var d=Math.hypot(s[0]-sx,s[1]-sy);
+      if(d<bd){ bd=d; best=pl; }
+    }
+    if(best) V.selId=best.id;
+    return best;
   }
 
   /* ---------- dynamic markers ---------- */
@@ -4255,6 +4358,7 @@ function create(cv,hooks){
     return mMul(mPersp(FOV,aspect,1,4000),mLookAt(b.eye,[0,2,0],[0,1,0]));
   }
   function pick(sx,sy){
+    if(verseMode||tier==='planet') return null; /* view-only tiers */
     var r=cv.getBoundingClientRect();
     var nx=((sx-r.left)/r.width)*2-1, ny=1-((sy-r.top)/r.height)*2;
     var b=camBasis(), tan=Math.tan(FOV/2), ax=tan*aspect;
@@ -4278,41 +4382,95 @@ function create(cv,hooks){
     var fx=b.eye[0]+d[0]*hi, fz=b.eye[2]+d[2]*hi;
     return [Math.max(-200,Math.min(200,fx)),Math.max(-200,Math.min(200,fz))];
   }
+  function warpJS(x,y,z){
+    if(planetR<1||verseMode) return [x,y,z];
+    var l=Math.sqrt(x*x+planetR*planetR+z*z)||1, r=planetR+y;
+    return [x/l*r, -planetR+planetR/l*r, z/l*r];
+  }
   function project(x,y,z){
     var r=cv.getBoundingClientRect();
-    var q=xPoint(vpMat(),[x,y,z]);
+    var q=xPoint(vpMat(),warpJS(x,y,z));
     return [(q[0]*0.5+0.5)*r.width+r.left,(0.5-q[1]*0.5)*r.height+r.top,q[2]<1];
   }
 
   /* ---------- frame ---------- */
   var layers={terrain:true,glass:true,grid:true,contours:true,claims:true,paths:true,buildings:true,waypoints:true};
+  /* ---------- verse frame ---------- */
+  function renderVerse(t){
+    var mvp=vpMat(), basis=camBasis();
+    gl.useProgram(pointP);
+    gl.uniformMatrix4fv(A.pp_mvp,false,mvp); setWarp('pp',0);
+    gl.uniform1f(A.pp_scale, cv.height/(2*Math.tan(FOV/2)));
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE); gl.depthMask(false);
+    if(V.stars){ bindPoints(V.stars); gl.uniform1f(A.pp_sz,5);
+      gl.drawArrays(gl.POINTS,0,V.stars.count); }
+    if(V.buf){ bindPoints(V.buf); gl.uniform1f(A.pp_sz,42);
+      gl.drawArrays(gl.POINTS,0,V.buf.count); }
+    gl.disable(gl.BLEND); gl.depthMask(true);
+    /* highlight rings: current planet (cyan, pulsing) + tapped (white) */
+    function ring(pl,r,g,b){
+      if(!pl) return;
+      var SEG=40, parr=[], i, rad=70+10*Math.sin(t*3);
+      for(i=0;i<SEG;i++){
+        var a0=i/SEG*Math.PI*2, a1=(i+1)/SEG*Math.PI*2;
+        parr.push(pl.x+Math.cos(a0)*rad,pl.y,pl.z+Math.sin(a0)*rad, r,g,b,1,
+                  pl.x+Math.cos(a1)*rad,pl.y,pl.z+Math.sin(a1)*rad, r,g,b,1);
+      }
+      var rb=mkBuf(parr,null,null,null,7);
+      gl.useProgram(lineP); bindLine(rb);
+      gl.uniformMatrix4fv(A.lp_mvp,false,mvp); setWarp('lp',0);
+      gl.uniform3f(A.lp_eye,basis.eye[0],basis.eye[1],basis.eye[2]);
+      gl.uniform2f(A.lp_depth,view.dist*0.55,view.dist*1.45);
+      gl.uniform1f(A.lp_lift,0); gl.uniform1f(A.lp_a,0.9);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE); gl.depthMask(false);
+      gl.drawArrays(gl.LINES,0,rb.count);
+      gl.disable(gl.BLEND); gl.depthMask(true);
+      gl.deleteBuffer(rb.vb);
+    }
+    var cur=null, sel=null, i;
+    for(i=0;i<V.planets.length;i++){
+      if(V.planets[i].id===V.currentId) cur=V.planets[i];
+      if(V.planets[i].id===V.selId) sel=V.planets[i];
+    }
+    ring(cur,0.45,0.85,1.0); ring(sel,1.0,1.0,1.0);
+  }
+
   function render(tms){
     var t=tms/1000;
     gl.viewport(0,0,cv.width,cv.height);
     gl.clearColor(0.012,0.03,0.055,1);
     gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.DEPTH_TEST);
+    if(verseMode){ renderVerse(t); return; }
     var mvp=vpMat();
+    /* planet backing sphere (already spherical: warp off) */
+    if(planetR>0&&S.planet){
+      gl.useProgram(meshP); bindMesh(S.planet);
+      gl.uniformMatrix4fv(A.mp_mvp,false,mvp); setWarp('mp',0);
+      gl.uniform1f(A.mp_t,t); gl.uniform1f(A.mp_add,0); gl.uniform1f(A.mp_lift,0);
+      gl.disable(gl.BLEND);
+      gl.drawElements(gl.TRIANGLES,S.planet.count,gl.UNSIGNED_INT,0);
+    }
     /* terrain */
     if(layers.terrain&&S.terrain){
       gl.useProgram(meshP); bindMesh(S.terrain);
-      gl.uniformMatrix4fv(A.mp_mvp,false,mvp);
+      gl.uniformMatrix4fv(A.mp_mvp,false,mvp); setWarp('mp',1);
       gl.uniform1f(A.mp_t,t); gl.uniform1f(A.mp_add,0); gl.uniform1f(A.mp_lift,0);
       gl.disable(gl.BLEND);
       gl.drawElements(gl.TRIANGLES,S.terrain.count,gl.UNSIGNED_INT,0);
     }
-    /* table disc */
-    if(S.disc){
+    /* table disc (surface tier only) */
+    if(S.disc&&planetR<1){
       gl.useProgram(meshP); bindMesh(S.disc);
-      gl.uniformMatrix4fv(A.mp_mvp,false,mvp);
+      gl.uniformMatrix4fv(A.mp_mvp,false,mvp); setWarp('mp',1);
       gl.uniform1f(A.mp_t,t); gl.uniform1f(A.mp_add,0); gl.uniform1f(A.mp_lift,0);
       gl.disable(gl.BLEND);
       gl.drawElements(gl.TRIANGLES,S.disc.count,gl.UNSIGNED_INT,0);
     }
-    /* glass panels: faint additive sheen (alpha kept low so 7 panels never wash out) */
-    if(layers.glass&&S.glass){
+    /* glass panels: faint additive sheen (surface tier only) */
+    if(layers.glass&&S.glass&&planetR<1){
       gl.useProgram(meshP); bindMesh(S.glass);
-      gl.uniformMatrix4fv(A.mp_mvp,false,mvp);
+      gl.uniformMatrix4fv(A.mp_mvp,false,mvp); setWarp('mp',1);
       gl.uniform1f(A.mp_t,t); gl.uniform1f(A.mp_add,1); gl.uniform1f(A.mp_lift,0);
       gl.uniform1f(A.mp_alpha,0.12);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
@@ -4323,7 +4481,7 @@ function create(cv,hooks){
     /* lines: grid + contours */
     var basis=camBasis();
     gl.useProgram(lineP);
-    gl.uniformMatrix4fv(A.lp_mvp,false,mvp);
+    gl.uniformMatrix4fv(A.lp_mvp,false,mvp); setWarp('lp',1);
     gl.uniform3f(A.lp_eye,basis.eye[0],basis.eye[1],basis.eye[2]);
     gl.uniform2f(A.lp_depth,view.dist*0.55,view.dist*1.45);
     gl.uniform1f(A.lp_lift,0);
@@ -4336,8 +4494,9 @@ function create(cv,hooks){
     /* lattice nodes: glowing points at major grid intersections */
     if(layers.grid&&S.nodes){
       gl.useProgram(pointP); bindPoints(S.nodes);
-      gl.uniformMatrix4fv(A.pp_mvp,false,mvp);
+      gl.uniformMatrix4fv(A.pp_mvp,false,mvp); setWarp('pp',1);
       gl.uniform1f(A.pp_scale, cv.height/(2*Math.tan(FOV/2)));
+      gl.uniform1f(A.pp_sz,4.2);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
       gl.depthMask(false);
       gl.drawArrays(gl.POINTS,0,S.nodes.count);
@@ -4347,7 +4506,7 @@ function create(cv,hooks){
     var bob=Math.sin(t*2.2)*0.9;
     function drawMeshBuf(b,additive,lift,alpha){
       gl.useProgram(meshP); bindMesh(b);
-      gl.uniformMatrix4fv(A.mp_mvp,false,mvp);
+      gl.uniformMatrix4fv(A.mp_mvp,false,mvp); setWarp('mp',1);
       gl.uniform1f(A.mp_t,t); gl.uniform1f(A.mp_add,additive?1:0); gl.uniform1f(A.mp_lift,lift||0);
       gl.uniform1f(A.mp_alpha,(alpha==null)?1:alpha);
       if(additive){ gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE); gl.depthMask(false); }
@@ -4359,7 +4518,8 @@ function create(cv,hooks){
     if(D.wp){ drawMeshBuf(D.wp,false,0); drawMeshBuf(D.wp,true,bob); } /* waypoints + bob glow */
     if(D.claim) drawMeshBuf(D.claim,true,0);           /* claim glow quads */
     if(D.lines){ gl.useProgram(lineP); bindLine(D.lines);
-      gl.uniformMatrix4fv(A.lp_mvp,false,mvp); gl.uniform1f(A.lp_a,1); gl.uniform1f(A.lp_lift,0);
+      gl.uniformMatrix4fv(A.lp_mvp,false,mvp); setWarp('lp',1);
+      gl.uniform1f(A.lp_a,1); gl.uniform1f(A.lp_lift,0);
       gl.uniform3f(A.lp_eye,basis.eye[0],basis.eye[1],basis.eye[2]);
       gl.uniform2f(A.lp_depth,view.dist*0.55,view.dist*1.45);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
@@ -4368,28 +4528,41 @@ function create(cv,hooks){
     }
     gl.depthMask(true);
   }
-
   function resize(w,h,dpr){
     aspect=w/h;
     cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
   }
+  function setTier(t2){
+    tier=t2;
+    verseMode=(t2==='verse');
+    planetR=(t2==='planet')?2000:0;
+    if(t2==='planet') buildPlanetSphere();
+    else if(S.planet){ gl.deleteBuffer(S.planet.vb); gl.deleteBuffer(S.planet.ib); S.planet=null; }
+  }
+
   function dispose(){
-    [S.terrain,S.disc,S.glass].forEach(function(b){ if(b){gl.deleteBuffer(b.vb);gl.deleteBuffer(b.ib);} });
+    [S.terrain,S.disc,S.glass,S.planet].forEach(function(b){ if(b){gl.deleteBuffer(b.vb);gl.deleteBuffer(b.ib);} });
     [S.grid,S.contours,S.nodes].forEach(function(b){ if(b) gl.deleteBuffer(b.vb); });
     [D.lines].forEach(function(b){ if(b) gl.deleteBuffer(b.vb); });
     [D.solid,D.wp,D.claim].forEach(function(b){ if(b){gl.deleteBuffer(b.vb);gl.deleteBuffer(b.ib);} });
+    [V.buf,V.stars].forEach(function(b){ if(b) gl.deleteBuffer(b.vb); });
   }
 
   return {
     setWorld:buildStatic, setData:buildDynamic, render:render,
     setLens:function(l){ if(l!==lens){ lens=l; buildStatic(worldKey); } },
     getLens:function(){ return lens; },
+    setTier:setTier, getTier:function(){ return tier; },
+    setVerseData:setVerseData, pickVerse:pickVerse,
     pick:pick, project:project, resize:resize, dispose:dispose,
     setLayers:function(l){ for(var k in l) layers[k]=l[k]; },
     getLayers:function(){ return layers; },
     setView:function(v){ for(var k in v) view[k]=v[k]; },
     getView:function(){ return {yaw:view.yaw,pitch:view.pitch,dist:view.dist}; },
-    zoomBy:function(f){ view.dist=Math.max(240,Math.min(1100,view.dist*f)); },
+    zoomBy:function(f){
+      var lim=tier==='verse'?[2000,9000]:tier==='planet'?[900,3500]:[240,1100];
+      view.dist=Math.max(lim[0],Math.min(lim[1],view.dist*f));
+    },
     rotateBy:function(dx){ view.yaw+=dx; }
   };
 }
@@ -5881,8 +6054,72 @@ function bindClaimPop(){
 var mapOpen=false, map3d=null, mapDirty=true, mapInit=false;
 var mapTool='inspect', terrSign=1, mapStroke=null, mapClaimRect=null, wpPopWp=null;
 var mapCursor=null, mapMeasure=null, mapReadXY=null, mapLens='normal';
+/* verse map tiers: surface | planet | verse */
+var mapTier='surface', mapTierManual=false, mapFollow=true, mapAutoTick=0;
 var mapLayers={terrain:true,glass:true,grid:true,contours:true,claims:true,paths:true,buildings:true,waypoints:true};
 var PURPOSES=Object.keys(PURPOSE_COLS);
+
+/* ---------------- verse map: the whole verse, not just the flat plane ---------------- */
+function hashStr(s){ var h=2166136261; for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function versePlanets(){
+  var secs={}, out=[];
+  allPlanets().forEach(function(e){
+    if(!(e.sec.id in secs)) secs[e.sec.id]=Object.keys(secs).length;
+    out.push({id:e.p.id,name:e.p.name,sec:e.sec.name,secIdx:secs[e.sec.id]});
+  });
+  var pal=[[0.45,0.75,1],[0.6,1,0.6],[1,0.8,0.45],[1,0.55,0.9],[0.75,0.65,1],[0.55,1,0.9]];
+  return out.map(function(p){
+    var h=hashStr(p.id), arm=p.secIdx%4;
+    var hf=(h%1000)/1000, r=350+hf*1150;
+    var t=arm*Math.PI/2+hf*4.5+(((h>>10)%100)/100)*0.6; /* winding spiral arms */
+    var c=pal[p.secIdx%pal.length];
+    return {id:p.id,name:p.name,sec:p.sec,
+      x:Math.cos(t)*r, y:(hf-0.5)*360, z:Math.sin(t)*r,
+      r:c[0],g:c[1],b:c[2]};
+  });
+}
+function currentPid(){ var w=activeWorld(); var s=w?w.seed:''; return s.indexOf('moor:')===0?s.slice(5):null; }
+function feedVerse(){ if(map3d) map3d.setVerseData({planets:versePlanets(),currentId:currentPid()}); }
+function setMapTier(t,manual){
+  if(!map3d) return;
+  if(mapTier===t&&map3d.getTier()===t) return;
+  mapTier=t; if(manual) mapTierManual=true;
+  map3d.setTier(t);
+  if(t==='surface') map3d.setView({dist:600,pitch:1.082});
+  else if(t==='planet') map3d.setView({dist:1500,pitch:0.38});
+  else { map3d.setView({dist:3800,pitch:0.5}); feedVerse(); }
+  document.querySelectorAll('#map-tiers [data-tier]').forEach(function(b){
+    b.classList.toggle('on',b.dataset.tier===t);
+  });
+  mapFollow=true; hideVersePop();
+  toast(t==='surface'?'🌍 Surface map':t==='planet'?'🪐 Planet view — the world as a globe':'✨ Verse map — all '+versePlanets().length+' planets');
+  mapDirty=true;
+}
+/* live tier tracking: leaving the planet switches the map to match */
+function mapAutoTier(){
+  if(mapTierManual||!map3d||!mapOpen) return;
+  var air=0;
+  try{ var st=window.__beta.ctrl().state(); air=st.air||0; }catch(_){}
+  var t=mapTier;
+  if(t==='surface'&&air>120) t='planet';
+  else if(t==='planet'&&(air>600||air<80)) t=air>600?'verse':'surface';
+  else if(t==='verse'&&air<400) t='planet';
+  if(t!==mapTier) setMapTier(t,false);
+}
+function showVersePop(x,y,pl){
+  var el=$('verse-pop');
+  el.innerHTML='<b>🪐 '+esc(pl.name)+'</b><br><small>'+esc(pl.sec)+'</small>'+
+    '<div class="prow"><button data-v="go">Travel →</button><button data-v="x">✕</button></div>';
+  el.hidden=false;
+  el.style.left=Math.min(window.innerWidth-230,Math.max(8,x-100))+'px';
+  el.style.top=Math.max(8,y-90)+'px';
+  el.querySelector('[data-v="go"]').addEventListener('click',function(){
+    hideVersePop(); travelToPlanet(pl.id);
+    setTimeout(function(){ if(mapOpen&&mapTier==='verse') feedVerse(); },600);
+  });
+  el.querySelector('[data-v="x"]').addEventListener('click',hideVersePop);
+}
+function hideVersePop(){ var el=$('verse-pop'); if(el) el.hidden=true; }
 
 /* dark hologram hypsometric tint; lens = Civ-style analytical recoloring */
 function mapTint(x,z,h,lens){
@@ -5944,6 +6181,7 @@ function mapSize(){
 function mapWorldKey(){ var w=activeWorld(); return w?(w.seed+'|'+(w.terrainEdits||[]).length):'none'; }
 function mapFeed(){
   if(!map3d) return;
+  if(mapTier==='verse') return; /* verse has its own data feed */
   var w=activeWorld(); if(!w) return;
   map3d.setWorld(mapWorldKey());
   var pl=(cam.mode==='walk')?{x:cam.wx,z:cam.wz}:{x:cam.tx,z:cam.tz};
@@ -5959,6 +6197,22 @@ function mapFeed(){
 }
 function mapLabels(){
   var layer=$('map-labels'); if(!layer||!map3d) return;
+  var vl=$('verse-label');
+  if(mapTier==='verse'){
+    while(layer.firstChild) layer.removeChild(layer.firstChild);
+    /* label the planet you're on */
+    var pid=currentPid(), vp=versePlanets(), hit=null, i;
+    for(i=0;i<vp.length;i++) if(vp[i].id===pid) hit=vp[i];
+    if(hit&&vl){
+      var q=map3d.project(hit.x,hit.y,hit.z), r=$('map-cv').getBoundingClientRect();
+      vl.hidden=false;
+      vl.textContent='🪐 '+hit.name+' — you are here';
+      vl.style.left=(q[0]-r.left)+'px'; vl.style.top=(q[1]-r.top)+'px';
+      vl.style.display=q[2]?'block':'none';
+    } else if(vl) vl.hidden=true;
+    return;
+  }
+  if(vl) vl.hidden=true;
   var w=activeWorld(), wps=w?(w.waypoints||[] ):[];
   while(layer.children.length<wps.length){
     var d=document.createElement('div'); d.className='map-wp'; layer.appendChild(d);
@@ -5976,6 +6230,16 @@ function mapLabels(){
 function mapFrame(t){
   if(!mapOpen||!map3d) return;
   if(mapDirty){ mapFeed(); mapDirty=false; }
+  if((mapAutoTick=(mapAutoTick+1)%30)===0) mapAutoTier();
+  /* planet tier: ease the globe so your position stays in view (live follow) */
+  if(mapTier==='planet'&&mapFollow){
+    try{
+      var st=window.__beta.ctrl().state(), v=map3d.getView();
+      var target=Math.atan2(st.x,st.z), d=target-v.yaw;
+      while(d>Math.PI) d-=Math.PI*2; while(d<-Math.PI) d+=Math.PI*2;
+      if(Math.abs(d)>0.02) map3d.setView({yaw:v.yaw+d*0.08});
+    }catch(_){}
+  }
   map3d.render(t);
   mapLabels();
   requestAnimationFrame(mapFrame);
@@ -5983,10 +6247,15 @@ function mapFrame(t){
 function setMap(open){
   mapOpen=open;
   $('map-wrap').hidden=!open;
-  if(!open){ hideWpPop(); return; }
+  if(!open){ hideWpPop(); hideVersePop(); return; }
   if(!mapEnsure()){ mapOpen=false; $('map-wrap').hidden=true; return; }
   if(!mapInit){ mapInit=true; map3d.setView({yaw:0,dist:600}); }
   setMapTool('inspect');
+  /* pick the tier that matches where the player actually is */
+  mapTierManual=false;
+  var air0=0;
+  try{ air0=window.__beta.ctrl().state().air||0; }catch(_){}
+  setMapTier(air0>600?'verse':air0>120?'planet':'surface',false);
   $('map-read').textContent='Drag to rotate · scroll to zoom · tap to read';
   mapDirty=true;
   requestAnimationFrame(mapFrame);
@@ -6026,6 +6295,9 @@ function bindMap(){
     b.addEventListener('click',function(){ setMapTool(b.dataset.mtool); });
   });
   $('map-layers-btn').addEventListener('click',function(e){ e.stopPropagation(); toggleLayers(); });
+  document.querySelectorAll('#map-tiers [data-tier]').forEach(function(b){
+    b.addEventListener('click',function(){ setMapTier(b.dataset.tier,true); });
+  });
   $('map-north-btn').addEventListener('click',function(){ if(map3d){ map3d.setView({yaw:0}); toast('🧭 North up'); } });
   $('map-terr-sign').addEventListener('click',function(){
     terrSign=-terrSign; this.textContent=terrSign>0?'＋':'－';
@@ -6074,7 +6346,7 @@ function bindMap(){
     if(!mapPD) return;
     var dx=e.clientX-mapPD.x, dy=e.clientY-mapPD.y;
     mapPD.moved+=Math.abs(dx)+Math.abs(dy); mapPD.x=e.clientX; mapPD.y=e.clientY;
-    if(mapTool==='inspect'){ if(map3d) map3d.rotateBy(dx*0.006); return; }
+    if(mapTool==='inspect'){ if(map3d) map3d.rotateBy(dx*0.006); if(mapTier==='planet') mapFollow=false; return; }
     var wp=mPos(e); if(!wp) return;
     if(mapTool==='path'&&mapStroke){
       var l=mapStroke[mapStroke.length-1], nx=Math.round(wp[0]*2)/2, nz=Math.round(wp[1]*2)/2;
@@ -6091,6 +6363,12 @@ function bindMap(){
     delete pointers[e.pointerId]; cv._pinchD=0;
     if(!mapPD) return;
     var pd=mapPD; mapPD=null; var wp=pd.wp;
+    /* verse tier: tap a planet to travel */
+    if(mapTier==='verse'){
+      if(pd.moved<14&&map3d){ var hit=map3d.pickVerse(e.clientX,e.clientY); if(hit) showVersePop(e.clientX,e.clientY,hit); }
+      return;
+    }
+    if(mapTier!=='surface') return; /* planet tier is view-only */
     if(mapTool==='path'&&mapStroke){
       var pts=mapStroke; mapStroke=null;
       if(pts.length>=2){
@@ -6133,7 +6411,15 @@ function bindMap(){
     delete pointers[e.pointerId]; mapPD=null; mapStroke=null; mapClaimRect=null; mapDirty=true;
   });
   cv.addEventListener('wheel',function(e){
-    e.preventDefault(); if(map3d) map3d.zoomBy(1+e.deltaY*0.001);
+    e.preventDefault(); if(!map3d) return;
+    var v0=map3d.getView().dist;
+    map3d.zoomBy(1+e.deltaY*0.001);
+    var v1=map3d.getView().dist;
+    /* zooming past a tier's range dives/climbs a level */
+    if(mapTier==='surface'&&v1>=1099&&e.deltaY>0) setMapTier('planet',true);
+    else if(mapTier==='planet'&&v1>=3499&&e.deltaY>0) setMapTier('verse',true);
+    else if(mapTier==='planet'&&v1<=901&&e.deltaY<0) setMapTier('surface',true);
+    else if(mapTier==='verse'&&v1<=2001&&e.deltaY<0) setMapTier('planet',true);
   },{passive:false});
   window.addEventListener('resize',function(){ if(mapOpen) mapSize(); });
   window.addEventListener('keydown',function(e){
@@ -6145,7 +6431,9 @@ function bindMap(){
 }
 
 function setMapTool(t){
-  mapTool=t; mapStroke=null; mapClaimRect=null; mapMeasure=null; hideWpPop();
+  mapTool=t; mapStroke=null; mapClaimRect=null; mapMeasure=null; hideWpPop(); hideVersePop();
+  /* editing tools live on the surface — drop down a tier if needed */
+  if(t!=='inspect'&&mapTier!=='surface'&&map3d){ setMapTier('surface',true); }
   var btns=document.querySelectorAll('#map-tools [data-mtool]');
   for(var i=0;i<btns.length;i++) btns[i].classList.toggle('on',btns[i].dataset.mtool===t);
   $('map-terr-sign').hidden=(t!=='terraform');
@@ -6210,6 +6498,9 @@ window.__beta.scatterPts=function(){ return scatterPlaced; };
 window.__beta.h=function(x,z){ return heightAt(x,z); };
 window.__beta.ctrl=function(){ return ctrl; };
 window.__beta.map3d=function(){ return map3d; };
+window.__beta.versePlanets=versePlanets;
+window.__beta.setMapTier=setMapTier;
+window.__beta.mapTier=function(){ return mapTier; };
 window.__beta.colliders=function(){ return colliders.length; };
 window.__beta.objTris=function(){ return objIdx.length/3; };
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
