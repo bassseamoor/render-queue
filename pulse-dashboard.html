@@ -3711,10 +3711,12 @@ var COMPS = [
    technical:'wonder-feed', source:'pulse-v2/tools/tool-wonder.js', inMoor:false,
    toolGap:'Local-first v1: library, taste, and comments live in this browser. Share links encode the full genome in the URL hash.'},
   /* --- MOOR City component kit: reusable seeds --- */
-  {id:'comp-vehicle-physics', tool:null, cats:['space','shared'], icon:'\u1F697', label:'Vehicle physics',
-   short:'Arcade car physics, zero dependencies.',
-   job:'Dependency-free vehicle simulation: createVehicle/stepVehicle with throttle, steering, grip, drift, and collision callback. Powers the dune buggy and any drivable.',
-   why:'Drop into any driving game. Pure math, no engine lock-in.', technical:'buggy-motion.mjs', source:'moor-city/sky-islands/buggy-motion.mjs', inMoor:false},
+  {id:'comp-vehicle-physics', tool:'vphys', toolSrc:'pulse-tools/tool-vphys.js', cats:['space','shared'], icon:'\u1F697', label:'Vehicle physics lab',
+   short:'Tune arcade car physics live, then feel the difference.',
+   job:'An editable workbench for the recovered buggy-motion.mjs physics: engine, handling, and handbrake knobs as live sliders, with telemetry (speed, drift angle, slide, steer), skid marks, a cone slalom, and presets from dune buggy to drift missile. Drive it, feel the difference, copy the tune as JSON.',
+   why:'The fastest way to understand what each physics number does — change grip mid-drift and feel it.',
+   technical:'buggy-motion.mjs', source:'moor-city/sky-islands/buggy-motion.mjs', inMoor:false,
+   toolGap:'The stepVehicle core is verbatim. Coast drag, handbrake strength, and quadratic air drag are extra exposed knobs (defaults reproduce the original exactly). The lot, cones, skid marks, telemetry, and presets are panel code.'},
   
   
   
@@ -12783,6 +12785,350 @@ TOOLS.vehicles={
     state.last=performance.now();
     state.raf=requestAnimationFrame(frame);
     this._state=state;
+  },
+  unmount:function(){
+    var s=this._state;
+    if(s){ cancelAnimationFrame(s.raf);
+      for(var i=0;i<s.clean.length;i++) try{ s.clean[i](); }catch(e){} }
+  }
+};
+
+})();
+
+</script>
+<script>
+/* Vehicle Physics Lab — editable arcade vehicle physics.
+ *
+ * A tuning workbench for the recovered buggy-motion.mjs: every handling knob
+ * is a live slider, with telemetry (speed, drift angle, slide), skid marks,
+ * a cone slalom, and presets from dune buggy to drift missile. Drive it,
+ * feel the difference, copy the tune.
+ *
+ * PROVENANCE: stepVehicle/createVehicle are verbatim moor-city/sky-islands/
+ * buggy-motion.mjs, except the drag line exposes three extra knobs
+ * (tune.coast, tune.hb, tune.qd) whose defaults reproduce the original
+ * exactly. The lot, cones, skid marks, telemetry, and UI are panel code.
+ *
+ * TAGS: tool:vphys | cat:space cat:shared | dep:canvas2d dep:raf | prov:editable-vehicle-physics prov:physics-tuning-lab | see:vehicles see:redwood-drive see:softbody-creatures | src:moor-city/sky-islands/buggy-motion.mjs
+ */
+(function(){
+'use strict';
+
+/* ---------------- physics: verbatim buggy-motion.mjs + exposed drag knobs ---------------- */
+function createVehicle(x,z,yaw){ x=(x==null?0:x); z=(z==null?0:z); yaw=(yaw==null?0:yaw);
+  return {x:x,z:z,yaw:yaw,vx:0,vz:0,steer:0,speed:0,hit:false}; }
+function stepVehicle(s,input,dt,tune,blocked){
+  blocked=blocked||function(){return false;};
+  var power=tune.power||1;
+  var forward={x:Math.sin(s.yaw),z:Math.cos(s.yaw)},
+      right={x:Math.cos(s.yaw),z:-Math.sin(s.yaw)};
+  var v=s.vx*forward.x+s.vz*forward.z, lateral=s.vx*right.x+s.vz*right.z;
+  var target=input.turn*tune.steering/(1+Math.abs(v)*.035);
+  s.steer+=(target-s.steer)*(1-Math.exp(-9*dt));
+  var acceleration=0;
+  if(input.throttle>0) acceleration=(v<-.3?16:8.5)*power;
+  if(input.throttle<0) acceleration=(v>.3?-18:-4.5)*power;
+  v+=acceleration*dt;
+  /* extra knobs vs the original: tune.coast (was .45), tune.hb (was 9), tune.qd (was .006) */
+  var drag=(input.handbrake?(tune.hb==null?9:tune.hb):(tune.coast==null?.45:tune.coast))*power
+           +(tune.qd==null?.006:tune.qd)*v*v/power;
+  v=Math.sign(v)*Math.max(0,Math.abs(v)-drag*dt);
+  v=Math.max(-7*power,Math.min(tune.maxSpeed,v));
+  lateral*=Math.exp(-(input.handbrake?1.25:tune.grip)*dt);
+  var yawDelta=v/(tune.wheelbase||2.52)*Math.tan(s.steer)*dt;
+  var yaw=s.yaw+yawDelta;
+  lateral-=v*Math.sin(yawDelta);
+  var vx=Math.sin(yaw)*v+Math.cos(yaw)*lateral,
+      vz=Math.cos(yaw)*v-Math.sin(yaw)*lateral;
+  var x=s.x+vx*dt, z=s.z+vz*dt;
+  s.hit=blocked(x,z,yaw);
+  if(!s.hit){ s.x=x; s.z=z; s.yaw=yaw; s.vx=vx; s.vz=vz; }
+  else { s.vx*=.15; s.vz*=.15; }
+  s.speed=s.vx*Math.sin(s.yaw)+s.vz*Math.cos(s.yaw);
+  return s;
+}
+
+/* ---------------- presets ---------------- */
+var PRESETS={
+  'Dune buggy':{power:1.1,maxSpeed:24,steering:.6,grip:5.5,wheelbase:2.2,coast:.45,hb:9,qd:.006},
+  'Drift missile':{power:1.3,maxSpeed:27,steering:.9,grip:2.2,wheelbase:2.5,coast:.35,hb:13,qd:.005},
+  'Go-kart':{power:.8,maxSpeed:18,steering:1.05,grip:9,wheelbase:1.6,coast:.6,hb:7,qd:.008},
+  'Crawler':{power:1.6,maxSpeed:10,steering:.5,grip:11,wheelbase:2.9,coast:.85,hb:6,qd:.01}
+};
+var SLIDERS=[
+  {k:'power',    label:'Engine power', min:.3, max:2,   step:.05},
+  {k:'maxSpeed', label:'Top speed',    min:5,  max:40,  step:1,   unit:' m/s'},
+  {k:'coast',    label:'Coast drag',   min:.1, max:1.5, step:.05},
+  {k:'steering', label:'Steering',     min:.2, max:1.2, step:.05},
+  {k:'grip',     label:'Grip',         min:1,  max:12,  step:.1},
+  {k:'wheelbase',label:'Wheelbase',    min:1.5,max:4,   step:.1,  unit:' m'},
+  {k:'hb',       label:'Handbrake',    min:3,  max:15,  step:.5},
+  {k:'qd',       label:'Air drag',     min:.002,max:.012,step:.001}
+];
+
+/* ---------------- lab ---------------- */
+TOOLS.vphys={
+  mount:function(host){
+    host.innerHTML=
+      '<style>.vphys-wrap{display:flex;gap:14px;flex-wrap:wrap}'+
+      '.vphys-stage{position:relative;flex:1 1 420px;min-width:300px;height:480px;border-radius:12px;'+
+      'overflow:hidden;background:#0b0e13;border:1px solid var(--line)}'+
+      '.vphys-stage canvas{width:100%;height:100%;display:block;touch-action:none}'+
+      '.vphys-side{flex:1 1 260px;min-width:240px}'+
+      '.vphys-side label{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);margin:7px 0}'+
+      '.vphys-side label span.nm{width:92px;flex:none}'+
+      '.vphys-side input[type=range]{flex:1;accent-color:var(--cyan)}'+
+      '.vphys-side label output{width:64px;flex:none;text-align:right;color:var(--text)}'+
+      '.vphys-tele{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}'+
+      '.vphys-tele div{background:#0b1523;border:1px solid var(--line);border-radius:8px;padding:8px 10px}'+
+      '.vphys-tele b{display:block;font-size:1.05rem;color:var(--text)}'+
+      '.vphys-tele span{font-size:.72rem;color:var(--muted)}'+
+      '.vphys-touch{position:absolute;right:12px;bottom:10px;display:flex;gap:8px}'+
+      '.vphys-touch button{width:56px;height:56px;border-radius:50%;border:1px solid var(--line);'+
+      'background:rgba(11,21,35,.85);color:var(--text);font-size:.95rem}'+
+      '.vphys-hint{position:absolute;left:12px;bottom:10px;font-size:.76rem;color:var(--muted);'+
+      'background:rgba(7,11,18,.72);padding:6px 10px;border-radius:8px;pointer-events:none}'+
+      '.vphys-presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}'+
+      '.vphys-presets .btn.on{border-color:var(--cyan);color:var(--cyan)}</style>'+
+      '<div class="t-controls"><span class="meta">Tune it live — every slider takes effect mid-drive.</span>'+
+      '<button class="btn" id="vp-reset">Reset car</button>'+
+      '<button class="btn" id="vp-copy">Copy tune</button></div>'+
+      '<div class="vphys-wrap"><div class="vphys-stage"><canvas id="vp-canvas"></canvas>'+
+      '<div class="vphys-hint">Arrows/WASD drive · Space handbrake · R reset</div>'+
+      '<div class="vphys-touch">'+
+      '<button data-k="left">&#9664;</button><button data-k="right">&#9654;</button>'+
+      '<button data-k="gas">GAS</button><button data-k="brk">BRK</button><button data-k="hb">HB</button>'+
+      '</div></div>'+
+      '<div class="vphys-side"><div class="vphys-presets" id="vp-presets"></div>'+
+      '<div id="vp-sliders"></div><div class="vphys-tele" id="vp-tele">'+
+      '<div><b id="vp-t-speed">0</b><span>speed mph</span></div>'+
+      '<div><b id="vp-t-drift">0°</b><span>drift angle</span></div>'+
+      '<div><b id="vp-t-slide">0</b><span>slide m/s</span></div>'+
+      '<div><b id="vp-t-steer">0°</b><span>steer</span></div>'+
+      '</div></div></div>'+
+      '<p class="meta" style="margin-top:10px">The <b>stepVehicle</b> core is verbatim '+
+      '<b>buggy-motion.mjs</b> — the same physics as the dune buggy and the Vehicle Builder test ride. '+
+      'Coast drag, handbrake strength, and air drag are extra knobs (defaults reproduce the original). '+
+      'Lot, cones, skid marks, and telemetry are panel code.</p>';
+
+    var canvas=host.querySelector('#vp-canvas');
+    var ctx=canvas.getContext('2d');
+    var tune=JSON.parse(JSON.stringify(PRESETS['Dune buggy']));
+    var state={car:createVehicle(0,0,0),keys:{},raf:0,last:0,clean:[],
+      cam:{x:0,z:0},skids:[],lastSkid:null};
+
+    /* cones: slalom + drift circle */
+    var cones=[];
+    for(var i=0;i<6;i++) cones.push({x:(i%2?7:-7), z:-24+i*9});
+    for(var a=0;a<12;a++) cones.push({x:Math.cos(a/12*Math.PI*2)*20, z:Math.sin(a/12*Math.PI*2)*20+8});
+    function blocked(x,z){
+      if(Math.abs(x)>76||Math.abs(z)>76) return true;
+      for(var i=0;i<cones.length;i++){
+        var dx=x-cones[i].x, dz=z-cones[i].z;
+        if(dx*dx+dz*dz<1.7) return true;
+      }
+      return false;
+    }
+
+    /* --- sliders --- */
+    var sliderBox=host.querySelector('#vp-sliders');
+    var outs={};
+    SLIDERS.forEach(function(s){
+      var lab=document.createElement('label');
+      lab.innerHTML='<span class="nm">'+s.label+'</span>';
+      var inp=document.createElement('input');
+      inp.type='range'; inp.min=s.min; inp.max=s.max; inp.step=s.step; inp.value=tune[s.k];
+      inp.setAttribute('data-k',s.k);
+      var out=document.createElement('output');
+      lab.appendChild(inp); lab.appendChild(out); sliderBox.appendChild(lab);
+      outs[s.k]={inp:inp,out:out,unit:s.unit||''};
+      inp.addEventListener('input',function(){
+        tune[s.k]=+inp.value; syncLabels(); markCustom();
+      });
+      state.clean.push(function(){});
+    });
+    function fmt(k,v){
+      if(k==='qd') return v.toFixed(4);
+      if(v>=10||k==='maxSpeed') return (+v).toFixed(v%1?1:0);
+      return (+v).toFixed(2);
+    }
+    function syncLabels(){
+      SLIDERS.forEach(function(s){ outs[s.k].out.textContent=fmt(s.k,tune[s.k])+outs[s.k].unit; });
+    }
+    function syncInputs(){
+      SLIDERS.forEach(function(s){ outs[s.k].inp.value=tune[s.k]; });
+      syncLabels();
+    }
+    /* --- presets --- */
+    var presetBox=host.querySelector('#vp-presets'), presetBtns={};
+    Object.keys(PRESETS).forEach(function(name){
+      var b=document.createElement('button');
+      b.className='btn'+(name==='Dune buggy'?' on':''); b.textContent=name;
+      b.addEventListener('click',function(){
+        var p=PRESETS[name];
+        for(var k in p) tune[k]=p[k];
+        syncInputs(); markCustom(name);
+      });
+      presetBox.appendChild(b); presetBtns[name]=b;
+    });
+    function markCustom(active){
+      Object.keys(presetBtns).forEach(function(n){
+        presetBtns[n].className='btn'+(n===active?' on':'');
+      });
+    }
+    syncLabels();
+
+    function on(el,ev,fn){ el.addEventListener(ev,fn);
+      state.clean.push(function(){ el.removeEventListener(ev,fn); }); }
+    on(host.querySelector('#vp-reset'),'click',resetCar);
+    function resetCar(){ state.car=createVehicle(0,0,0); state.skids=[]; state.lastSkid=null; }
+    on(host.querySelector('#vp-copy'),'click',function(){
+      var j=JSON.stringify({tool:'vphys',tune:tune},null,2);
+      var btn=host.querySelector('#vp-copy');
+      function done(ok){ btn.textContent=ok?'Copied':'Copy failed';
+        setTimeout(function(){ btn.textContent='Copy tune'; },1400); }
+      if(navigator.clipboard&&navigator.clipboard.writeText)
+        navigator.clipboard.writeText(j).then(function(){done(true);},function(){done(false);});
+      else done(false);
+    });
+
+    /* --- input --- */
+    function key(e,down){
+      var k=e.key;
+      if(k==='ArrowLeft'||k==='a'||k==='A'){ state.keys.left=down; e.preventDefault(); }
+      else if(k==='ArrowRight'||k==='d'||k==='D'){ state.keys.right=down; e.preventDefault(); }
+      else if(k==='ArrowUp'||k==='w'||k==='W'){ state.keys.gas=down; e.preventDefault(); }
+      else if(k==='ArrowDown'||k==='s'||k==='S'){ state.keys.brk=down; e.preventDefault(); }
+      else if(k===' '){ state.keys.hb=down; e.preventDefault(); }
+      else if((k==='r'||k==='R')&&down){ resetCar(); }
+    }
+    on(window,'keydown',function(e){ key(e,true); });
+    on(window,'keyup',function(e){ key(e,false); });
+    var touches=host.querySelectorAll('.vphys-touch button');
+    for(var ti=0;ti<touches.length;ti++)(function(b){
+      var k=b.getAttribute('data-k');
+      function dn(e){ e.preventDefault(); state.keys[k]=true; }
+      function up(e){ e.preventDefault(); state.keys[k]=false; }
+      b.addEventListener('pointerdown',dn); b.addEventListener('pointerup',up);
+      b.addEventListener('pointercancel',up); b.addEventListener('pointerleave',up);
+      state.clean.push(function(){
+        b.removeEventListener('pointerdown',dn); b.removeEventListener('pointerup',up);
+        b.removeEventListener('pointercancel',up); b.removeEventListener('pointerleave',up); });
+    })(touches[ti]);
+
+    /* --- render --- */
+    var elSpeed=host.querySelector('#vp-t-speed'), elDrift=host.querySelector('#vp-t-drift'),
+        elSlide=host.querySelector('#vp-t-slide'), elSteer=host.querySelector('#vp-t-steer');
+    function frame(t){
+      state.raf=requestAnimationFrame(frame);
+      var dt=Math.min(.05,(t-state.last)/1000||.016); state.last=t;
+      var input={turn:(state.keys.left?-1:0)+(state.keys.right?1:0),
+        throttle:(state.keys.gas?1:0)+(state.keys.brk?-.7:0),
+        handbrake:!!state.keys.hb};
+      var car=state.car;
+      stepVehicle(car,input,dt,tune,blocked);
+      /* camera follow */
+      state.cam.x+=(car.x-state.cam.x)*Math.min(1,dt*5);
+      state.cam.z+=(car.z-state.cam.z)*Math.min(1,dt*5);
+      /* skid marks */
+      var sy=Math.sin(car.yaw), cy=Math.cos(car.yaw);
+      var vlat=car.vx*cy-car.vz*sy, vfor=car.vx*sy+car.vz*cy;
+      if(Math.abs(vlat)>2.2&&Math.abs(vfor)>3){
+        /* rear axle center = pos - forward*1.5; right vector = (cy,-sy) */
+        var ax=car.x-sy*1.5, az=car.z-cy*1.5;
+        for(var s=-1;s<=1;s+=2){
+          var wx=ax+cy*s*.8, wz=az+(-sy)*s*.8;
+          if(state.lastSkid){
+            state.skids.push({x1:state.lastSkid[s<0?0:1].x,z1:state.lastSkid[s<0?0:1].z,
+              x2:wx,z2:wz,a:.55});
+          }
+        }
+        state.lastSkid=[{x:car.x-sy*1.5+cy*.8,z:car.z-cy*1.5+(-sy)*.8},
+                        {x:car.x-sy*1.5-cy*.8,z:car.z-cy*1.5-(-sy)*.8}];
+        if(state.skids.length>500) state.skids.splice(0,state.skids.length-500);
+      } else state.lastSkid=null;
+      for(var di=state.skids.length-1;di>=0;di--){
+        state.skids[di].a-=dt*.22;
+        if(state.skids[di].a<=0) state.skids.splice(di,1);
+      }
+
+      /* draw */
+      var W=canvas.clientWidth,H=canvas.clientHeight,dpr=Math.min(2,window.devicePixelRatio||1);
+      if(canvas.width!==Math.round(W*dpr)||canvas.height!==Math.round(H*dpr)){
+        canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr);
+      }
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      var scale=Math.min(W,H)/46, ox=W/2-state.cam.x*scale, oy=H/2-state.cam.z*scale;
+      function px(x){ return ox+x*scale; } function pz(z){ return oy+z*scale; }
+      ctx.fillStyle='#0b0e13'; ctx.fillRect(0,0,W,H);
+      /* asphalt */
+      ctx.fillStyle='#14181f';
+      ctx.fillRect(px(-78),pz(-78),156*scale,156*scale);
+      /* grid */
+      ctx.strokeStyle='#1c232e'; ctx.lineWidth=1;
+      ctx.beginPath();
+      for(var g=-78;g<=78;g+=6){
+        ctx.moveTo(px(g),pz(-78)); ctx.lineTo(px(g),pz(78));
+        ctx.moveTo(px(-78),pz(g)); ctx.lineTo(px(78),pz(g));
+      }
+      ctx.stroke();
+      /* drift circle */
+      ctx.strokeStyle='#2a3648'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(px(0),pz(8),20*scale,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='#2a3648'; ctx.font='11px system-ui'; ctx.textAlign='center';
+      ctx.fillText('drift circle',px(0),pz(8)-20*scale-8);
+      /* cones */
+      for(var ci=0;ci<cones.length;ci++){
+        var cx=px(cones[ci].x), cz=pz(cones[ci].z), r=Math.max(3,1.1*scale);
+        ctx.fillStyle='#b3541e';
+        ctx.beginPath(); ctx.arc(cx,cz,r,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#f5f0e6';
+        ctx.beginPath(); ctx.arc(cx,cz,r*.45,0,Math.PI*2); ctx.fill();
+      }
+      /* skids */
+      ctx.lineCap='round';
+      for(var si=0;si<state.skids.length;si++){
+        var sk=state.skids[si];
+        ctx.strokeStyle='rgba(5,5,8,'+(sk.a.toFixed(2))+')';
+        ctx.lineWidth=Math.max(2,.32*scale);
+        ctx.beginPath(); ctx.moveTo(px(sk.x1),pz(sk.z1)); ctx.lineTo(px(sk.x2),pz(sk.z2)); ctx.stroke();
+      }
+      /* car: drawn nose-down, rotated by -yaw */
+      ctx.save();
+      ctx.translate(px(car.x),pz(car.z));
+      ctx.rotate(-car.yaw);
+      var L=4.4*scale, Wd=2.1*scale;
+      /* wheels */
+      ctx.fillStyle='#0c0e11';
+      function wheel(wx,wz,steer){
+        ctx.save(); ctx.translate(wx,wz); ctx.rotate(steer||0);
+        ctx.fillRect(-.32*scale,-.55*scale,.64*scale,1.1*scale);
+        ctx.restore();
+      }
+      wheel(-Wd/2,-L/2+.8*scale,car.steer); wheel(Wd/2,-L/2+.8*scale,car.steer);
+      wheel(-Wd/2,L/2-.8*scale,0); wheel(Wd/2,L/2-.8*scale,0);
+      /* body */
+      ctx.fillStyle=input.handbrake?'#8a2b2b':'#b3541e';
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(-Wd/2,-L/2,Wd,L,.5*scale); else ctx.rect(-Wd/2,-L/2,Wd,L);
+      ctx.fill();
+      /* cabin + nose stripe */
+      ctx.fillStyle='#1a2230';
+      ctx.fillRect(-Wd*.32,-L*.1,Wd*.64,L*.34);
+      ctx.fillStyle='#e8e2d2';
+      ctx.fillRect(-.12*scale,L/2-.5*scale,.24*scale,.5*scale);
+      ctx.restore();
+
+      /* telemetry */
+      elSpeed.textContent=Math.round(Math.abs(car.speed)*2.237);
+      var drift=Math.abs(vfor)>1?Math.atan2(Math.abs(vlat),Math.abs(vfor))*180/Math.PI:0;
+      elDrift.textContent=Math.round(drift)+'°';
+      elSlide.textContent=Math.abs(vlat).toFixed(1);
+      elSteer.textContent=Math.round(car.steer*180/Math.PI)+'°';
+    }
+    state.last=performance.now();
+    state.raf=requestAnimationFrame(frame);
+    this._state=state; this._tune=tune;
   },
   unmount:function(){
     var s=this._state;
