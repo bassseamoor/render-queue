@@ -666,15 +666,31 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
   padding:5px 11px;font-size:.76rem;color:var(--muted)}
 .dim{color:var(--muted);font-size:.85rem;line-height:1.5;margin:0 0 12px}
 
-/* focused tool stage */
-.stage-back{display:flex;align-items:center;gap:12px;margin:8px 2px 12px}
-.stage-title{font-size:.85rem;color:var(--muted)}
-.ghost-btn,.vp-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);
+/* focused tool: one slim back link, the tool full-bleed, about collapsed below */
+.focus-nav{margin:0 2px 4px}
+.back-link{background:none;border:0;color:var(--muted);font:inherit;font-size:.92rem;
+  cursor:pointer;padding:8px 2px;display:inline-flex;align-items:center;gap:3px}
+.back-link:hover{color:var(--text)}
+.tabs-on #windows.focus-mode{padding:0 0 26px;max-width:none}
+.tool-host.bare{padding:0}
+.focus-about{margin:20px 14px 0;border:1px solid var(--line);border-radius:14px;
+  background:rgba(255,255,255,.02);max-width:860px}
+.focus-about summary{padding:13px 18px;cursor:pointer;color:var(--muted);
+  font-size:.86rem;list-style:none}
+.focus-about summary::-webkit-details-marker{display:none}
+.focus-about summary::before{content:'\203A  '}
+.focus-about[open] summary::before{content:'\203A  '}
+.focus-about-body{padding:2px 18px 18px}
+.page-open{text-align:center;padding:36px 22px;max-width:540px;margin:0 auto}
+.page-open .hero-ic{font-size:2.6rem}
+.page-open h2{margin:12px 0 8px;font-size:1.35rem}
+.page-open p{color:var(--muted);line-height:1.6;margin:0 0 20px}
+.page-open .btn{display:inline-block}
+
+.vp-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);
   border-radius:999px;padding:7px 15px;font:inherit;font-size:.82rem;cursor:pointer;
   transition:all .18s}
-.ghost-btn:hover,.vp-ghost:hover{color:var(--text);border-color:rgba(255,255,255,.22)}
-#stage-focus .window{margin:0}
-.titlebar-sp{flex:1}
+.vp-ghost:hover{color:var(--text);border-color:rgba(255,255,255,.22)}
 
 /* shared bits */
 .empty{color:var(--muted);padding:26px 8px;text-align:center;font-size:.88rem}
@@ -5061,24 +5077,14 @@ function tabView(tab){
   return binView();
 }
 
-/* ---------------- windows (tool panels) ---------------- */
-function windowHTML(c){
+/* ---------------- focused view: the tool, full-bleed, no card chrome ----------------
+ * One slim back link, the tool itself, and the explainer collapsed below.
+ * The tool's own UI is the interface — Pulse adds nothing around it. */
+function aboutHTML(c){
   var pill = c.inMoor
     ? '<span class="pill cyan">In MOOR</span>'
     : '<span class="pill amber">Not in MOOR \u2014 runs standalone here</span>';
-  var body = '';
-  if (c.page) {
-    body = '<a class="btn standalone-open" href="'+esc(c.page)+'" target="_blank" rel="noopener">Open '+esc(c.label)+' \u2197</a>';
-  }
-  if (c.tool && TOOLS[c.tool]) {
-    body += '<div class="tool-host" id="toolhost-'+c.id+'"></div>';
-  } else if (!c.page) {
-    body = '<p class="job">'+esc(c.job)+'</p>';
-  } else {
-    body += '<p class="job">'+esc(c.job)+'</p>';
-  }
-  body +=
-    '<div class="status-line">'+pill+'<span class="pill">'+esc(c.inMoor?'connected':'available to reuse')+'</span></div>'+
+  return '<div class="status-line">'+pill+'<span class="pill">'+esc(c.inMoor?'connected':'available to reuse')+'</span></div>'+
     '<div class="explanation"><div class="eyebrow">Why you might use it</div><p>'+esc(c.why)+'</p></div>'+
     (c.toolGap ? '<div class="explanation"><div class="eyebrow">Honest limits</div><p>'+esc(c.toolGap)+'</p></div>' : '')+
     '<details><summary>Original name &amp; source</summary><div class="evidence-content">'+
@@ -5086,11 +5092,28 @@ function windowHTML(c){
       '<p>Source: <code>'+esc(c.source)+'</code></p>'+
       '<p>These plain-language labels do not rename the existing source. Opening this page does not integrate it into MOOR.</p>'+
     '</div></details>';
-  return '<article class="window'+(UI.focus===c.id?' focused':'')+'" id="window-'+c.id+'" aria-label="'+esc(c.label)+'">'+
-    '<div class="titlebar"><span class="title-icon" aria-hidden="true">'+esc(c.icon)+'</span><h3>'+esc(c.label)+'</h3>'+
-    '<span class="titlebar-sp"></span>'+
-    '<button class="icon-btn" data-close="'+c.id+'" aria-label="Close '+esc(c.label)+'">\u00D7</button></div>'+
-    '<div class="window-body">'+body+'</div></article>';
+}
+function renderFocus(host, c){
+  var back='<div class="focus-nav"><button class="back-link" data-back>'+
+    '\u2039 '+esc(tabName(UI.fromTab))+'</button></div>';
+  if(c.tool && TOOLS[c.tool]){
+    host.innerHTML=back+
+      '<div class="tool-host bare" id="toolhost-'+c.id+'"></div>'+
+      '<details class="focus-about"><summary>About this part</summary><div class="focus-about-body">'+
+      (c.page?'<p><a class="btn standalone-open" href="'+esc(c.page)+'" target="_blank" rel="noopener">Open '+esc(c.label)+' \u2197</a></p>':'')+
+      aboutHTML(c)+'</div></details>';
+    var hostEl=$('toolhost-'+c.id);
+    try{ TOOLS[c.tool].mount(hostEl,c); mounted[c.id]=true; }
+    catch(e){ hostEl.innerHTML='<div class="empty">Tool failed to start: '+esc(e.message)+'</div>'; }
+  } else {
+    host.innerHTML=back+
+      '<div class="page-open"><span class="hero-ic" aria-hidden="true">'+esc(c.icon)+'</span>'+
+      '<h2>'+esc(c.label)+'</h2><p>'+esc(c.job)+'</p>'+
+      (c.page?'<a class="btn standalone-open" href="'+esc(c.page)+'" target="_blank" rel="noopener">Open '+esc(c.label)+' \u2197</a>':'')+
+      '</div>'+
+      '<details class="focus-about" open><summary>About this part</summary><div class="focus-about-body">'+
+      aboutHTML(c)+'</div></details>';
+  }
 }
 /* ---------------- stage: tab browse, or one focused tool ---------------- */
 function unmountFocus(){
@@ -5103,21 +5126,11 @@ function unmountFocus(){
 function renderStage(){
   var host=$('windows');
   ensureTabbar();
+  host.classList.toggle('focus-mode', !!UI.focus);
   if(UI.focus){
     var c=find(UI.focus);
     if(c){
-      host.innerHTML='<div class="stage-back"><button class="ghost-btn" data-back>'+
-        '\u2190 '+esc(tabName(UI.fromTab))+'</button>'+
-        '<span class="stage-title">'+esc(c.label)+'</span></div>'+
-        '<div id="stage-focus"></div>';
-      var tmp=document.createElement('div'); tmp.innerHTML=windowHTML(c);
-      var el=tmp.firstChild;
-      $('stage-focus').appendChild(el);
-      if(c.tool&&TOOLS[c.tool]){
-        var hostEl=el.querySelector('#toolhost-'+CSS.escape(c.id));
-        try{ TOOLS[c.tool].mount(hostEl,c); mounted[c.id]=true; }
-        catch(e){ hostEl.innerHTML='<div class="empty">Tool failed to start: '+esc(e.message)+'</div>'; }
-      }
+      renderFocus(host, c);
       var main=$('main'); if(main) main.scrollTop=0;
       window.scrollTo(0,0);
       return;
