@@ -2925,6 +2925,20 @@ TOOLS.world = {
     var counts = W.counts();
     var selected = null;
 
+    var st = document.createElement('style');
+    st.textContent = '.w-layers{display:flex;flex-direction:column;gap:10px;margin:6px 0 12px}'+
+      '.w-layer{display:flex;align-items:center;gap:10px}'+
+      '.w-layer-label{width:64px;flex:none;font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.6}'+
+      '.w-strip{flex:1;display:flex;align-items:center;gap:6px;min-width:0}'+
+      '.w-cards{flex:1;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px;scroll-snap-type:x mandatory}'+
+      '.w-cards::-webkit-scrollbar{display:none}'+
+      '.w-card{flex:none;scroll-snap-align:center;min-width:118px;max-width:150px;padding:10px 12px;border-radius:12px;'+
+      'background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:inherit;text-align:left;cursor:pointer}'+
+      '.w-card b{display:block;font-size:14px}'+
+      '.w-card span{font-size:11px;opacity:.6}'+
+      '.w-card.sel{background:rgba(140,120,255,.22);border-color:rgba(160,140,255,.55)}'+
+      '.w-arrow{flex:none;width:34px;height:44px;border-radius:10px;background:rgba(255,255,255,.06);'+
+      'border:1px solid rgba(255,255,255,.14);color:inherit;font-size:20px;cursor:pointer}';
     host.innerHTML =
       '<div class="t-controls">'+
         '<span class="meta">'+counts.sectors+' sectors \u00B7 '+counts.systems+' systems \u00B7 '+counts.planets+' planets \u00B7 '+counts.zones+' zones \u00B7 seed '+W.UNIVERSE_SEED+'</span>'+
@@ -2941,14 +2955,17 @@ TOOLS.world = {
       '<div class="w-main"><div class="w-tree" id="w-tree"></div><div class="w-detail" id="w-detail"><div class="empty">Select a sector, system, planet, or zone.</div></div></div>'+
       '</div>'+
       '<div id="w-pane-planet" style="display:none">'+
-        '<div class="t-controls"><label>Planet <input id="w-psearch" placeholder="type a name…" spellcheck="false" style="width:200px"></label>'+
-        '<select id="w-planet" style="max-width:220px"></select>'+
-        '<button class="btn primary" id="w-view">View</button></div>'+
+        '<div class="w-layers">'+
+          '<div class="w-layer"><div class="w-layer-label">Sector</div><div class="w-strip" id="w-strip-sec"></div></div>'+
+          '<div class="w-layer"><div class="w-layer-label">System</div><div class="w-strip" id="w-strip-sys"></div></div>'+
+          '<div class="w-layer"><div class="w-layer-label">Planet</div><div class="w-strip" id="w-strip-pl"></div></div>'+
+        '</div>'+
         '<canvas id="w-cv" width="600" height="380" style="width:100%;border-radius:12px;touch-action:none"></canvas>'+
         '<div class="meta" id="w-pinfo"></div>'+
         '<div class="t-row"><a class="btn" href="https://bassseamoor.github.io/render-queue/moor-planet-demo.html" target="_blank" rel="noopener">Walk the surface in the planet demo ↗</a></div>'+
         '<p class="meta">The sphere is panel composition — real planet data (name, type, address, climate) and real palette colors, with seeded relief. The full surface explorer is the planet demo.</p>'+
       '</div>';
+    host.appendChild(st);
 
     function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
@@ -3033,10 +3050,11 @@ TOOLS.world = {
       if (!planetGL) initPlanet();
     };
 
-    /* ---------- planet view: 3D sphere from real data + real palettes ---------- */
-    var planetSel = host.querySelector('#w-planet'), psearch = host.querySelector('#w-psearch');
-    var allPlanets = [];
-    W.sectors().forEach(function(s){ s.systems.forEach(function(y){ y.planets.forEach(function(p){ allPlanets.push(p); }); }); });
+    /* ---------- planet view: swipeable layers, no forms ---------- */
+    var sectors = W.sectors();
+    var li = { sec: 0, sys: 0, pl: 0 };  // layer indexes
+    function curSys(){ return sectors[li.sec].systems[li.sys]; }
+    function curPlanet(){ return curSys().planets[li.pl]; }
     function typeKey(p){
       var n = (W.planetType(p).name||'').toUpperCase();
       var m = {'TERRAN WORLD':'TERRAN','OCEAN WORLD':'OCEAN','DESERT WORLD':'DESERT','ICE WORLD':'ICE',
@@ -3044,18 +3062,57 @@ TOOLS.world = {
                'CRYSTAL WORLD':'CRYSTAL','TOXIC WORLD':'TOXIC'};
       return m[n] || 'TERRAN';
     }
-    function fillPlanetList(filter){
-      planetSel.innerHTML='';
-      var f=(filter||'').toLowerCase();
-      allPlanets.filter(function(p){ return !f || p.name.toLowerCase().indexOf(f)>=0; })
-        .slice(0,60).forEach(function(p){
-          var o=document.createElement('option'); o.value=p.id;
-          o.textContent=p.name+' ('+typeKey(p)+')'; planetSel.appendChild(o);
-        });
+    function stripHTML(items, idx, sub){
+      var h = '<button class="w-arrow" data-d="-1">‹</button><div class="w-cards">';
+      items.forEach(function(it, i){
+        h += '<button class="w-card'+(i===idx?' sel':'')+'" data-i="'+i+'">'+
+             '<b>'+esc(it.name)+'</b><span>'+esc(sub?sub(it):'')+'</span></button>';
+      });
+      return h + '</div><button class="w-arrow" data-d="1">›</button>';
     }
-    fillPlanetList('');
-    psearch.oninput = function(){ fillPlanetList(psearch.value); };
-    host.querySelector('#w-view').onclick = function(){ if (planetGL) planetGL.setPlanet(planetSel.value); };
+    function renderLayers(){
+      var secEl = host.querySelector('#w-strip-sec'),
+          sysEl = host.querySelector('#w-strip-sys'),
+          plEl  = host.querySelector('#w-strip-pl');
+      secEl.innerHTML = stripHTML(sectors, li.sec, function(x){ return x.systems.length+' systems'; });
+      var systems = sectors[li.sec].systems;
+      sysEl.innerHTML = stripHTML(systems, li.sys, function(x){ return x.planets.length+' planets'; });
+      var planets = systems[li.sys].planets;
+      plEl.innerHTML  = stripHTML(planets, li.pl, function(p){ return typeKey(p); });
+      [[secEl,'sec',sectors.length],[sysEl,'sys',systems.length],[plEl,'pl',planets.length]].forEach(function(cfg){
+        var el = cfg[0], key = cfg[1], n = cfg[2];
+        el.querySelectorAll('.w-arrow').forEach(function(b){
+          b.onclick = function(){ move(key, parseInt(b.dataset.d,10), n); };
+        });
+        el.querySelectorAll('.w-card').forEach(function(c){
+          c.onclick = function(){ setLayer(key, parseInt(c.dataset.i,10), n); };
+        });
+        // touch swipe
+        var sx = 0;
+        el.addEventListener('touchstart', function(e){ sx = e.touches[0].clientX; }, {passive:true});
+        el.addEventListener('touchend', function(e){
+          var dx = e.changedTouches[0].clientX - sx;
+          if (Math.abs(dx) > 40) move(key, dx < 0 ? 1 : -1, n);
+        }, {passive:true});
+        // center the selected card
+        var sel = el.querySelector('.w-card.sel');
+        if (sel) sel.scrollIntoView({inline:'center', block:'nearest'});
+      });
+      if (planetGL) planetGL.setPlanet(curPlanet().id);
+    }
+    function move(key, d, n){
+      li[key] = (li[key] + d + n) % n;
+      if (key==='sec'){ li.sys = 0; li.pl = 0; }
+      if (key==='sys'){ li.pl = 0; }
+      renderLayers();
+    }
+    function setLayer(key, i, n){
+      li[key] = i;
+      if (key==='sec'){ li.sys = 0; li.pl = 0; }
+      if (key==='sys'){ li.pl = 0; }
+      renderLayers();
+    }
+    renderLayers();
 
     function initPlanet(){
       var cv = host.querySelector('#w-cv'), gl = cv.getContext('webgl',{antialias:true,preserveDrawingBuffer:true});
@@ -3185,7 +3242,7 @@ TOOLS.world = {
         gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_SHORT,0);
       }
       frame();
-      if (planetSel.value) setPlanet(planetSel.value);
+      setPlanet(curPlanet().id);
     }
   },
   unmount: function(){ if (planetRAF) cancelAnimationFrame(planetRAF); planetRAF=0; planetGL=null; }
