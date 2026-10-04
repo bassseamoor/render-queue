@@ -289,6 +289,8 @@
   padding:10px 12px;background:var(--holo-surface);margin-bottom:4px}
 #view-home .split-in{border-color:rgba(95,212,255,.45);box-shadow:inset 3px 0 0 var(--holo-cyan)}
 #view-home .split-pane .trow{margin-bottom:2px}
+#view-home .split-toggle{cursor:pointer;user-select:none}
+#view-home .split-toggle:hover{color:var(--holo-cyan)}
 
 </style>
 <style>
@@ -406,7 +408,7 @@ summary{cursor:pointer}
 
 
 <script>
-var S=null, SEL=null, OPEN={}, LASTHASH='', UI={trail:[{kind:'home'}],texp:{'project:more-os':1},taskOpen:{},right:{mode:'timeline'},mView:'work'};
+var S=null, SEL=null, OPEN={}, LASTHASH='', UI={trail:[{kind:'home'}],splitCollapsed:{},texp:{'project:more-os':1},taskOpen:{},right:{mode:'timeline'},mView:'work'};
 var SEEN_MAX=0, REDUCED=false; try{REDUCED=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function ago(ts){if(!ts)return 'never';var s=Math.max(0,Date.now()/1000-ts);if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'}
@@ -524,7 +526,8 @@ function openNode(kind,id){
 }
 function setTrail(t){
   UI.trail=t; syncHash(); renderTree(); renderCenter();
-  var ce=document.getElementById('center'); if(ce)ce.scrollTop=0;
+  var ce=document.getElementById('center');
+  if(ce){var d=document.getElementById('detail-anchor');ce.scrollTop=d?d.offsetTop:0}
 }
 function goBack(){if(UI.trail.length>1)setTrail(UI.trail.slice(0,-1))}
 function goCrumb(i){setTrail(UI.trail.slice(0,i+1))}
@@ -562,7 +565,8 @@ function crumbsHTML(){
 function stripShellHead(html){
   return html.replace(/^<div class="row" style="margin-bottom:4px">[\s\S]*?<\/div>/,'');
 }
-function homeSplit(){
+function toggleSplit(w){UI.splitCollapsed=UI.splitCollapsed||{};UI.splitCollapsed[w]=!UI.splitCollapsed[w];renderCenter()}
+function splitBoxes(){
   var comps=S.components||{};
   function C(id){var c=comps[id];return c?{kind:'component',id:id,name:c.name,st:c.status,role:c.role}:null}
   var inIds=['canvas-shell','wrangler-catalog','js-create-pipeline','seed-lab','project-pulse'];
@@ -580,6 +584,19 @@ function homeSplit(){
       +'<span class="badge b-'+c.role+'">'+esc(c.role)+'</span>'
       +'<span class="tstat">'+esc(c.st)+'</span></div>';
   }
+  var sc=UI.splitCollapsed||{};
+  return '<h4 class="sech split-toggle" role="button" tabindex="0" onclick="toggleSplit(\'in\')" onkeydown="if(event.key===\'Enter\')toggleSplit(\'in\')">'
+    +'In Moor \u2014 in the product now ('+inKids.length+') <span class="meta">'+(sc.in?'\u25b8 show':'\u25be hide')+'</span></h4>'
+    +(sc.in?'':'<div class="split-pane split-in">'+inKids.map(row).join('')+'</div>')
+    +'<h4 class="sech split-toggle" role="button" tabindex="0" onclick="toggleSplit(\'notin\')" onkeydown="if(event.key===\'Enter\')toggleSplit(\'notin\')">'
+    +'Not in Moor \u2014 reference, already made somewhere ('+notInCount+') <span class="meta">'+(sc.notin?'\u25b8 show':'\u25be hide')+'</span></h4>'
+    +(sc.notin?'':'<div class="split-pane split-notin">'
+      +groups.map(function(g){
+          var kids=g.ids.map(C).filter(Boolean);
+          return '<div class="meta" style="margin:8px 0 4px">'+esc(g.name)+' ('+kids.length+')</div>'+kids.map(row).join('');
+        }).join('')+'</div>');
+}
+function homeBody(){
   var mvp=(S.objectives||{})['more-os-mvp']||{};
   var evs=S.activity||[];
   var verified=evs.filter(function(e){return /^(task_completed|check_passed|component_registered|decision_recorded)$/.test(e.type)&&e.origin==='confirmed'});
@@ -602,21 +619,13 @@ function homeSplit(){
       ['Reporting',names.length?esc(names.join(', ')):'<span class="sub">none reporting</span>'],
       ['Open questions',String(open)]
     ]);
-  h+='<h4 class="sech">In Moor \u2014 in the product now ('+inKids.length+')</h4>'
-    +'<div class="split-pane split-in">'+inKids.map(row).join('')+'</div>'
-    +'<h4 class="sech">Not in Moor \u2014 reference, already made somewhere ('+notInCount+')</h4>'
-    +'<div class="split-pane split-notin">'
-    +groups.map(function(g){
-        var kids=g.ids.map(C).filter(Boolean);
-        return '<div class="meta" style="margin:8px 0 4px">'+esc(g.name)+' ('+kids.length+')</div>'+kids.map(row).join('');
-      }).join('')+'</div>';
   h+='<h4 class="sech">Tasks</h4>'+tasksHTML(tasks);
   h+=needsDecisionHTML(null,null);
   return h;
 }
 function centerDetail(n){
   var body='';
-  if(n.kind==='home')return homeSplit();
+  if(n.kind==='home')return homeBody();
   if(n.kind==='project')return cProject();
   if(n.kind==='group')return cGroup(n.id);
   if(n.kind==='component')return cComponentFull(n.id);
@@ -833,7 +842,10 @@ function cLinked(n){
 }
 function renderCenter(){
   var n=currentNode();
-  document.getElementById('center').innerHTML=crumbsHTML()+centerDetail(n);
+  var h=splitBoxes();
+  if(n.kind==='home')h+=homeBody();
+  else h+='<div id="detail-anchor"></div>'+crumbsHTML()+centerDetail(n);
+  document.getElementById('center').innerHTML=h;
   afterCenterRender(n);
 }
 /* holo pointer tilt: subtle 3D follow on cards. Fine pointers only, never under
