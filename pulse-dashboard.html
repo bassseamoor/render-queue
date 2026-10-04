@@ -2083,7 +2083,7 @@ window.FIELD_GLSL = "uniform vec3 seedOff;\nuniform vec4 uEditA[48];   /* xyz = 
 window.MESH_FRAG = "\nprecision highp float;\nvarying vec3 vPosition,vNormal,vTint;varying vec2 vTex,vBuild;varying vec4 vInfo,vShadow;varying float vFade,vProgress;\nuniform mat4 uLightMatrix;uniform highp sampler2D uShadow;uniform sampler2D uMaterial;uniform sampler2D uBlimpSign;uniform sampler2D uBillboard;uniform sampler2D uFoliage;uniform sampler2D uSignage,uGraffiti,uFlag;uniform vec3 uEye,uSun,uLandTint,uWaterTint;uniform vec4 uGeo,uMap;uniform vec2 uCenter,uSpacing,uBounds;uniform vec3 uPark;uniform float uTime,uStory,uWeather,uMist,uGlow,uRays,uPixelScale;uniform float uSunI,uAmbI,uTod;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\nfloat noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}\nfloat landDistance(vec2 p){float type=uGeo.x,phase=uGeo.y,offset=uGeo.z,water=uGeo.w;float river=offset+sin(p.y*uMap.x+phase)*uMap.y+p.y*uMap.z;\n if(type<.5)return abs(p.x-river)-water;if(type<1.5)return offset+sin(p.y*.09+phase)*4.-p.x;if(type<2.5)return length((p-uCenter)/vec2(1.50,2.4))-1.52;if(type<3.5)return 20.;if(type<4.5)return min(abs(p.x-river)-water,abs(p.y-offset*.7-sin(p.x*.12+phase)*2.)-water*.72);return p.y-offset-sin(p.x*.095+phase)*3.8;}\nfloat unpack(vec4 c){return dot(c,vec4(1.,1./255.,1./65025.,1./16581375.));}\nfloat shadow(vec3 N){\n float reach=length(vPosition.xz);if(reach>36.||dot(N,uSun)<.025)return 1.;\n vec3 q=vShadow.xyz/vShadow.w*.5+.5;if(q.x<0.||q.x>1.||q.y<0.||q.y>1.||q.z<0.||q.z>1.)return 1.;\n // Compare each sample against the RECEIVER PLANE at that sample, not the center depth.\n // Inverse-transpose normal for ortho(34, .1, 130), derived from its squared axis scales.\n vec3 lightNormal=(uLightMatrix*vec4(N,0.)).xyz*vec3(1156.,1156.,4218.5025);\n vec2 slope=clamp(-lightNormal.xy/(abs(lightNormal.z)<.0001?.0001:lightNormal.z),vec2(-12.),vec2(12.));\n vec2 grid=q.xy*1024.-.5,base=floor(grid),f=fract(grid);\n vec2 p00=(base+vec2(.5,.5))/1024.,p10=(base+vec2(1.5,.5))/1024.,p01=(base+vec2(.5,1.5))/1024.,p11=(base+vec2(1.5,1.5))/1024.;\n float bias=.00012;\n float s00=step(q.z+dot(slope,p00-q.xy)-bias,unpack(texture2D(uShadow,p00))),s10=step(q.z+dot(slope,p10-q.xy)-bias,unpack(texture2D(uShadow,p10))),s01=step(q.z+dot(slope,p01-q.xy)-bias,unpack(texture2D(uShadow,p01))),s11=step(q.z+dot(slope,p11-q.xy)-bias,unpack(texture2D(uShadow,p11)));\n float lit=mix(mix(s00,s10,f.x),mix(s01,s11,f.x),f.y);return mix(lit,1.,smoothstep(26.,36.,reach));\n}\n\nvoid main(){if(vFade<.015||(vBuild.y>.5&&vPosition.y>vBuild.x))discard;vec3 N=normalize(vNormal),V=normalize(uEye-vPosition);float footprint=length(uEye-vPosition)*uPixelScale/max(.22,abs(dot(N,V)));float mat=vInfo.x,seed=floor(vInfo.y+.5);vec3 albedo=vTint;float nightF=1.-smoothstep(.05,.55,uTod);if(mat>10.5&&mat<11.5){float shore=landDistance(vPosition.xz);mat=shore<0.?6.:5.;vec2 p=vPosition.xz;float park=uGeo.x>1.5&&uGeo.x<2.5?1.-smoothstep(4.10,4.45,length((p-uCenter)/vec2(1.15,2.2))):uGeo.x>2.5&&uGeo.x<3.5?1.-smoothstep(3.0,3.5,length(p)):1.-smoothstep(uPark.z-.25,uPark.z+.25,length(p-uPark.xy));float town=1.-smoothstep(.96,1.10,max(abs(p.x)/uBounds.x,abs(p.y)/uBounds.y));vec3 land=mix(uLandTint,mix(vec3(.30,.33,.30),uLandTint,park),town);albedo=shore<0.?uWaterTint:mix(vec3(.48,.44,.30),land,smoothstep(0.,.23,shore));}float rough=.7,metal=0.;vec3 emission=vec3(0.);float grain=texture2D(uMaterial,fract(vPosition.xz*.17)).b;albedo*=.992+.016*grain;\n // Facade detail follows floor courses; broad mineral variation precedes fine joints.\n if(mat>.5&&mat<3.5&&abs(N.y)<.5){\n  float floorHeight=max(.32,vInfo.w),bay=mat<1.5?.29:.38;\n  vec2 coord=vec2(vTex.x/bay,vPosition.y/floorHeight),cell=floor(coord),f=fract(coord);\n  float aa=clamp(footprint/bay*.6,.025,.32),nearDetail=(1.-smoothstep(.035,.16,footprint));\n  float left=mat<1.5?.08:.20,right=1.-left,low=mat<1.5?.12:.23;\n  float panes=smoothstep(left-aa,left+aa,f.x)*(1.-smoothstep(right-aa,right+aa,f.x))*smoothstep(low-aa,low+aa,f.y)*(1.-smoothstep(.86-aa,.86+aa,f.y));\n  panes=mix(panes,(right-left)*(.86-low),smoothstep(.23,.42,footprint/bay));\n  float rnd=hash(cell+seed),column=hash(vec2(cell.x,seed));\n  float windowLight=smoothstep(1.,1.20,vProgress)*step(mix(.82,.40,nightF),rnd);\n  vec3 reflection=mix(vec3(.115,.205,.245),vec3(.36,.53,.56),clamp(V.y*.65+.30,0.,1.));\n  reflection*=.80+.16*column+.045*sin(vPosition.y*.61+seed);\n  reflection+=vec3(.19,.16,.10)*pow(max(0.,dot(reflect(-V,N),uSun)),16.);\n  // Curtains and recessed upper edges give glazing depth without noisy black grids.\n  float curtain=step(.64,rnd)*smoothstep(.38,.50,f.x)*.16;\n  reflection=mix(reflection,vec3(.54,.48,.34),curtain);\n  float recess=mix(.66,1.,smoothstep(low,low+.20,f.y));\n  vec3 mineralField=texture2D(uMaterial,fract(vec2(vTex.x,vPosition.y)*.11+seed*.137)).rgb;float mineral=mineralField.r*.65+mineralField.g*.35;\n  albedo*=.95+.08*mineral;\n  if(mat<1.5){albedo=mix(vTint*.80,reflection*recess,panes);rough=.22;metal=.24;}\n  else if(mat<2.5){\n   vec2 slab=fract(vec2(vTex.x*2.1,vPosition.y/floorHeight));\n   float joint=(1.-smoothstep(.012,.035,min(slab.x,slab.y)))*nearDetail;\n   albedo*=1.-joint*.11;\n   float sill=smoothstep(.16,.21,f.y)*(1.-smoothstep(.23,.28,f.y))*smoothstep(.13,.22,f.x)*(1.-smoothstep(.78,.87,f.x));\n   albedo*=1.+sill*.12*nearDetail;albedo=mix(albedo,reflection*.58*recess,panes*.90);rough=.67;\n  }else{\n   vec2 brickCoord=vec2(vTex.x*8.,vPosition.y*15.);brickCoord.x+=mod(floor(brickCoord.y),2.)*.5;\n   vec2 joint=fract(brickCoord);float mortar=(1.-smoothstep(.035,.105,min(joint.x,joint.y)))*nearDetail;\n   float brickTone=hash(floor(brickCoord)+seed);\n   albedo*=mix(1.,.94+.08*brickTone,nearDetail);albedo=mix(albedo,albedo*1.19,mortar*.65);\n   albedo=mix(albedo,reflection*.48*recess,panes*.88);rough=.86;\n  }\n  emission=vec3(1.,.67,.28)*windowLight*panes*(.075+.95*nightF)*uGlow;\n }\n if(mat>.5&&mat<1.5&&abs(N.y)>=.5){float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(albedo,vec3(.32,.48,.52),.16+fres*.28);rough=.24;metal=.22;}\n if(mat>3.5&&mat<4.5){albedo*=.96+.04*noise(vPosition.xz*5.);rough=.92;}\n if(mat>4.5&&mat<5.5){albedo*=.96+.04*noise(vPosition.xz*3.);rough=.93;}\n if(mat>5.5&&mat<6.5){float ripple=sin(vPosition.x*4.+uTime*.21)+.43*sin(vPosition.z*6.7-uTime*.133);N=normalize(N+vec3(ripple*.025,0.,sin(vPosition.z*8.3+uTime*.091)*.014));float fres=pow(1.-max(dot(N,V),0.),4.);albedo=mix(uWaterTint,mix(vec3(.28,.48,.52),vec3(.19,.33,.42),.30),fres*.74);float glint=pow(max(dot(reflect(-V,N),uSun),0.),260.);albedo+=vec3(.72,.74,.58)*glint*.22;float foam=(1.-smoothstep(.02,.16,abs(landDistance(vPosition.xz))))*(.50+.16*sin(vPosition.z*6.+uTime*.31)+.10*sin(vPosition.x*8.7-uTime*.47));albedo=mix(albedo,vec3(.69,.85,.77),foam*.42);rough=.12;metal=.3;}\n if(mat>7.5&&mat<8.5){rough=.36;metal=.24;}\n if(mat>9.5&&mat<10.5){vec2 tile=fract(vec2(vTex.x*11.,vPosition.z*16.));float nearDetail=1.-smoothstep(.025,.095,footprint);albedo*=1.-.12*(1.-smoothstep(.03,.14,min(tile.x,tile.y)))*nearDetail;rough=.81;}\n // Low contrast, multiscale surface finishes inspired by Forge's baked detail layers.\n if(mat>11.5&&mat<18.6){\n  vec2 surface=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field=texture2D(uMaterial,fract(surface*.11+seed*.137)).rgb;float broad=field.r,fine=field.b,detail=1.-smoothstep(.035,.14,footprint);\n  albedo*=.95+.075*broad+.025*fine*detail;\n  if(mat<12.5){vec2 course=fract(surface*vec2(2.,5.));float joint=1.-smoothstep(.015,.065,min(course.x,course.y));albedo*=1.-joint*.09*detail;rough=.83;}\n  else if(mat<13.5){albedo*=.98+.035*fine;rough=.90;}\n  else if(mat<14.5){float seam=1.-smoothstep(.025,.085,fract(surface.x*8.));albedo=mix(albedo,albedo*vec3(.80,1.04,.96),broad*.3);albedo*=1.-seam*.16*detail;rough=.49;metal=.28;}\n  else if(mat<15.5){albedo*=.93+.09*texture2D(uMaterial,fract(surface*vec2(.8,.04)+seed*.137)).g;rough=.85;}\n  else if(mat<16.5){albedo*=.92+.12*fine*detail;rough=.98;}\n  else if(mat<17.5){albedo*=1.-.28*(1.-smoothstep(.15,.35,fract(surface.x*26.)))*detail;rough=.68;}\n  else if(mat<18.5){vec2 panel=fract(surface*vec2(14.,18.));albedo*=mix(.97,.8+.2*smoothstep(.025,.10,min(panel.x,panel.y)),detail);rough=.25;metal=.30;}\n  else{albedo=vec3(.49,.50,.46)*(.96+.05*broad);rough=.94;}\n }\n // Blimp marquee: the scrolling canvas sign on the envelope.\n if(mat>19.5&&mat<20.5){vec3 sign=texture2D(uBlimpSign,vTex).rgb;albedo=sign;emission=sign*.32;rough=.5;metal=.1;}\n // Billboards: seeded canvas ads drifting in and out on their own schedule.\n if(mat>20.5&&mat<21.5){vec3 ad=texture2D(uBillboard,vTex).rgb;if(hash(gl_FragCoord.xy)>vFade+.001)discard;albedo=ad;emission=ad*.38*uGlow;rough=.55;}\n // Drifting clouds: soft white, shaded by normal.\n if(mat>21.5&&mat<22.5){float clUp=max(N.y,0.),clDn=max(-N.y,0.);albedo=vec3(.94,.955,.975)*(.80+.20*clUp+.16*clDn);rough=1.;}\n // Instanced foliage: leafy variation with a darker underside.\n if(mat>22.5&&mat<23.5){albedo*=.86+.28*noise(vPosition.xz*7.+vPosition.y*2.3);albedo*=.55+.45*max(N.y,0.);rough=1.;}\n if(mat>23.5&&mat<24.5){vec4 ftx=texture2D(uFoliage,vTex);if(ftx.a<.42)discard;albedo=ftx.rgb*(.72+.38*max(N.y,0.));rough=1.;}\n // Worker C materials 24-32: signage, translucent glass, interiors, beacons, smoke,\n // graffiti, brushed metal, copper, flags. Glass/interior/smoke stay LOD-cheap.\n if(mat>32.5&&mat<33.5){vec3 sg=texture2D(uSignage,vTex).rgb;albedo=sg;emission=sg*.30*uGlow;rough=.5;}\n if(mat>24.5&&mat<25.5){\n  // Translucent glass: cheap screen-door dither, denser far / sparse near.\n  float dist=length(uEye-vPosition);\n  float keep=mix(.40,.985,smoothstep(3.,17.,dist));\n  if(hash(gl_FragCoord.xy)>keep+.001)discard;\n  float bay=.29;vec2 coord=vec2(vTex.x/bay,vPosition.y/.34);vec2 cf=floor(coord),f=fract(coord);\n  float frame=1.-smoothstep(.015,.06,min(min(f.x,1.-f.x),min(f.y,1.-f.y)));\n  vec3 reflection=mix(vec3(.10,.17,.20),vec3(.44,.56,.59),clamp(V.y*.6+.35,0.,1.));\n  albedo=mix(vTint*.72,reflection,.55+.30*frame);\n  albedo*=.92+.08*hash(cf+seed);\n  rough=.16;metal=.32;\n }\n if(mat>25.5&&mat<26.5){\n  // Interior hints: warm, coarse, culled far away so they never cost a pixel at LOD.\n  float dist2=length(uEye-vPosition);\n  if(hash(gl_FragCoord.xy*1.71)<smoothstep(4.,13.,dist2))discard;\n  albedo*=.9+.1*hash(floor(vPosition.xz*20.)+seed);\n  emission=albedo*vec3(.55,.38,.22)*uGlow;rough=.9;\n }\n if(mat>26.5&&mat<27.5){float blink=step(.42,fract(uTime*.5+seed*.061));albedo=mix(vec3(.30,.03,.02),vec3(1.,.16,.10),blink);emission=vec3(1.2,.12,.06)*blink*uGlow;rough=.4;}\n if(mat>27.5&&mat<28.5){\n  // Smoke: alpha-scaled dither (vFade carries the age ramp), soft procedural noise.\n  float a=clamp(vFade,0.,1.)*.5;\n  if(hash(gl_FragCoord.xy*1.31)>a+.001)discard;\n  float nse=hash(floor(vPosition.xz*24.)+floor(vPosition.y*24.));\n  albedo=vec3(.60,.62,.65)*(.88+.24*nse);rough=1.;\n }\n if(mat>28.5&&mat<29.5){vec3 tag=texture2D(uGraffiti,vTex).rgb;if(dot(tag,vec3(.333))<.04)discard;albedo=tag;emission=tag*.12;rough=.9;}\n if(mat>29.5&&mat<30.5){\n  // Brushed metal: streaky roughness from the material atlas.\n  vec2 surface=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field=texture2D(uMaterial,fract(surface*vec2(.13,.53)+seed*.137)).rgb;\n  albedo*=.92+.16*field.g;\n  float streak=texture2D(uMaterial,fract(vec2(surface.x*3.,surface.y*36.)+seed*.137)).r;\n  albedo*=1.-streak*.10;rough=.44;metal=.82;\n }\n if(mat>30.5&&mat<31.5){\n  // Copper: subtle ribbed variation, warmer reflection.\n  vec2 surface2=abs(N.y)>.5?vPosition.xz:vec2(vTex.x,vPosition.y);\n  vec3 field2=texture2D(uMaterial,fract(surface2*.23+seed*.137)).rgb;\n  albedo*=.80+.30*field2.b;\n  float rib=1.-smoothstep(.10,.30,abs(fract(surface2.x*9.)-.5));\n  albedo*=1.-rib*.14;rough=.58;metal=.72;\n }\n if(mat>31.5&&mat<32.5){vec3 fl=texture2D(uFlag,vTex).rgb;albedo=fl*(.92+.08*hash(gl_FragCoord.xy));rough=.92;}\n if(mat>8.5&&mat<9.5){emission=albedo*uGlow*(.20+.95*nightF);rough=.2;}\n // Formation smoke: the ribbon pales and thins into the haze as it ages.\n if(vInfo.z>11.5&&vInfo.z<12.5){float sage=clamp(vTex.x/7.,0.,1.);albedo=mix(albedo,vec3(.45,.55,.60),sage*sage*.9);emission*=1.-sage*.75;}\n // Fresh concrete at the active frontier settles into the finished facade below it.\n if(vBuild.y>.5&&mat>.5&&mat<3.5){float finish=smoothstep(.07,.54,vBuild.x-vPosition.y);albedo=mix(vec3(.45,.47,.44),albedo,finish);emission*=finish;rough=mix(.92,rough,finish);metal*=finish;}\n float direct=max(dot(N,uSun),0.),visibility=shadow(normalize(vNormal));float sky=.58+.42*max(N.y,0.);\n // Plain lighting controls: sun strength, ambient strength, time of day (warms and lowers the sun).\n vec3 sunTint=mix(vec3(1.50,1.14,.73),vec3(1.78,.90,.48),1.-smoothstep(.05,.55,uTod));\n vec3 ambTint=vec3(.155,.255,.445)*mix(.42,1.,smoothstep(.0,.65,uTod));\n float ao=mix(.58,1.,smoothstep(0.,.8,vPosition.y));vec3 lighting=ambTint*sky*ao*uAmbI+sunTint*direct*visibility*(.32+.91*uRays)*uSunI;\n vec3 H=normalize(V+uSun);float spec=pow(max(dot(N,H),0.),mix(125.,12.,rough))*(.10+metal*.7)*visibility;vec3 col=albedo*lighting+vec3(1.0,.86,.63)*spec+emission;\n float distance=length(uEye-vPosition);float haze=1.-exp(-max(distance-16.,0.)*.010*uMist*uMist);col=mix(col,vec3(.45,.55,.60),haze);col*=1.+.022*uWeather;col*=.45+.65*uGlow;gl_FragColor=vec4(col,1.);\n}\n";
 </script>
 <script>
-var SEED_EVENTS = [{"t": 1791082673000, "title": "Creature Lab Stage A live: deterministic creature compiler replaces 2D prototype", "body": "End-to-end walker per Creature Compiler handoff v1.0 Stage A: seeded genome -> canonical anatomy (hashed) -> validation + bounded repair -> compiled mesh/IK rig/soft belly -> procedural walking over fixture terrain. 4-le", "origin": "agent-report"}, {"t": 1791082667000, "title": "Source drawer + manifest: underlying logic exposed for AIs and builders", "body": "Non-invasive </> button in Pulse header opens drawer listing every tool's panel source, component source, dependencies. pulse-manifest.json published so any AI handed the link can fetch the full inventory and reuse tools", "origin": "agent-report"}, {"t": 1791067367000, "title": "How do private sessions connect \u2014 or how should they?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "What does the menu look like? Is there something that tells me a menu exists, or do I have to find it?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "Does it automatically sign into the account, or do I sign in myself?", "body": "", "origin": "agent-report"}, {"t": 1791067362000, "title": "More OS page added: underlying systems, open OS questions, and the hierarchical road to MVP", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "I\u2019m on my own private server. When I decide \u2018time to explore\u2019 \u2014 where am I going? What do I need to connect to?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "When it\u2019s local, do I load in as a character? With an account? Is there already a default account, quote unquote?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "Sign in or local build? My read: it\u2019s a local build \u2014 private, no sign-in needed. Confirm or correct.", "body": "", "origin": "agent-report"}, {"t": 1791066599000, "title": "Drill-down pages shipped: every component/generator/layout/decision/concept opens its own page with impact analysis and Q&A; dependency grap", "body": "", "origin": "confirmed"}, {"t": 1791066584000, "title": "Staged until Sebastian approves the install \u2014 the live-install handoff doc has the steps.", "body": "", "origin": "agent-report"}, {"t": 1791066584000, "title": "Should the dashboard live in the real MOOR or stay a staged copy?", "body": "", "origin": "agent-report"}, {"t": 1791066022000, "title": "How-things-work section added: 10 real layouts (servers, geometry, doctrine, compiler, craft, release) with approach history and bring-back ", "body": "", "origin": "confirmed"}, {"t": 1791065856000, "title": "Generator atlas added: 6 real procedural systems separated out (terrain, terrain renderer, tree builder, planet vegetation, world conditions", "body": "", "origin": "confirmed"}];
+var SEED_EVENTS = [{"t": 1791108469000, "title": "Wonder Feed culmination: workshop spotlights + save\u2192feed\u2192remix loop live", "body": "Every 4th feed card now spotlights a distilled component (weighted by learned taste). Mixes saved in Moor Canvas join the workshop automatically and pull back into the canvas to remix. Canvas learns which pairs combine w", "origin": "agent-report"}, {"t": 1791082673000, "title": "Creature Lab Stage A live: deterministic creature compiler replaces 2D prototype", "body": "End-to-end walker per Creature Compiler handoff v1.0 Stage A: seeded genome -> canonical anatomy (hashed) -> validation + bounded repair -> compiled mesh/IK rig/soft belly -> procedural walking over fixture terrain. 4-le", "origin": "agent-report"}, {"t": 1791082667000, "title": "Source drawer + manifest: underlying logic exposed for AIs and builders", "body": "Non-invasive </> button in Pulse header opens drawer listing every tool's panel source, component source, dependencies. pulse-manifest.json published so any AI handed the link can fetch the full inventory and reuse tools", "origin": "agent-report"}, {"t": 1791067367000, "title": "How do private sessions connect \u2014 or how should they?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "What does the menu look like? Is there something that tells me a menu exists, or do I have to find it?", "body": "", "origin": "agent-report"}, {"t": 1791067367000, "title": "Does it automatically sign into the account, or do I sign in myself?", "body": "", "origin": "agent-report"}, {"t": 1791067362000, "title": "More OS page added: underlying systems, open OS questions, and the hierarchical road to MVP", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "I\u2019m on my own private server. When I decide \u2018time to explore\u2019 \u2014 where am I going? What do I need to connect to?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "When it\u2019s local, do I load in as a character? With an account? Is there already a default account, quote unquote?", "body": "", "origin": "agent-report"}, {"t": 1791067358000, "title": "Sign in or local build? My read: it\u2019s a local build \u2014 private, no sign-in needed. Confirm or correct.", "body": "", "origin": "agent-report"}, {"t": 1791066599000, "title": "Drill-down pages shipped: every component/generator/layout/decision/concept opens its own page with impact analysis and Q&A; dependency grap", "body": "", "origin": "confirmed"}, {"t": 1791066584000, "title": "Staged until Sebastian approves the install \u2014 the live-install handoff doc has the steps.", "body": "", "origin": "agent-report"}, {"t": 1791066584000, "title": "Should the dashboard live in the real MOOR or stay a staged copy?", "body": "", "origin": "agent-report"}, {"t": 1791066022000, "title": "How-things-work section added: 10 real layouts (servers, geometry, doctrine, compiler, craft, release) with approach history and bring-back ", "body": "", "origin": "confirmed"}];
 </script>
 <script>
 window.APP_DATA = {
@@ -9713,7 +9713,7 @@ function copyText(s, done){
 /* ---------- CSS ---------- */
 var CSS =
  '.wd-feed{height:78vh;overflow-y:auto;scroll-snap-type:y mandatory;border-radius:14px;background:#05070d;position:relative;overscroll-behavior:contain}'+
- '.wd-card{min-height:76vh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;align-items:center;position:relative;padding:18px 14px 84px;box-sizing:border-box;border-bottom:1px solid rgba(255,255,255,.05)}'+
+ '.wd-kicker{font-size:10px;letter-spacing:.24em;color:#8fd0ff;opacity:.75;margin-bottom:5px}'+'.wd-card{min-height:76vh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;align-items:center;position:relative;padding:18px 14px 84px;box-sizing:border-box;border-bottom:1px solid rgba(255,255,255,.05)}'+
  '.wd-visual{width:100%;max-width:700px;position:relative}'+
  '.wd-visual canvas{width:100%;display:block;border-radius:12px;background:#05070d}'+
  '.wd-cap{margin-top:12px;text-align:center}'+
@@ -9808,6 +9808,46 @@ CSS +=
 CSS +=
  '.wd-empty2{padding:60px 20px;text-align:center;color:#5a6a80;font-size:13px;line-height:1.8;'+
  'scroll-snap-align:start;min-height:50vh;display:flex;align-items:center;justify-content:center}';
+/* ============ TIKTOK LAYOUT: full-bleed visual, right rail, bottom caption ============ */
+CSS +=
+ '.wd-card{padding:0;overflow:hidden;-webkit-tap-highlight-color:transparent}'+
+ '.wd-full .wd-card{min-height:calc(100dvh - 92px);min-height:calc(100svh - 92px)}'+
+ '.wd-card{scroll-margin-top:96px}'+
+ '.wd-card:has(.wd-visual){justify-content:flex-start}'+
+ '.wd-visual{position:absolute!important;inset:0;max-width:none!important;touch-action:pan-y}'+
+ '.wd-visual canvas{width:100%!important;height:100%!important;border-radius:0!important;display:block}'+
+ '.wd-card:has(.wd-visual)::after{content:"";position:absolute;left:0;right:0;bottom:0;height:36%;'+
+ 'background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.62));pointer-events:none;z-index:5}'+
+ '.wd-rail{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;'+
+ 'gap:14px;z-index:8;align-items:center}'+
+ '.wd-railbtn{width:48px;height:48px;border-radius:50%;border:1px solid rgba(255,255,255,.25);'+
+ 'background:rgba(8,12,22,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;'+
+ 'font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;'+
+ 'pointer-events:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;padding:0;line-height:1}'+
+ '.wd-railbtn:active{transform:scale(.92)}'+
+ '.wd-railbtn.liked{color:#ff6b8a;border-color:rgba(255,107,138,.75);background:rgba(60,12,24,.6)}'+
+ '.wd-railbtn.saved{color:#8affc0;border-color:rgba(138,255,192,.7);background:rgba(10,40,24,.6)}'+
+ '.wd-cap{position:absolute;left:14px;bottom:calc(16px + env(safe-area-inset-bottom,0px));right:78px;z-index:7;'+
+ 'text-align:left;margin:0;pointer-events:none}'+
+ '.wd-cap b{display:block;font-size:16px;letter-spacing:.02em;color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.8)}'+
+ '.wd-cap span{font-size:12px;color:#d5dce8;text-shadow:0 1px 8px rgba(0,0,0,.8)}'+
+ '.wd-kicker{display:block;font-size:10px;letter-spacing:.14em;color:#8fd0ff;margin-bottom:4px;text-shadow:0 1px 8px rgba(0,0,0,.8)}'+
+ '.wd-seed{display:none!important}'+
+ '.wd-sheetwrap{position:fixed;inset:0;z-index:70;background:rgba(2,4,8,.5)}'+
+ '.wd-sheetwrap[hidden]{display:none}'+
+ '.wd-sheet{position:absolute;left:0;right:0;bottom:0;background:#0c1220;border-top:1px solid rgba(255,255,255,.12);'+
+ 'border-radius:20px 20px 0 0;padding:10px 18px calc(20px + env(safe-area-inset-bottom,0px))}'+
+ '.wd-sheetgrab{width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.22);margin:0 auto 12px}'+
+ '.wd-sheet b{color:#eef;font-size:14px;display:block;margin-bottom:10px}'+
+ '.wd-sheet input{width:100%;box-sizing:border-box;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);'+
+ 'border-radius:12px;color:#fff;padding:14px;font-size:16px;outline:none;margin-bottom:10px}'+
+ '.wd-sheetrow{display:flex;gap:10px}'+
+ '.wd-sheetrow button{flex:1;padding:13px;border-radius:12px;font-size:15px;cursor:pointer;'+
+ 'border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#cde}'+
+ '.wd-sheetrow button.primary{background:rgba(120,100,255,.3);border-color:rgba(160,140,255,.6);color:#fff;font-weight:600}'+
+ /* text cards keep designed look; rail overlays right edge (no overlap w/ text since padding) */+
+ '.wd-card:has(.wd-idea){padding-left:14px;padding-right:70px}'+
+ '.wd-comp{padding-right:70px!important}';
 
 /* ================= GENOME =================
  * genome = {type, seed, p:{...}} — the complete, serializable recipe.
@@ -10054,7 +10094,7 @@ var Attention = {
     }
   },
   clearSuppressed: function(){ var d=this.data(); d.suppressed=[]; this.save(d); },
-  viewEndSig: function(key, sig, params, dt, capId){
+  viewEndSig: function(key, sig, params, dt, capId, capIds){
     if (dt < 400) return; /* flicker, not a view */
     var d = this.data();
     var it = d.items[key] || {d:0,n:0,like:0,share:0,save:0,skip:0};
@@ -10075,10 +10115,11 @@ var Attention = {
     ts.d += dt; ts.n++; if (dt < 1500) ts.skip++;
     d.types[sig] = ts;
     this.save(d);
-    if (w){ Taste2.record(sig, params, w); if (capId) Taste2.recordCap(capId, w); }
+    if (w){ Taste2.record(sig, params, w); if (capId) Taste2.recordCap(capId, w);
+      if (capIds) for (var ci=0;ci<capIds.length;ci++) Taste2.recordCap(capIds[ci], w); }
   },
   viewEnd: function(genome, dt){
-    this.viewEndSig(genomeKey(genome), sigKey(genome), genome.p, dt, null);
+    this.viewEndSig(genomeKey(genome), sigKey(genome), genome.p, dt, null, genome.capIds);
   },
   signal: function(genome, kind, w){
     /* explicit signals: like/share/save/comment — weight the profile */
@@ -10092,6 +10133,7 @@ var Attention = {
     d.items[key] = it;
     this.save(d);
     Taste2.record(sig, genome.p, w);
+    if (genome.capIds) for (var ci=0;ci<genome.capIds.length;ci++) Taste2.recordCap(genome.capIds[ci], w);
   },
   signalSig: function(key, sig, params, kind, w, capId){
     var d = this.data();
@@ -10180,6 +10222,7 @@ var Taste2 = {
     var d = this.data(), out = {};
     Object.keys(p).forEach(function(k){ out[k] = p[k]; });
     Object.keys(out).forEach(function(k){
+      if (!RANGES[k]) return; /* hash/flag params (component) are never nudged */
       var pe = d.params[k];
       if (pe && pe.w >= 5 && rng() < 0.5 && typeof out[k]==='number'){
         var mean = pe.s/pe.w;
@@ -10385,16 +10428,15 @@ function cardShell(genome, title, sub){
   var el = document.createElement('div');
   el.className = 'wd-card';
   el.innerHTML =
-    '<div class="wd-seed">seed '+genome.seed+'</div>'+
     '<div class="wd-visual"></div>'+
-    '<div class="wd-cap"><b>'+esc(title)+'</b><span>'+esc(sub)+'</span></div>'+
-    '<div class="wd-actions">'+
-      '<button class="wd-act" data-a="like" title="like — tune the feed">♥</button>'+
-      '<button class="wd-act" data-a="comment" title="comment">💬</button>'+
-      '<button class="wd-act" data-a="share" title="share link">↗</button>'+
-      '<button class="wd-act" data-a="save" title="save to library">⬇</button>'+
+    '<div class="wd-rail">'+
+      '<button class="wd-railbtn" data-a="like" title="like — tune the feed">♥</button>'+
+      '<button class="wd-railbtn" data-a="comment" title="comment">💬</button>'+
+      '<button class="wd-railbtn" data-a="share" title="share link">↗</button>'+
+      '<button class="wd-railbtn" data-a="save" title="save to library">⬇</button>'+
+      '<button class="wd-railbtn" data-a="remix" title="remix this wonder">⟳</button>'+
     '</div>'+
-    '<div class="wd-commentbox" hidden><input placeholder="say something…" maxlength="140"><button>✓</button></div>';
+    '<div class="wd-cap"><b>'+esc(title)+'</b><span>'+esc(sub)+' · seed '+genome.seed+'</span></div>';
   return el;
 }
 function makeCanvas(w, h){
@@ -10477,8 +10519,7 @@ TYPES.push({kind:'planet', icon:'🪐', label:'Planet',
   var el = cardShell(genome, title, sub);
   var vis = el.querySelector('.wd-visual');
   var cv = document.createElement('canvas');
-  cv.width = 560; cv.height = 560;
-  cv.style.aspectRatio = '1/1';
+  var _gs = glPortrait(); cv.width = _gs[0]; cv.height = _gs[1]; cv._glNoFit = true;
   vis.appendChild(cv);
   var raf = 0, gl = null, ok = false;
   try{
@@ -10533,7 +10574,7 @@ TYPES.push({kind:'planet', icon:'🪐', label:'Planet',
       gl.enable(gl.DEPTH_TEST);
       var cy=Math.cos(yaw), sy=Math.sin(yaw);
       var rot=new Float32Array([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, 0,0,-3.1,1]);
-      var mvp=new Float32Array(16), Pm=persp(0.8,1,0.1,50);
+      var mvp=new Float32Array(16), Pm=persp(0.8,cv.width/Math.max(1,cv.height),0.1,50);
       for (var i2=0;i2<4;i2++) for (var j2=0;j2<4;j2++)
         mvp[i2*4+j2]=Pm[j2]*rot[i2*4]+Pm[4+j2]*rot[i2*4+1]+Pm[8+j2]*rot[i2*4+2]+Pm[12+j2]*rot[i2*4+3];
       gl.uniformMatrix4fv(uMVP,false,mvp);
@@ -10547,6 +10588,7 @@ TYPES.push({kind:'planet', icon:'🪐', label:'Planet',
     draw(); /* one frame now so the card is never blank */
   }catch(e){ ok = false; }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start: function(){ if (ok && !raf) frame(); },
     stop: function(){ if (raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -10565,6 +10607,7 @@ TYPES.push({kind:'terrain', icon:'⛰', label:'Terrain',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 420); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var layers = P.layers, t = rng()*100;
   var hue = P.hue;
   var raf = 0;
@@ -10613,6 +10656,7 @@ TYPES.push({kind:'terrain', icon:'⛰', label:'Terrain',
     }
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -10632,6 +10676,7 @@ TYPES.push({kind:'creature', icon:'🔮', label:'Creature',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, hue2 = (P.hue+P.hue2)%360;
   var N = 42, pts = [];
   var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.26;
@@ -10714,6 +10759,7 @@ TYPES.push({kind:'creature', icon:'🔮', label:'Creature',
     ctx.globalAlpha = 1;
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -10732,6 +10778,7 @@ TYPES.push({kind:'particles', icon:'✨', label:'Particles',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue;
   var Parr = [], NP = mode===0?90:(mode===1?70:110);
   for (var i=0;i<NP;i++){
@@ -10779,6 +10826,7 @@ TYPES.push({kind:'particles', icon:'✨', label:'Particles',
   }
   ctx.fillStyle = '#04060d'; ctx.fillRect(0,0,Wd,Ht);
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -10797,6 +10845,7 @@ TYPES.push({kind:'ambience', icon:'🎵', label:'Ambience',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue;
   var btn = document.createElement('button');
   btn.className = 'wd-mute'; btn.textContent = '🔇 tap for sound';
@@ -10894,6 +10943,7 @@ TYPES.push({kind:'ambience', icon:'🎵', label:'Ambience',
     }
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){
       if (raf){ cancelAnimationFrame(raf); raf=0; }
@@ -10914,6 +10964,7 @@ TYPES.push({kind:'forest', icon:'🌲', label:'Forest',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue;
   var NL = 4, layers = [];
   for (var L=0;L<NL;L++){
@@ -10986,6 +11037,7 @@ TYPES.push({kind:'forest', icon:'🌲', label:'Forest',
     }
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11002,6 +11054,7 @@ TYPES.push({kind:'tide', icon:'🌊', label:'Tide',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, NW = P.waves;
   var waves = [];
   for (var i=0;i<NW;i++){
@@ -11052,6 +11105,7 @@ TYPES.push({kind:'tide', icon:'🌊', label:'Tide',
     }
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11071,6 +11125,7 @@ TYPES.push({kind:'maze', icon:'\u{1F300}', label:'Maze',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.46;
   var NR = Math.round(P.rings), NS = 24;
   /* carve a spanning tree on the polar grid (randomized DFS) */
@@ -11155,6 +11210,7 @@ TYPES.push({kind:'maze', icon:'\u{1F300}', label:'Maze',
     ctx.beginPath(); ctx.arc(pp[0],pp[1],4,0,6.2832); ctx.fill();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11173,6 +11229,7 @@ TYPES.push({kind:'swarm', icon:'\u{1F41D}', label:'Swarm',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, inten = Math.round(P.intensity);
   /* simplified director: unlock schedule + swarm timer */
   var t = 0, spawnT = 0, swarmT = 8, wave = 0;
@@ -11220,6 +11277,7 @@ TYPES.push({kind:'swarm', icon:'\u{1F41D}', label:'Swarm',
     if (parts.length > 900) parts.splice(0, parts.length-900);
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11238,6 +11296,7 @@ TYPES.push({kind:'spectrum', icon:'\u{1F308}', label:'Spectrum',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var pal = PALS[P.pal % PALS.length];
   var flow = P.flow;
   /* collect palette colors into a band */
@@ -11282,6 +11341,7 @@ TYPES.push({kind:'spectrum', icon:'\u{1F308}', label:'Spectrum',
     ctx.globalAlpha = 1;
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11336,6 +11396,7 @@ TYPES.push({kind:'metaball', icon:'\u{1FAE7}', label:'Metaball',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var NB = Math.round(P.blobs), hue = P.hue, goo = P.goo;
   var blobs = [];
   for (var i=0;i<NB;i++){
@@ -11373,6 +11434,7 @@ TYPES.push({kind:'metaball', icon:'\u{1FAE7}', label:'Metaball',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11391,6 +11453,7 @@ TYPES.push({kind:'aurora', icon:'\u{1F30C}', label:'Aurora',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var NC = Math.round(P.curtains), hue = P.hue, speed = P.speed;
   var stars = [];
   for (var si=0;si<90;si++) stars.push({x:rng()*Wd, y:rng()*Ht*0.7, r:0.6+rng()*1.6, tw:1+rng()*3, ph:rng()*6.28});
@@ -11440,6 +11503,7 @@ TYPES.push({kind:'aurora', icon:'\u{1F30C}', label:'Aurora',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11458,6 +11522,7 @@ TYPES.push({kind:'choir', icon:'\u{1F3B5}', label:'Choir',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var cx = Wd/2, cy = Ht/2, base = Math.min(Wd,Ht)*0.16;
   var RATIOS = [1, 1.5, 2.02, 2.98];
   var NV = Math.round(P.voices), hue = P.hue;
@@ -11492,6 +11557,7 @@ TYPES.push({kind:'choir', icon:'\u{1F3B5}', label:'Choir',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11510,6 +11576,7 @@ TYPES.push({kind:'drops', icon:'\u{1F4A7}', label:'Drops',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, rate = P.rate;
   var drops = [], acc = 0;
   var motes = [];
@@ -11560,6 +11627,7 @@ TYPES.push({kind:'drops', icon:'\u{1F4A7}', label:'Drops',
     drops = drops.filter(function(d){ return d.t<2.4; });
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11578,6 +11646,7 @@ TYPES.push({kind:'grain', icon:'\u{1F4FC}', label:'Grain',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, inten = Math.round(P.intensity);
   var tiles = [];
   for (var gi=0;gi<3;gi++){
@@ -11623,6 +11692,7 @@ TYPES.push({kind:'grain', icon:'\u{1F4FC}', label:'Grain',
     ctx.fillStyle = vg; ctx.fillRect(0,0,Wd,Ht);
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11641,6 +11711,7 @@ TYPES.push({kind:'glyphs', icon:'\u{1F524}', label:'Glyphs',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, NG = Math.round(P.glyphs);
   var CH = ['▲','△','●','○','◆','◇','■','□','✕','◈','⌖','⟁','◐','◑','⋈','⟡'];
   var items = [];
@@ -11678,6 +11749,7 @@ TYPES.push({kind:'glyphs', icon:'\u{1F524}', label:'Glyphs',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11696,6 +11768,7 @@ TYPES.push({kind:'bloom', icon:'\u{1F338}', label:'Bloom',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.40;
   var hue = P.hue, pA = P.petalsA, pB = P.petalsB;
   var t = rng()*100, raf = 0;
@@ -11737,6 +11810,7 @@ TYPES.push({kind:'bloom', icon:'\u{1F338}', label:'Bloom',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11755,6 +11829,7 @@ TYPES.push({kind:'vortex', icon:'\u{1F32A}', label:'Vortex',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, NP = Math.round(P.count), swirl = P.swirl;
   var cx = Wd/2, cy = Ht/2;
   var parts = [];
@@ -11793,6 +11868,7 @@ TYPES.push({kind:'vortex', icon:'\u{1F32A}', label:'Vortex',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11811,6 +11887,7 @@ TYPES.push({kind:'lattice', icon:'\u{1F578}', label:'Lattice',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(560, 560); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var cx = Wd/2, cy = Ht/2, R = Math.min(Wd,Ht)*0.34;
   var hue = P.hue, spin = P.spin;
   var N = 4, pts = [], edges = [];
@@ -11859,6 +11936,7 @@ TYPES.push({kind:'lattice', icon:'\u{1F578}', label:'Lattice',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11877,6 +11955,7 @@ TYPES.push({kind:'crystal', icon:'\u{1F48E}', label:'Crystal',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, budget = Math.round(P.walkers);
   var GW = 150, GH = 100;
   var grid = new Uint8Array(GW*GH);
@@ -11946,6 +12025,7 @@ TYPES.push({kind:'crystal', icon:'\u{1F48E}', label:'Crystal',
     ctx.restore();
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -11972,6 +12052,7 @@ TYPES.push({kind:'evolver', icon:'\u{1F9EC}', label:'Evolver',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var MODES = ['screen','overlay','multiply','difference','lighten'];
   var SW = 340, SH = 230;
   var tmpA = document.createElement('canvas'); tmpA.width = SW; tmpA.height = SH;
@@ -12035,6 +12116,7 @@ TYPES.push({kind:'evolver', icon:'\u{1F9EC}', label:'Evolver',
     }
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ setup(); if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } teardown(); } };
 }});
@@ -12146,6 +12228,7 @@ TYPES.push({kind:'fireball', icon:'🔥', label:'Fireball',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, SZ = P.size;
   var spr = spellSprite(hue, 95, 55), sprW = spellSprite(hue, 100, 88);
   var t = 0, raf = 0;
@@ -12247,6 +12330,7 @@ TYPES.push({kind:'fireball', icon:'🔥', label:'Fireball',
     ctx.globalCompositeOperation = 'source-over';
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12262,6 +12346,7 @@ TYPES.push({kind:'frostnova', icon:'❄️', label:'Frost Nova',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue;
   var cx = Wd/2, cy = Ht*0.46;
   var period = 3.4/P.speed, ct = period*0.7, nt = 99;
@@ -12339,6 +12424,7 @@ TYPES.push({kind:'frostnova', icon:'❄️', label:'Frost Nova',
     ctx.globalCompositeOperation = 'source-over';
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12355,6 +12441,7 @@ TYPES.push({kind:'lightning', icon:'⚡', label:'Lightning',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue;
   var strikes = [], timer = 1.0;
   var t = 0, raf = 0;
@@ -12416,6 +12503,7 @@ TYPES.push({kind:'lightning', icon:'⚡', label:'Lightning',
     ctx.globalCompositeOperation = 'source-over';
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12432,6 +12520,7 @@ TYPES.push({kind:'portal', icon:'🌀', label:'Portal',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue, hue2 = P.hue2;
   var cx = Wd/2, cy = Ht*0.48;
   var sprs = [];
@@ -12494,6 +12583,7 @@ TYPES.push({kind:'portal', icon:'🌀', label:'Portal',
     ctx.globalCompositeOperation = 'source-over';
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12509,6 +12599,7 @@ TYPES.push({kind:'heal', icon:'💚', label:'Heal',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue;
   var spr = spellSprite(hue, 85, 60);
   var motes = [], i;
@@ -12551,6 +12642,7 @@ TYPES.push({kind:'heal', icon:'💚', label:'Heal',
     ctx.globalCompositeOperation = 'source-over';
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12567,6 +12659,7 @@ TYPES.push({kind:'soulwisps', icon:'👻', label:'Soul Wisps',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue = P.hue;
   var sprs = [spellSprite(hue-14,80,58), spellSprite(hue,80,58), spellSprite(hue+14,80,58)];
   var core = spellSprite(hue, 60, 85);
@@ -12599,6 +12692,7 @@ TYPES.push({kind:'soulwisps', icon:'👻', label:'Soul Wisps',
     ctx.globalCompositeOperation = 'source-over';
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12615,6 +12709,7 @@ TYPES.push({kind:'celebration', icon:'🎉', label:'Celebration',
   var vis = el.querySelector('.wd-visual');
   var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
   var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var sprs = [];
   var si;
   for (si=0;si<6;si++) sprs.push(spellSprite((P.hue+si*60)%360, 95, 62));
@@ -12687,6 +12782,7 @@ TYPES.push({kind:'celebration', icon:'🎉', label:'Celebration',
     }
   }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12701,8 +12797,7 @@ TYPES.push({kind:'galaxy', icon:'🌌', label:'Galaxy',
   var el = cardShell(genome, title, sub);
   var vis = el.querySelector('.wd-visual');
   var cv = document.createElement('canvas');
-  cv.width = 640; cv.height = 440;
-  cv.style.aspectRatio = '640/440';
+  var _gs2 = glPortrait(); cv.width = _gs2[0]; cv.height = _gs2[1]; cv._glNoFit = true;
   vis.appendChild(cv);
   var raf = 0, gl = null, ok = false, B = null;
   var N = 2600, yaw = rng()*6.28;
@@ -12733,7 +12828,8 @@ TYPES.push({kind:'galaxy', icon:'🌌', label:'Galaxy',
     gl.disable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    var persp = mPersp(0.85, 640/440, 0.1, 50);
+    var persp = mPersp(0.85, cv.width/cv.height, 0.1, 50);
+    function refitWH(w,h){ persp = mPersp(0.85, w/Math.max(1,h), 0.1, 50); }
     var tro = mTrans(0,0,-3.9), rx = mRotX(P.tilt*0.9);
     function draw(){
       gl.viewport(0,0,cv.width,cv.height);
@@ -12751,6 +12847,7 @@ TYPES.push({kind:'galaxy', icon:'🌌', label:'Galaxy',
     }
   }catch(e){ ok = false; }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(ok && !raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12765,8 +12862,7 @@ TYPES.push({kind:'firefountain', icon:'⛲', label:'Fire Fountain',
   var el = cardShell(genome, title, sub);
   var vis = el.querySelector('.wd-visual');
   var cv = document.createElement('canvas');
-  cv.width = 640; cv.height = 440;
-  cv.style.aspectRatio = '640/440';
+  var _gs2 = glPortrait(); cv.width = _gs2[0]; cv.height = _gs2[1]; cv._glNoFit = true;
   vis.appendChild(cv);
   var raf = 0, gl = null, ok = false;
   var N = Math.min(P.pcount, 3200);
@@ -12793,7 +12889,8 @@ TYPES.push({kind:'firefountain', icon:'⛲', label:'Fire Fountain',
     gl.disable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    var persp = mPersp(0.9, 640/440, 0.1, 50);
+    var persp = mPersp(0.9, cv.width/cv.height, 0.1, 50);
+    function refitWH(w,h){ persp = mPersp(0.9, w/Math.max(1,h), 0.1, 50); }
     var mvp = mm4(persp, mm4(mTrans(0,-1.0,-3.6), mRotX(-0.28)));
     function step(dt){
       for (var j=0;j<N;j++){
@@ -12829,6 +12926,7 @@ TYPES.push({kind:'firefountain', icon:'⛲', label:'Fire Fountain',
     }
   }catch(e){ ok = false; }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(ok && !raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12843,8 +12941,7 @@ TYPES.push({kind:'warp', icon:'🚀', label:'Warp',
   var el = cardShell(genome, title, sub);
   var vis = el.querySelector('.wd-visual');
   var cv = document.createElement('canvas');
-  cv.width = 640; cv.height = 440;
-  cv.style.aspectRatio = '640/440';
+  var _gs2 = glPortrait(); cv.width = _gs2[0]; cv.height = _gs2[1]; cv._glNoFit = true;
   vis.appendChild(cv);
   var raf = 0, gl = null, ok = false;
   var N = Math.min(P.density, 1400);
@@ -12870,7 +12967,8 @@ TYPES.push({kind:'warp', icon:'🚀', label:'Warp',
     var quad = ptBuffer(gl, new Float32Array([-1,-1, 3,-1, -1,3]));
     gl.disable(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
-    var persp = mPersp(1.05, 640/440, 0.1, 40);
+    var persp = mPersp(1.05, cv.width/cv.height, 0.1, 40);
+    function refitWH(w,h){ persp = mPersp(1.05, w/Math.max(1,h), 0.1, 40); }
     gl.clearColor(0.016,0.023,0.05,1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     function draw(){
@@ -12908,6 +13006,7 @@ TYPES.push({kind:'warp', icon:'🚀', label:'Warp',
     cancelAnimationFrame(raf); raf = 0;
   }catch(e){ ok = false; }
   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
     start:function(){ if(ok && !raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
@@ -12930,6 +13029,7 @@ TYPES.push({kind:'driveby', icon:'🚗', label:'Drive-By',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue, speed=P.speed;
   var nz=[makeNoise1D(mulberry32(seed^0x11)),makeNoise1D(mulberry32(seed^0x22)),makeNoise1D(mulberry32(seed^0x33))];
   var dust=[], t=0, raf=0, off=rng()*500;
@@ -12997,6 +13097,7 @@ TYPES.push({kind:'driveby', icon:'🚗', label:'Drive-By',
    ctx.restore();
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13012,6 +13113,7 @@ TYPES.push({kind:'siege', icon:'🏰', label:'Siege',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue;
   var cx=Wd*0.16, cy=Ht*0.66, tx=Wd*0.82, ty=Ht*0.78;
   var t=0, raf=0, cool=1.2, ball=null, boom=null, wob=0;
@@ -13087,6 +13189,7 @@ TYPES.push({kind:'siege', icon:'🏰', label:'Siege',
    }
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13102,6 +13205,7 @@ TYPES.push({kind:'daynight', icon:'🌗', label:'Day/Night',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var nz=makeNoise1D(mulberry32(seed^0x77));
   var stars=[];
   for(var i=0;i<110;i++) stars.push({x:rng()*Wd,y:rng()*Ht*0.62,r:0.5+rng()*1.5,ph:rng()*6.28});
@@ -13153,6 +13257,7 @@ TYPES.push({kind:'daynight', icon:'🌗', label:'Day/Night',
    ctx.lineTo(Wd,Ht); ctx.closePath(); ctx.fill();
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13168,6 +13273,7 @@ TYPES.push({kind:'portalent', icon:'🌀', label:'Portal Ent',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue, hue2=(hue+130)%360;
   var cx=Wd/2, cy=Ht/2;
   function newWisp(any){
@@ -13209,6 +13315,7 @@ TYPES.push({kind:'portalent', icon:'🌀', label:'Portal Ent',
    ctx.restore();
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13224,6 +13331,7 @@ TYPES.push({kind:'skyfest', icon:'🎆', label:'Sky Fest',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue;
   var bg=document.createElement('canvas'); bg.width=Wd; bg.height=Ht;
   (function(){
@@ -13279,6 +13387,7 @@ TYPES.push({kind:'skyfest', icon:'🎆', label:'Sky Fest',
    ctx.restore();
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13294,6 +13403,7 @@ TYPES.push({kind:'storm', icon:'⛈', label:'Storm',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue, inten=P.intensity;
   var nz=makeNoise1D(mulberry32(seed^0x99));
   var rain=[];
@@ -13349,6 +13459,7 @@ TYPES.push({kind:'storm', icon:'⛈', label:'Storm',
    }
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13370,6 +13481,7 @@ TYPES.push({kind:'glass', icon:'🔷', label:'Glass',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue;
   var panels=[];
   for(var i=0;i<P.panels;i++) panels.push({
@@ -13419,6 +13531,7 @@ TYPES.push({kind:'glass', icon:'🔷', label:'Glass',
    }
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13435,6 +13548,7 @@ TYPES.push({kind:'arch', icon:'🏛', label:'Arch',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue, style=P.style;
   var gy=Ht*0.86;
   var shapes=[];
@@ -13521,6 +13635,7 @@ TYPES.push({kind:'arch', icon:'🏛', label:'Arch',
    }
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13536,6 +13651,7 @@ TYPES.push({kind:'rain', icon:'🌧', label:'Rain',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue, inten=P.intensity;
   var nz=makeNoise1D(mulberry32(seed^0x55));
   var drops=[];
@@ -13594,6 +13710,7 @@ TYPES.push({kind:'rain', icon:'🌧', label:'Rain',
    }
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13622,6 +13739,7 @@ TYPES.push({kind:'motive', icon:'💬', label:'Motive',
   var vis=el.querySelector('.wd-visual');
   var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
   var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  function refitWH(w,h){ Wd=w; Ht=h; }
   var hue=P.hue;
   var blobs=[];
   for(var i=0;i<5;i++) blobs.push({x:rng()*Wd,y:rng()*Ht,r:120+rng()*180,
@@ -13658,6 +13776,7 @@ TYPES.push({kind:'motive', icon:'💬', label:'Motive',
    ctx.restore();
   }
   return {el:el,title:title,sub:sub,
+   onResize:(typeof refitWH!=='undefined'?refitWH:null),
    start:function(){ if(!raf) frame(); },
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
@@ -13739,6 +13858,162 @@ function thumbnail(genome, W2, H2, cb){
   }, 700);
 }
 
+
+/* ================= COMPONENT SPOTLIGHTS =================
+ * The feed as culmination: every 4th wonder card spotlights something from the
+ * workshop (the distiller catalog). Genome: {type:'component', seed, p:{comp, pal}}
+ * comp = hashStr(component name) — numeric so sanitize/keys/share-links survive. */
+function componentCatalog(){
+  var byComp = {};
+  caps().forEach(function(c){
+    if (c.status!=='new' && c.status!=='known') return;
+    if (!c.component) return;
+    (byComp[c.component] = byComp[c.component] || []).push(c);
+  });
+  var out = Object.keys(byComp).sort().map(function(n){ return {name:n, label:compDisplayName(n), caps:byComp[n]}; });
+  /* his own saved components: mixes saved in Moor Canvas join the workshop,
+   * so the feed spotlights what he actually built — the loop closes */
+  try{
+    var d = JSON.parse(localStorage.getItem('moor-pulse-canvas-v1')||'{}');
+    (d.parts||[]).forEach(function(p){
+      if (!p || !p.id || !p.name) return;
+      var ids = (p.recipe && p.recipe.ids) || [];
+      var cname = 'saved:'+p.id;
+      out.push({name:cname, label:p.name, savedId:p.id, caps:[{
+        id:'savedcap:'+p.id, component:cname, verb:'mixes',
+        what:((p.recipe && p.recipe.prompt) || p.desc || p.name)+'',
+        knobs:[], outputs:['component'], code_ref:'moor-canvas · saved part',
+        status:'known',
+        notes:'Saved in Moor Canvas'+(ids.length?' from '+ids.join(' + '):'')+'. Pull it back to remix.'
+      }]});
+    });
+  }catch(e){}
+  return out;
+}
+function compDisplayName(n){
+  return n.split('-').map(function(w){ return w.charAt(0).toUpperCase()+w.slice(1); }).join(' ');
+}
+function compByHash(h){
+  var cs = componentCatalog();
+  for (var i=0;i<cs.length;i++) if (hashStr(cs[i].name)===h) return cs[i];
+  return null;
+}
+/* component -> Moor Canvas part (only where the canvas can truly mix it) */
+var COMP_PULL = {
+  'terrain-core':'terrain-core', 'terrain-field':'terrain-field',
+  'ambience-engine':'ambient-sound', 'softbody-creatures':'creature-lab',
+  'stream':'moor-ultra', 'seed-console':'seed-console',
+  'palettes':'planet-colors', 'planet-vegetation':'plant-gen',
+  'terrain-pipeline':'terrain-core', 'moorworld':'universe-explorer'
+};
+function pickComponent(rng){
+  var cs = componentCatalog();
+  if (!cs.length) return null;
+  var d = Taste2.data(), tot = 0, ws = [], i, j;
+  for (i=0;i<cs.length;i++){
+    var w = 1, ck = cs[i].caps;
+    for (j=0;j<ck.length;j++){ var s = d.caps[ck[j].id]; if (s) w += s*0.4; }
+    ws.push(w); tot += w;
+  }
+  var r = rng()*tot;
+  for (i=0;i<cs.length;i++){ r -= ws[i]; if (r<=0) return cs[i]; }
+  return cs[cs.length-1];
+}
+TYPES.push({kind:'component', icon:'\u{1F9E9}', label:'Component',
+ params: function(r){
+   var c = pickComponent(r);
+   return {comp: c ? hashStr(c.name) : 0, pal: (r()*PALS.length)|0};
+ },
+ make: function(genome){
+   var P = genome.p, seed = genome.seed;
+   var comp = compByHash(P.comp);
+   if (!comp){ var cs0 = componentCatalog(); if (cs0.length) comp = cs0[seed % cs0.length]; }
+   if (!comp){
+     var f0 = document.createElement('div'); f0.className='wd-card';
+     f0.innerHTML='<div class="wd-cap"><b>workshop empty</b><span>no distilled components yet</span></div>';
+     return {el:f0, genome:genome, title:'workshop empty', sub:'',
+       start:function(){}, stop:function(){}};
+   }
+   genome.capIds = comp.caps.map(function(c){ return c.id; });
+   var nodes = comp.caps.slice(0, 7);
+   var title = comp.label || compDisplayName(comp.name);
+   var verbs = [];
+   comp.caps.slice(0,3).forEach(function(c){ if (verbs.indexOf(c.verb)<0) verbs.push(c.verb); });
+   var sub = comp.caps.length+' capabilities · '+verbs.join(' · ');
+   var el = cardShell(genome, title, sub);
+   var capEl = el.querySelector('.wd-cap');
+   var kick = document.createElement('div');
+   kick.className = 'wd-kicker'; kick.textContent = 'FROM THE WORKSHOP';
+   capEl.insertBefore(kick, capEl.firstChild);
+   /* pull: into Moor Canvas where mixable, else open Pulse */
+   var actions = el.querySelector('.wd-rail');
+   var pull = document.createElement('button');
+   pull.className = 'wd-railbtn';
+   var target = COMP_PULL[comp.name];
+   if (comp.savedId){
+     pull.textContent = '\u27F3'; pull.title = 'remix this saved component in Moor Canvas';
+     pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
+       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.caps[0].id); }catch(x){}
+       window.open('more-canvas.html?loadpart='+encodeURIComponent(comp.savedId), '_blank'); };
+   } else if (target){
+     pull.textContent = '\uFF0B'; pull.title = 'pull into Moor Canvas';
+     pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
+       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.caps[0].id); }catch(x){}
+       window.open('more-canvas.html?pull='+encodeURIComponent(target), '_blank'); };
+   } else {
+     pull.textContent = '\u2699'; pull.title = 'open in Pulse';
+     pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
+       window.open('pulse-dashboard.html', '_blank'); };
+   }
+   actions.appendChild(pull);
+   /* visual: blueprint constellation of the capability nodes */
+   var vis = el.querySelector('.wd-visual');
+   var mc = makeCanvas(400, 300), cv = mc.cv, ctx = mc.ctx, Wd = mc.w, Ht = mc.h;
+  function refitWH(w,h){ Wd=w; Ht=h; }
+   vis.appendChild(cv);
+   var rng2 = mulberry32(seed>>>0);
+   var pts = nodes.map(function(n, i){
+     var a = (i/Math.max(1,nodes.length))*Math.PI*2 + rng2()*0.6;
+     var rad = 0.30 + rng2()*0.10;
+     return {x: 0.5+Math.cos(a)*rad*1.6, y: 0.52+Math.sin(a)*rad,
+             r: 0.020+rng2()*0.014, verb: n.verb, hue: 200+rng2()*40, ph: rng2()*6.28};
+   });
+   var raf = 0;
+   function draw(t){
+     ctx.clearRect(0,0,Wd,Ht);
+     ctx.strokeStyle = 'rgba(120,180,255,0.07)'; ctx.lineWidth = 1;
+     for (var gx=0;gx<=Wd;gx+=40){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,Ht); ctx.stroke(); }
+     for (var gy=0;gy<=Ht;gy+=40){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(Wd,gy); ctx.stroke(); }
+     ctx.save(); ctx.translate(Wd/2, Ht/2); ctx.rotate(t*0.00006); ctx.translate(-Wd/2, -Ht/2);
+     ctx.strokeStyle = 'rgba(140,200,255,0.28)';
+     pts.forEach(function(p){
+       ctx.beginPath(); ctx.moveTo(Wd/2, Ht/2); ctx.lineTo(p.x*Wd, p.y*Ht); ctx.stroke();
+     });
+     pts.forEach(function(p, i){
+       ctx.globalAlpha = 0.6+0.4*Math.sin(t*0.002+p.ph);
+       ctx.fillStyle = 'hsl('+p.hue+',70%,62%)';
+       ctx.shadowColor = 'hsl('+p.hue+',70%,62%)'; ctx.shadowBlur = 12;
+       ctx.beginPath(); ctx.arc(p.x*Wd, p.y*Ht, p.r*Math.min(Wd,Ht), 0, 6.2832); ctx.fill();
+       ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+       ctx.fillStyle = 'rgba(200,225,255,0.78)';
+       ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+       ctx.fillText(p.verb, p.x*Wd, p.y*Ht + 16);
+     });
+     ctx.fillStyle = '#0a1424';
+     ctx.strokeStyle = 'rgba(160,210,255,0.5)'; ctx.lineWidth = 1.5;
+     ctx.beginPath(); ctx.arc(Wd/2, Ht/2, 22, 0, 6.2832); ctx.fill(); ctx.stroke();
+     ctx.fillStyle = '#cfe6ff'; ctx.font = 'bold 16px system-ui';
+     ctx.textAlign='center'; ctx.textBaseline='middle';
+     ctx.fillText(title.charAt(0), Wd/2, Ht/2+1);
+     ctx.restore();
+   }
+   function frame(ts){ draw(ts||0); raf = requestAnimationFrame(frame); }
+   return { el:el, title:title, sub:sub,
+    onResize:(typeof refitWH!=='undefined'?refitWH:null),
+     start:function(){ if(!raf) frame(); },
+     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
 /* ================= FEED CORE ================= */
 var SHARE_BASE = 'https://bassseamoor.github.io/render-queue/wonder-feed.html';
 var mounts = [];
@@ -13807,11 +14082,39 @@ function mountFeed(host, opts){
   }
 
   /* ---------- generic infinite feed core with dwell tracking ---------- */
+  /* Size the card's canvas backing store to the card's real CSS rect (iOS-safe:
+   * measured from getBoundingClientRect after layout, not window guesses). */
+  function fitVisual(el){
+    var vis = el.querySelector('.wd-visual');
+    if (!vis) return null;
+    var cv = vis.querySelector('canvas');
+    if (!cv) return null;
+    if (cv._glNoFit) return {w:cv.width, h:cv.height};
+    var r = vis.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return null;
+    var dpr = Math.min(window.devicePixelRatio||1, 2);
+    var w = Math.round(r.width*dpr), h = Math.round(r.height*dpr);
+    if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+    return {w:w, h:h};
+  }
+  /* Portrait backing store for WebGL canvases (sized once at creation:
+   * resizing a WebGL canvas resets its context, so these are never refit). */
+  function glPortrait(){
+    var vw = Math.min(window.innerWidth||390, 520);
+    var dpr = Math.min(window.devicePixelRatio||1, 2);
+    var w = Math.round(vw*dpr);
+    return [w, Math.round(w*1.93)];
+  }
   function feedCore(feedEl, o){
     var live = [];
     function startRec(rec){
       if (rec.started) return;
       rec.started = true; rec.viewT0 = Date.now();
+      try{
+        var f = fitVisual(rec.el);
+        if (f && rec.w && rec.w.onResize) rec.w.onResize(f.w, f.h);
+        rec.el._onResize = (rec.w && rec.w.onResize) || null;
+      }catch(e){}
       try{ if (rec.w) rec.w.start(); }catch(e){}
     }
     function stopRec(rec){
@@ -13951,10 +14254,55 @@ function mountFeed(host, opts){
       cardCount++;
       Taste2.decay();
       var surprise = (!onlyKind && cardCount % 7 === 0);
-      do { g = pickGenome(surprise); tries++; }
+      /* component spotlight: every 4th card pulls from the workshop */
+      var spotlight = (!onlyKind && !surprise && cardCount % 4 === 0 && componentCatalog().length > 0);
+      do {
+        if (spotlight){
+          var ct = typeByKind('component');
+          g = sanitizeGenome({type:'component', seed:(rng()*1000000000)|0, p:ct.params(rng)});
+        } else g = pickGenome(surprise);
+        tries++;
+      }
       while (tries<6 && Attention.isSuppressed(genomeKey(g)));
       noteKind(g.type);
       return g;
+    }
+
+    /* comment bottom-sheet (one global sheet, thumb-friendly) */
+    function openSheet(g, title, sub){
+      var wrap = host.querySelector('#wd-sheetwrap');
+      if (!wrap){
+        wrap = document.createElement('div');
+        wrap.className = 'wd-sheetwrap'; wrap.id = 'wd-sheetwrap'; wrap.hidden = true;
+        wrap.innerHTML =
+          '<div class="wd-sheet"><div class="wd-sheetgrab"></div>'+
+          '<b>\uD83D\uDCAC comment</b>'+
+          '<input id="wd-sheetin" placeholder="say something…" maxlength="140" enterkeyhint="done">'+
+          '<div class="wd-sheetrow"><button id="wd-sheetx">cancel</button>'+
+          '<button id="wd-sheetok" class="primary">save</button></div></div>';
+        host.appendChild(wrap);
+        wrap.addEventListener('click', function(e){ if (e.target===wrap) wrap.hidden = true; });
+        wrap.querySelector('#wd-sheetx').onclick = function(){ wrap.hidden = true; };
+      }
+      var input = wrap.querySelector('#wd-sheetin');
+      var ex = '';
+      Library.list().forEach(function(e){ if (genomeKey(e.genome)===genomeKey(g)) ex = e.comment||''; });
+      input.value = ex;
+      wrap.hidden = false;
+      setTimeout(function(){ try{ input.focus(); }catch(e){} }, 60);
+      wrap.querySelector('#wd-sheetok').onclick = function(){
+        var txt = input.value.trim();
+        Library.save(g, title, sub);
+        Library.setComment(g, txt);
+        wrap.hidden = true;
+        if (txt){ try{ Attention.signal(g,'comment',1); }catch(e){} }
+        toast(txt ? '\uD83D\uDCAC comment saved' : 'comment cleared');
+        refreshChrome();
+      };
+      input.onkeydown = function(e){
+        if (e.key === 'Enter') wrap.querySelector('#wd-sheetok').click();
+        e.stopPropagation();
+      };
     }
 
     function wireActions(rec){
@@ -13962,7 +14310,8 @@ function mountFeed(host, opts){
       var likeBtn = el.querySelector('[data-a="like"]');
       function paintLike(){ likeBtn.classList.toggle('liked', Taste.has(g)); }
       paintLike();
-      likeBtn.onclick = function(){
+      likeBtn.onclick = function(e){
+        if (e && e.stopPropagation) e.stopPropagation();
         if (Taste.has(g)){
           Taste.remove(g);
           try{ Attention.signal(g,'like',-1.5); }catch(e){}
@@ -13976,43 +14325,36 @@ function mountFeed(host, opts){
         paintLike(); refreshChrome();
       };
       var saveBtn = el.querySelector('[data-a="save"]');
-      saveBtn.onclick = function(){
+      function paintSave(){ saveBtn.classList.toggle('saved', Library.has(g)); }
+      paintSave();
+      saveBtn.onclick = function(e){
+        if (e && e.stopPropagation) e.stopPropagation();
         Library.save(g, rec.w.title, rec.w.sub);
         try{ Attention.signal(g,'save',2); }catch(e){}
-        saveBtn.classList.add('savedflash');
-        setTimeout(function(){ saveBtn.classList.remove('savedflash'); }, 1200);
+        paintSave();
         toast('saved to library');
         refreshChrome();
       };
-      el.querySelector('[data-a="share"]').onclick = function(){
+      el.querySelector('[data-a="share"]').onclick = function(e){
+        if (e && e.stopPropagation) e.stopPropagation();
         var url = SHARE_BASE + '#w=' + b64urlEncode(JSON.stringify(sanitizeGenome(g)));
         try{ Attention.signal(g,'share',3); }catch(e){}
         copyText(url, function(ok){ toast(ok ? 'link copied — opens this exact wonder' : 'copy failed'); });
         refreshChrome();
       };
-      var cbox = el.querySelector('.wd-commentbox');
-      var cinput = cbox.querySelector('input');
-      el.querySelector('[data-a="comment"]').onclick = function(){
-        var ex = '';
-        Library.list().forEach(function(e){ if (genomeKey(e.genome)===genomeKey(g)) ex = e.comment||''; });
-        cinput.value = ex;
-        cbox.hidden = !cbox.hidden;
-        if (!cbox.hidden) cinput.focus();
+      el.querySelector('[data-a="comment"]').onclick = function(e){
+        if (e && e.stopPropagation) e.stopPropagation();
+        openSheet(g, rec.w.title, rec.w.sub);
       };
-      function submitComment(){
-        var txt = cinput.value.trim();
-        Library.save(g, rec.w.title, rec.w.sub);
-        Library.setComment(g, txt);
-        cbox.hidden = true;
-        if (txt){ try{ Attention.signal(g,'comment',1); }catch(e){} }
-        toast(txt ? '💬 comment saved' : 'comment cleared');
-        refreshChrome();
-      }
-      cbox.querySelector('button').onclick = submitComment;
-      cinput.addEventListener('keydown', function(e){
-        if (e.key === 'Enter') submitComment();
-        e.stopPropagation();
-      });
+      var remixBtn = el.querySelector('[data-a="remix"]');
+      if (remixBtn) remixBtn.onclick = function(e){
+        if (e && e.stopPropagation) e.stopPropagation();
+        try{ Attention.signal(g,'remix',1); }catch(e){}
+        var r2 = mulberry32(((Date.now()^genome.seed)>>>0)||1);
+        var ng = mutateGenome(sanitizeGenome(genome), r2);
+        if (apiRef.insertGenome) apiRef.insertGenome(ng);
+        toast('\u27F3 remixed — mutated copy incoming');
+      };
     }
 
     var core = feedCore(feedEl, {
@@ -14290,9 +14632,26 @@ function mountFeed(host, opts){
   refreshChrome();
   showFeed('wonders');
 
+  /* refit visible card canvases on viewport change (rotation, toolbar show/hide) */
+  var rsT = 0;
+  function refitAll(){
+    try{
+      var cards = host.querySelectorAll('.wd-card');
+      for (var i=0;i<cards.length;i++){
+        var f = fitVisual(cards[i]);
+        if (f && cards[i]._onResize) cards[i]._onResize(f.w, f.h);
+      }
+    }catch(e){}
+  }
+  function onRs(){ clearTimeout(rsT); rsT = setTimeout(refitAll, 220); }
+  window.addEventListener('resize', onRs);
+  window.addEventListener('orientationchange', onRs);
+  host._wonderRefit = refitAll;
+
   var api={
     stopAll:function(){
       if(active){ try{active.destroy();}catch(e){} active=null; }
+      try{ window.removeEventListener('resize', onRs); window.removeEventListener('orientationchange', onRs); }catch(e){}
       closeDrawer(); closeInto();
       if(drawer&&drawer.parentNode) drawer.parentNode.removeChild(drawer);
       drawer=null;
