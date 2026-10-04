@@ -14308,6 +14308,7 @@ function mountFeed(host, opts){
     function wireActions(rec){
       var el = rec.el, g = rec.genome;
       var likeBtn = el.querySelector('[data-a="like"]');
+      if (!likeBtn) return; /* e.g. workshop-empty fallback card has no rail */
       function paintLike(){ likeBtn.classList.toggle('liked', Taste.has(g)); }
       paintLike();
       likeBtn.onclick = function(e){
@@ -14350,8 +14351,8 @@ function mountFeed(host, opts){
       if (remixBtn) remixBtn.onclick = function(e){
         if (e && e.stopPropagation) e.stopPropagation();
         try{ Attention.signal(g,'remix',1); }catch(e){}
-        var r2 = mulberry32(((Date.now()^genome.seed)>>>0)||1);
-        var ng = mutateGenome(sanitizeGenome(genome), r2);
+        var r2 = mulberry32(((Date.now()^g.seed)>>>0)||1);
+        var ng = mutateGenome(sanitizeGenome(g), r2);
         if (apiRef.insertGenome) apiRef.insertGenome(ng);
         toast('\u27F3 remixed — mutated copy incoming');
       };
@@ -15702,68 +15703,122 @@ function stepVehicle(s,input,dt,tune,blocked){
   return s;
 }
 
-/* ---------------- presets ---------------- */
+/* ---------------- presets & control groups ---------------- */
 var PRESETS={
   'Dune buggy':{power:1.1,maxSpeed:24,steering:.6,grip:5.5,wheelbase:2.2,coast:.45,hb:9,qd:.006},
   'Drift missile':{power:1.3,maxSpeed:27,steering:.9,grip:2.2,wheelbase:2.5,coast:.35,hb:13,qd:.005},
   'Go-kart':{power:.8,maxSpeed:18,steering:1.05,grip:9,wheelbase:1.6,coast:.6,hb:7,qd:.008},
   'Crawler':{power:1.6,maxSpeed:10,steering:.5,grip:11,wheelbase:2.9,coast:.85,hb:6,qd:.01}
 };
-var SLIDERS=[
-  {k:'power',    label:'Engine power', min:.3, max:2,   step:.05},
-  {k:'maxSpeed', label:'Top speed',    min:5,  max:40,  step:1,   unit:' m/s'},
-  {k:'coast',    label:'Coast drag',   min:.1, max:1.5, step:.05},
-  {k:'steering', label:'Steering',     min:.2, max:1.2, step:.05},
-  {k:'grip',     label:'Grip',         min:1,  max:12,  step:.1},
-  {k:'wheelbase',label:'Wheelbase',    min:1.5,max:4,   step:.1,  unit:' m'},
-  {k:'hb',       label:'Handbrake',    min:3,  max:15,  step:.5},
-  {k:'qd',       label:'Air drag',     min:.002,max:.012,step:.001}
+var GROUPS=[
+  {name:'Engine', ctrls:[
+    {k:'power',    label:'Power',     min:.3, max:2,   step:.05},
+    {k:'maxSpeed', label:'Top speed', min:5,  max:40,  step:1,   unit:' m/s'},
+    {k:'coast',    label:'Coast drag',min:.1, max:1.5, step:.05}]},
+  {name:'Chassis', ctrls:[
+    {k:'steering', label:'Steering',  min:.2, max:1.2, step:.05},
+    {k:'grip',     label:'Grip',      min:1,  max:12,  step:.1},
+    {k:'wheelbase',label:'Wheelbase', min:1.5,max:4,   step:.1,  unit:' m'}]},
+  {name:'Brake & air', ctrls:[
+    {k:'hb',       label:'Handbrake', min:3,  max:15,  step:.5},
+    {k:'qd',       label:'Air drag',  min:.002,max:.012,step:.001}]}
 ];
 
 /* ---------------- lab ---------------- */
 TOOLS.vphys={
   mount:function(host){
     host.innerHTML=
-      '<style>.vphys-wrap{display:flex;gap:14px;flex-wrap:wrap}'+
-      '.vphys-stage{position:relative;flex:1 1 420px;min-width:300px;height:480px;border-radius:12px;'+
-      'overflow:hidden;background:#0b0e13;border:1px solid var(--line)}'+
-      '.vphys-stage canvas{width:100%;height:100%;display:block;touch-action:none}'+
-      '.vphys-side{flex:1 1 260px;min-width:240px}'+
-      '.vphys-side label{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);margin:7px 0}'+
-      '.vphys-side label span.nm{width:92px;flex:none}'+
-      '.vphys-side input[type=range]{flex:1;accent-color:var(--cyan)}'+
-      '.vphys-side label output{width:64px;flex:none;text-align:right;color:var(--text)}'+
-      '.vphys-tele{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}'+
-      '.vphys-tele div{background:#0b1523;border:1px solid var(--line);border-radius:8px;padding:8px 10px}'+
-      '.vphys-tele b{display:block;font-size:1.05rem;color:var(--text)}'+
-      '.vphys-tele span{font-size:.72rem;color:var(--muted)}'+
-      '.vphys-touch{position:absolute;right:12px;bottom:10px;display:flex;gap:8px}'+
-      '.vphys-touch button{width:56px;height:56px;border-radius:50%;border:1px solid var(--line);'+
-      'background:rgba(11,21,35,.85);color:var(--text);font-size:.95rem}'+
-      '.vphys-hint{position:absolute;left:12px;bottom:10px;font-size:.76rem;color:var(--muted);'+
-      'background:rgba(7,11,18,.72);padding:6px 10px;border-radius:8px;pointer-events:none}'+
-      '.vphys-presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}'+
-      '.vphys-presets .btn.on{border-color:var(--cyan);color:var(--cyan)}</style>'+
-      '<div class="t-controls"><span class="meta">Tune it live — every slider takes effect mid-drive.</span>'+
-      '<button class="btn" id="vp-reset">Reset car</button>'+
-      '<button class="btn" id="vp-copy">Copy tune</button></div>'+
-      '<div class="vphys-wrap"><div class="vphys-stage"><canvas id="vp-canvas"></canvas>'+
-      '<div class="vphys-hint">Arrows/WASD drive · Space handbrake · R reset</div>'+
-      '<div class="vphys-touch">'+
+      '<style>'+
+      '.vp-lab{--vp-acc:#e8a33d;--vp-bg:#0b0e13;--vp-panel:#0d1219;'+
+      '--vp-line:rgba(255,255,255,.08);--vp-tx:#eef1f6;--vp-mut:#8b94a3;'+
+      'font-variant-numeric:tabular-nums}'+
+      /* top bar: one row, presets left, actions right */
+      '.vp-top{display:flex;align-items:center;justify-content:space-between;gap:12px;'+
+      'flex-wrap:wrap;margin-bottom:12px}'+
+      '.vp-seg{display:inline-flex;background:var(--vp-panel);border:1px solid var(--vp-line);'+
+      'border-radius:999px;padding:3px;gap:2px}'+
+      '.vp-seg button{border:0;background:transparent;color:var(--vp-mut);font:inherit;'+
+      'font-size:.8rem;padding:7px 15px;border-radius:999px;cursor:pointer;transition:all .18s}'+
+      '.vp-seg button:hover{color:var(--vp-tx)}'+
+      '.vp-seg button.on{background:#1c2534;color:var(--vp-tx)}'+
+      '.vp-actions{display:flex;align-items:center;gap:8px}'+
+      '.vp-hintline{font-size:.78rem;color:var(--vp-mut);margin-right:4px}'+
+      '.vp-ghost{background:transparent;border:1px solid var(--vp-line);color:var(--vp-mut);'+
+      'border-radius:999px;padding:7px 14px;font:inherit;font-size:.8rem;cursor:pointer;transition:all .18s}'+
+      '.vp-ghost:hover{color:var(--vp-tx);border-color:rgba(255,255,255,.2)}'+
+      /* stage */
+      '.vp-stage{position:relative;height:500px;border-radius:16px;overflow:hidden;'+
+      'background:var(--vp-bg);border:1px solid var(--vp-line)}'+
+      '.vp-stage canvas{width:100%;height:100%;display:block;touch-action:none}'+
+      /* HUD: instrument readouts overlaid, pointer-transparent */
+      '.vp-hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;'+
+      'align-items:flex-start;padding:16px 18px;pointer-events:none}'+
+      '.vp-speed{color:var(--vp-tx);font-size:46px;font-weight:200;line-height:1;letter-spacing:-.02em;'+
+      'text-shadow:0 2px 18px rgba(0,0,0,.6)}'+
+      '.vp-speed small{display:block;font-size:10px;font-weight:600;letter-spacing:.22em;'+
+      'color:var(--vp-mut);margin-top:5px}'+
+      '.vp-stats{display:flex;gap:18px;text-align:right}'+
+      '.vp-stats b{display:block;color:var(--vp-tx);font-size:19px;font-weight:500}'+
+      '.vp-stats span{font-size:9.5px;font-weight:600;letter-spacing:.18em;color:var(--vp-mut)}'+
+      '.vp-stats .hot b{color:var(--vp-acc)}'+
+      /* touch controls */
+      '.vp-touch{position:absolute;right:14px;bottom:14px;display:flex;gap:8px}'+
+      '.vp-touch button{width:54px;height:54px;border-radius:50%;'+
+      'border:1px solid var(--vp-line);background:rgba(13,18,25,.82);color:var(--vp-mut);'+
+      'font-size:.85rem;backdrop-filter:blur(4px);transition:all .15s;touch-action:none}'+
+      '.vp-touch button:active{background:var(--vp-acc);color:#111;border-color:var(--vp-acc)}'+
+      /* deck: grouped control cards */
+      '.vp-deck{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));'+
+      'gap:12px;margin-top:12px}'+
+      '.vp-group{background:var(--vp-panel);border:1px solid var(--vp-line);'+
+      'border-radius:16px;padding:14px 18px 12px}'+
+      '.vp-group h4{margin:0 0 2px;font-size:10px;font-weight:700;letter-spacing:.22em;'+
+      'color:var(--vp-mut)}'+
+      '.vp-ctl{margin:11px 0 9px}'+
+      '.vp-ctl .row{display:flex;justify-content:space-between;align-items:baseline;'+
+      'font-size:.82rem;margin-bottom:1px}'+
+      '.vp-ctl .row span{color:var(--vp-mut)}'+
+      '.vp-ctl .row output{color:var(--vp-tx);font-size:.82rem}'+
+      '.vp-deck input[type=range]{-webkit-appearance:none;appearance:none;width:100%;'+
+      'height:22px;background:transparent;cursor:pointer;margin:0}'+
+      '.vp-deck input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;'+
+      'background:linear-gradient(to right,var(--vp-acc) 0%,var(--vp-acc) var(--fill,50%),'+
+      '#232c3b var(--fill,50%))}'+
+      '.vp-deck input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;'+
+      'border-radius:50%;background:#f2f5f9;margin-top:-6px;border:none;'+
+      'box-shadow:0 1px 8px rgba(0,0,0,.55)}'+
+      '.vp-deck input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:#232c3b}'+
+      '.vp-deck input[type=range]::-moz-range-progress{height:3px;border-radius:2px;'+
+      'background:var(--vp-acc)}'+
+      '.vp-deck input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;'+
+      'background:#f2f5f9;border:none;box-shadow:0 1px 8px rgba(0,0,0,.55)}'+
+      '.vp-foot{margin:14px 2px 0;font-size:.76rem;color:var(--vp-mut);line-height:1.5}'+
+      '.vp-foot b{color:var(--vp-tx);font-weight:600}</style>'+
+
+      '<div class="vp-lab">'+
+      '<div class="vp-top"><div class="vp-seg" id="vp-presets"></div>'+
+      '<div class="vp-actions"><span class="vp-hintline">Arrows / WASD · Space handbrake · R reset</span>'+
+      '<button class="vp-ghost" id="vp-reset">Reset</button>'+
+      '<button class="vp-ghost" id="vp-copy">Copy tune</button></div></div>'+
+
+      '<div class="vp-stage"><canvas id="vp-canvas"></canvas>'+
+      '<div class="vp-hud"><div class="vp-speed"><span id="vp-t-speed">0</span><small>MPH</small></div>'+
+      '<div class="vp-stats">'+
+      '<div id="vp-s-drift"><b id="vp-t-drift">0°</b><span>DRIFT</span></div>'+
+      '<div><b id="vp-t-slide">0</b><span>SLIDE</span></div>'+
+      '<div><b id="vp-t-steer">0°</b><span>STEER</span></div>'+
+      '</div></div>'+
+      '<div class="vp-touch">'+
       '<button data-k="left">&#9664;</button><button data-k="right">&#9654;</button>'+
       '<button data-k="gas">GAS</button><button data-k="brk">BRK</button><button data-k="hb">HB</button>'+
       '</div></div>'+
-      '<div class="vphys-side"><div class="vphys-presets" id="vp-presets"></div>'+
-      '<div id="vp-sliders"></div><div class="vphys-tele" id="vp-tele">'+
-      '<div><b id="vp-t-speed">0</b><span>speed mph</span></div>'+
-      '<div><b id="vp-t-drift">0°</b><span>drift angle</span></div>'+
-      '<div><b id="vp-t-slide">0</b><span>slide m/s</span></div>'+
-      '<div><b id="vp-t-steer">0°</b><span>steer</span></div>'+
-      '</div></div></div>'+
-      '<p class="meta" style="margin-top:10px">The <b>stepVehicle</b> core is verbatim '+
-      '<b>buggy-motion.mjs</b> — the same physics as the dune buggy and the Vehicle Builder test ride. '+
-      'Coast drag, handbrake strength, and air drag are extra knobs (defaults reproduce the original). '+
-      'Lot, cones, skid marks, and telemetry are panel code.</p>';
+
+      '<div class="vp-deck" id="vp-deck"></div>'+
+
+      '<p class="vp-foot"><b>stepVehicle</b> is verbatim <b>buggy-motion.mjs</b> — the same physics '+
+      'as the dune buggy and the Vehicle Builder test ride. Coast drag, handbrake, and air drag '+
+      'are extra knobs; their defaults reproduce the original exactly.</p>'+
+      '</div>';
 
     var canvas=host.querySelector('#vp-canvas');
     var ctx=canvas.getContext('2d');
@@ -15784,53 +15839,63 @@ TOOLS.vphys={
       return false;
     }
 
-    /* --- sliders --- */
-    var sliderBox=host.querySelector('#vp-sliders');
-    var outs={};
-    SLIDERS.forEach(function(s){
-      var lab=document.createElement('label');
-      lab.innerHTML='<span class="nm">'+s.label+'</span>';
-      var inp=document.createElement('input');
-      inp.type='range'; inp.min=s.min; inp.max=s.max; inp.step=s.step; inp.value=tune[s.k];
-      inp.setAttribute('data-k',s.k);
-      var out=document.createElement('output');
-      lab.appendChild(inp); lab.appendChild(out); sliderBox.appendChild(lab);
-      outs[s.k]={inp:inp,out:out,unit:s.unit||''};
-      inp.addEventListener('input',function(){
-        tune[s.k]=+inp.value; syncLabels(); markCustom();
-      });
-      state.clean.push(function(){});
-    });
+    /* --- control deck --- */
+    var deck=host.querySelector('#vp-deck'), ctrls={};
     function fmt(k,v){
       if(k==='qd') return v.toFixed(4);
-      if(v>=10||k==='maxSpeed') return (+v).toFixed(v%1?1:0);
+      if(k==='maxSpeed') return Math.round(v)+'';
       return (+v).toFixed(2);
     }
-    function syncLabels(){
-      SLIDERS.forEach(function(s){ outs[s.k].out.textContent=fmt(s.k,tune[s.k])+outs[s.k].unit; });
+    GROUPS.forEach(function(g){
+      var card=document.createElement('div');
+      card.className='vp-group';
+      card.innerHTML='<h4>'+g.name+'</h4>';
+      g.ctrls.forEach(function(s){
+        var div=document.createElement('div');
+        div.className='vp-ctl';
+        div.innerHTML='<div class="row"><span>'+s.label+'</span><output></output></div>';
+        var inp=document.createElement('input');
+        inp.type='range'; inp.min=s.min; inp.max=s.max; inp.step=s.step; inp.value=tune[s.k];
+        inp.setAttribute('aria-label',s.label);
+        div.appendChild(inp); card.appendChild(div);
+        ctrls[s.k]={inp:inp,out:div.querySelector('output'),unit:s.unit||'',
+          min:s.min,max:s.max,key:s.k};
+        inp.addEventListener('input',function(){
+          tune[s.k]=+inp.value; syncCtl(s.k); markCustom();
+        });
+      });
+      deck.appendChild(card);
+    });
+    function syncCtl(k){
+      var c=ctrls[k];
+      c.out.textContent=fmt(k,tune[k])+c.unit;
+      var pct=(tune[k]-c.min)/(c.max-c.min)*100;
+      c.inp.style.setProperty('--fill',pct.toFixed(1)+'%');
     }
-    function syncInputs(){
-      SLIDERS.forEach(function(s){ outs[s.k].inp.value=tune[s.k]; });
-      syncLabels();
+    function syncAll(){
+      Object.keys(ctrls).forEach(function(k){
+        ctrls[k].inp.value=tune[k]; syncCtl(k);
+      });
     }
-    /* --- presets --- */
+    /* --- presets (segmented) --- */
     var presetBox=host.querySelector('#vp-presets'), presetBtns={};
     Object.keys(PRESETS).forEach(function(name){
       var b=document.createElement('button');
-      b.className='btn'+(name==='Dune buggy'?' on':''); b.textContent=name;
+      b.textContent=name;
+      if(name==='Dune buggy') b.className='on';
       b.addEventListener('click',function(){
         var p=PRESETS[name];
         for(var k in p) tune[k]=p[k];
-        syncInputs(); markCustom(name);
+        syncAll(); markCustom(name);
       });
       presetBox.appendChild(b); presetBtns[name]=b;
     });
     function markCustom(active){
       Object.keys(presetBtns).forEach(function(n){
-        presetBtns[n].className='btn'+(n===active?' on':'');
+        presetBtns[n].className=(n===active?'on':'');
       });
     }
-    syncLabels();
+    syncAll();
 
     function on(el,ev,fn){ el.addEventListener(ev,fn);
       state.clean.push(function(){ el.removeEventListener(ev,fn); }); }
@@ -15858,7 +15923,7 @@ TOOLS.vphys={
     }
     on(window,'keydown',function(e){ key(e,true); });
     on(window,'keyup',function(e){ key(e,false); });
-    var touches=host.querySelectorAll('.vphys-touch button');
+    var touches=host.querySelectorAll('.vp-touch button');
     for(var ti=0;ti<touches.length;ti++)(function(b){
       var k=b.getAttribute('data-k');
       function dn(e){ e.preventDefault(); state.keys[k]=true; }
@@ -15872,7 +15937,8 @@ TOOLS.vphys={
 
     /* --- render --- */
     var elSpeed=host.querySelector('#vp-t-speed'), elDrift=host.querySelector('#vp-t-drift'),
-        elSlide=host.querySelector('#vp-t-slide'), elSteer=host.querySelector('#vp-t-steer');
+        elSlide=host.querySelector('#vp-t-slide'), elSteer=host.querySelector('#vp-t-steer'),
+        elDriftBox=host.querySelector('#vp-s-drift');
     function frame(t){
       state.raf=requestAnimationFrame(frame);
       var dt=Math.min(.05,(t-state.last)/1000||.016); state.last=t;
@@ -15881,24 +15947,20 @@ TOOLS.vphys={
         handbrake:!!state.keys.hb};
       var car=state.car;
       stepVehicle(car,input,dt,tune,blocked);
-      /* camera follow */
       state.cam.x+=(car.x-state.cam.x)*Math.min(1,dt*5);
       state.cam.z+=(car.z-state.cam.z)*Math.min(1,dt*5);
-      /* skid marks */
       var sy=Math.sin(car.yaw), cy=Math.cos(car.yaw);
       var vlat=car.vx*cy-car.vz*sy, vfor=car.vx*sy+car.vz*cy;
+      /* skid marks off the rear axle */
       if(Math.abs(vlat)>2.2&&Math.abs(vfor)>3){
-        /* rear axle center = pos - forward*1.5; right vector = (cy,-sy) */
         var ax=car.x-sy*1.5, az=car.z-cy*1.5;
         for(var s=-1;s<=1;s+=2){
           var wx=ax+cy*s*.8, wz=az+(-sy)*s*.8;
-          if(state.lastSkid){
+          if(state.lastSkid)
             state.skids.push({x1:state.lastSkid[s<0?0:1].x,z1:state.lastSkid[s<0?0:1].z,
-              x2:wx,z2:wz,a:.55});
-          }
+              x2:wx,z2:wz,a:.5});
         }
-        state.lastSkid=[{x:car.x-sy*1.5+cy*.8,z:car.z-cy*1.5+(-sy)*.8},
-                        {x:car.x-sy*1.5-cy*.8,z:car.z-cy*1.5-(-sy)*.8}];
+        state.lastSkid=[{x:ax+cy*.8,z:az+(-sy)*.8},{x:ax-cy*.8,z:az-(-sy)*.8}];
         if(state.skids.length>500) state.skids.splice(0,state.skids.length-500);
       } else state.lastSkid=null;
       for(var di=state.skids.length-1;di>=0;di--){
@@ -15914,69 +15976,100 @@ TOOLS.vphys={
       ctx.setTransform(dpr,0,0,dpr,0,0);
       var scale=Math.min(W,H)/46, ox=W/2-state.cam.x*scale, oy=H/2-state.cam.z*scale;
       function px(x){ return ox+x*scale; } function pz(z){ return oy+z*scale; }
+      /* backdrop */
       ctx.fillStyle='#0b0e13'; ctx.fillRect(0,0,W,H);
-      /* asphalt */
-      ctx.fillStyle='#14181f';
+      ctx.fillStyle='#12161e';
       ctx.fillRect(px(-78),pz(-78),156*scale,156*scale);
-      /* grid */
-      ctx.strokeStyle='#1c232e'; ctx.lineWidth=1;
+      /* grid: quiet */
+      ctx.strokeStyle='rgba(255,255,255,.05)'; ctx.lineWidth=1;
       ctx.beginPath();
-      for(var g=-78;g<=78;g+=6){
+      for(var g=-72;g<=72;g+=12){
         ctx.moveTo(px(g),pz(-78)); ctx.lineTo(px(g),pz(78));
         ctx.moveTo(px(-78),pz(g)); ctx.lineTo(px(78),pz(g));
       }
       ctx.stroke();
-      /* drift circle */
-      ctx.strokeStyle='#2a3648'; ctx.lineWidth=3;
+      /* drift circle: thin amber ring */
+      ctx.strokeStyle='rgba(232,163,61,.28)'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.arc(px(0),pz(8),20*scale,0,Math.PI*2); ctx.stroke();
-      ctx.fillStyle='#2a3648'; ctx.font='11px system-ui'; ctx.textAlign='center';
-      ctx.fillText('drift circle',px(0),pz(8)-20*scale-8);
+      ctx.fillStyle='rgba(139,148,163,.75)'; ctx.font='10px system-ui';
+      ctx.textAlign='center'; ctx.letterSpacing='3px';
+      ctx.fillText('DRIFT CIRCLE',px(0),pz(8)-20*scale-10);
       /* cones */
       for(var ci=0;ci<cones.length;ci++){
-        var cx=px(cones[ci].x), cz=pz(cones[ci].z), r=Math.max(3,1.1*scale);
-        ctx.fillStyle='#b3541e';
+        var cx=px(cones[ci].x), cz=pz(cones[ci].z), r=Math.max(3.5,1.05*scale);
+        ctx.fillStyle='rgba(0,0,0,.35)';
+        ctx.beginPath(); ctx.arc(cx+r*.25,cz+r*.3,r,0,Math.PI*2); ctx.fill();
+        var cg=ctx.createRadialGradient(cx-r*.3,cz-r*.3,r*.1,cx,cz,r);
+        cg.addColorStop(0,'#e08a3c'); cg.addColorStop(1,'#9a4d1c');
+        ctx.fillStyle=cg;
         ctx.beginPath(); ctx.arc(cx,cz,r,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle='#f5f0e6';
-        ctx.beginPath(); ctx.arc(cx,cz,r*.45,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(245,240,230,.9)';
+        ctx.beginPath(); ctx.arc(cx,cz,r*.38,0,Math.PI*2); ctx.fill();
       }
-      /* skids */
+      /* skid marks */
       ctx.lineCap='round';
       for(var si=0;si<state.skids.length;si++){
         var sk=state.skids[si];
-        ctx.strokeStyle='rgba(5,5,8,'+(sk.a.toFixed(2))+')';
-        ctx.lineWidth=Math.max(2,.32*scale);
+        ctx.strokeStyle='rgba(4,4,7,'+(sk.a.toFixed(2))+')';
+        ctx.lineWidth=Math.max(2,.3*scale);
         ctx.beginPath(); ctx.moveTo(px(sk.x1),pz(sk.z1)); ctx.lineTo(px(sk.x2),pz(sk.z2)); ctx.stroke();
       }
-      /* car: drawn nose-down, rotated by -yaw */
+      /* car: nose-down, rotated by -yaw, soft shadow + gradient body */
       ctx.save();
       ctx.translate(px(car.x),pz(car.z));
       ctx.rotate(-car.yaw);
       var L=4.4*scale, Wd=2.1*scale;
+      ctx.shadowColor='rgba(0,0,0,.55)'; ctx.shadowBlur=14; ctx.shadowOffsetY=4;
       /* wheels */
-      ctx.fillStyle='#0c0e11';
+      ctx.fillStyle='#0a0c0f';
       function wheel(wx,wz,steer){
         ctx.save(); ctx.translate(wx,wz); ctx.rotate(steer||0);
-        ctx.fillRect(-.32*scale,-.55*scale,.64*scale,1.1*scale);
+        ctx.shadowColor='transparent';
+        ctx.fillRect(-.3*scale,-.55*scale,.6*scale,1.1*scale);
+        ctx.fillStyle='#2a2f38';
+        ctx.fillRect(-.3*scale,-.09*scale,.6*scale,.18*scale);
+        ctx.fillStyle='#0a0c0f';
         ctx.restore();
       }
-      wheel(-Wd/2,-L/2+.8*scale,car.steer); wheel(Wd/2,-L/2+.8*scale,car.steer);
-      wheel(-Wd/2,L/2-.8*scale,0); wheel(Wd/2,L/2-.8*scale,0);
+      wheel(-Wd/2,-L/2+.85*scale,car.steer); wheel(Wd/2,-L/2+.85*scale,car.steer);
+      wheel(-Wd/2,L/2-.85*scale,0);          wheel(Wd/2,L/2-.85*scale,0);
       /* body */
-      ctx.fillStyle=input.handbrake?'#8a2b2b':'#b3541e';
+      var bg=ctx.createLinearGradient(-Wd/2,0,Wd/2,0);
+      bg.addColorStop(0,'#c9722a'); bg.addColorStop(.5,'#dd8a35'); bg.addColorStop(1,'#b25e20');
+      ctx.fillStyle=bg;
       ctx.beginPath();
-      if(ctx.roundRect) ctx.roundRect(-Wd/2,-L/2,Wd,L,.5*scale); else ctx.rect(-Wd/2,-L/2,Wd,L);
+      if(ctx.roundRect) ctx.roundRect(-Wd/2,-L/2,Wd,L,.55*scale); else ctx.rect(-Wd/2,-L/2,Wd,L);
       ctx.fill();
-      /* cabin + nose stripe */
-      ctx.fillStyle='#1a2230';
-      ctx.fillRect(-Wd*.32,-L*.1,Wd*.64,L*.34);
-      ctx.fillStyle='#e8e2d2';
-      ctx.fillRect(-.12*scale,L/2-.5*scale,.24*scale,.5*scale);
+      ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+      /* cabin glass */
+      ctx.fillStyle='#151d2a';
+      ctx.beginPath();
+      if(ctx.roundRect) ctx.roundRect(-Wd*.3,-L*.08,Wd*.6,L*.32,.3*scale);
+      else ctx.rect(-Wd*.3,-L*.08,Wd*.6,L*.32);
+      ctx.fill();
+      ctx.fillStyle='rgba(150,180,210,.25)';
+      ctx.fillRect(-Wd*.3,-L*.08,Wd*.6,.12*scale);
+      /* nose stripe + headlights */
+      ctx.fillStyle='#f2ede0';
+      ctx.fillRect(-.1*scale,L/2-.55*scale,.2*scale,.55*scale);
+      ctx.save();
+      ctx.shadowColor='#ffcf7a'; ctx.shadowBlur=10;
+      ctx.fillStyle='#ffe9b8';
+      ctx.beginPath(); ctx.arc(-Wd*.28,L/2-.18*scale,.11*scale,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc( Wd*.28,L/2-.18*scale,.11*scale,0,Math.PI*2); ctx.fill();
+      ctx.restore();
       ctx.restore();
 
-      /* telemetry */
+      /* vignette: pull the edges in, keep focus center */
+      var vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.35,W/2,H/2,Math.max(W,H)*.75);
+      vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.42)');
+      ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+      /* HUD telemetry */
       elSpeed.textContent=Math.round(Math.abs(car.speed)*2.237);
       var drift=Math.abs(vfor)>1?Math.atan2(Math.abs(vlat),Math.abs(vfor))*180/Math.PI:0;
       elDrift.textContent=Math.round(drift)+'°';
+      elDriftBox.className=drift>14?'hot':'';
       elSlide.textContent=Math.abs(vlat).toFixed(1);
       elSteer.textContent=Math.round(car.steer*180/Math.PI)+'°';
     }
