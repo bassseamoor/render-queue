@@ -405,7 +405,7 @@ TOOLS.stream = { mount: function(host){
     '.stm-nudge{font-size:10px;color:#5f7a92;text-align:center;padding:4px 0 0;max-width:860px;margin:0 auto;}'+
     '</style>'+
     '<div class="stm">'+
-      '<div class="stm-head"><div><div class="stm-title">More Ultra</div>'+
+      '<div class="stm-head"><div><div class="stm-title">Moor Ultra</div>'+
       '<div class="stm-sub" id="stm-sub">the second project — say what you want, worlds land in the space</div></div>'+
       '<button class="stm-voice" id="stm-voice">🔊 voice off</button>'+
       '<button class="stm-dev" id="stm-boop" style="color:#7fd4ff;border-color:#7fd4ff;">boop → screen</button>'+
@@ -778,7 +778,7 @@ TOOLS.stream = { mount: function(host){
   /* Buster: the builder seat. For anything the Stream can't tune live,
    * Buster writes the brief — copy it to your Muse and it gets built. */
   function busterBrief(request){
-    return ['BUILD BRIEF \u2014 More Ultra (from the in-app Buster panel)','',
+    return ['BUILD BRIEF \u2014 Moor Ultra (from the in-app Buster panel)','',
       'Request: '+request,'',
       'Context:',
       '- Tool source: pulse-v2/tools/tool-stream.js (TOOLS.stream), one file, raw WebGL, no deps beyond globals.',
