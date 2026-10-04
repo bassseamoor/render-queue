@@ -294,6 +294,75 @@ input[type=range]{ accent-color:var(--cyan); }
   border-right:none !important;
 }
 
+/* ================= LIVING CHROME + DEPTH ================= */
+/* The light plane moves to a real layer so it can drift (parallax = depth).
+ * It replaces the static body::before orbs. */
+body::before{ display:none; }
+#orbs{
+  position:fixed; inset:-20% 0; z-index:0; pointer-events:none; will-change:transform;
+  background:
+    radial-gradient(520px 520px at 10% 14%, rgba(90,170,245,0.20), transparent 70%),
+    radial-gradient(620px 620px at 88% 10%, rgba(70,220,170,0.11), transparent 70%),
+    radial-gradient(760px 760px at 50% 100%, rgba(60,120,225,0.16), transparent 70%),
+    radial-gradient(420px 420px at 72% 58%, rgba(130,100,235,0.08), transparent 70%),
+    radial-gradient(300px 300px at 28% 72%, rgba(127,212,255,0.10), transparent 70%);
+}
+/* fixed header: slides without leaving a gap; casts the deepest shadow (nearest plane) */
+body.chrome-live header{
+  position:fixed; top:0; left:0; right:0; z-index:60;
+  transition:transform .55s cubic-bezier(0.22,1,0.36,1);
+  will-change:transform;
+  box-shadow:0 18px 50px rgba(0,0,0,0.55), inset 0 -1px 0 rgba(0,0,0,0.30) !important;
+}
+body.chrome-live .app{ margin-top:66px; }
+/* the connected unit: header + nav share one motion curve, one timing */
+body.chrome-live .app{ transition:grid-template-columns .55s cubic-bezier(0.22,1,0.36,1); }
+body.chrome-live .nav{ transition:opacity .30s ease, visibility 0s linear .30s; }
+body.chrome-hidden header{ transform:translateY(-101%); }
+@media(min-width:761px){
+  body.chrome-hidden .app{ grid-template-columns:0px minmax(0,1fr) 300px; }
+  body.chrome-hidden .app.activity-hidden{ grid-template-columns:0px minmax(0,1fr); }
+  body.chrome-hidden .nav{ opacity:0; visibility:hidden; transition:opacity .30s ease, visibility 0s linear .30s; }
+}
+@media(min-width:1750px){
+  body.chrome-hidden .app{ grid-template-columns:0px minmax(0,1fr) 320px; }
+}
+/* the pull: a sliver of glass at the top edge when chrome is hidden */
+#chrome-pull{
+  position:fixed; top:0; left:50%; transform:translate(-50%,-100%);
+  width:72px; height:12px; z-index:59; cursor:pointer;
+  background:linear-gradient(180deg, rgba(255,255,255,0.16), rgba(127,212,255,0.10));
+  border:1px solid rgba(150,210,255,0.30); border-top:none;
+  border-radius:0 0 10px 10px;
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  transition:transform .55s cubic-bezier(0.22,1,0.36,1);
+  padding:0;
+}
+body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
+/* words etched INTO the glass — they ride the surface, never float above it */
+.brand strong,.stm-title,.tile strong,.event h3,.titlebar h3,.section-head h2,.root-label{
+  text-shadow:0 1px 1px rgba(255,255,255,0.09), 0 3px 14px rgba(0,0,0,0.55);
+}
+/* light moving across the brand — the glass catches it */
+.brand strong{
+  background:linear-gradient(110deg,#7fd4ff 25%,#ffffff 50%,#7fd4ff 75%);
+  background-size:220% 100%;
+  -webkit-background-clip:text; background-clip:text;
+  -webkit-text-fill-color:transparent; color:transparent;
+  animation:brand-sheen 7s ease-in-out infinite;
+}
+@keyframes brand-sheen{
+  0%,100%{ background-position:0% 0; }
+  50%{ background-position:100% 0; }
+}
+@media(max-width:760px){
+  body.chrome-live .app{ margin-top:60px; height:calc(100dvh - 60px); }
+}
+@media(prefers-reduced-motion:reduce){
+  #orbs,#chrome-pull{ display:none; }
+  .brand strong{ animation:none; }
+}
+
 </style>
 </head>
 <body>
@@ -6896,6 +6965,73 @@ function init(){
   } else wire();
 }
 init();
+})();
+
+</script>
+<script>
+/* Living chrome: the top bar and the sidebar are one connected glass unit.
+ * When you're deep in content they slide away as one piece; when you scroll
+ * up or reach for the top edge they glide back. Words ride their glass —
+ * transform-only motion, etched type, no detached fades. */
+(function(){
+  'use strict';
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) return;
+  document.body.classList.add('chrome-live');
+
+  /* the light plane: a real layer behind the glass, drifts slower than content */
+  var orbs = document.createElement('div');
+  orbs.id = 'orbs';
+  orbs.setAttribute('aria-hidden','true');
+  document.body.prepend(orbs);
+
+  /* the pull: a sliver of glass peeking at the top edge when chrome is hidden */
+  var pull = document.createElement('button');
+  pull.id = 'chrome-pull';
+  pull.setAttribute('aria-label','Show navigation');
+  document.body.appendChild(pull);
+
+  var main = document.querySelector('.main');
+  var lastY = 0, ticking = false, hoverLock = false, settleUntil = 0;
+
+  function y(){ return main ? main.scrollTop : (window.scrollY || 0); }
+  function setHidden(hide){ document.body.classList.toggle('chrome-hidden', hide); }
+
+  function onFrame(){
+    ticking = false;
+    var yy = y();
+    orbs.style.transform = 'translate3d(0,' + Math.round(yy * 0.22) + 'px,0)';
+    var now = performance.now();
+    /* settle: hiding the nav reflows content and the browser clamps scrollTop —
+     * that fake "scroll up" must not un-hide the chrome we just hid. */
+    if (now < settleUntil){ lastY = yy; return; }
+    if (!hoverLock){
+      if (yy > lastY + 2 && yy > 140){ setHidden(true); settleUntil = now + 700; }
+      else if (yy < lastY - 2 || yy <= 140){ setHidden(false); settleUntil = now + 700; }
+    }
+    lastY = yy;
+  }
+  function tick(){ if (!ticking){ ticking = true; requestAnimationFrame(onFrame); } }
+  if (main) main.addEventListener('scroll', tick, {passive:true});
+  window.addEventListener('scroll', tick, {passive:true});
+
+  /* reaching for the top edge brings it back */
+  window.addEventListener('pointermove', function(e){
+    if (e.clientY < 48 && document.body.classList.contains('chrome-hidden')){
+      hoverLock = true; setHidden(false);
+      setTimeout(function(){ hoverLock = false; }, 1200);
+    }
+  }, {passive:true});
+
+  /* hovering the chrome itself keeps it around */
+  ['header','.nav'].forEach(function(sel){
+    var el = document.querySelector(sel);
+    if (!el) return;
+    el.addEventListener('pointerenter', function(){ hoverLock = true; setHidden(false); });
+    el.addEventListener('pointerleave', function(){ hoverLock = false; tick(); });
+  });
+
+  pull.addEventListener('click', function(){ setHidden(false); tick(); });
 })();
 
 </script>
