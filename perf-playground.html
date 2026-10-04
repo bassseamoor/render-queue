@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<title>Perf Playground — perf-governor</title>
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; padding:0; height:100%; background:#0b0e14; color:#e8eef7;
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif; overscroll-behavior:none; }
+  body { display:flex; flex-direction:column; }
+  #hud { padding:10px 14px 8px; padding-top:calc(10px + env(safe-area-inset-top));
+    background:#0d1220; border-bottom:1px solid #1d2a42; }
+  #hud .title { font-size:15px; font-weight:700; margin-bottom:6px; }
+  #hud .title small { font-weight:400; color:#8fa0b8; }
+  .meters { display:flex; gap:10px; }
+  .m { flex:1; background:#101724; border:1px solid #22314a; border-radius:12px; padding:8px 10px; }
+  .m .v { font-size:20px; font-weight:800; }
+  .m .k { font-size:10px; color:#8fa0b8; text-transform:uppercase; letter-spacing:1px; }
+  #qbar { height:8px; border-radius:6px; background:#1a2436; margin-top:8px; overflow:hidden; }
+  #qfill { height:100%; width:100%; border-radius:6px; background:#4caf50; transition:width .15s, background .3s; }
+  #wrap { position:relative; flex:1; min-height:0; }
+  #cv { display:block; width:100%; height:100%; }
+  #chart { position:absolute; right:10px; top:10px; width:150px; height:56px;
+    background:rgba(9,13,19,.75); border:1px solid #22314a; border-radius:10px; }
+  #controls { display:flex; gap:8px; padding:10px 12px calc(12px + env(safe-area-inset-bottom));
+    background:#0d1220; border-top:1px solid #1d2a42; }
+  #controls button { flex:1; min-height:52px; border-radius:14px; border:1px solid #2a3a52;
+    background:#16202f; color:#e8eef7; font-size:14px; font-weight:700; touch-action:manipulation; cursor:pointer; }
+  #controls button.on { background:#4a2418; border-color:#ff7043; color:#ffd9c4; }
+  #note { font-size:11px; color:#7d8ea6; text-align:center; padding:0 16px 4px; background:#0d1220; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="title">⛈️ Perf Playground <small>— perf-governor × particle storm</small></div>
+  <div class="meters">
+    <div class="m"><div class="v" id="m-q">100%</div><div class="k">quality</div></div>
+    <div class="m"><div class="v" id="m-ms">–</div><div class="k">frame ms</div></div>
+    <div class="m"><div class="v" id="m-n">0</div><div class="k">particles</div></div>
+  </div>
+  <div id="qbar"><div id="qfill"></div></div>
+</div>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <canvas id="chart" width="300" height="112"></canvas>
+</div>
+<div id="note">stress ×4 load — watch quality adapt down, release it, watch it recover</div>
+<div id="controls">
+  <button id="b-stress">🔥 STRESS ×4</button>
+  <button id="b-reset">↻ reset governor</button>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+ * PROVENANCE — inlined VERBATIM, logic untouched:
+ *   createGovernor <- moor-recovery/components/perf-governor/perf-governor.js
+ *   (extracted from render-queue/work/studios/parallax-engine.html:670-723;
+ *    the demo feeds it real measured dt and scales the particle count by
+ *    the quality it reports — applying it is the host's job.)
+ *   mulberry32 <- moor-recovery/components/seed-rng/rng.js (verbatim)
+ * ===================================================================== */
+
+/* ---- perf-governor (verbatim) ---- */
+function createGovernor() {
+  var quality = 1, qualityTarget = 1;
+  var slowCount = 0, goodCount = 0, frames = 0;
+
+  function frame(dt) {
+    frames++;
+    if (frames > 120 && dt > 0) {
+      if (dt > 0.023) { slowCount++; goodCount = 0; }
+      else { goodCount++; slowCount = Math.max(0, slowCount - 1); }
+      if (slowCount > 120) { qualityTarget = Math.max(0.28, qualityTarget - 0.1); slowCount = 0; }
+      if (goodCount > 600) { qualityTarget = Math.min(1, qualityTarget + 0.04); goodCount = 0; }
+    }
+    quality += (qualityTarget - quality) * (1 - Math.exp(-dt / 5));
+    return quality;
+  }
+
+  function reset() {
+    quality = 1; qualityTarget = 1; slowCount = 0; goodCount = 0; frames = 0;
+  }
+
+  return { frame: frame, reset: reset,
+           state: function () { return { quality: quality, target: qualityTarget, frames: frames }; } };
+}
+
+/* ---- seed-rng (verbatim) ---- */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ================= demo code (perf-playground) ================= */
+var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+var chart = document.getElementById('chart'), cctx = chart.getContext('2d');
+var W = 0, H = 0;
+function fit(){
+  var r = cv.getBoundingClientRect();
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  var DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', fit);
+
+var gov = createGovernor();
+var BASE = 1200;                 // particle budget at quality 1
+var parts = [];
+var stress = false;
+var spawnRng = mulberry32(20261004);
+var emaMs = 16, burnSink = 0, tw = 0;
+var samples = [];
+
+function addParticle(){
+  var a = spawnRng() * 6.2832, r0 = 20 + spawnRng() * Math.max(W, H) * 0.45;
+  parts.push({
+    x: W / 2 + Math.cos(a) * r0, y: H / 2 + Math.sin(a) * r0,
+    vx: (spawnRng() - 0.5) * 160, vy: (spawnRng() - 0.5) * 160,
+    hue: 190 + spawnRng() * 140, s: 1 + spawnRng() * 2.6,
+    ph: spawnRng() * 6.2832
+  });
+}
+
+document.getElementById('b-stress').addEventListener('click', function(){
+  stress = !stress;
+  this.classList.toggle('on', stress);
+  this.textContent = stress ? '🔥 STRESS ×4 (on)' : '🔥 STRESS ×4';
+});
+document.getElementById('b-reset').addEventListener('click', function(){
+  gov.reset(); samples = [];
+});
+
+function drawChart(){
+  var Cw = chart.width, Ch = chart.height;
+  cctx.fillStyle = 'rgba(9,13,19,.9)'; cctx.fillRect(0, 0, Cw, Cw * 0 + Ch);
+  cctx.strokeStyle = '#f44336'; cctx.setLineDash([6, 6]); cctx.beginPath();
+  var fy = Ch - 0.28 * Ch; cctx.moveTo(0, fy); cctx.lineTo(Cw, fy); cctx.stroke();
+  cctx.setLineDash([]);
+  cctx.strokeStyle = '#5bd8ff'; cctx.lineWidth = 2; cctx.beginPath();
+  for (var i = 0; i < samples.length; i++) {
+    var x = i / Math.max(1, samples.length - 1) * Cw, y = Ch - samples[i] * Ch;
+    if (i === 0) cctx.moveTo(x, y); else cctx.lineTo(x, y);
+  }
+  cctx.stroke();
+  cctx.fillStyle = '#9db1cc'; cctx.font = '18px system-ui';
+  cctx.fillText('28% floor', 8, fy - 6);
+}
+
+var last = performance.now();
+function tick(now){
+  requestAnimationFrame(tick);
+  var rawDt = Math.min(0.25, (now - last) / 1000); last = now;
+  emaMs = emaMs * 0.92 + rawDt * 1000 * 0.08;
+
+  // honest load: per-particle trig burn, ×4 under STRESS
+  var burnN = stress ? 30000 : 500;
+  var acc = burnSink, b;
+  for (b = 0; b < burnN; b++) acc += Math.sin(acc + b) * Math.cos(b * 0.7);
+  burnSink = acc;
+  tw = 0.7 + 0.3 * Math.sin(burnSink * 1e-4);   // burn visibly modulates twinkle
+
+  var q = gov.frame(rawDt);                       // real measured frame time
+  var n = Math.round(BASE * q);                   // host applies quality
+  while (parts.length < n) addParticle();
+  if (parts.length > n) parts.length = n;
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(7,9,14,0.32)'; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i];
+    // storm swirl: curl around center + drift
+    var dx = p.x - W / 2, dy = p.y - H / 2, d = Math.sqrt(dx * dx + dy * dy) + 1;
+    p.vx += (-dy / d * 90 - p.vx * 0.4) * rawDt;
+    p.vy += ( dx / d * 90 - p.vy * 0.4) * rawDt;
+    p.x += p.vx * rawDt; p.y += p.vy * rawDt;
+    p.ph += rawDt * 3;
+    if (p.x < -20) p.x = W + 20; if (p.x > W + 20) p.x = -20;
+    if (p.y < -20) p.y = H + 20; if (p.y > H + 20) p.y = -20;
+    ctx.globalAlpha = (0.35 + 0.65 * Math.abs(Math.sin(p.ph))) * tw;
+    ctx.fillStyle = 'hsl(' + p.hue + ',90%,62%)';
+    var s = p.s;
+    ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+  }
+  ctx.globalAlpha = 1;
+
+  samples.push(q); if (samples.length > 240) samples.shift();
+  document.getElementById('m-q').textContent = Math.round(q * 100) + '%';
+  document.getElementById('m-ms').textContent = emaMs.toFixed(1);
+  document.getElementById('m-n').textContent = parts.length;
+  var fill = document.getElementById('qfill');
+  fill.style.width = (q * 100) + '%';
+  fill.style.background = q > 0.7 ? '#4caf50' : q > 0.45 ? '#ff9800' : '#f44336';
+  drawChart();
+}
+
+/* headless/test hooks */
+window.__perf = {
+  governor: gov,
+  freshGovernor: createGovernor,   // verbatim factory — tests exercise the real API
+  quality: function(){ return gov.state().quality; },
+  setStress: function(b){ stress = !!b;
+    var btn = document.getElementById('b-stress');
+    btn.classList.toggle('on', stress);
+    btn.textContent = stress ? '🔥 STRESS ×4 (on)' : '🔥 STRESS ×4'; },
+  particles: function(){ return parts.length; }
+};
+
+fit();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
