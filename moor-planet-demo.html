@@ -41,6 +41,7 @@
   #typeChips button.on{border-color:#c9a227;color:#ffe9a8;}
   #cloudCut{position:absolute;inset:0;z-index:6;pointer-events:none;opacity:0;
     background:radial-gradient(ellipse at center,#ffffff 25%,#dfe8f2 65%,#b9c9da 100%);}
+  #cloudHaze{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,rgba(255,255,255,0.95) 0%,rgba(240,245,255,0.7) 60%,rgba(220,230,245,0.3) 100%);opacity:0;transition:opacity 0.3s;z-index:5;}
   #vignette{position:absolute;inset:0;pointer-events:none;z-index:2;
     background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.5) 100%)}
   /* sections */
@@ -75,7 +76,7 @@ const t="160",e={LEFT:0,MIDDLE:1,RIGHT:2,ROTATE:0,DOLLY:1,PAN:2},n={ROTATE:0,PAN
 
 <div id="hero">
   <canvas id="heroCanvas"></canvas>
-  <div id="heroHint">drag = move · 2-finger drag = look · pinch / scroll / slider = zoom</div>
+  <div id="heroHint">drag to look around · pinch or slider to dive · two-finger drag to travel</div>
   <div id="dropbar">
     <button id="randomBtn" class="gold" title="random planet drop-in">🎲</button>
     <button id="dropInBtn">▶ DROP-IN</button>
@@ -88,6 +89,7 @@ const t="160",e={LEFT:0,MIDDLE:1,RIGHT:2,ROTATE:0,DOLLY:1,PAN:2},n={ROTATE:0,PAN
   <div id="cloudCut"></div>
   <button id="modeBtn" style="display:none">⛰ BRUSH</button>
   <div id="vignette"></div>
+  <div id="cloudHaze"></div>
   <div id="heroText">
     <h1><span class="gold">MOOR</span> <span style="color:#fff">PLANET</span></h1>
     <p>One world, from orbit to the ground. No cuts.<br>Drag to <b style="color:#fff">move the camera anywhere</b> — hit <b style="color:#fff">▶ drop-in</b> or roll the slider to fall in.</p>
@@ -477,7 +479,10 @@ function createPlanetDemo(canvas,opts){
   }
   const clouds1=new THREE.Mesh(fieldSphere(R+2200,96,64),cloudMat(0.85,1.0,seed+7));
   const clouds2=new THREE.Mesh(fieldSphere(R+4800,64,48),cloudMat(0.30,1.06,seed+31));
-  orbitGroup.add(clouds1,clouds2);
+  const clouds3=new THREE.Mesh(fieldSphere(R+8200,48,32),cloudMat(0.22,1.12,seed+53));
+  orbitGroup.add(clouds1,clouds2,clouds3);
+  /* cloud drift: layers slide at different rates for parallax depth */
+  const cloudLayers=[{m:clouds1,s:0.004},{m:clouds2,s:-0.0025},{m:clouds3,s:0.0016}];
 
   /* ----- atmosphere shell ----- */
   const atmoMat=new THREE.ShaderMaterial({
@@ -651,8 +656,10 @@ function createPlanetDemo(canvas,opts){
     m.frustumCulled=false;
     return{m,uni};
   }
-  const nearPatch=makePatch(520,256,3.0);   // 131k tris where the eyes are: crisp silhouettes
-  const farPatch=makePatch(8000,80,1.0);    // regional context for descent
+  /* mobile: halve the vertex load — the fragment detail carries the close-up */
+  const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const nearPatch=makePatch(520,isMobile?128:256,3.0);
+  const farPatch=makePatch(8000,isMobile?48:80,1.0);
   farPatch.uni.uMicroK.value=0;
   groundGroup.add(nearPatch.m,farPatch.m);
   const patchMats=[nearPatch.uni,farPatch.uni];
@@ -1246,7 +1253,9 @@ function createPlanetDemo(canvas,opts){
     diveTo(_v1);
     playDropIn();
   }
-  if(dropBtn)dropBtn.addEventListener('click',()=>{diveTo(null);playDropIn();});
+  /* DROP-IN descends exactly where you're looking — no teleport, no re-aim.
+     (The dice picks a new spot; this button just takes you down.) */
+  if(dropBtn)dropBtn.addEventListener('click',()=>{playDropIn();});
   if(backBtn)backBtn.addEventListener('click',()=>{cancelDropIn();returnToOrbit();});
   const randomBtn=document.getElementById('randomBtn');
   if(randomBtn)randomBtn.addEventListener('click',randomDropIn);
@@ -1334,7 +1343,9 @@ function createPlanetDemo(canvas,opts){
       if(brushMode&&altNow<300){brushAt(e.clientX,e.clientY);return;}
       if(dragging){
         const mdx=e.clientX-dragging.x,mdy=e.clientY-dragging.y;
-        if(dragging.look)lookBy(mdx,mdy);else moveCam(mdx,mdy);
+        /* one finger does the natural thing: orbit when high, look when low.
+           (shift/right-drag or two-finger still pans the ground point.) */
+        if(dragging.look||altNow<1000)lookBy(mdx,mdy);else moveCam(mdx,mdy);
         dragging.x=e.clientX;dragging.y=e.clientY;
       }
     }
@@ -1395,8 +1406,7 @@ function createPlanetDemo(canvas,opts){
       else if(emaMs<14&&qLevel>0){qLevel--;renderer.setPixelRatio([Math.min(devicePixelRatio||1,2),1.5,1.25,1][qLevel]);}
     }
 
-    clouds1.material.uniforms.uTime.value+=dt;
-    clouds2.material.uniforms.uTime.value+=dt*0.6;
+    for(const cl of cloudLayers){cl.m.material.uniforms.uTime.value+=dt;cl.m.rotation.y+=cl.s*dt;}
     waterMat.uniforms.uTime.value+=dt;
     for(const m of propList)m.userData.uni.uTime.value+=dt;
 
@@ -1447,6 +1457,18 @@ function createPlanetDemo(canvas,opts){
       if(slider&&!sliderActive){
         const loS=Math.log(minRadius());
         slider.value=Math.round(1000*(Math.log(r)-LOG_FAR)/(loS-LOG_FAR));
+      }
+      /* cloud punch-through: whiteout when passing through a cloud deck */
+      {
+        const haze=document.getElementById('cloudHaze');
+        if(haze){
+          let hazeOp=0;
+          for(const cr of [R+2200,R+4800,R+8200]){
+            const d=Math.abs(r-cr);
+            if(d<600)hazeOp=Math.max(hazeOp,1-d/600);
+          }
+          haze.style.opacity=(hazeOp*0.85).toFixed(2);
+        }
       }
     }
 
