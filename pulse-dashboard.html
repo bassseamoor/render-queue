@@ -277,6 +277,19 @@
 #view-home #right{background:rgba(3,6,11,.55)}
 #view-home #center{background:linear-gradient(180deg,rgba(22,34,56,.38),transparent 260px)}
 
+/* ---- 15. nested canvas breadcrumbs ---- */
+#view-home .crumb{color:var(--holo-cyan)}
+#view-home .crumb:hover{text-decoration:underline}
+#view-home .crumb-sep{color:var(--holo-faint)}
+#view-home .crumb-cur{color:var(--holo-ink);font-weight:600}
+#view-home .crumb-back{color:var(--holo-dim)}
+
+/* ---- 16. home split: In / Not In stacked boxes ---- */
+#view-home .split-pane{border:1px solid var(--holo-line);border-radius:var(--holo-r);
+  padding:10px 12px;background:var(--holo-surface);margin-bottom:4px}
+#view-home .split-in{border-color:rgba(95,212,255,.45);box-shadow:inset 3px 0 0 var(--holo-cyan)}
+#view-home .split-pane .trow{margin-bottom:2px}
+
 </style>
 <style>
 /* Pulse layout skeleton — structure and positioning only.
@@ -390,10 +403,10 @@ summary{cursor:pointer}
 </div>
 <div id="sheetshade" onclick="closeSheet()"></div>
 </div><!-- /view-home -->
-<div id="view-page" style="display:none"></div>
+
 
 <script>
-var S=null, SEL=null, OPEN={}, LASTHASH='', UI={node:{kind:'project',id:'more-os'},texp:{'project:more-os':1},taskOpen:{},right:{mode:'timeline'},mView:'work'};
+var S=null, SEL=null, OPEN={}, LASTHASH='', UI={trail:[{kind:'home'}],texp:{'project:more-os':1},taskOpen:{},right:{mode:'timeline'},mView:'work'};
 var SEEN_MAX=0, REDUCED=false; try{REDUCED=window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function ago(ts){if(!ts)return 'never';var s=Math.max(0,Date.now()/1000-ts);if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago'}
@@ -444,17 +457,12 @@ function treeData(){
   var dcs=Object.values(S.decisions||{}).map(function(d){return D(d.id)}).filter(Boolean);
   var cps=(S.activity||[]).filter(function(e){return e.type==='proposal'}).map(E);
   function grp(id,name,st,kids){return {kind:'group',id:id,name:name,st:st,kids:kids.filter(Boolean)}}
-  var inOrder=['canvas-shell','wrangler-catalog','js-create-pipeline','seed-lab','project-pulse'];
-  var inKids=inOrder.map(C).filter(Boolean);
-  Object.values(comps).forEach(function(c){
-    if(c.role==='active'&&inOrder.indexOf(c.id)<0&&C(c.id))inKids.push(C(c.id))});
-  var notInKids=[
-    grp('g-env','3D space','environment',['terrain-core','terrain-field','mesh-builder','moorworld','palettes','ambience-engine','spawn-director','perf-governor'].map(C)),
-    grp('g-shared','Shared parts','',['seed-rng','seed-codec','seed-console','save-shape','release-gate','registry-triple','replace-file','idempotent-upload'].map(C)),
-    grp('g-ref','Reference','',['rust-intent-compiler'].map(C))];
   return {kind:'project',id:'more-os',name:'More OS',st:'active project',kids:[
-    grp('g-in','In','in Moor now',inKids),
-    grp('g-notin','Not In','exists, not in Moor',notInKids),
+    grp('g-env','3D space','environment',['terrain-core','terrain-field','mesh-builder','moorworld','palettes','ambience-engine','spawn-director','perf-governor'].map(C)),
+    grp('g-iface','Interface','',['canvas-shell','wrangler-catalog'].map(C)),
+    grp('g-prod','Production','',['js-create-pipeline','rust-intent-compiler'].map(C)),
+    grp('g-apps','Apps & worlds','',['seed-lab','project-pulse'].map(C)),
+    grp('g-shared','Shared parts','',['seed-rng','seed-codec','seed-console','save-shape','release-gate','registry-triple','replace-file','idempotent-upload'].map(C)),
     grp('g-gen','Generators','',[0,1,2,3,4,5].map(G)),
     grp('g-how','How it works','',howKids),
     grp('g-dec','Decisions',String(dcs.length),dcs),
@@ -464,10 +472,11 @@ function treeData(){
 }
 function findNode(id){var t=treeData(),found=null;(function walk(n){if(n.kind==='group'&&n.id===id){found=n;return}(n.kids||[]).forEach(walk)})(t);return found}
 function renderTree(){
+  UI.trail.forEach(function(n){UI.texp[n.kind+':'+n.id]=1});
   var t=treeData(),h='';
   function row(n){
     var kids=n.kids||[],has=kids.length>0,key=n.kind+':'+n.id,exp=!!UI.texp[key];
-    var sel=UI.node.kind===n.kind&&String(UI.node.id)===String(n.id);
+    var cn=currentNode(),sel=cn.kind===n.kind&&String(cn.id)===String(n.id);
     var nk=n.kind+':'+n.id;
     h+='<div class="trow'+(sel?' sel':'')+'" tabindex="0" role="treeitem" aria-selected="'+(sel?'true':'false')+'" data-nk="'+esc(nk)+'" onkeydown="treeKey(event,\''+n.kind+'\',\''+String(n.id).replace(/'/g,'')+'\','+(has?1:0)+')" onclick="treeSel(\''+n.kind+'\',\''+String(n.id).replace(/'/g,'')+'\')">'
       +'<span class="twisty" onclick="treeTwist(\''+n.kind+'\',\''+String(n.id).replace(/'/g,'')+'\',event)">'+(has?(exp?'\u25be':'\u25b8'):'\u00b7')+'</span>'
@@ -489,11 +498,130 @@ function focusNK(k){var el=document.querySelector('[data-nk="'+k+'"]');if(el)el.
 function taskKey(ev,id){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();toggleTask(id)}}
 function tileKey(ev,kind,id){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();treeSel(kind,id)}}
 function treeSel(kind,id){
-  UI.node={kind:kind,id:id};
   document.body.classList.remove('m-tree');
-  renderTree();renderCenter();
-  if(kind==='component'||kind==='task')openDetail(kind,id);
-  else if(window.innerWidth<=900&&UI.mView==='activity')mView('work');
+  openNode(kind,id);
+}
+/* ---- nested canvas: the center is a drill-down trail, everything opens here ---- */
+function currentNode(){return UI.trail[UI.trail.length-1]}
+function findPath(kind,id){
+  id=String(id);
+  if(kind==='project')return [{kind:'home'}];
+  var found=null;
+  (function walk(n,anc){
+    if(found)return;
+    var entry=n.kind==='project'?{kind:'home'}:{kind:n.kind,id:String(n.id)};
+    if(n.kind===kind&&String(n.id)===id){found=anc.concat([entry]);return}
+    (n.kids||[]).forEach(function(k){walk(k,anc.concat([entry]))});
+  })(treeData(),[]);
+  return found;
+}
+function openNode(kind,id){
+  id=String(id);
+  var p=findPath(kind,id);
+  var t=p?p:[{kind:'project',id:'more-os'},{kind:kind,id:id}];
+  setTrail(t);
+  if(window.innerWidth<=900&&UI.mView==='activity')mView('work');
+}
+function setTrail(t){
+  UI.trail=t; syncHash(); renderTree(); renderCenter();
+  var ce=document.getElementById('center'); if(ce)ce.scrollTop=0;
+}
+function goBack(){if(UI.trail.length>1)setTrail(UI.trail.slice(0,-1))}
+function goCrumb(i){setTrail(UI.trail.slice(0,i+1))}
+function syncHash(){
+  var n=currentNode(),h=(n.kind==='home'||n.kind==='project')?'#/':'#/'+n.kind+'/'+encodeURIComponent(n.id);
+  try{history.replaceState(null,'',h)}catch(e){try{location.hash=h.slice(1)}catch(_){}}
+}
+function crumbLabel(n){
+  if(n.kind==='home')return 'In / Not In';
+  if(n.kind==='project')return 'More OS';
+  if(n.kind==='component'&&S.components[n.id])return S.components[n.id].name;
+  if(n.kind==='generator'&&ATLAS[+n.id])return ATLAS[+n.id].name;
+  if(n.kind==='task')return n.id;
+  if(n.kind==='objective'&&(S.objectives||{})[n.id])return S.objectives[n.id].title;
+  if(n.kind==='layout'&&(S.layouts||{})[n.id])return S.layouts[n.id].name;
+  if(n.kind==='decision'&&(S.decisions||{})[n.id])return String(S.decisions[n.id].text).slice(0,40);
+  if(n.kind==='moreos')return 'More OS systems';
+  if(n.kind==='anatomy')return 'Anatomy';
+  if(n.kind==='graph')return 'Graph';
+  if(n.kind==='group'){var g=findNode(n.id);return g?g.name:n.id}
+  if(n.kind==='concept'){var e=(S.activity||[]).filter(function(x){return x.id===n.id})[0];return e?e.summary.slice(0,40):'concept'}
+  return n.id;
+}
+function crumbsHTML(){
+  var h='<div class="crumbs" aria-label="Breadcrumb">';
+  if(UI.trail.length>1)h+='<button class="refresh crumb-back" onclick="goBack()" aria-label="Go back">\u2190</button>';
+  h+=UI.trail.map(function(n,i){
+    var last=i===UI.trail.length-1;
+    return (i>0?'<span class="crumb-sep">\u203a</span>':'')+
+      (last?'<b class="crumb-cur">'+esc(crumbLabel(n))+'</b>'
+           :'<button class="crumb" onclick="goCrumb('+i+')">'+esc(crumbLabel(n))+'</button>');
+  }).join('')+'</div>';
+  return h;
+}
+function stripShellHead(html){
+  return html.replace(/^<div class="row" style="margin-bottom:4px">[\s\S]*?<\/div>/,'');
+}
+function homeSplit(){
+  var comps=S.components||{};
+  function C(id){var c=comps[id];return c?{kind:'component',id:id,name:c.name,st:c.status,role:c.role}:null}
+  var inIds=['canvas-shell','wrangler-catalog','js-create-pipeline','seed-lab','project-pulse'];
+  var inKids=inIds.map(C).filter(Boolean);
+  Object.values(comps).forEach(function(c){if(c.role==='active'&&inIds.indexOf(c.id)<0){var x=C(c.id);if(x)inKids.push(x)}});
+  var groups=[
+    {name:'3D space',ids:['terrain-core','terrain-field','mesh-builder','moorworld','palettes','ambience-engine','spawn-director','perf-governor']},
+    {name:'Shared parts',ids:['seed-rng','seed-codec','seed-console','save-shape','release-gate','registry-triple','replace-file','idempotent-upload']},
+    {name:'Reference',ids:['rust-intent-compiler']}
+  ];
+  function row(c){
+    return '<div class="trow" tabindex="0" role="button" aria-label="'+esc(c.name)+'" onclick="openNode(\'component\',\''+c.id+'\')" onkeydown="tileKey(event,\'component\',\''+c.id+'\')">'
+      +'<span class="tname">'+esc(c.name)+'</span>'
+      +'<span class="badge b-'+c.role+'">'+esc(c.role)+'</span>'
+      +'<span class="tstat">'+esc(c.st)+'</span></div>';
+  }
+  var evs=S.activity||[];
+  var tasks=Object.values(S.tasks||{});
+  var ip=tasks.filter(function(t){return t.status==='in_progress'});
+  var open=evs.filter(function(e){return e.type==='question'&&!answersFor(e.id).length}).length;
+  return '<div class="chead"><h2>More OS</h2><div><span class="badge b-active">active project</span></div></div>'
+    +'<div class="facts">'
+    +'<div class="fact"><div class="lab">Next recorded action</div><div class="val">'+(ip.length?'<b>'+esc(ip[0].id)+'</b> \u2014 '+esc(ip[0].current_action||'\u2014'):'<span class="sub">none recorded</span>')+'</div></div>'
+    +'<div class="fact"><div class="lab">Open questions</div><div class="val">'+open+'</div></div>'
+    +'</div>'
+    +'<h4 class="sech">In \u2014 in Moor now ('+inKids.length+')</h4>'
+    +'<div class="split-pane split-in">'+inKids.map(row).join('')+'</div>'
+    +'<h4 class="sech">Not In \u2014 exists, not in Moor</h4>'
+    +'<div class="split-pane split-notin">'
+    +groups.map(function(g){
+        var kids=g.ids.map(C).filter(Boolean);
+        return '<div class="meta" style="margin:8px 0 4px">'+esc(g.name)+' ('+kids.length+')</div>'+kids.map(row).join('');
+      }).join('')+'</div>'
+    +'<h4 class="sech">Tasks</h4>'+tasksHTML(tasks)
+    +needsDecisionHTML(null,null);
+}
+function centerDetail(n){
+  var body='';
+  if(n.kind==='home')return homeSplit();
+  if(n.kind==='project')return cProject();
+  if(n.kind==='group')return cGroup(n.id);
+  if(n.kind==='component')return cComponentFull(n.id);
+  if(n.kind==='generator')body=pageGenerator(+n.id);
+  else if(n.kind==='task')return '<div class="holo-inspector holo-brackets">'+taskDetail(n.id)+'</div>';
+  else if(n.kind==='objective')return cObjective(n.id);
+  else if(n.kind==='layout')body=pageLayout(n.id);
+  else if(n.kind==='decision')body=pageDecision(n.id);
+  else if(n.kind==='concept')body=pageConcept(n.id);
+  else if(n.kind==='moreos')body=pageMoreOS();
+  else if(n.kind==='anatomy')body=pageAnatomy();
+  else if(n.kind==='graph')body=pageGraph();
+  else return '<div class="empty">Not found.</div>';
+  if(!body)return '<div class="empty">Not found.</div>';
+  return stripShellHead(body);
+}
+function afterCenterRender(n){
+  if(n.kind==='generator'&&n.id==='0'&&document.getElementById('pg-big'))initPageBrowser();
+  if(n.kind==='moreos')renderRoadmap();
+  if(n.kind==='anatomy')renderAnatomy();
 }
 /* ---- center ---- */
 function chead(title,badges){
@@ -567,7 +695,7 @@ function taskRow(t){
     h+='<div class="tdetail"><div class="kv"><b>Objective:</b> '+esc(t.objective||'\u2014')+'</div>'
       +((t.acceptance||[]).length?'<div class="kv"><b>Done when:</b><br>\u2022 '+t.acceptance.map(esc).join('<br>\u2022 ')+'</div>':'')
       +(hist.length?'<div class="kv"><b>History:</b><br>'+hist.map(function(e){return '\u2022 '+esc(e.summary)+' <span class="meta">('+ago(e.ts)+')</span>'}).join('<br>')+'</div>':'')
-      +'<div style="margin-top:6px"><button class="refresh" onclick="openDetail(\'task\',\''+String(t.id).replace(/'/g,'')+'\')">full detail</button></div></div>';
+      +'<div style="margin-top:6px"><button class="refresh" onclick="openNode(\'task\',\''+String(t.id).replace(/'/g,'')+'\')">full detail</button></div></div>';
   }
   return h+'</div>';
 }
@@ -633,7 +761,7 @@ function cGroup(id){
     return '<div class="tile holo-tilt" tabindex="0" role="button" onkeydown="tileKey(event,\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')" onclick="treeSel(\''+k.kind+'\',\''+String(k.id).replace(/'/g,'')+'\')"><div class="t">'+esc(k.name)+'</div>'+(k.st?'<div class="s">'+esc(k.st)+'</div>':'')+'</div>'}).join('')+'</div>';
   return h;
 }
-function cComponent(id){
+function cComponentFull(id){
   var c=S.components[id];if(!c)return '<div class="empty">Not found.</div>';
   var layer=(LAYERS.find(function(L){return L[0]===(c.layer||'')})||['','(no layer)'])[1];
   var tasks=Object.values(S.tasks||{}).filter(function(t){return (t.components||[]).indexOf(id)>=0});
@@ -643,8 +771,20 @@ function cComponent(id){
     +facts([['Belongs to',esc(layer)],['Source',esc(c.source_path||'\u2014')],['Last checked',esc(c.last_checked||'\u2014')]])
     +'<h4 class="sech">Connections</h4>'+relDiagramHTML(c);
   if(tasks.length)h+='<h4 class="sech">Tasks</h4>'+tasksHTML(tasks);
-  h+=needsDecisionHTML('component',id);
-  h+='<div style="margin-top:10px"><button class="refresh" onclick="openDetail(\'component\',\''+id.replace(/'/g,'')+'\')">full detail</button> <a href="#/component/'+id+'" style="color:var(--acc);font-size:13px">open page</a></div>';
+  var evs=(S.activity||[]).filter(function(e){return e.component_id===c.id}).slice(-8).reverse();
+  var built=(S.activity||[]).filter(function(e){return e.type==='component_registered'&&((e.summary||'').toLowerCase().indexOf(c.id)>=0||e.component_id===c.id)});
+  var visual=c.thumbnail
+    ?'<div style="margin:10px 0"><img src="/apps/'+esc(c.thumbnail)+'" onerror="this.style.display=\'none\'" style="width:100%;border-radius:8px;border:1px solid var(--line)"></div>'
+    :'';
+  h+='<h4 class="sech">Detail</h4><div class="card">'
+    +(c.usage?'<div class="kv"><b>How you use it:</b> '+esc(c.usage)+'</div>':'')
+    +'<div class="kv"><b>What the builder sees:</b> '+esc(c.entry_point||'\u2014')+'</div>'
+    +(c.source_path?'<div class="kv"><b>What you can edit:</b> '+esc(c.source_path)+'</div>':'')
+    +'</div>'+visual
+    +'<h4 class="sech">Verified</h4><div class="card">'+(c.evidence&&c.evidence.length?c.evidence.map(function(e){return '<div>\u2022 '+esc(e)+'</div>'}).join(''):'<span class="warn">no verification evidence recorded</span>')+'</div>'
+    +'<h4 class="sech">Built by</h4><div class="card">'+(built.length?built.map(function(e){return '<div>\u2022 '+esc(e.actor)+' \u2014 '+esc(e.summary)+' <span class="meta">('+ago(e.ts)+')</span></div>'}).join(''):'<div class="meta">build origin not recorded in the feed</div>')+'</div>'
+    +'<h4 class="sech">Recent changes</h4><div class="card">'+(evs.length?evs.map(function(e){return '<div>\u2022 '+esc(e.summary)+' <span class="meta">('+ago(e.ts)+')</span></div>'}).join(''):'<div class="meta">none recorded</div>')+'</div>'
+    +needsDecisionHTML('component',id);
   return h;
 }
 function cGenerator(id){
@@ -677,14 +817,9 @@ function cLinked(n){
     +'<div style="margin-top:10px"><a href="'+itemLink(n.kind,n.id)+'" class="refresh" style="text-decoration:none;display:inline-block">open full page \u2192</a></div>';
 }
 function renderCenter(){
-  var n=UI.node,h='';
-  if(n.kind==='project')h=cProject();
-  else if(n.kind==='group')h=cGroup(n.id);
-  else if(n.kind==='component')h=cComponent(n.id);
-  else if(n.kind==='generator')h=cGenerator(n.id);
-  else if(n.kind==='objective')h=cObjective(n.id);
-  else h=cLinked(n);
-  document.getElementById('center').innerHTML=h;
+  var n=currentNode();
+  document.getElementById('center').innerHTML=crumbsHTML()+centerDetail(n);
+  afterCenterRender(n);
 }
 /* holo pointer tilt: subtle 3D follow on cards. Fine pointers only, never under
    reduced motion. Re-render safe: transforms live on replaced nodes. */
@@ -719,8 +854,8 @@ function timelineHTML(){
     h+='<div class="tlrow'+(isFresh?' is-fresh':'')+'"><div class="t">'+ago(e.ts)+' \u00b7 <span class="badge b-'+String(e.origin).replace('-','')+'">'+esc(e.origin)+'</span></div>'
       +'<div class="tlb">'+esc(e.summary)+'</div>'
       +'<div class="meta">'+esc(String(e.type).replace(/_/g,' '))+(e.actor?' \u00b7 '+esc(e.actor):'')
-      +(e.task_id?' \u00b7 <a href="#" onclick="openDetail(\'task\',\''+String(e.task_id).replace(/'/g,'')+'\');return false" style="color:var(--acc)">'+esc(e.task_id)+'</a>':'')
-      +(e.component_id?' \u00b7 <a href="#" onclick="openDetail(\'component\',\''+String(e.component_id).replace(/'/g,'')+'\');return false" style="color:var(--acc)">'+esc(e.component_id)+'</a>':'')
+      +(e.task_id?' \u00b7 <a href="#" onclick="openNode(\'task\',\''+String(e.task_id).replace(/'/g,'')+'\');return false" style="color:var(--acc)">'+esc(e.task_id)+'</a>':'')
+      +(e.component_id?' \u00b7 <a href="#" onclick="openNode(\'component\',\''+String(e.component_id).replace(/'/g,'')+'\');return false" style="color:var(--acc)">'+esc(e.component_id)+'</a>':'')
       +'</div>'
       +((e.detail||e.evidence)?'<details><summary class="meta" style="cursor:pointer">evidence</summary><div class="ev">'+esc(e.detail||'')+(e.evidence?'\n\u2014 '+esc(e.evidence):'')+'</div></details>':'')+'</div>';
     i--;shown++;
@@ -744,10 +879,7 @@ function taskDetail(id){
 }
 function renderRight(){
   var el=document.getElementById('right'),m=UI.right.mode;
-  if(m==='detail'){
-    el.innerHTML='<div class="tlhead"><button class="refresh" onclick="closeDetail()">\u2190 Activity</button><b>'+(UI.right.kind==='task'?'Task':'Component')+'</b></div>'
-      +'<div class="holo-inspector holo-brackets">'+(UI.right.kind==='task'?taskDetail(UI.right.id):compDetail(UI.right.id))+'</div>';
-  }else if(m==='log'){
+  if(m==='log'){
     el.innerHTML='<div class="tlhead"><button class="refresh" onclick="closeDetail()">\u2190 Activity</button><b>Log work</b></div>'
       +'<div class="row" style="gap:8px;margin-bottom:8px">'
       +'<button class="refresh" onclick="showForm(\'task\')">\uFF0B New task</button>'
@@ -760,11 +892,7 @@ function renderRight(){
     el.innerHTML='<div class="tlhead"><b>Activity</b></div>'+timelineHTML();
   }
 }
-function openDetail(kind,id){
-  UI.right={mode:'detail',kind:kind,id:id};renderRight();
-  var r=document.getElementById('right');if(r)r.scrollTop=0;
-  if(window.innerWidth<=900)document.body.classList.add('m-sheet');
-}
+
 function closeDetail(){
   UI.right={mode:'timeline'};document.body.classList.remove('m-sheet');renderRight();
   if(window.innerWidth<=900)mView('activity');
@@ -938,26 +1066,16 @@ function pageShell(crumb,title,body){
   return '<div class="row" style="margin-bottom:4px"><a href="#/" style="color:var(--acc);font-size:13px">\u2190 Project Pulse</a><span class="meta">'+esc(crumb)+'</span></div>'
     +'<h1 style="margin:2px 0 12px;font-size:24px">'+esc(title)+'</h1>'+body;
 }
-function showPage(html){document.getElementById('view-home').style.display='none';var v=document.getElementById('view-page');v.style.display='block';v.innerHTML=html}
-function showHome(){var v=document.getElementById('view-page');v.style.display='none';v.innerHTML='';document.getElementById('view-home').style.display='block'}
 function nav(soft){
-  var h=location.hash||'#/', html=null;
-  if(h==='#/'||h==='#'||h===''){showHome();return}
-  var p=h.slice(2).split('/');
-  if(p[0]==='component')html=pageComponent(decodeURIComponent(p[1]||''));
-  else if(p[0]==='generator')html=pageGenerator(parseInt(p[1]||'0',10));
-  else if(p[0]==='layout')html=pageLayout(decodeURIComponent(p[1]||''));
-  else if(p[0]==='decision')html=pageDecision(decodeURIComponent(p[1]||''));
-  else if(p[0]==='concept')html=pageConcept(decodeURIComponent(p[1]||''));
-  else if(p[0]==='moreos')html=pageMoreOS();
-  else if(p[0]==='anatomy')html=pageAnatomy();
-  else if(p[0]==='graph')html=pageGraph();
-  if(html==null){showHome();return}
-  showPage(html);
-  if(!soft)window.scrollTo(0,0);
-  if(p[0]==='generator'&&parseInt(p[1]||'0',10)===0&&document.getElementById('pg-big'))initPageBrowser();
-  if(p[0]==='moreos')renderRoadmap();
-  if(p[0]==='anatomy')renderAnatomy();
+  var h=location.hash||'#/', p=h.slice(2).split('/');
+  var kind=p[0]||'project', id=decodeURIComponent(p[1]||'');
+  if(h==='#/'||h==='#'||h===''||kind==='project'){UI.trail=[{kind:'home'}]}
+  else{
+    var fp=findPath(kind,id);
+    UI.trail=fp?fp.map(function(n){return {kind:n.kind,id:String(n.id)}}):[{kind:'home'},{kind:kind,id:id}];
+  }
+  renderTree();renderCenter();
+  if(!soft){var ce=document.getElementById('center');if(ce)ce.scrollTop=0}
 }
 window.addEventListener('hashchange',function(){nav()});
 /* ---- Q&A: ask on anything, answers stick to the question ---- */
