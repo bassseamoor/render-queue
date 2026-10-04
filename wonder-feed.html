@@ -5,6 +5,1490 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#05070d">
 <title>✨ Wonder Feed</title>
+<script>
+window.APP_DATA = {
+  "meta": {
+    "distilled_at": "2026-10-04T09:20:27Z",
+    "components_scanned": 20,
+    "capabilities": 80,
+    "new": 0,
+    "known": 66,
+    "marginal": 13,
+    "review": 0,
+    "unreviewed": 1
+  },
+  "capabilities": [
+    {
+      "id": "e854166f722f",
+      "component": "terrain-core",
+      "verb": "generates",
+      "what": "seeded 2D heightfield (81x81) + biome map from string seed",
+      "knobs": [
+        "seed",
+        "preset",
+        "relief"
+      ],
+      "outputs": [
+        "Float32Array heights",
+        "Uint8Array biomes",
+        "JSON doc"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> generate()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e854166f722f",
+      "notes": "General-purpose 2D scalar field generator, not terrain-specific. Preset radial-shape math is separable shape-masking logic."
+    },
+    {
+      "id": "6f852f74f3bb",
+      "component": "terrain-core",
+      "verb": "transforms",
+      "what": "spherical-falloff brush edits (raise/lower/flatten/smooth/paint-biome)",
+      "knobs": [
+        "tool",
+        "radius",
+        "strength",
+        "target",
+        "biome",
+        "x",
+        "z"
+      ],
+      "outputs": [
+        "mutated heights/biomes in place"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> brush()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "6f852f74f3bb",
+      "notes": "Falloff kernel w=(1-d/r)^2 is reusable smooth radial weighting. Flatten = exponential approach-to-target, a generic lerp smoother. Smooth reads from snapshot to avoid feedback — correct in-place convolution pattern."
+    },
+    {
+      "id": "916b40d3cf06",
+      "component": "terrain-core",
+      "verb": "encodes",
+      "what": "typed-array terrain into JSON-safe object",
+      "knobs": [],
+      "outputs": [
+        "plain object with array heights/biomes"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> pack()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "916b40d3cf06",
+      "notes": "Trivial serializer; the value is in the unpack contract."
+    },
+    {
+      "id": "13752070080e",
+      "component": "terrain-core",
+      "verb": "decodes",
+      "what": "JSON back into typed-array terrain with strict validation",
+      "knobs": [],
+      "outputs": [
+        "Float32Array",
+        "Uint8Array",
+        "throws on violation"
+      ],
+      "code_ref": "tool-terrain.js terrain-core.mjs -> unpack()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "13752070080e",
+      "notes": "Versioned data contract template: format tag + bounds validation + friendly error. Copy-paste for any import guard."
+    },
+    {
+      "id": "dc9edf6d36cb",
+      "component": "terrain-field",
+      "verb": "generates",
+      "what": "ridged domain-warped fBm noise field (planet-scale detail)",
+      "knobs": [
+        "seedOff"
+      ],
+      "outputs": [
+        "GLSL float 0..1 per 3D position"
+      ],
+      "code_ref": "tool-field.js field.glsl -> fieldRaw()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "dc9edf6d36cb",
+      "notes": "High-quality ridgeline noise reusable for clouds, nebulae, wood grain. seedOff re-seeds without recompile — N variants of one shader."
+    },
+    {
+      "id": "fc0aeb55436a",
+      "component": "terrain-field",
+      "verb": "generates",
+      "what": "multi-scale micro-relief displacement (36m/9m/2.4m + ridged spine)",
+      "knobs": [
+        "uMicroK"
+      ],
+      "outputs": [
+        "meters of vertex displacement"
+      ],
+      "code_ref": "tool-field.js field.glsl -> microH()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "fc0aeb55436a",
+      "notes": "Vertex-displacement detail shared by terrain AND props. One uniform scales all detail to zero. Ridged-spine trick reusable for machined surfaces."
+    },
+    {
+      "id": "ee28789d785c",
+      "component": "terrain-field",
+      "verb": "transforms",
+      "what": "persistent sparse brush edits addressed by surface direction",
+      "knobs": [
+        "uEditA[48]",
+        "uEditB[48]",
+        "uEditCount"
+      ],
+      "outputs": [
+        "GLSL displacement delta"
+      ],
+      "code_ref": "tool-field.js field.glsl -> editDelta()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ee28789d785c",
+      "notes": "NON-OBVIOUS GEM: generic 48-slot sparse-override pattern. Edits addressed by direction (angular distance), seamless on spheres. Reusable for any CPU-editable GPU-applied sparse deltas."
+    },
+    {
+      "id": "ab3ea9830874",
+      "component": "mesh-builder",
+      "verb": "generates",
+      "what": "23-channel procedural meshes (box, bevelBox, dome, cylinder, sphere)",
+      "knobs": [
+        "position",
+        "size",
+        "segments",
+        "rings",
+        "taper",
+        "mat",
+        "color"
+      ],
+      "outputs": [
+        "CityMesh (float array + indices)"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> box()/dome()/cylinder()/sphere()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ab3ea9830874",
+      "notes": "Pure-JS immediate-mode builder, no WebGL until upload(). Extra vertex channels carry shader-domain metadata — mesh doubles as animation/LOD instruction packet."
+    },
+    {
+      "id": "ff7b1e16f6ff",
+      "component": "mesh-builder",
+      "verb": "transforms",
+      "what": "baked pivot rotation of vertices at build time",
+      "knobs": [
+        "turn",
+        "pivot"
+      ],
+      "outputs": [
+        "rotated positions + normals"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> vertex()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ff7b1e16f6ff",
+      "notes": "Bakes instance rotation into mesh; niche optimization."
+    },
+    {
+      "id": "52af9d9bafea",
+      "component": "mesh-builder",
+      "verb": "generates",
+      "what": "bounding-volume solids instead of triangles (dual-mode box)",
+      "knobs": [
+        "solids"
+      ],
+      "outputs": [
+        "AABB records {lo,hi,c,mat,kind,anchor}"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> box() solids branch",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "52af9d9bafea",
+      "notes": "One call emits render geometry OR collision AABBs. Render/physics unification pattern."
+    },
+    {
+      "id": "f15537a311bb",
+      "component": "mesh-builder",
+      "verb": "renders",
+      "what": "mesh to WebGL buffers with auto 16/32-bit index strategy",
+      "knobs": [
+        "gl"
+      ],
+      "outputs": [
+        "GPU buffers"
+      ],
+      "code_ref": "tool-mesh.js mesh-builder.js -> upload()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "f15537a311bb",
+      "notes": "Handles >65535 verts via triangle-soup expansion. Standard practice, well executed."
+    },
+    {
+      "id": "71931c9e2c24",
+      "component": "palettes",
+      "verb": "stores",
+      "what": "10 planet-type color tables (land/water/atmo/sea/spec/mode)",
+      "knobs": [
+        "type key"
+      ],
+      "outputs": [
+        "PTEX object"
+      ],
+      "code_ref": "tool-palettes.js palettes.js -> PTEX",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "71931c9e2c24",
+      "notes": "Schema is the value: compact planet-look descriptor. mode 0/1/2 switches shader behavior; null = graceful absence. Could skin non-planet things."
+    },
+    {
+      "id": "d06adb2fa3d4",
+      "component": "palettes",
+      "verb": "stores",
+      "what": "per-type vegetation color tables (grass/leaf/bark/rock/flower/soil)",
+      "knobs": [
+        "type key"
+      ],
+      "outputs": [
+        "MAT object"
+      ],
+      "code_ref": "tool-palettes.js palettes.js -> MAT",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "d06adb2fa3d4",
+      "notes": "Zero-logic data; two-stop gradient convention is mildly reusable."
+    },
+    {
+      "id": "19aa4c42c603",
+      "component": "moorworld",
+      "verb": "generates",
+      "what": "deterministic universe: 8 sectors, 57 systems, 254 planets, 745 zones",
+      "knobs": [
+        "UNIVERSE_SEED"
+      ],
+      "outputs": [
+        "nested sector/system/planet/zone objects"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> generation block",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "19aa4c42c603",
+      "notes": "Burned-draw stream preservation keeps old worlds byte-identical across generator evolution. Per-planet names from separate stream with uniqueness set — deterministic unique-name generator from arbitrary IDs."
+    },
+    {
+      "id": "f64aeb34b2f6",
+      "component": "moorworld",
+      "verb": "queries",
+      "what": "any world node by id or hierarchical address string",
+      "knobs": [
+        "id",
+        "addr"
+      ],
+      "outputs": [
+        "node object or null"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> findById/findByAddress",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "f64aeb34b2f6",
+      "notes": "URI-like identity scheme (universe:prime/sector:S01/...) — could address any hierarchical catalog."
+    },
+    {
+      "id": "a7eba816e163",
+      "component": "moorworld",
+      "verb": "generates",
+      "what": "per-planet dossier: materials table, climate, species, prose summary",
+      "knobs": [
+        "planet id"
+      ],
+      "outputs": [
+        "materials/climate/species/summary"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> materials()/climate()/species()/summary()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "a7eba816e163",
+      "notes": "Independent per-subsystem streams (hashStr(pid+suffix)) decouple generators. Materials table is a generic loot/resource engine. MAT_SIG = archetype-to-signature-item mapping."
+    },
+    {
+      "id": "090e4ee8fe71",
+      "component": "moorworld",
+      "verb": "stores",
+      "what": "append-only capped event log of world mutations",
+      "knobs": [
+        "by",
+        "type",
+        "target",
+        "payload"
+      ],
+      "outputs": [
+        "event records (5000 cap)"
+      ],
+      "code_ref": "tool-world.js moorworld.js -> logEvent()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "090e4ee8fe71",
+      "notes": "'No event, no mutation' — generic audit-trail pattern, but thin."
+    },
+    {
+      "id": "ea8c285f57c2",
+      "component": "comp-vehicle-physics",
+      "verb": "simulates",
+      "what": "arcade vehicle dynamics (throttle/steer/grip/drift)",
+      "knobs": [
+        "throttle",
+        "steer",
+        "dt"
+      ],
+      "outputs": [
+        "vehicle state {pos, vel, yaw}"
+      ],
+      "code_ref": "moor-city/sky-islands/buggy-motion.mjs buggy-motion.mjs -> createVehicle/stepVehicle",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "ea8c285f57c2",
+      "notes": "Zero-dependency vehicle sim. Drop into any driving game."
+    },
+    {
+      "id": "e1d517a34eec",
+      "component": "comp-model-loader",
+      "verb": "decodes",
+      "what": ".moor.json model documents into Three.js groups",
+      "knobs": [
+        "doc"
+      ],
+      "outputs": [
+        "THREE.Group"
+      ],
+      "code_ref": "moor-city/model-importer/model-loader.js model-loader.js -> fromMoor()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e1d517a34eec",
+      "notes": "Pure function of doc + three.js. The model component for MOOR's object system."
+    },
+    {
+      "id": "2d9dd9ffaec7",
+      "component": "comp-model-kit",
+      "verb": "generates",
+      "what": "code-built 3D models (buggy, motorcycle, harvester)",
+      "knobs": [
+        "part params"
+      ],
+      "outputs": [
+        "normalized project",
+        "exported .moor.json"
+      ],
+      "code_ref": "moor-city/model-studio/recipes.mjs recipes.mjs -> part()/makeStarter()/exportModel()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "2d9dd9ffaec7",
+      "notes": "Models as code: versionable, remixable. Single source of truth with the editor."
+    },
+    {
+      "id": "d6a3c4406c9d",
+      "component": "comp-maze",
+      "verb": "generates",
+      "what": "seeded polar-grid maze (365x24) + endless coordinate extension",
+      "knobs": [
+        "seed"
+      ],
+      "outputs": [
+        "mazeBlocked()",
+        "mazeWallDistance()"
+      ],
+      "code_ref": "moor-city/sky-islands/wasteland-maze-layout.mjs wasteland-maze-layout.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "d6a3c4406c9d",
+      "notes": "Zero 3D deps. Data-first maze for vehicles, mobs, or level layout."
+    },
+    {
+      "id": "5ec0e2a877f2",
+      "component": "comp-spawn",
+      "verb": "generates",
+      "what": "spawn station layouts + flat-to-circular warp math",
+      "knobs": [
+        "layout params"
+      ],
+      "outputs": [
+        "station poses",
+        "warped architecture"
+      ],
+      "code_ref": "moor-city/sky-islands/spawn-layout.mjs spawn-layout.mjs + circular-spawn.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "5ec0e2a877f2",
+      "notes": "Pure spawn data + warp math. 4s cinematic arrival reveal pattern."
+    },
+    {
+      "id": "49f7158d44dd",
+      "component": "comp-proc-vehicles",
+      "verb": "generates",
+      "what": "procedural chopper/touring-bike builders",
+      "knobs": [
+        "T (three)"
+      ],
+      "outputs": [
+        "{root, front, rear, update}"
+      ],
+      "code_ref": "moor-city/sky-islands/chopper-model.mjs chopper-model.mjs -> createChopper()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "49f7158d44dd",
+      "notes": "Vehicles as functions: parametrize, remix, generate variants."
+    },
+    {
+      "id": "e0ca82e96d14",
+      "component": "comp-billboards",
+      "verb": "renders",
+      "what": "canvas-painted billboard sprites (signs, leaderboards)",
+      "knobs": [
+        "text",
+        "data"
+      ],
+      "outputs": [
+        "sprite textures"
+      ],
+      "code_ref": "moor-city/sky-islands/dev-billboards.mjs dev-billboards.mjs -> createDevBillboards()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e0ca82e96d14",
+      "notes": "Signage without texture files. Data-driven canvas sprites — a real content capability."
+    },
+    {
+      "id": "d611fec62a96",
+      "component": "comp-tablets",
+      "verb": "renders",
+      "what": "canvas-2D data-driven UI panels",
+      "knobs": [
+        "data dict"
+      ],
+      "outputs": [
+        "painted UI"
+      ],
+      "code_ref": "moor-city/sky-islands/tablet-*.mjs tablet-*.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "d611fec62a96",
+      "notes": "Portable UI painters, no framework. Data-in, painted-panel-out is a real generative UI capability."
+    },
+    {
+      "id": "da5920815bdc",
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "seeded stereo ambient bed (noise + washes + tones + drops + pads + drones)",
+      "knobs": [
+        "seedStr",
+        "kind",
+        "seconds",
+        "sr"
+      ],
+      "outputs": [
+        "Float32Array mixL",
+        "Float32Array mixR"
+      ],
+      "code_ref": "tool-ambience.js ambience.js -> renderBed() / ambBuild()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "da5920815bdc",
+      "notes": "Event-scatter composition: ev(n, fn) scatters n events at random times. Biquad filter design in pure JS (ambBiquadCoefs). Kinds are recipe functions — new ambience kinds = new recipes."
+    },
+    {
+      "id": "515b396e8824",
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "seeded white-noise buffer",
+      "knobs": [
+        "sr",
+        "L",
+        "seedStr"
+      ],
+      "outputs": [
+        "Float32Array noise"
+      ],
+      "code_ref": "tool-ambience.js ambience.js -> ambContext()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "515b396e8824",
+      "notes": "Thin primitive under renderBed."
+    },
+    {
+      "id": "55405f136abf",
+      "component": "spawn-director",
+      "verb": "simulates",
+      "what": "enemy wave pacing (spawn/swarm curves, unlock schedule, kill reporting)",
+      "knobs": [
+        "types",
+        "maxAlive",
+        "swarmType"
+      ],
+      "outputs": [
+        "spawn events",
+        "{t, alive} state"
+      ],
+      "code_ref": "tool-spawn.js spawn-director.js -> createSpawnDirector()/update()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "55405f136abf",
+      "notes": "Time-based unlock pool + swarm timer. Generic pacing engine for any wave/queue system — not just enemies."
+    },
+    {
+      "id": "a9a95f41207f",
+      "component": "perf-governor",
+      "verb": "simulates",
+      "what": "adaptive quality governor from frame times",
+      "knobs": [
+        "frame dt"
+      ],
+      "outputs": [
+        "quality 0.28..1"
+      ],
+      "code_ref": "tool-perf.js perf-governor.js -> createGovernor()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "a9a95f41207f",
+      "notes": "Generic adaptive-feedback controller. Reusable for any frame-budgeted system."
+    },
+    {
+      "id": "dc86afcbb408",
+      "component": "seed-rng",
+      "verb": "generates",
+      "what": "deterministic named random streams (mulberry32 + hashing)",
+      "knobs": [
+        "stream name",
+        "seed"
+      ],
+      "outputs": [
+        "function rng() -> [0,1)"
+      ],
+      "code_ref": "tool-shared.js rng.js -> streamFrom()/hashStr()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "dc86afcbb408",
+      "notes": "Foundation: every procedural tool depends on this. Named streams give independent reproducible sequences."
+    },
+    {
+      "id": "578c93688396",
+      "component": "seed-rng",
+      "verb": "generates",
+      "what": "2D value-noise fields from seed",
+      "knobs": [
+        "seed",
+        "w",
+        "h"
+      ],
+      "outputs": [
+        "noise function (x,y) -> [0,1)"
+      ],
+      "code_ref": "tool-shared.js rng.js -> makeNoise()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "578c93688396",
+      "notes": "Seeded 2D noise usable for heightfields, textures, audio modulation — anything needing coherent randomness."
+    },
+    {
+      "id": "751105e87bca",
+      "component": "seed-codec",
+      "verb": "encodes",
+      "what": "control state into short shareable seed-code strings",
+      "knobs": [
+        "controls"
+      ],
+      "outputs": [
+        "short code string"
+      ],
+      "code_ref": "tool-shared.js codec.js -> makeCodec()/codeOf()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "751105e87bca",
+      "notes": "Base-36 packed lens codes. Could encode any small JSON state, not just seeds."
+    },
+    {
+      "id": "2b9b46aba1b0",
+      "component": "seed-codec",
+      "verb": "decodes",
+      "what": "seed-code strings back into control state",
+      "knobs": [
+        "code"
+      ],
+      "outputs": [
+        "controls object"
+      ],
+      "code_ref": "tool-shared.js codec.js -> parseCode()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "2b9b46aba1b0",
+      "notes": "Inverse of codeOf; strict format validation."
+    },
+    {
+      "id": "b79a7d0d0e4a",
+      "component": "seed-console",
+      "verb": "generates",
+      "what": "interactive seeded console (REPL over component APIs)",
+      "knobs": [
+        "adapter"
+      ],
+      "outputs": [
+        "console UI + command results"
+      ],
+      "code_ref": "tool-shared.js seed-console.js",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "b79a7d0d0e4a",
+      "notes": "Pluggable command adapter. A REPL pattern for live component introspection."
+    },
+    {
+      "id": "84aaf92a9240",
+      "component": "save-shape",
+      "verb": "stores",
+      "what": "versioned shape documents to localStorage",
+      "knobs": [
+        "doc"
+      ],
+      "outputs": [
+        "saved record"
+      ],
+      "code_ref": "tool-shared.js save-shape.js",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "84aaf92a9240",
+      "notes": "Thin persistence wrapper. The value is the doc schema convention."
+    },
+    {
+      "id": "4f7e66ddfd5b",
+      "component": "registry-triple",
+      "verb": "validates",
+      "what": "app registry catalog schema (kebab-case ids, uniqueness)",
+      "knobs": [
+        "registry.json"
+      ],
+      "outputs": [
+        "validation diagnostics"
+      ],
+      "code_ref": "tool-shared.js wrangle.mjs",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "4f7e66ddfd5b",
+      "notes": "Schema-guard for the app catalog. Kebab-case + uniqueness rules are a reusable catalog hygiene pattern."
+    },
+    {
+      "id": "dadaa7ca5673",
+      "component": "release-gate",
+      "verb": "validates",
+      "what": "release readiness checks before publish",
+      "knobs": [
+        "bundle"
+      ],
+      "outputs": [
+        "pass/fail report"
+      ],
+      "code_ref": "tool-shared.js release.py",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "dadaa7ca5673",
+      "notes": "Checklist automation. Thin but honest."
+    },
+    {
+      "id": "3d9198a39b96",
+      "component": "replace-file",
+      "verb": "transforms",
+      "what": "deterministic file replace with hash guard",
+      "knobs": [
+        "path",
+        "expected_sha256",
+        "content"
+      ],
+      "outputs": [
+        "replaced file or abort"
+      ],
+      "code_ref": "tool-shared.js replace-file SCHEMA",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "3d9198a39b96",
+      "notes": "Atomic temp+replace with hash-mismatch abort. The safe-remote-edit primitive."
+    },
+    {
+      "id": "616b42ee73d7",
+      "component": "idempotent-upload",
+      "verb": "transforms",
+      "what": "idempotent file upload (invoke/check)",
+      "knobs": [
+        "payload"
+      ],
+      "outputs": [
+        "upload receipt"
+      ],
+      "code_ref": "tool-shared.js adapter.js -> invoke()/check()",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "616b42ee73d7",
+      "notes": "Idempotency-key upload pattern. Standard but correct."
+    },
+    {
+      "id": "90449ccf3d0f",
+      "component": "stream",
+      "verb": "generates",
+      "what": "3D diorama scenes from intent specs (trees/rocks/grass/clouds/creatures/structs)",
+      "knobs": [
+        "spec {seed, mood, comps}"
+      ],
+      "outputs": [
+        "diorama {trees, rocks, grass, clouds, creatures, structs}"
+      ],
+      "code_ref": "tool-stream.js tool-stream.js -> buildDiorama()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "90449ccf3d0f",
+      "notes": "One-way water: text spec -> populated 3D scene. Component flags (hasComp) compose scene contents. A scene-composition algebra."
+    },
+    {
+      "id": "557c410b8db2",
+      "component": "stream",
+      "verb": "generates",
+      "what": "continuous scene stream from voice/text (intent -> N dioramas)",
+      "knobs": [
+        "utterance"
+      ],
+      "outputs": [
+        "scene specs downstream"
+      ],
+      "code_ref": "tool-stream.js tool-stream.js -> stream pipeline",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "557c410b8db2",
+      "notes": "Coherence gate ignores non-requests. Never throttled — ask for 40, get 40."
+    },
+    {
+      "id": "1d440ca0a7d1",
+      "component": "softbody-creatures",
+      "verb": "generates",
+      "what": "creature anatomy from seeded genome (validator + bounded repair)",
+      "knobs": [
+        "genome traits"
+      ],
+      "outputs": [
+        "canonical anatomy JSON (hashed)"
+      ],
+      "code_ref": "tool-creatures.js tool-creatures.js -> genome pipeline",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "1d440ca0a7d1",
+      "notes": "Genome -> anatomy -> validation/repair -> compiled mesh + IK rig + soft tissue. The creature compiler pattern."
+    },
+    {
+      "id": "7f605cf17364",
+      "component": "softbody-creatures",
+      "verb": "simulates",
+      "what": "procedural bilateral walking over fixture terrain",
+      "knobs": [
+        "anatomy",
+        "terrain"
+      ],
+      "outputs": [
+        "walking animation"
+      ],
+      "code_ref": "tool-creatures.js tool-creatures.js -> walker",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "7f605cf17364",
+      "notes": "No hand-animation: gait emerges from leg count + terrain height."
+    },
+    {
+      "id": "da668240c544",
+      "component": "planet-vegetation",
+      "verb": "generates",
+      "what": "procedural plant geometry (verbatim builders, minimal THREE shim)",
+      "knobs": [
+        "type",
+        "seed"
+      ],
+      "outputs": [
+        "BufferGeometry plants"
+      ],
+      "code_ref": "tool-vegetation.js tool-vegetation.js -> plant builders",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "da668240c544",
+      "notes": "Real plant builders running without THREE.js loaded. Wind sway is panel composition."
+    },
+    {
+      "id": "3e038c165e1c",
+      "component": "terrain-pipeline",
+      "verb": "transforms",
+      "what": "user-added math layers over real terrain-core output",
+      "knobs": [
+        "layer fns"
+      ],
+      "outputs": [
+        "modified heightfield"
+      ],
+      "code_ref": "tool-pipeline.js tool-pipeline.js -> layer stack",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "3e038c165e1c",
+      "notes": "Pipeline inspector: see the generator as equation boxes, add your own seeded layers. Deterministic composition."
+    },
+    {
+      "id": "1da4f8ecd3ee",
+      "component": "rust-intent-compiler",
+      "verb": "transforms",
+      "what": "plain request -> application definition (WASM)",
+      "knobs": [
+        "request text"
+      ],
+      "outputs": [
+        "intent JSON"
+      ],
+      "code_ref": "tool-intent.js moor_web.wasm -> handle()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "1da4f8ecd3ee",
+      "notes": "Deterministic rule-based compiler in Rust/WASM. Reference only; production is the JS pipeline."
+    },
+    {
+      "id": "b2bf3557f681",
+      "component": "wonder-feed",
+      "verb": "generates",
+      "what": "serializable wonder genomes (type+seed+params) with mutate/crossover",
+      "knobs": [
+        "rng"
+      ],
+      "outputs": [
+        "genome {type, seed, p}"
+      ],
+      "code_ref": "tool-wonder.js tool-wonder.js -> randomGenome()/mutateGenome()/crossoverGenomes()",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "b2bf3557f681",
+      "notes": "The content instrument: every wonder is a pure function of its genome. RANGES drives mutation jitter. 15% cross-type jumps."
+    },
+    {
+      "id": "3d242ae91ee6",
+      "component": "wonder-feed",
+      "verb": "stores",
+      "what": "taste profile + wonder library (localStorage, local-first)",
+      "knobs": [
+        "genome"
+      ],
+      "outputs": [
+        "taste list",
+        "library entries"
+      ],
+      "code_ref": "tool-wonder.js tool-wonder.js -> Taste/Library",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "3d242ae91ee6",
+      "notes": "60/40 random/taste sampling. Thin storage, but the sampling policy is the value."
+    },
+    {
+      "id": "38642fd53190",
+      "component": "redwood-drive",
+      "verb": "renders",
+      "what": "embedded Redwood Drive experience (iframe)",
+      "knobs": [],
+      "outputs": [
+        "iframe"
+      ],
+      "code_ref": "tool-redwood.js tool-redwood.js",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "38642fd53190",
+      "notes": "Showcase wrapper around the live build, not a capability."
+    },
+    {
+      "id": "420296ac1ab1",
+      "component": "render-studio",
+      "verb": "generates",
+      "what": "studio hub cards linking the 8 studios",
+      "knobs": [],
+      "outputs": [
+        "hub UI"
+      ],
+      "code_ref": "tool-rstudio.js tool-rstudio.js",
+      "status": "marginal",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "420296ac1ab1",
+      "notes": "Navigation hub; the studios are the capabilities."
+    },
+    {
+      "id": "73e02dff147e",
+      "component": "component-distiller",
+      "verb": "generates",
+      "what": "distilled capability catalog from component sources (fingerprint + merge)",
+      "knobs": [
+        "tools/"
+      ],
+      "outputs": [
+        "app-data.json"
+      ],
+      "code_ref": "pulse-v2/tools/tool-distiller.js distill.py",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "73e02dff147e",
+      "notes": "The pipeline stage itself: scans components, fingerprints capabilities, merges without dropping. Judgment stays agentic."
+    },
+    {
+      "id": "e76bed72a9bc",
+      "component": "component-distiller",
+      "verb": "queries",
+      "what": "searchable capability catalog (new/known/marginal)",
+      "knobs": [
+        "query"
+      ],
+      "outputs": [
+        "capability atoms"
+      ],
+      "code_ref": "pulse-v2/tools/tool-distiller.js tool-distiller.js",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e76bed72a9bc",
+      "notes": "The visible stage: components in, capabilities out, flagged-useless reported."
+    },
+    {
+      "id": "e28eedc76b54",
+      "component": "more-canvas",
+      "verb": "generates",
+      "what": "part-mixing compositions from catalog parts",
+      "knobs": [
+        "part A",
+        "part B",
+        "intent"
+      ],
+      "outputs": [
+        "recipe + brief"
+      ],
+      "code_ref": "more-canvas.html more-canvas.html",
+      "status": "known",
+      "first_seen": "2026-10-04T08:35:51Z",
+      "fp": "e28eedc76b54",
+      "notes": "Mix parts -> live preview -> save as part. Recipe + brief output for builders."
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "filtered noise wash with LFO (bandpass/lowpass)",
+      "knobs": [
+        "type",
+        "freq",
+        "q",
+        "gain",
+        "lfoK",
+        "lfoDepth"
+      ],
+      "outputs": [
+        "stereo wash buffer"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambWash()",
+      "status": "known",
+      "notes": "The texture primitive: airy bandpass washes vs deep lowpass beds, LFO gives breathing.",
+      "id": "6328d6ef117e",
+      "fp": "6328d6ef117e",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "chirped tone event (f0 -> f1)",
+      "knobs": [
+        "t",
+        "f0",
+        "f1",
+        "dur",
+        "gain",
+        "type"
+      ],
+      "outputs": [
+        "tone event in mix"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambTone()",
+      "status": "known",
+      "notes": "Bird-chirp / sonar-blip primitive. f0->f1 sweep is the signature move.",
+      "id": "61079596bada",
+      "fp": "61079596bada",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "percussive drop event",
+      "knobs": [
+        "t",
+        "dur",
+        "gain",
+        "freq"
+      ],
+      "outputs": [
+        "drop event in mix"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambDrop()",
+      "status": "known",
+      "notes": "Water-drop / ember-pop primitive.",
+      "id": "193617f46732",
+      "fp": "193617f46732",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "chord pad from base frequency + ratios",
+      "knobs": [
+        "base",
+        "ratios",
+        "gain"
+      ],
+      "outputs": [
+        "pad layer in mix"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambPad()",
+      "status": "known",
+      "notes": "Harmonic stack primitive: ratios like [1,1.5,2.02,2.98] voice alien chords.",
+      "id": "aca18b74d3a7",
+      "fp": "aca18b74d3a7",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "continuous drone at target frequency",
+      "knobs": [
+        "targetFreq",
+        "gain"
+      ],
+      "outputs": [
+        "drone layer in mix"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambDrone()",
+      "status": "known",
+      "notes": "Sub-bass bed primitive.",
+      "id": "89052f970d83",
+      "fp": "89052f970d83",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "transforms",
+      "what": "biquad filter coefficient calculator",
+      "knobs": [
+        "type",
+        "freq",
+        "q",
+        "sr"
+      ],
+      "outputs": [
+        "biquad coefficients [b0,b1,b2,a1,a2]"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambBiquadCoefs()",
+      "status": "known",
+      "notes": "Zero-dep DSP math: design any bandpass/lowpass/highpass from 4 numbers.",
+      "id": "be8fbfa385c0",
+      "fp": "be8fbfa385c0",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "generates",
+      "what": "seeded stereo render context (mix buffers + rng)",
+      "knobs": [
+        "sr",
+        "seconds",
+        "seedStr",
+        "kind"
+      ],
+      "outputs": [
+        "render context g"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambContext()",
+      "status": "known",
+      "notes": "The deterministic canvas all primitives paint into.",
+      "id": "eeba505a985d",
+      "fp": "eeba505a985d",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "ambience-engine",
+      "verb": "transforms",
+      "what": "recipe composer: kind -> arrangement of primitives",
+      "knobs": [
+        "kind",
+        "g"
+      ],
+      "outputs": [
+        "arranged mix"
+      ],
+      "code_ref": "components/ambience-engine/ambience.js ambBuild()",
+      "status": "known",
+      "notes": "The arrangement layer is separable from the primitives: new recipes without new DSP.",
+      "id": "09aa33a8535d",
+      "fp": "09aa33a8535d",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "seed-console",
+      "verb": "generates",
+      "what": "video capture of any canvas (MediaRecorder + captureStream)",
+      "knobs": [
+        "canvas",
+        "mimeType",
+        "videoBitsPerSecond"
+      ],
+      "outputs": [
+        "webm video blob"
+      ],
+      "code_ref": "components/seed-console/seed-console.js startRecord()",
+      "status": "known",
+      "notes": "One-tap screen recording of any generative canvas. Direct line to his screen-record workflow.",
+      "id": "b06e3b6e3316",
+      "fp": "b06e3b6e3316",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "seed-console",
+      "verb": "decodes",
+      "what": "full settings snapshot from ?p= base64url JSON",
+      "knobs": [
+        "p"
+      ],
+      "outputs": [
+        "settings snapshot"
+      ],
+      "code_ref": "components/seed-console/seed-console.js ?p= restore",
+      "status": "known",
+      "notes": "Shareable state cards: a URL that IS the thing. Same pattern as wonder #w= links.",
+      "id": "11828aefb584",
+      "fp": "11828aefb584",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "seed-codec",
+      "verb": "transforms",
+      "what": "config breeding: keeps realm+layout, jitters the rest",
+      "knobs": [
+        "base",
+        "rand",
+        "freshUint32"
+      ],
+      "outputs": [
+        "remixed config"
+      ],
+      "code_ref": "components/seed-codec/codec.js remixConfig()",
+      "status": "known",
+      "notes": "The breeding operator: \"more like this\" as a function. Core of taste-biased generation.",
+      "id": "7a3f03422f64",
+      "fp": "7a3f03422f64",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "stream",
+      "verb": "transforms",
+      "what": "text -> intent spec parser (seed, mood, comps)",
+      "knobs": [
+        "text"
+      ],
+      "outputs": [
+        "intent spec {seed, mood, comps}"
+      ],
+      "code_ref": "pulse-v2/tools/tool-stream.js parseInput()",
+      "status": "known",
+      "notes": "Plain words become a buildable spec. The \"one sentence\" interface primitive.",
+      "id": "429fdc9762b3",
+      "fp": "429fdc9762b3",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "stream",
+      "verb": "validates",
+      "what": "coherence gate: request vs thinking-out-loud",
+      "knobs": [
+        "txt",
+        "conf"
+      ],
+      "outputs": [
+        "boolean + confidence"
+      ],
+      "code_ref": "pulse-v2/tools/tool-stream.js isCoherent()",
+      "status": "known",
+      "notes": "\"Silence builds nothing.\" Gate that ignores non-requests before generation.",
+      "id": "c2e46356fdcf",
+      "fp": "c2e46356fdcf",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "softbody-creatures",
+      "verb": "transforms",
+      "what": "polynomial smooth-min for SDF smooth union",
+      "knobs": [
+        "a",
+        "b",
+        "k"
+      ],
+      "outputs": [
+        "smooth-unioned distance"
+      ],
+      "code_ref": "pulse-v2/tools/tool-creatures.js smin()",
+      "status": "known",
+      "notes": "The skinning primitive: blobby organic fusion of spheres/cones. k controls gooeyness.",
+      "id": "561917818684",
+      "fp": "561917818684",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "softbody-creatures",
+      "verb": "validates",
+      "what": "anatomy validator + bounded repair with diagnostics log",
+      "knobs": [
+        "anatomy"
+      ],
+      "outputs": [
+        "diagnostics log",
+        "repaired anatomy"
+      ],
+      "code_ref": "pulse-v2/tools/tool-creatures.js validator + repair()",
+      "status": "known",
+      "notes": "Repair-as-compilation: invalid genomes get repaired, not rejected. Aborts only on unknown rule.",
+      "id": "c298a74df565",
+      "fp": "c298a74df565",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "softbody-creatures",
+      "verb": "transforms",
+      "what": "anatomy -> SDF field -> runtime assets compiler",
+      "knobs": [
+        "anatomy"
+      ],
+      "outputs": [
+        "SDF field",
+        "mesh/runtime assets"
+      ],
+      "code_ref": "pulse-v2/tools/tool-creatures.js compiler",
+      "status": "known",
+      "notes": "Genome to flesh: smooth-unioned spheres/cones marched into a renderable field.",
+      "id": "47fe181cf65b",
+      "fp": "47fe181cf65b",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "spawn-director",
+      "verb": "generates",
+      "what": "score-weighted unlock-gated type picker",
+      "knobs": [
+        "types",
+        "t",
+        "rand"
+      ],
+      "outputs": [
+        "type name"
+      ],
+      "code_ref": "components/spawn-director/spawn-director.js pickType()",
+      "status": "known",
+      "notes": "Weighted random with unlock schedule: new types enter the pool over time.",
+      "id": "669cac707087",
+      "fp": "669cac707087",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "spawn-director",
+      "verb": "generates",
+      "what": "swarm burst scheduler (26-strong bursts every 45-70s)",
+      "knobs": [
+        "swarmType",
+        "swarmSize"
+      ],
+      "outputs": [
+        "swarm event"
+      ],
+      "code_ref": "components/spawn-director/spawn-director.js swarm()",
+      "status": "known",
+      "notes": "Punctuated bursts on top of the steady spawn curve. Drama primitive.",
+      "id": "303247ca7d82",
+      "fp": "303247ca7d82",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "stream",
+      "verb": "generates",
+      "what": "mood-driven terrain geometry (noise field mesh)",
+      "knobs": [
+        "nf",
+        "size",
+        "seg",
+        "mood",
+        "amp"
+      ],
+      "outputs": [
+        "terrain geometry"
+      ],
+      "code_ref": "pulse-v2/tools/tool-stream.js geoTerrain()",
+      "status": "known",
+      "notes": "Mood selects the noise character, not just params.",
+      "id": "d02227058878",
+      "fp": "d02227058878",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "stream",
+      "verb": "transforms",
+      "what": "zero-dependency 4x4 matrix kit for scene graphs",
+      "knobs": [
+        "op",
+        "args"
+      ],
+      "outputs": [
+        "Float32Array(16)"
+      ],
+      "code_ref": "pulse-v2/tools/tool-stream.js mT/mRY/mRX/mS/mPersp/mLook/mMul",
+      "status": "known",
+      "notes": "A complete transform pipeline in ~15 lines. No library needed for 3D scene graphs.",
+      "id": "367a6df13bbd",
+      "fp": "367a6df13bbd",
+      "first_seen": "2026-10-04T08:42:52Z"
+    },
+    {
+      "component": "vehicles",
+      "verb": "generates",
+      "what": "parametric vehicle meshes (chopper, touring bike, dune buggy)",
+      "knobs": [
+        "body",
+        "params"
+      ],
+      "outputs": [
+        "vehicle mesh (Group)"
+      ],
+      "code_ref": "pulse-v2/tools/tool-vehicles.js buildChopper/buildTouring/buildBuggy",
+      "status": "known",
+      "notes": "Adapted from moor-city builders; defaults reproduce the recovered models exactly.",
+      "id": "594d7ce47e05",
+      "fp": "594d7ce47e05",
+      "first_seen": "2026-10-04T08:43:00Z"
+    },
+    {
+      "component": "vehicles",
+      "verb": "renders",
+      "what": "zero-dependency minimal WebGL scene graph + renderer (THREE-lite shim)",
+      "knobs": [
+        "scene graph"
+      ],
+      "outputs": [
+        "rendered frame"
+      ],
+      "code_ref": "pulse-v2/tools/tool-vehicles.js V3/Quat/Node3/boxGeo/cylGeo/sphGeo",
+      "status": "known",
+      "notes": "A complete tiny 3D stack with no library: vectors, quats, nodes, primitive geos, one renderer. Honest limits: no shadows/textures.",
+      "id": "a85fdfba3a3f",
+      "fp": "a85fdfba3a3f",
+      "first_seen": "2026-10-04T08:43:00Z"
+    },
+    {
+      "component": "vehicles",
+      "verb": "simulates",
+      "what": "arcade vehicle drive on verbatim recovered physics",
+      "knobs": [
+        "vehicle",
+        "input"
+      ],
+      "outputs": [
+        "vehicle state"
+      ],
+      "code_ref": "pulse-v2/tools/tool-vehicles.js createVehicle/stepVehicle",
+      "status": "known",
+      "notes": "Test-drive loop: builders produce the mesh, buggy-motion.mjs drives it.",
+      "id": "40a15a1ff573",
+      "fp": "40a15a1ff573",
+      "first_seen": "2026-10-04T08:43:00Z"
+    },
+    {
+      "component": "particle-pack",
+      "verb": "provides",
+      "what": "20 authored spell effects as pure data: forked/chain lightning, fireball explosion, plasma detonation, celebration confetti, aegis dome, hex barrier, bonfire, blue arcane fire, water fountain, splash impact, wind ribbons, rolling clouds, camera flash, paint splatter, petal bloom, floral spiral, climbing vines, smoke trails",
+      "knobs": [
+        "behavior",
+        "rate",
+        "lifetime",
+        "startSpeed",
+        "gravity",
+        "startColor",
+        "colorMid",
+        "colorEnd",
+        "sizeCurve",
+        "alphaCurve",
+        "bursts",
+        "shape"
+      ],
+      "outputs": [
+        "effect settings JSON",
+        "canvas/WebGL preview render"
+      ],
+      "code_ref": "moor-city/particle-pack.mjs effectPack",
+      "notes": "Data-driven spell library: each effect is pure settings, zero per-effect code. Wonder spell-pack reimplements 10 of these behaviors as genome functions (fireball, lightning, celebration, portal, heal, soulwisps, frostnova).",
+      "id": "4aa12285d3a0",
+      "fp": "4aa12285d3a0",
+      "status": "known",
+      "first_seen": "2026-10-04T08:55:23Z"
+    },
+    {
+      "component": "particle-special",
+      "verb": "renders",
+      "what": "canvas 2D immediate-mode spell overlays: branching lightning bolts with sub-branches, explosion/plasma shock rings, aegis dome energy mesh, hex barrier ripple grid, growing vines with leaves",
+      "knobs": [
+        "behavior",
+        "effectStrength",
+        "effectScale",
+        "time"
+      ],
+      "outputs": [
+        "canvas 2D overlay"
+      ],
+      "code_ref": "moor-city/particle-special.mjs drawSpecial",
+      "notes": "Time-parameterized, stateless — no particle sim needed. Directly reusable for any canvas; wonder lightning/frostnova/portal follow this pattern.",
+      "id": "ceb656cf93f0",
+      "fp": "ceb656cf93f0",
+      "status": "known",
+      "first_seen": "2026-10-04T08:55:23Z"
+    },
+    {
+      "component": "particle-shader",
+      "verb": "renders",
+      "what": "WebGL2 instanced-quad GPU particle renderer: texture-atlas flipbook animation, velocity stretch, ribbon trails, per-particle tint/rotation/life/age streams, additive/alpha/multiply materials",
+      "knobs": [
+        "atlasURL",
+        "grid",
+        "animation",
+        "material",
+        "textureScale",
+        "customX/Y/Z/W"
+      ],
+      "outputs": [
+        "WebGL render"
+      ],
+      "code_ref": "moor-city/particle-shader.mjs + particle-preview-3d.mjs ParticlePreview3D",
+      "notes": "Reference for high-count GPU particles. Wonder pack uses a lighter raw-WebGL point-sprite variant (shared PTVS/PTFS) for galaxy/firefountain/warp — no three.js, no atlas, ~60 lines.",
+      "id": "3eeb2d0f4381",
+      "fp": "3eeb2d0f4381",
+      "status": "known",
+      "first_seen": "2026-10-04T08:55:23Z"
+    },
+    {
+      "id": "stub-vphys",
+      "component": "vphys",
+      "verb": "unknown",
+      "what": "unreviewed tool file — needs agentic distillation",
+      "knobs": [],
+      "outputs": [],
+      "code_ref": "tool-vphys.js",
+      "status": "unreviewed",
+      "first_seen": "2026-10-04T09:20:27Z",
+      "fp": "b5157d9a3f8d",
+      "notes": "Auto-created by distill.py. An agent must read the source and replace with real capability atoms."
+    }
+  ],
+  "flagged_useless": [
+    "idempotent-upload",
+    "redwood-drive",
+    "release-gate",
+    "render-studio",
+    "save-shape",
+    "vphys"
+  ]
+};
+</script>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#05070d;overscroll-behavior:none}
 #app{height:100dvh}
@@ -138,6 +1622,48 @@ var CSS =
  '.wd-full .wd-feed{height:100dvh;border-radius:0}'+
  '.wd-full .wd-card{min-height:100dvh;min-height:100svh}';
 
+/* true-fullscreen audit + attention-engine chrome (appended, later rules win) */
+CSS +=
+ '.wd-full{max-height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:#05070d;'+
+ 'padding-top:env(safe-area-inset-top,0px);padding-right:env(safe-area-inset-right,0px);'+
+ 'padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);box-sizing:border-box}'+
+ '.wd-full .wd-feed{height:auto;flex:1 1 auto;min-height:0}'+
+ '.wd-chrome{position:sticky;top:0;z-index:6;background:rgba(5,7,13,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}'+
+ '.wd-head{position:static}'+
+ '.wd-tabs{display:inline-flex;gap:6px}'+
+ '.wd-tab.on{background:rgba(160,140,255,.28);border-color:rgba(160,140,255,.65);color:#fff}'+
+ '.wd-steer{display:flex;gap:6px;align-items:center;padding:8px 14px 4px}'+
+ '.wd-steer input{flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:999px;color:#eef;padding:8px 14px;font-size:13px;outline:none}'+
+ '.wd-steer input::placeholder{color:#5a6a80}'+
+ '.wd-steer button{flex:none;width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#cde;font-size:15px;cursor:pointer}'+
+ '.wd-steer.collapsed #wd-steerin,.wd-steer.collapsed #wd-steergo{display:none}'+
+ '#wd-chips{display:flex;gap:6px;flex-wrap:wrap;padding:6px 14px 10px}'+
+ '#wd-chips:empty{display:none}'+
+ '.wd-chip{display:inline-flex;align-items:center;gap:2px;font-size:11px;padding:4px 4px 4px 10px;border-radius:999px;background:rgba(160,140,255,.16);border:1px solid rgba(160,140,255,.45);color:#dcd2ff;white-space:nowrap}'+
+ '.wd-chip button{background:none;border:none;color:#dcd2ff;cursor:pointer;font-size:13px;padding:0 6px;line-height:1}'+
+ '.wd-comp{justify-content:flex-start;text-align:left;align-items:stretch;padding-top:26px}'+
+ '.wd-compverb{display:inline-block;align-self:flex-start;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#8fd0ff;background:rgba(143,208,255,.1);border:1px solid rgba(143,208,255,.3);padding:4px 12px;border-radius:999px;margin-bottom:10px}'+
+ '.wd-comptitle{font-size:19px;line-height:1.35;color:#eef;max-width:640px}'+
+ '.wd-compmeta{font-size:12px;color:#8a9ab0;margin-top:8px;overflow-wrap:break-word}'+
+ '.wd-compnotes{font-size:13px;color:#b9a8e0;font-style:italic;margin-top:10px;max-width:640px;line-height:1.5}'+
+ '.wd-comp .wd-actions{position:static;margin-top:18px;justify-content:flex-start}'+
+ '.wd-idea{width:100%;max-width:640px;background:rgba(160,140,255,.06);border:1px solid rgba(160,140,255,.25);border-radius:16px;padding:26px 24px;box-sizing:border-box;text-align:left}'+
+ '.wd-ideaT{font-size:21px;line-height:1.3;color:#f0eaff;font-weight:700;margin-bottom:12px}'+
+ '.wd-ideaB{font-size:14px;line-height:1.65;color:#c9bde8}'+
+ '.wd-ideaS{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}'+
+ '.wd-ideaS span{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#8a7ab8;background:rgba(160,140,255,.1);padding:4px 10px;border-radius:999px}'+
+ '.wd-intobody{padding:6px 18px 22px;overflow-y:auto;color:#cde;font-size:13px}'+
+ '.wd-intosec{margin:14px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#8a9ab0}'+
+ '.wd-intorow{display:flex;align-items:center;gap:8px;margin:7px 0}'+
+ '.wd-intorow b{min-width:110px;font-weight:600;color:#eef;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+ '.wd-bar{flex:1;height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}'+
+ '.wd-bar span{display:block;height:100%;background:linear-gradient(90deg,#8f7bff,#5ad)}'+
+ '.wd-intoscore{font-size:11px;color:#8a9ab0;min-width:36px;text-align:right}'+
+ '.wd-intonote{font-size:11px;color:#5a6a80;margin-top:14px;line-height:1.6}';
+CSS +=
+ '.wd-empty2{padding:60px 20px;text-align:center;color:#5a6a80;font-size:13px;line-height:1.8;'+
+ 'scroll-snap-align:start;min-height:50vh;display:flex;align-items:center;justify-content:center}';
+
 /* ================= GENOME =================
  * genome = {type, seed, p:{...}} — the complete, serializable recipe.
  * make(genome) is a pure function of the genome: same genome, same wonder.
@@ -166,14 +1692,21 @@ function clampJit(v, key, rng){
   if (r[2]===1) v = Math.round(v);
   return v;
 }
+function visualPool(){
+  var pool = [];
+  for (var i=0;i<TYPES.length;i++) if (!TYPES[i].noFeed) pool.push(TYPES[i]);
+  return pool;
+}
 function randomGenome(rng){
-  var t = TYPES[(rng()*TYPES.length)|0];
+  var pool = visualPool();
+  var t = pool[(rng()*pool.length)|0];
   return {type:t.kind, seed:(rng()*1000000000)|0, p:t.params(rng)};
 }
 function mutateGenome(g, rng){
   /* small param jitter; 15% chance to jump types (cross-type hybrid) */
   if (rng() < 0.15){
-    var t = TYPES[(rng()*TYPES.length)|0];
+    var pool = visualPool();
+    var t = pool[(rng()*pool.length)|0];
     return {type:t.kind, seed:g.seed, p:t.params(rng)};
   }
   if (g.type==='evolver'){
@@ -249,7 +1782,7 @@ function validGenome(g){
 }
 function randNonEvolver(r){
   var pool = [];
-  for (var i=0;i<TYPES.length;i++) if (TYPES[i].kind!=='evolver') pool.push(TYPES[i]);
+  for (var i=0;i<TYPES.length;i++) if (TYPES[i].kind!=='evolver' && !TYPES[i].noFeed) pool.push(TYPES[i]);
   var t = pool[(r()*pool.length)|0];
   return {type:t.kind, seed:(r()*1000000000)|0, p:t.params(r)};
 }
@@ -348,6 +1881,349 @@ var Library = {
     return this.list().some(function(e){ return genomeKey(e.genome)===k; });
   }
 };
+
+/* ================= ATTENTION (dwell-time learning) =================
+ * moor-wonder-attention-v1: {items:{key:{d,n,like,share,save,skip,last}},
+ *   suppressed:[keys], types:{sig:{d,n,skip}}}
+ * Rule: a card dwelled on < 1.5s is a skip — its exact genome is suppressed
+ * (never shown again) and similar genomes get down-weighted via Taste2. */
+var LS_ATT='moor-wonder-attention-v1';
+function sigKey(g){ return (g.type==='idea' ? 'idea' : 'w:'+g.type); }
+var Attention = {
+  data: function(){
+    try{ var v=JSON.parse(localStorage.getItem(LS_ATT));
+      if (v && v.items) return v; }catch(e){}
+    return {items:{}, suppressed:[], types:{}};
+  },
+  save: function(d){ try{ localStorage.setItem(LS_ATT, JSON.stringify(d)); }catch(e){} },
+  isSuppressed: function(key){
+    var d = this.data();
+    return d.suppressed.indexOf(key) >= 0;
+  },
+  suppress: function(key){
+    var d = this.data();
+    if (d.suppressed.indexOf(key) < 0){
+      d.suppressed.push(key);
+      if (d.suppressed.length > 500) d.suppressed = d.suppressed.slice(-500);
+      this.save(d);
+    }
+  },
+  clearSuppressed: function(){ var d=this.data(); d.suppressed=[]; this.save(d); },
+  viewEndSig: function(key, sig, params, dt, capId){
+    if (dt < 400) return; /* flicker, not a view */
+    var d = this.data();
+    var it = d.items[key] || {d:0,n:0,like:0,share:0,save:0,skip:0};
+    it.d += dt; it.n += 1; it.last = Date.now();
+    var w = 0;
+    if (dt < 1500){
+      it.skip++; w = -1;
+      /* inline: suppress() would save then get clobbered by the save below */
+      if (d.suppressed.indexOf(key)<0){
+        d.suppressed.push(key);
+        if (d.suppressed.length>500) d.suppressed=d.suppressed.slice(-500);
+      }
+    }
+    else if (dt > 8000){ w = 1; }
+    else { w = 0.15; }
+    d.items[key] = it;
+    var ts = d.types[sig] || {d:0,n:0,skip:0};
+    ts.d += dt; ts.n++; if (dt < 1500) ts.skip++;
+    d.types[sig] = ts;
+    this.save(d);
+    if (w){ Taste2.record(sig, params, w); if (capId) Taste2.recordCap(capId, w); }
+  },
+  viewEnd: function(genome, dt){
+    this.viewEndSig(genomeKey(genome), sigKey(genome), genome.p, dt, null);
+  },
+  signal: function(genome, kind, w){
+    /* explicit signals: like/share/save/comment — weight the profile */
+    var key = genomeKey(genome), sig = sigKey(genome);
+    var d = this.data();
+    var it = d.items[key] || {d:0,n:0,like:0,share:0,save:0,skip:0};
+    if (kind==='like') it.like++;
+    else if (kind==='share') it.share++;
+    else if (kind==='save') it.save++;
+    it.last = Date.now();
+    d.items[key] = it;
+    this.save(d);
+    Taste2.record(sig, genome.p, w);
+  },
+  signalSig: function(key, sig, params, kind, w, capId){
+    var d = this.data();
+    var it = d.items[key] || {d:0,n:0,like:0,share:0,save:0,skip:0};
+    if (kind==='like') it.like++;
+    else if (kind==='share') it.share++;
+    else if (kind==='save') it.save++;
+    it.last = Date.now();
+    d.items[key] = it;
+    this.save(d);
+    Taste2.record(sig, params, w);
+    if (capId) Taste2.recordCap(capId, w);
+  },
+  stats: function(){
+    var d = this.data(), views=0, dwell=0, likes=0, shares=0, saves=0, skips=0;
+    Object.keys(d.items).forEach(function(k){
+      var it = d.items[k];
+      views += it.n; dwell += it.d; likes += it.like; shares += it.share; saves += it.save; skips += it.skip;
+    });
+    return {views:views, dwell:dwell, likes:likes, shares:shares, saves:saves,
+            skips:skips, suppressed:d.suppressed.length, types:d.types};
+  }
+};
+
+/* ================= TASTE v2 — weighted signal profile =================
+ * moor-wonder-taste-v2: {types:{sig:score}, params:{key:{s,w}}, caps:{id:score}}
+ * Weights: share 3 > save 2 > like 1.5 > long dwell 1 > glance 0.15 > skip -1.
+ * Generation samples types by affinity and nudges numeric params toward the
+ * weighted mean of what he responded to. */
+var LS_TASTE2='moor-wonder-taste-v2';
+var Taste2 = {
+  data: function(){
+    try{ var v=JSON.parse(localStorage.getItem(LS_TASTE2));
+      if (v && v.types) return v; }catch(e){}
+    return {types:{}, params:{}, caps:{}};
+  },
+  save: function(d){ try{ localStorage.setItem(LS_TASTE2, JSON.stringify(d)); }catch(e){} },
+  record: function(sig, params, w){
+    var d = this.data();
+    d.types[sig] = Math.max(0.05, (d.types[sig]||1) + w);
+    if (params){
+      var pw = Math.max(0, w);
+      if (pw > 0) Object.keys(params).forEach(function(k){
+        var v = params[k];
+        if (typeof v==='number' && isFinite(v)){
+          var pe = d.params[k] || {s:0, w:0};
+          pe.s += v*pw; pe.w += pw;
+          d.params[k] = pe;
+        }
+      });
+    }
+    this.save(d);
+  },
+  recordCap: function(capId, w){
+    var d = this.data();
+    d.caps[capId] = Math.max(0.05, (d.caps[capId]||1) + w);
+    this.save(d);
+  },
+  affinity: function(sig){ return this.data().types[sig] || 1; },
+  hasSignal: function(){
+    var d = this.data();
+    return Object.keys(d.types).length > 0;
+  },
+  pickKind: function(rng, kinds){
+    /* weighted pick over wonder kinds (array of kind strings) */
+    var d = this.data(), tot = 0, ws = [];
+    for (var i=0;i<kinds.length;i++){
+      var w = d.types['w:'+kinds[i]] || 1;
+      ws.push(w); tot += w;
+    }
+    var r = rng()*tot;
+    for (var j=0;j<kinds.length;j++){ r -= ws[j]; if (r <= 0) return kinds[j]; }
+    return kinds[kinds.length-1];
+  },
+  nudgeParams: function(p, rng){
+    var d = this.data(), out = {};
+    Object.keys(p).forEach(function(k){ out[k] = p[k]; });
+    Object.keys(out).forEach(function(k){
+      var pe = d.params[k];
+      if (pe && pe.w >= 3 && rng() < 0.5 && typeof out[k]==='number'){
+        var mean = pe.s/pe.w;
+        out[k] = out[k] + (mean - out[k])*0.4;
+        var r = RANGES[k];
+        if (r){
+          out[k] = Math.max(r[0], Math.min(r[1], out[k]));
+          if (r[2]===1) out[k] = Math.round(out[k]);
+        }
+      }
+    });
+    return out;
+  },
+  topTypes: function(n){
+    var d = this.data();
+    var arr = Object.keys(d.types).map(function(k){ return {sig:k, score:d.types[k]}; });
+    arr.sort(function(a,b){ return b.score-a.score; });
+    return arr.slice(0, n||6);
+  },
+  topParams: function(n){
+    var d = this.data();
+    var arr = Object.keys(d.params)
+      .filter(function(k){ return d.params[k].w >= 3; })
+      .map(function(k){ return {key:k, mean:d.params[k].s/d.params[k].w, w:d.params[k].w}; });
+    arr.sort(function(a,b){ return b.w-a.w; });
+    return arr.slice(0, n||5);
+  },
+  topCaps: function(n){
+    var d = this.data();
+    var arr = Object.keys(d.caps).map(function(k){ return {id:k, score:d.caps[k]}; });
+    arr.sort(function(a,b){ return b.score-a.score; });
+    return arr.slice(0, n||6);
+  },
+  migrate: function(){
+    /* one-time: fold v1 likes into v2 as 1.5-weight signals */
+    var d = this.data();
+    if (Object.keys(d.types).length) return;
+    var likes = [];
+    try{ likes = Taste.list(); }catch(e){}
+    if (!likes.length) return;
+    likes.forEach(function(g){ this.record(sigKey(g), g.p, 1.5); }, this);
+  },
+  reset: function(){
+    try{ localStorage.removeItem(LS_TASTE2); }catch(e){}
+    try{ Taste.clear(); }catch(e){}
+    Attention.clearSuppressed();
+  }
+};
+
+/* ================= STEER — the steering bar =================
+ * He types what he wants more of: "more glass", "less rain", "no X".
+ * Directives: "more X"/"less X"/"no X" (bare "X" = more X), comma-separated.
+ * Stored in moor-wonder-steer-v1. Each directive maps through STEER_MAP to
+ * wonder kinds and records a high-weight Taste2 signal (more=2.5 ~ share-level,
+ * less=-1.5, no=-3). Chips render under the bar; removing one records the
+ * inverse (approximation, noted) so the profile unwinds.
+ * Honest mapping note (code only): photorealistic subjects (bathrooms,
+ * interiors) are outside this procedural engine — they map to the nearest
+ * generatable, architecture/structures. */
+var LS_STEER='moor-wonder-steer-v1';
+var STEER_MAP=[
+ [/glass/i,['glass']],
+ [/architect|building|structur|interior|bathroom|room/i,['arch']],
+ [/rain|rainy|storm/i,['rain','storm']],
+ [/motivat|quote|mindset|inspir|discipline/i,['motive']],
+ [/fire|flame|ember/i,['fireball','firefountain']],
+ [/ice|frost|winter|snow/i,['frostnova']],
+ [/lightning|electric|thunder/i,['lightning']],
+ [/portal/i,['portal','portalent']],
+ [/galax|space|cosmos|nebula/i,['galaxy','planet','warp']],
+ [/ocean|water|tide|sea|wave/i,['tide']],
+ [/forest|nature|tree|plant/i,['forest']],
+ [/city|skyline|urban/i,['skyfest']],
+ [/creature|monster|blob/i,['creature','metaball','bloom']],
+ [/music|sound|audio|song/i,['ambience','choir','drops']],
+ [/maze|labyrinth/i,['maze']],
+ [/crystal|gem|diamond/i,['crystal']],
+ [/car|driv|vehicle|buggy/i,['driveby']],
+ [/typograph|text|word|font/i,['glyphs','motive']],
+ [/night|dark/i,['daynight']],
+ [/party|celebrat|firework/i,['celebration','skyfest']],
+ [/flower|bloom|garden/i,['bloom']],
+ [/vortex|swirl|tornado/i,['vortex','tide']]
+];
+var Steer = {
+  list: function(){
+    try{ var v=JSON.parse(localStorage.getItem(LS_STEER)); return v||[]; }catch(e){ return []; }
+  },
+  save: function(l){ try{ localStorage.setItem(LS_STEER, JSON.stringify(l)); }catch(e){} },
+  parse: function(text){
+    var out=[];
+    String(text).split(',').forEach(function(chunk){
+      var m=chunk.trim().match(/^(more|less|fewer|no)\s+(.+)$/i);
+      var phrase, w;
+      if(m){ phrase=m[2].trim().toLowerCase(); w={more:2.5,less:-1.5,fewer:-1.5,no:-3}[m[1].toLowerCase()]; }
+      else if(chunk.trim()){ phrase=chunk.trim().toLowerCase(); w=2.5; }
+      else return;
+      if(phrase) out.push({phrase:phrase, weight:w, applied:false});
+    });
+    return out;
+  },
+  kindsFor: function(phrase){
+    var kinds=[];
+    STEER_MAP.forEach(function(entry){
+      if(entry[0].test(phrase)) kinds=kinds.concat(entry[1]);
+    });
+    return kinds.filter(function(k,i){ return kinds.indexOf(k)===i && typeExists(k); });
+  },
+  applyOne: function(s){
+    var self=this;
+    this.kindsFor(s.phrase).forEach(function(k){ Taste2.record('w:'+k, null, s.weight); });
+    s.applied=true;
+  },
+  boot: function(){
+    var l=this.list(), changed=false, self=this;
+    l.forEach(function(s){ if(!s.applied){ self.applyOne(s); changed=true; } });
+    if(changed) this.save(l);
+  },
+  add: function(text){
+    var news=this.parse(text), l=this.list(), self=this;
+    if(!news.length){ toast('try: more glass — or less rain, no text'); return; }
+    var matched=0;
+    news.forEach(function(n){
+      l=l.filter(function(x){ return x.phrase!==n.phrase; });
+      if(self.kindsFor(n.phrase).length) matched++;
+      self.applyOne(n);
+      l.push(n);
+    });
+    this.save(l);
+    renderChips();
+    toast(matched? 'steering: '+news.map(function(n){return n.phrase;}).join(', ') : 'noted — nothing generatable matches that yet');
+  },
+  remove: function(phrase){
+    var l=this.list(), hit=null, self=this;
+    l=l.filter(function(x){ if(x.phrase===phrase){ hit=x; return false; } return true; });
+    this.save(l);
+    if(hit && hit.applied)
+      this.kindsFor(hit.phrase).forEach(function(k){ Taste2.record('w:'+k, null, -hit.weight); });
+    renderChips();
+  },
+  clear: function(){ this.save([]); renderChips(); }
+};
+function renderChips(){
+  var box=document.querySelector('#wd-chips');
+  if(!box) return;
+  var l=Steer.list();
+  box.innerHTML=l.map(function(s,i){
+    return '<span class="wd-chip">'+esc(s.phrase)+'<button data-i="'+i+'" title="remove">×</button></span>';
+  }).join('');
+  var btns=box.querySelectorAll('button');
+  for(var i=0;i<btns.length;i++){
+    (function(b){
+      b.onclick=function(){
+        var s=Steer.list()[parseInt(b.getAttribute('data-i'),10)];
+        if(s) Steer.remove(s.phrase);
+      };
+    })(btns[i]);
+  }
+}
+
+/* ---------- distilled capabilities (from the Component Distiller) ---------- */
+function caps(){
+  var A = (typeof window!=='undefined') ? window.APP_DATA : null;
+  return (A && A.capabilities) || [];
+}
+function capById(id){
+  var C = caps();
+  for (var i=0;i<C.length;i++) if (C[i].id===id) return C[i];
+  return null;
+}
+/* capability component -> wonder kinds for "remix into wonder" */
+var COMP_REMIX = [
+  [/particle|spell|effect/i, ['fireball','portal','lightning','frostnova','celebration','soulwisps']],
+  [/terrain|heightfield|landscape/i, ['terrain','tide','daynight','storm']],
+  [/ambien|audio|sound|music/i, ['ambience','choir','drops']],
+  [/spawn|wave|crowd/i, ['swarm']],
+  [/maze|labyrinth/i, ['maze']],
+  [/palette|color/i, ['spectrum','aurora']],
+  [/creature|blob|softbody|metaball/i, ['creature','metaball','bloom']],
+  [/vehicle|buggy|car|driv/i, ['driveby']],
+  [/sky|cloud|atmos/i, ['aurora','grain']],
+  [/plant|forest|tree|veget/i, ['forest']],
+  [/crystal|gem|mineral/i, ['crystal']],
+  [/portal|vortex|warp/i, ['portal','warp','portalent']],
+  [/fire|flame|ember/i, ['fireball','firefountain']],
+  [/water|ocean|tide/i, ['tide']],
+  [/city|skyline|urban/i, ['skyfest']],
+  [/siege|tower|castle/i, ['siege']]
+];
+function remixKindFor(cap, rng){
+  var hay = (cap.component||'')+' '+(cap.code_ref||'')+' '+(cap.what||'');
+  for (var i=0;i<COMP_REMIX.length;i++){
+    if (COMP_REMIX[i][0].test(hay)){
+      var ks = COMP_REMIX[i][1];
+      return ks[(rng()*ks.length)|0];
+    }
+  }
+  return null;
+}
 
 /* ---------- shared card shell ---------- */
 function cardShell(genome, title, sub){
@@ -2022,6 +3898,9 @@ Object.assign(RANGES, {
   bolts:[1,4,1], rise:[0.4,1.6,0], drift:[0.2,1.4,0], pops:[2,6,1],
   arms:[2,4,1], tilt:[0.15,1.25,0], pcount:[900,3200,1], power:[0.6,1.8,0],
   spread:[0.2,1,0], density:[300,1400,1]
+,
+  tmpl:[0,5,1], capA:[0,200,1], capB:[0,200,1], phrase:[0,39,1],
+  style:[0,2,1], panels:[3,8,1]
 });
 function spellSprite(hue, sat, li){
   var c = document.createElement('canvas'); c.width = c.height = 64;
@@ -2878,6 +4757,803 @@ TYPES.push({kind:'warp', icon:'🚀', label:'Warp',
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
 
+/* ================= SITUATIONS — scenes with something happening =================
+ * Not ambient pretties: a buggy on a run, a fireball hitting a tower, a full
+ * day/night cycle, wisps flying through a portal, fireworks over a skyline,
+ * a lightning storm. Each is a little situation with a beginning, middle,
+ * and loop.
+ * TAGS: tool:wonder | cat:experiences | dep:canvas2d dep:seed-rng | prov:situation-wonders */
+
+/* ---------- 32. DRIVEBY — buggy run through procedural hills ---------- */
+TYPES.push({kind:'driveby', icon:'🚗', label:'Drive-By',
+ params: function(r){ return {hue:r()*360, speed:0.4+r()*1.6}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Drive-By '+((seed%900)+100), sub='a buggy run — situation from the vehicle kit';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue, speed=P.speed;
+  var nz=[makeNoise1D(mulberry32(seed^0x11)),makeNoise1D(mulberry32(seed^0x22)),makeNoise1D(mulberry32(seed^0x33))];
+  var dust=[], t=0, raf=0, off=rng()*500;
+  var bx=Wd*0.42;
+  function groundY(x){ return Ht*0.80 - nz[2]((x+off)/150,3)*Ht*0.09; }
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016; off+=speed*3.2;
+   var g=ctx.createLinearGradient(0,0,0,Ht);
+   g.addColorStop(0,'hsl('+hue+',50%,7%)');
+   g.addColorStop(0.75,'hsl('+((hue+50)%360)+',55%,15%)');
+   g.addColorStop(1,'hsl('+hue+',45%,9%)');
+   ctx.fillStyle=g; ctx.fillRect(0,0,Wd,Ht);
+   var sx=Wd*0.78, sy=Ht*0.20;
+   var sg=ctx.createRadialGradient(sx,sy,2,sx,sy,Ht*0.32);
+   sg.addColorStop(0,'hsla('+((hue+60)%360)+',90%,72%,.9)');
+   sg.addColorStop(1,'hsla('+((hue+60)%360)+',90%,60%,0)');
+   ctx.fillStyle=sg; ctx.fillRect(0,0,Wd,Ht);
+   var layers=[[0,0.25,Ht*0.60,Ht*0.15,12],[1,0.55,Ht*0.70,Ht*0.13,10]];
+   for(var li=0;li<2;li++){
+    var L=layers[li];
+    ctx.fillStyle='hsl('+hue+',30%,'+L[4]+'%)';
+    ctx.beginPath(); ctx.moveTo(0,Ht);
+    for(var x=0;x<=Wd;x+=10) ctx.lineTo(x, L[2]-nz[L[0]]((x+off*L[1])/150,3)*L[3]);
+    ctx.lineTo(Wd,Ht); ctx.closePath(); ctx.fill();
+   }
+   ctx.fillStyle='hsl('+hue+',25%,8%)';
+   ctx.beginPath(); ctx.moveTo(0,Ht);
+   for(var x2=0;x2<=Wd;x2+=10) ctx.lineTo(x2,groundY(x2));
+   ctx.lineTo(Wd,Ht); ctx.closePath(); ctx.fill();
+   var gy=groundY(bx), bounce=Math.sin(t*11)*3*Math.min(1.5,speed);
+   if((((t*60)|0)%3)===0 && dust.length<90)
+    dust.push({x:bx-36,y:gy-10,vx:-(1+rng()*2.2)*speed,vy:-(0.5+rng()*1.6),r:2+rng()*4,t:0});
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   for(var di=dust.length-1;di>=0;di--){
+    var d=dust[di]; d.t+=0.016; d.x+=d.vx; d.y+=d.vy; d.vy+=0.035; d.r+=0.07;
+    var da=Math.max(0,0.5-d.t*0.45);
+    if(da>0){ ctx.fillStyle='hsla('+hue+',30%,62%,'+da.toFixed(3)+')';
+     ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,6.2832); ctx.fill(); }
+    if(d.t>1.5||d.x<-24) dust.splice(di,1);
+   }
+   ctx.restore();
+   var wyr=13, byy=gy-15+bounce*0.4;
+   var wheels=[bx-32,bx+32];
+   for(var wi=0;wi<2;wi++){
+    var wx=wheels[wi];
+    ctx.save(); ctx.translate(wx,gy-wyr+2); ctx.rotate(t*7*speed);
+    ctx.fillStyle='#10131b'; ctx.beginPath(); ctx.arc(0,0,wyr,0,6.2832); ctx.fill();
+    ctx.strokeStyle='hsl('+hue+',65%,58%)'; ctx.lineWidth=3;
+    for(var s2=0;s2<5;s2++){ var sa2=s2*1.2566;
+     ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(sa2)*wyr,Math.sin(sa2)*wyr); ctx.stroke(); }
+    ctx.restore();
+   }
+   ctx.fillStyle='hsl('+((hue+180)%360)+',72%,46%)';
+   ctx.beginPath();
+   ctx.moveTo(bx-56,byy); ctx.lineTo(bx-48,byy-20); ctx.lineTo(bx+42,byy-26);
+   ctx.lineTo(bx+56,byy-4); ctx.lineTo(bx+56,byy); ctx.closePath(); ctx.fill();
+   ctx.fillStyle='hsla('+hue+',65%,72%,.9)';
+   ctx.fillRect(bx-20,byy-36,36,13);
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   var bg2=ctx.createLinearGradient(bx+56,0,bx+176,0);
+   bg2.addColorStop(0,'hsla(50,100%,70%,.32)'); bg2.addColorStop(1,'hsla(50,100%,70%,0)');
+   ctx.fillStyle=bg2;
+   ctx.beginPath(); ctx.moveTo(bx+56,byy-8); ctx.lineTo(bx+176,byy-30);
+   ctx.lineTo(bx+176,byy+10); ctx.lineTo(bx+56,byy); ctx.closePath(); ctx.fill();
+   ctx.restore();
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 33. SIEGE — fireball vs. crystal tower ---------- */
+TYPES.push({kind:'siege', icon:'🏰', label:'Siege',
+ params: function(r){ return {hue:r()*360}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Siege '+((seed%900)+100), sub='fireball vs. crystal tower — a situation';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue;
+  var cx=Wd*0.16, cy=Ht*0.66, tx=Wd*0.82, ty=Ht*0.78;
+  var t=0, raf=0, cool=1.2, ball=null, boom=null, wob=0;
+  var shards=[];
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   var g=ctx.createLinearGradient(0,0,0,Ht);
+   g.addColorStop(0,'hsl('+hue+',40%,6%)'); g.addColorStop(1,'hsl('+((hue+30)%360)+',45%,12%)');
+   ctx.fillStyle=g; ctx.fillRect(0,0,Wd,Ht);
+   ctx.fillStyle='hsl('+hue+',25%,7%)'; ctx.fillRect(0,Ht*0.78,Wd,Ht*0.22);
+   ctx.save(); ctx.translate(cx,cy);
+   ctx.strokeStyle='hsla('+((hue+150)%360)+',90%,65%,.8)'; ctx.lineWidth=2;
+   var pr=34+Math.sin(t*3)*4;
+   ctx.beginPath(); ctx.arc(0,0,pr,0,6.2832); ctx.stroke();
+   ctx.beginPath(); ctx.arc(0,0,pr*0.7,t,-t+6.2832); ctx.stroke();
+   for(var ri=0;ri<8;ri++){ var a2=t*0.8+ri*0.785;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a2)*pr*0.7,Math.sin(a2)*pr*0.7);
+    ctx.lineTo(Math.cos(a2)*pr,Math.sin(a2)*pr); ctx.stroke(); }
+   ctx.restore();
+   wob*=0.94;
+   ctx.save(); ctx.translate(tx,ty); ctx.rotate(Math.sin(t*30)*0.06*wob);
+   for(var si=0;si<5;si++){
+    var sw2=54-si*9, sy2=-si*26;
+    ctx.save(); ctx.translate(0,sy2); ctx.rotate(Math.PI/4);
+    var tg=ctx.createLinearGradient(-sw2,0,sw2,0);
+    tg.addColorStop(0,'hsl('+((hue+200)%360)+',70%,30%)');
+    tg.addColorStop(0.5,'hsl('+((hue+200)%360)+',80%,62%)');
+    tg.addColorStop(1,'hsl('+((hue+200)%360)+',70%,30%)');
+    ctx.fillStyle=tg; ctx.fillRect(-sw2/2,-sw2/2,sw2,sw2);
+    ctx.restore();
+   }
+   ctx.restore();
+   cool-=0.016;
+   if(cool<=0 && !ball){ ball={t:0,dur:1.1}; cool=2.6+rng()*1.4; }
+   if(ball){
+    ball.t+=0.016;
+    var k=ball.t/ball.dur;
+    if(k>=1){
+     boom={t:0,x:tx,y:ty-Ht*0.24}; ball=null; wob=1;
+     for(var bi=0;bi<26;bi++){ var ba=rng()*6.2832, bs=2+rng()*6;
+      shards.push({x:tx,y:ty-Ht*0.24,vx:Math.cos(ba)*bs,vy:Math.sin(ba)*bs-2,t:0}); }
+    } else {
+     var fx=cx+(tx-cx)*k, fy=cy+((ty-Ht*0.24)-cy)*k - Math.sin(k*Math.PI)*Ht*0.22;
+     ctx.save(); ctx.globalCompositeOperation='lighter';
+     var fg=ctx.createRadialGradient(fx,fy,1,fx,fy,26);
+     fg.addColorStop(0,'hsla(30,100%,75%,.95)');
+     fg.addColorStop(0.5,'hsla(15,100%,55%,.6)');
+     fg.addColorStop(1,'hsla(0,90%,50%,0)');
+     ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(fx,fy,26,0,6.2832); ctx.fill();
+     ctx.restore();
+    }
+   }
+   if(boom){
+    boom.t+=0.016;
+    var bk=boom.t/0.9;
+    if(bk<1){
+     ctx.save(); ctx.globalCompositeOperation='lighter';
+     ctx.strokeStyle='hsla(35,100%,65%,'+((1-bk)*0.9).toFixed(3)+')'; ctx.lineWidth=4;
+     ctx.beginPath(); ctx.arc(boom.x,boom.y,bk*90,0,6.2832); ctx.stroke();
+     var gg2=ctx.createRadialGradient(boom.x,boom.y,1,boom.x,boom.y,60);
+     gg2.addColorStop(0,'hsla(40,100%,80%,'+(1-bk).toFixed(3)+')');
+     gg2.addColorStop(1,'hsla(20,100%,55%,0)');
+     ctx.fillStyle=gg2; ctx.beginPath(); ctx.arc(boom.x,boom.y,60,0,6.2832); ctx.fill();
+     ctx.restore();
+    } else boom=null;
+   }
+   for(var qi=shards.length-1;qi>=0;qi--){
+    var sh=shards[qi]; sh.t+=0.016; sh.x+=sh.vx; sh.y+=sh.vy; sh.vy+=0.25;
+    var sa=Math.max(0,1-sh.t/1.2);
+    if(sa>0){ ctx.fillStyle='hsla('+((hue+200)%360)+',80%,70%,'+sa.toFixed(3)+')';
+     ctx.fillRect(sh.x,sh.y,4,4); }
+    if(sh.t>1.2) shards.splice(qi,1);
+   }
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 34. DAYNIGHT — a full cycle over the ridge ---------- */
+TYPES.push({kind:'daynight', icon:'🌗', label:'Day/Night',
+ params: function(r){ return {hue:r()*360}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Day/Night '+((seed%900)+100), sub='a full cycle over the ridge — a situation';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var nz=makeNoise1D(mulberry32(seed^0x77));
+  var stars=[];
+  for(var i=0;i<110;i++) stars.push({x:rng()*Wd,y:rng()*Ht*0.62,r:0.5+rng()*1.5,ph:rng()*6.28});
+  var t=0, raf=0, DAY=26;
+  var STOPS=[
+   [0.00, [7,9,24],[15,13,32],0,1],
+   [0.20, [46,32,74],[206,116,82],0.35,0.12],
+   [0.34, [64,142,220],[176,222,242],1,0],
+   [0.62, [64,142,220],[176,222,242],1,0],
+   [0.76, [52,30,82],[232,122,70],0.35,0.12],
+   [1.00, [7,9,24],[15,13,32],0,1]];
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   var k=(t/DAY)%1, a=STOPS[0], b=STOPS[STOPS.length-1];
+   for(var si=0;si<STOPS.length-1;si++)
+    if(k>=STOPS[si][0]&&k<=STOPS[si+1][0]){ a=STOPS[si]; b=STOPS[si+1]; break; }
+   var f=(k-a[0])/Math.max(1e-4,b[0]-a[0]);
+   function mx(u,v){ return Math.round(u+(v-u)*f); }
+   var g=ctx.createLinearGradient(0,0,0,Ht);
+   g.addColorStop(0,'rgb('+mx(a[1][0],b[1][0])+','+mx(a[1][1],b[1][1])+','+mx(a[1][2],b[1][2])+')');
+   g.addColorStop(1,'rgb('+mx(a[2][0],b[2][0])+','+mx(a[2][1],b[2][1])+','+mx(a[2][2],b[2][2])+')');
+   ctx.fillStyle=g; ctx.fillRect(0,0,Wd,Ht);
+   var sunI=a[3]+(b[3]-a[3])*f, starA=a[4]+(b[4]-a[4])*f;
+   var ang=k*Math.PI*2-Math.PI/2;
+   var sx2=Wd*0.5+Math.cos(ang)*Wd*0.44, sy2=Ht*0.68-Math.sin(ang)*Ht*0.56;
+   if(sunI>0.02){
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    var sg2=ctx.createRadialGradient(sx2,sy2,2,sx2,sy2,Ht*0.3);
+    sg2.addColorStop(0,'rgba(255,236,190,'+(0.95*sunI).toFixed(3)+')');
+    sg2.addColorStop(1,'rgba(255,180,120,0)');
+    ctx.fillStyle=sg2; ctx.fillRect(0,0,Wd,Ht); ctx.restore();
+   }
+   if(starA>0.02){
+    for(var i2=0;i2<stars.length;i2++){ var s2=stars[i2];
+     var tw=0.35+0.65*Math.abs(Math.sin(t*1.4+s2.ph));
+     ctx.fillStyle='rgba(255,255,255,'+(starA*tw*0.9).toFixed(3)+')';
+     ctx.fillRect(s2.x,s2.y,s2.r,s2.r);
+    }
+    var mang=ang+Math.PI;
+    if(Math.sin(mang)>-0.2){
+     ctx.fillStyle='rgba(226,232,244,'+(0.9*starA).toFixed(3)+')';
+     ctx.beginPath(); ctx.arc(Wd*0.5+Math.cos(mang)*Wd*0.44, Ht*0.68-Math.sin(mang)*Ht*0.56, 16,0,6.2832); ctx.fill();
+    }
+   }
+   var dark=8+Math.round(10*(1-starA));
+   ctx.fillStyle='rgb('+dark+','+(dark+2)+','+(dark+6)+')';
+   ctx.beginPath(); ctx.moveTo(0,Ht);
+   for(var x=0;x<=Wd;x+=8) ctx.lineTo(x, Ht*0.66-nz(x/170,3)*Ht*0.22);
+   ctx.lineTo(Wd,Ht); ctx.closePath(); ctx.fill();
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 35. PORTALENT — wisps flying through a portal ---------- */
+TYPES.push({kind:'portalent', icon:'🌀', label:'Portal Ent',
+ params: function(r){ return {hue:r()*360}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Portal Ent '+((seed%900)+100), sub='wisps through the gate — a situation';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue, hue2=(hue+130)%360;
+  var cx=Wd/2, cy=Ht/2;
+  function newWisp(any){
+   var a=rng()*6.2832;
+   return {a:a, r:any?120+rng()*260:260+rng()*60, sp:0.25+rng()*0.5,
+           sz:1.5+rng()*3, ph:rng()*6.28, side:rng()<0.5?-1:1};
+  }
+  var wisps=[];
+  for(var i=0;i<46;i++) wisps.push(newWisp(true));
+  var t=0, raf=0;
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   ctx.fillStyle='#04060d'; ctx.fillRect(0,0,Wd,Ht);
+   ctx.save(); ctx.translate(cx,cy);
+   ctx.globalCompositeOperation='lighter';
+   for(var ri=0;ri<3;ri++){
+    var pr2=44+ri*16+Math.sin(t*2+ri)*4;
+    ctx.strokeStyle='hsla('+(((hue+ri*22)%360)+360)%360+',90%,62%,'+(0.75-ri*0.2).toFixed(3)+')';
+    ctx.lineWidth=7-ri*1.6;
+    ctx.beginPath(); ctx.ellipse(0,0,pr2*0.62,pr2,t*0.9+ri,0,6.2832); ctx.stroke();
+   }
+   var cg=ctx.createRadialGradient(0,0,2,0,0,44);
+   cg.addColorStop(0,'hsla('+hue2+',95%,78%,.95)');
+   cg.addColorStop(1,'hsla('+hue+',90%,55%,0)');
+   ctx.fillStyle=cg;
+   ctx.beginPath(); ctx.ellipse(0,0,30,44,0,0,6.2832); ctx.fill();
+   ctx.restore();
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   for(var wi=0;wi<wisps.length;wi++){
+    var w=wisps[wi];
+    w.a+=w.sp*0.03*w.side; w.r-=w.sp*1.1;
+    if(w.r<34){ var nw=newWisp(false); w.a=nw.a+Math.PI; w.r=nw.r; w.side*=-1; }
+    var wx=cx+Math.cos(w.a)*w.r*0.62, wy=cy+Math.sin(w.a)*w.r;
+    var inHue=w.r<150?hue2:hue;
+    var tw2=0.5+0.5*Math.sin(t*3+w.ph);
+    ctx.fillStyle='hsla('+inHue+',90%,70%,'+(0.35+0.5*tw2).toFixed(3)+')';
+    ctx.beginPath(); ctx.arc(wx,wy,w.sz*(0.7+0.5*tw2),0,6.2832); ctx.fill();
+   }
+   ctx.restore();
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 36. SKYFEST — celebration over a skyline ---------- */
+TYPES.push({kind:'skyfest', icon:'🎆', label:'Sky Fest',
+ params: function(r){ return {hue:r()*360}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Sky Fest '+((seed%900)+100), sub='fireworks over the skyline — a situation';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue;
+  var bg=document.createElement('canvas'); bg.width=Wd; bg.height=Ht;
+  (function(){
+   var c=bg.getContext('2d');
+   var g=c.createLinearGradient(0,0,0,Ht);
+   g.addColorStop(0,'hsl('+hue+',45%,6%)'); g.addColorStop(1,'hsl('+((hue+40)%360)+',50%,13%)');
+   c.fillStyle=g; c.fillRect(0,0,Wd,Ht);
+   var x=0;
+   while(x<Wd){
+    var bw=34+rng()*70, bh=Ht*0.18+rng()*Ht*0.3;
+    c.fillStyle='#05070d'; c.fillRect(x,Ht-bh,bw,bh);
+    c.fillStyle='hsla('+((hue+50)%360)+',70%,62%,.8)';
+    for(var wy=Ht-bh+10; wy<Ht-8; wy+=14)
+     for(var wx=x+6; wx<x+bw-6; wx+=12)
+      if(rng()<0.42) c.fillRect(wx,wy,5,7);
+    x+=bw+4+rng()*20;
+   }
+  })();
+  var rockets=[], sparks=[];
+  var t=0, raf=0, acc=0;
+  function boom(x,y,h2,big){
+   var n=big?110:60;
+   for(var i=0;i<n;i++){
+    var a=rng()*6.2832, sp=(big?3:2)+rng()*(big?5:3.4);
+    sparks.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,t:0,
+                 h:(((h2+(rng()*30-15))%360)+360)%360, big:big});
+   }
+  }
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016; acc+=0.016;
+   ctx.drawImage(bg,0,0);
+   if(acc>1.5){ acc=0;
+    rockets.push({x:rng()*Wd, y:Ht, vy:-(7+rng()*3), h:rng()*360});
+    if(rockets.length>6) rockets.shift();
+   }
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   for(var ri=rockets.length-1;ri>=0;ri--){
+    var r=rockets[ri]; r.y+=r.vy;
+    ctx.fillStyle='hsla('+r.h+',95%,75%,.95)';
+    ctx.beginPath(); ctx.arc(r.x,r.y,3,0,6.2832); ctx.fill();
+    ctx.fillStyle='hsla('+r.h+',90%,60%,.35)';
+    ctx.fillRect(r.x-1.5,r.y,3,26);
+    if(r.y<Ht*0.18+rng()*Ht*0.15){ boom(r.x,r.y,r.h,rng()<0.25); rockets.splice(ri,1); }
+   }
+   for(var si=sparks.length-1;si>=0;si--){
+    var s=sparks[si]; s.t+=0.016;
+    s.x+=s.vx; s.y+=s.vy; s.vy+=0.09; s.vx*=0.985;
+    var life=s.big?2.2:1.4, a=Math.max(0,1-s.t/life);
+    if(a>0){ ctx.fillStyle='hsla('+s.h+',92%,66%,'+a.toFixed(3)+')';
+     ctx.beginPath(); ctx.arc(s.x,s.y,s.big?2.6:2,0,6.2832); ctx.fill(); }
+    if(s.t>life) sparks.splice(si,1);
+   }
+   ctx.restore();
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 37. STORM — lightning over dark terrain ---------- */
+TYPES.push({kind:'storm', icon:'⛈', label:'Storm',
+ params: function(r){ return {hue:r()*360, intensity:1+((r()*4)|0)}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Storm '+((seed%900)+100), sub='lightning over dark ground — a situation';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,440); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue, inten=P.intensity;
+  var nz=makeNoise1D(mulberry32(seed^0x99));
+  var rain=[];
+  for(var i=0;i<120*inten;i++) rain.push({x:rng()*Wd,y:rng()*Ht,l:10+rng()*18,sp:9+rng()*7});
+  var clouds=[];
+  for(var ci=0;ci<7;ci++) clouds.push({x:rng()*Wd,y:rng()*Ht*0.3,r:60+rng()*90,sp:0.3+rng()*0.7});
+  var bolt=null, flash=0, cool=1+rng()*2, t=0, raf=0;
+  function strike(){
+   var x=Wd*0.15+rng()*Wd*0.7, pts=[[x,Ht*0.18]], y=Ht*0.18;
+   while(y<Ht*0.72){ x+=(rng()-0.5)*46; y+=18+rng()*26; pts.push([x,y]); }
+   bolt={pts:pts,t:0}; flash=1;
+  }
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   var g=ctx.createLinearGradient(0,0,0,Ht);
+   g.addColorStop(0,'hsl('+hue+',30%,7%)'); g.addColorStop(1,'hsl('+hue+',28%,12%)');
+   ctx.fillStyle=g; ctx.fillRect(0,0,Wd,Ht);
+   for(var ci2=0;ci2<clouds.length;ci2++){ var c=clouds[ci2];
+    c.x+=c.sp; if(c.x-c.r>Wd) c.x=-c.r;
+    var cg=ctx.createRadialGradient(c.x,c.y,4,c.x,c.y,c.r);
+    cg.addColorStop(0,'hsla('+hue+',22%,20%,.85)'); cg.addColorStop(1,'hsla('+hue+',22%,14%,0)');
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,6.2832); ctx.fill();
+   }
+   ctx.strokeStyle='hsla('+((hue+180)%360)+',40%,70%,.4)'; ctx.lineWidth=1.4;
+   ctx.beginPath();
+   for(var ri=0;ri<rain.length;ri++){ var rp=rain[ri];
+    rp.y+=rp.sp; rp.x-=1.2; if(rp.y>Ht){ rp.y=-20; rp.x=rng()*Wd; }
+    ctx.moveTo(rp.x,rp.y); ctx.lineTo(rp.x-2.4,rp.y-rp.l);
+   }
+   ctx.stroke();
+   ctx.fillStyle='hsl('+hue+',24%,6%)'; ctx.beginPath(); ctx.moveTo(0,Ht);
+   for(var x=0;x<=Wd;x+=10) ctx.lineTo(x,Ht*0.74-nz(x/150,3)*Ht*0.14);
+   ctx.lineTo(Wd,Ht); ctx.closePath(); ctx.fill();
+   cool-=0.016;
+   if(cool<=0){ strike(); cool=2+rng()*4/inten; }
+   if(bolt){
+    bolt.t+=0.016;
+    var ba=Math.max(0,1-bolt.t/0.35);
+    if(ba>0){
+     ctx.save(); ctx.globalCompositeOperation='lighter';
+     ctx.strokeStyle='rgba(230,240,255,'+(0.95*ba).toFixed(3)+')';
+     ctx.lineWidth=3; ctx.shadowColor='rgba(160,190,255,.9)'; ctx.shadowBlur=18;
+     ctx.beginPath();
+     for(var bi=0;bi<bolt.pts.length;bi++){ var bp=bolt.pts[bi];
+      if(bi) ctx.lineTo(bp[0],bp[1]); else ctx.moveTo(bp[0],bp[1]); }
+     ctx.stroke(); ctx.restore();
+    } else bolt=null;
+   }
+   if(flash>0.01){
+    ctx.fillStyle='rgba(200,215,255,'+(flash*0.28).toFixed(3)+')';
+    ctx.fillRect(0,0,Wd,Ht);
+    flash*=0.86;
+   }
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ================= STEERABLES — directions the procedural engine CAN do =================
+ * Honest note (code only, never UI): photorealistic subjects (bathrooms,
+ * interiors) are outside this engine. Steering maps them to the nearest
+ * generatable — architecture/interior -> structural forms. Everything below
+ * is genuinely procedural. */
+
+/* ---------- 38. GLASS — transparency / refraction aesthetics ---------- */
+TYPES.push({kind:'glass', icon:'🔷', label:'Glass',
+ params: function(r){ return {hue:r()*360, panels:3+((r()*6)|0)}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Glass '+((seed%900)+100), sub='light through glass — steerable';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue;
+  var panels=[];
+  for(var i=0;i<P.panels;i++) panels.push({
+   x:Wd*0.12+rng()*Wd*0.76, y:Ht*0.14+rng()*Ht*0.6,
+   w:90+rng()*150, h:130+rng()*190, rot:(rng()-0.5)*0.9, ph:rng()*6.28, sp:0.2+rng()*0.5});
+  var orbs=[];
+  for(var o=0;o<4;o++) orbs.push({x:rng()*Wd,y:rng()*Ht,r:60+rng()*110,h:(((hue+rng()*120)%360)+360)%360});
+  var t=0, raf=0;
+  function rr(x,y,w,h,rad){
+   ctx.beginPath();
+   ctx.moveTo(x+rad,y); ctx.arcTo(x+w,y,x+w,y+h,rad); ctx.arcTo(x+w,y+h,x,y+h,rad);
+   ctx.arcTo(x,y+h,x,y,rad); ctx.arcTo(x,y,x+w,y,rad); ctx.closePath();
+  }
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   var g=ctx.createLinearGradient(0,0,Wd,Ht);
+   g.addColorStop(0,'hsl('+hue+',55%,6%)'); g.addColorStop(1,'hsl('+((hue+60)%360)+',50%,11%)');
+   ctx.fillStyle=g; ctx.fillRect(0,0,Wd,Ht);
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   for(var oi=0;oi<orbs.length;oi++){ var ob=orbs[oi];
+    var og=ctx.createRadialGradient(ob.x,ob.y,2,ob.x,ob.y,ob.r);
+    og.addColorStop(0,'hsla('+ob.h+',85%,55%,.30)'); og.addColorStop(1,'hsla('+ob.h+',85%,55%,0)');
+    ctx.fillStyle=og; ctx.beginPath(); ctx.arc(ob.x,ob.y,ob.r,0,6.2832); ctx.fill();
+   }
+   ctx.restore();
+   for(var pi=0;pi<panels.length;pi++){ var pn=panels[pi];
+    var rot=pn.rot+Math.sin(t*pn.sp+pn.ph)*0.08;
+    ctx.save(); ctx.translate(pn.x,pn.y); ctx.rotate(rot);
+    var pg=ctx.createLinearGradient(-pn.w/2,-pn.h/2,pn.w/2,pn.h/2);
+    pg.addColorStop(0,'rgba(255,255,255,.14)'); pg.addColorStop(0.5,'rgba(255,255,255,.04)');
+    pg.addColorStop(1,'hsla('+(((hue+180)%360)+360)%360+',70%,70%,.12)');
+    rr(-pn.w/2,-pn.h/2,pn.w,pn.h,18);
+    ctx.fillStyle=pg; ctx.fill();
+    ctx.save(); rr(-pn.w/2,-pn.h/2,pn.w,pn.h,18); ctx.clip();
+    var bx2=((t*90+pn.ph*40)%(pn.w*2))-pn.w;
+    var cg2=ctx.createLinearGradient(bx2-pn.w/2,0,bx2+pn.w/2,0);
+    cg2.addColorStop(0,'rgba(255,255,255,0)');
+    cg2.addColorStop(0.5,'rgba(255,255,255,.20)');
+    cg2.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=cg2; ctx.fillRect(-pn.w/2,-pn.h/2,pn.w,pn.h);
+    ctx.restore();
+    ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=2;
+    rr(-pn.w/2,-pn.h/2,pn.w,pn.h,18); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(-pn.w/2+14,-pn.h/2+26); ctx.lineTo(-pn.w/2+44,-pn.h/2+10); ctx.stroke();
+    ctx.restore();
+   }
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 39. ARCH — geometric structural forms ---------- */
+TYPES.push({kind:'arch', icon:'🏛', label:'Arch',
+ params: function(r){ return {hue:r()*360, style:(r()*3)|0}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var names=['Arches','Towers','Monolith'];
+  var title=names[P.style]+' '+((seed%900)+100), sub='structural forms — steerable';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue, style=P.style;
+  var gy=Ht*0.86;
+  var shapes=[];
+  if(style===0){
+   var nA=4+((rng()*3)|0);
+   for(var i=0;i<nA;i++)
+    shapes.push({k:'arch', x:Wd*(0.12+0.76*i/Math.max(1,nA-1)), w:70+rng()*60, h:Ht*0.34+rng()*Ht*0.2});
+  } else if(style===1){
+   var nT=3+((rng()*3)|0);
+   for(var j=0;j<nT;j++){
+    var tw=60+rng()*80, th=Ht*0.3+rng()*Ht*0.35;
+    var sh={k:'tower', x:Wd*(0.14+0.72*j/Math.max(1,nT-1))-tw/2, w:tw, h:th, wins:[]};
+    for(var wy=0;wy<th-24;wy+=18) for(var wx=8;wx<tw-8;wx+=16)
+     if(rng()<0.5) sh.wins.push([wx,wy]);
+    shapes.push(sh);
+   }
+  } else {
+   shapes.push({k:'obelisk', x:Wd/2-40, w:80, h:Ht*0.62});
+   shapes.push({k:'obelisk', x:Wd*0.14, w:44, h:Ht*0.38});
+   shapes.push({k:'obelisk', x:Wd*0.80, w:44, h:Ht*0.38});
+  }
+  var motes=[];
+  for(var mi=0;mi<36;mi++) motes.push({x:rng()*Wd,y:rng()*Ht,ph:rng()*6.28,sp:0.2+rng()*0.6});
+  var t=0, raf=0;
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   var g=ctx.createLinearGradient(0,0,0,Ht);
+   g.addColorStop(0,'hsl('+hue+',48%,6%)');
+   g.addColorStop(0.8,'hsl('+((hue+45)%360)+',55%,16%)');
+   g.addColorStop(1,'hsl('+hue+',40%,9%)');
+   ctx.fillStyle=g; ctx.fillRect(0,0,Wd,Ht);
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   var hg=ctx.createRadialGradient(Wd/2,gy,10,Wd/2,gy,Wd*0.6);
+   hg.addColorStop(0,'hsla('+((hue+60)%360)+',80%,60%,.25)');
+   hg.addColorStop(1,'hsla('+((hue+60)%360)+',80%,60%,0)');
+   ctx.fillStyle=hg; ctx.fillRect(0,0,Wd,Ht);
+   for(var m2=0;m2<motes.length;m2++){ var mo=motes[m2];
+    mo.y-=mo.sp; if(mo.y<-4){ mo.y=Ht+4; mo.x=rng()*Wd; }
+    var tw2=0.3+0.7*Math.abs(Math.sin(t+mo.ph));
+    ctx.fillStyle='hsla('+((hue+180)%360)+',80%,72%,'+(0.5*tw2).toFixed(3)+')';
+    ctx.beginPath(); ctx.arc(mo.x,mo.y,1.6,0,6.2832); ctx.fill();
+   }
+   ctx.restore();
+   for(var si=0;si<shapes.length;si++){ var sh2=shapes[si];
+    ctx.fillStyle='#070a12';
+    ctx.strokeStyle='hsla('+((hue+180)%360)+',70%,65%,.55)';
+    ctx.lineWidth=2;
+    if(sh2.k==='arch'){
+     var aw=sh2.w, ah=sh2.h, ax=sh2.x-aw/2;
+     ctx.beginPath();
+     ctx.moveTo(ax,gy); ctx.lineTo(ax,gy-ah+aw/2);
+     ctx.arc(ax+aw/2,gy-ah+aw/2,aw/2,Math.PI,0);
+     ctx.lineTo(ax+aw,gy); ctx.closePath(); ctx.fill(); ctx.stroke();
+     ctx.fillStyle='hsla('+((hue+60)%360)+',80%,62%,.16)';
+     ctx.beginPath();
+     ctx.moveTo(ax+10,gy); ctx.lineTo(ax+10,gy-ah+aw/2);
+     ctx.arc(ax+aw/2,gy-ah+aw/2,aw/2-10,Math.PI,0);
+     ctx.lineTo(ax+aw-10,gy); ctx.closePath(); ctx.fill();
+    } else if(sh2.k==='tower'){
+     var tiers=3, th2=sh2.h/tiers;
+     for(var tr=0;tr<tiers;tr++){
+      var tw2=sh2.w*(1-tr*0.18), tx2=sh2.x+(sh2.w-tw2)/2, ty2=gy-sh2.h+tr*th2;
+      ctx.fillRect(tx2,ty2,tw2,th2);
+      ctx.strokeRect(tx2,ty2,tw2,th2);
+     }
+     ctx.fillStyle='hsla('+((hue+60)%360)+',85%,66%,.85)';
+     for(var wni=0;wni<sh2.wins.length;wni++){
+      var wn=sh2.wins[wni];
+      ctx.fillRect(sh2.x+wn[0], gy-sh2.h+wn[1], 6, 8);
+     }
+    } else {
+     var ox=sh2.x, ow=sh2.w, oh=sh2.h;
+     ctx.beginPath();
+     ctx.moveTo(ox,gy); ctx.lineTo(ox+ow*0.18,gy-oh);
+     ctx.lineTo(ox+ow*0.82,gy-oh); ctx.lineTo(ox+ow,gy); ctx.closePath();
+     ctx.fill(); ctx.stroke();
+     ctx.save(); ctx.globalCompositeOperation='lighter';
+     var og2=ctx.createRadialGradient(ox+ow/2,gy-oh,2,ox+ow/2,gy-oh,ow);
+     og2.addColorStop(0,'hsla('+((hue+60)%360)+',90%,70%,.8)');
+     og2.addColorStop(1,'hsla('+((hue+60)%360)+',90%,60%,0)');
+     ctx.fillStyle=og2; ctx.beginPath(); ctx.arc(ox+ow/2,gy-oh,ow,0,6.2832); ctx.fill();
+     ctx.restore();
+    }
+   }
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 40. RAIN — rainy-day moods ---------- */
+TYPES.push({kind:'rain', icon:'🌧', label:'Rain',
+ params: function(r){ return {hue:200+r()*60, intensity:1+((r()*4)|0)}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var title='Rain '+((seed%900)+100), sub='a rainy day — steerable';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue, inten=P.intensity;
+  var nz=makeNoise1D(mulberry32(seed^0x55));
+  var drops=[];
+  for(var i=0;i<130*inten;i++) drops.push({x:rng()*Wd,y:rng()*Ht,l:12+rng()*20,sp:11+rng()*8});
+  var mist=[];
+  for(var m3=0;m3<6;m3++) mist.push({x:rng()*Wd,y:Ht*0.55+rng()*Ht*0.3,r:90+rng()*120,sp:0.2+rng()*0.5,ph:rng()*6.28});
+  var flash=0, cool=3+rng()*5, t=0, raf=0;
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   var g=ctx.createLinearGradient(0,0,0,Ht);
+   g.addColorStop(0,'hsl('+hue+',24%,10%)');
+   g.addColorStop(0.7,'hsl('+hue+',22%,16%)');
+   g.addColorStop(1,'hsl('+hue+',20%,9%)');
+   ctx.fillStyle=g; ctx.fillRect(0,0,Wd,Ht);
+   // distant ridge
+   ctx.fillStyle='hsl('+hue+',18%,8%)';
+   ctx.beginPath(); ctx.moveTo(0,Ht*0.62);
+   for(var x=0;x<=Wd;x+=12) ctx.lineTo(x,Ht*0.62-nz(x/160,3)*Ht*0.12);
+   ctx.lineTo(Wd,Ht*0.62); ctx.lineTo(Wd,Ht); ctx.lineTo(0,Ht); ctx.closePath(); ctx.fill();
+   // rain
+   ctx.strokeStyle='hsla('+(hue+20)+',30%,75%,.42)'; ctx.lineWidth=1.3;
+   ctx.beginPath();
+   for(var ri=0;ri<drops.length;ri++){ var rp=drops[ri];
+    rp.y+=rp.sp; rp.x-=2.2; if(rp.y>Ht){ rp.y=-24; rp.x=rng()*Wd; }
+    ctx.moveTo(rp.x,rp.y); ctx.lineTo(rp.x-3.4,rp.y-rp.l);
+   }
+   ctx.stroke();
+   // wet reflective ground
+   var gy=Ht*0.78;
+   var rg=ctx.createLinearGradient(0,gy,0,Ht);
+   rg.addColorStop(0,'hsla('+hue+',30%,30%,.5)'); rg.addColorStop(1,'hsla('+hue+',30%,12%,.1)');
+   ctx.fillStyle=rg; ctx.fillRect(0,gy,Wd,Ht-gy);
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   for(var si=0;si<26;si++){
+    var sx2=rng()*Wd; // static-ish shimmer: use sin
+    var shx=(si*97.3)%Wd, shy=gy+((si*57.7)%(Ht-gy));
+    var tw=0.2+0.5*Math.abs(Math.sin(t*2+si));
+    ctx.fillStyle='hsla('+(hue+30)+',50%,70%,'+(0.25*tw).toFixed(3)+')';
+    ctx.fillRect(shx,shy,14+((si*13)%30),2);
+   }
+   ctx.restore();
+   // mist
+   ctx.save();
+   for(var mi2=0;mi2<mist.length;mi2++){ var mm=mist[mi2];
+    mm.x+=mm.sp; if(mm.x-mm.r>Wd) mm.x=-mm.r;
+    var mg=ctx.createRadialGradient(mm.x,mm.y,4,mm.x,mm.y,mm.r);
+    mg.addColorStop(0,'hsla('+hue+',20%,60%,.10)'); mg.addColorStop(1,'hsla('+hue+',20%,60%,0)');
+    ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(mm.x,mm.y,mm.r,0,6.2832); ctx.fill();
+   }
+   ctx.restore();
+   cool-=0.016;
+   if(cool<=0){ flash=1; cool=4+rng()*7; }
+   if(flash>0.02){
+    ctx.fillStyle='rgba(190,205,235,'+(flash*0.16).toFixed(3)+')';
+    ctx.fillRect(0,0,Wd,Ht); flash*=0.88;
+   }
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 41. MOTIVE — typographic fuel (40 lines, his voice) ---------- */
+var MOTIVE_LINES=[
+ "Ship it.","Done beats perfect.","Nobody's coming. It's you.","Make it weird.",
+ "Taste is a spec.","Keep wrong cheap.","Momentum reveals direction.","Finish things.",
+ "Less, but better.","One sentence, not Blender.","Save everything.","Boring is invisible.",
+ "Speed is a feature.","Show, don't tell.","Make them feel the future.","Volume beats genius.",
+ "Post the ugly draft.","Build in public.","The work is the pitch.","Earn the complexity.",
+ "Delete the darlings.","Follow the energy.","Make the call.","Protect the morning.",
+ "Do the reps.","Taste, then trust.","Simple scales.","Weird wins.",
+ "Document, don't create.","Obsession compounds.","Stay dangerous.","Curiosity over credentials.",
+ "Make your own luck.","The feed never sleeps.","Prototype the vibe.","Kill your favorites.",
+ "Signal over noise.","Move first.","Own the outcome.","Become undeniable."
+];
+TYPES.push({kind:'motive', icon:'💬', label:'Motive',
+ params: function(r){ return {hue:r()*360, phrase:(r()*MOTIVE_LINES.length)|0}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var rng=mulberry32(seed);
+  var line=MOTIVE_LINES[P.phrase%MOTIVE_LINES.length];
+  var title=line, sub='fuel — steerable';
+  var el=cardShell(genome,title,sub);
+  var vis=el.querySelector('.wd-visual');
+  var mc=makeCanvas(680,460); vis.appendChild(mc.cv);
+  var ctx=mc.ctx, Wd=mc.cv.width, Ht=mc.cv.height;
+  var hue=P.hue;
+  var blobs=[];
+  for(var i=0;i<5;i++) blobs.push({x:rng()*Wd,y:rng()*Ht,r:120+rng()*180,
+   h:(((hue+(rng()*140-70))%360)+360)%360, sp:0.1+rng()*0.3, ph:rng()*6.28});
+  var t=0, raf=0;
+  function frame(){
+   raf=requestAnimationFrame(frame); t+=0.016;
+   ctx.fillStyle='#04060c'; ctx.fillRect(0,0,Wd,Ht);
+   ctx.save(); ctx.globalCompositeOperation='lighter';
+   for(var bi=0;bi<blobs.length;bi++){ var b=blobs[bi];
+    var bx=b.x+Math.cos(t*b.sp+b.ph)*60, by=b.y+Math.sin(t*b.sp*0.8+b.ph)*50;
+    var bg=ctx.createRadialGradient(bx,by,4,bx,by,b.r);
+    bg.addColorStop(0,'hsla('+b.h+',75%,45%,.34)'); bg.addColorStop(1,'hsla('+b.h+',75%,45%,0)');
+    ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(bx,by,b.r,0,6.2832); ctx.fill();
+   }
+   ctx.restore();
+   var pulse=0.75+0.25*Math.sin(t*1.6);
+   ctx.save();
+   ctx.textAlign='center'; ctx.textBaseline='middle';
+   ctx.font='700 '+Math.min(64, Wd/(line.length*0.52+4))+'px system-ui, sans-serif';
+   ctx.shadowColor='hsla('+hue+',90%,65%,.8)'; ctx.shadowBlur=26*pulse;
+   ctx.fillStyle='rgba(240,244,255,'+(0.92*pulse+0.08)+')';
+   var words=line.split(' '), lines2=[], cur='';
+   words.forEach(function(wd){
+    var test=cur?cur+' '+wd:wd;
+    if(ctx.measureText(test).width>Wd*0.86 && cur){ lines2.push(cur); cur=wd; }
+    else cur=test;
+   });
+   if(cur) lines2.push(cur);
+   var fs=Math.min(64, Wd/(Math.max.apply(null,lines2.map(function(l){return l.length;}))*0.52+4));
+   ctx.font='700 '+fs+'px system-ui, sans-serif';
+   var lh=fs*1.25, y0=Ht/2-(lines2.length-1)*lh/2;
+   for(var li=0;li<lines2.length;li++) ctx.fillText(lines2[li], Wd/2, y0+li*lh);
+   ctx.restore();
+  }
+  return {el:el,title:title,sub:sub,
+   start:function(){ if(!raf) frame(); },
+   stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
+}});
+
+/* ---------- 42. IDEA — concept cards distilled from capabilities ---------- */
+function ideaText(a, b, tmpl){
+  function short(c){
+   var w=String(c.what||c.verb||c.component||'thing').split(' ');
+   return w.slice(0,5).join(' ');
+  }
+  function knobs(c){ return (c.knobs||[]).slice(0,3).join(', ')||'its knobs'; }
+  var an=short(a), bn=short(b);
+  var T=[
+   {t: an+' × '+bn,
+    b: 'Mashup: '+a.verb+' '+a.what+' with '+b.verb+' '+b.what+'. Steal the knobs: '+knobs(a)+'.'},
+   {t: 'A '+bn+' that '+a.verb+'s',
+    b: 'Take '+a.what+' ('+a.component+') and aim it at '+b.what+'. First dial to turn: '+knobs(a)+'.'},
+   {t: 'Steal the knobs',
+    b: 'Apply '+knobs(a)+' from '+a.component+' to '+b.what+'. If it breaks, it was worth knowing.'},
+   {t: 'Situation: '+an+' meets '+bn,
+    b: 'Stage it like a scene — '+a.verb+' '+a.what+', then '+b.verb+' '+b.what+' hits. What does the camera see?'},
+   {t: 'Build this: '+a.verb+' → '+b.verb,
+    b: a.what+' as the input, '+b.what+' as the output. '+a.component+' feeds '+b.component+'.'},
+   {t: 'Remix the '+a.component,
+    b: 'Same '+a.verb+' engine, new skin: '+b.what+'. Change one knob ('+knobs(a)+') and ship the variant.'}
+  ];
+  return T[tmpl%T.length];
+}
+TYPES.push({kind:'idea', icon:'💡', label:'Idea', noFeed:true,
+ params: function(r){ var n=Math.max(1,caps().length); return {capA:(r()*n)|0, capB:(r()*n)|0, tmpl:(r()*6)|0}; },
+ make: function(genome){
+  var P=genome.p, seed=genome.seed;
+  var C=caps();
+  var el=cardShell(genome,'Idea '+((seed%900)+100),'concept — from the distiller');
+  var vis=el.querySelector('.wd-visual');
+  if(!C.length){
+   vis.innerHTML='<div class="wd-idea"><div class="wd-ideaB">The distiller hasn\'t fed this feed yet.</div></div>';
+   return {el:el,title:'Idea',sub:'',start:function(){},stop:function(){}};
+  }
+  var a=C[P.capA%C.length], b=C[P.capB%C.length];
+  var T=ideaText(a,b,P.tmpl);
+  el.querySelector('.wd-cap b').textContent=T.t;
+  el.querySelector('.wd-cap span').textContent='idea — '+a.component+' × '+b.component;
+  vis.innerHTML=
+   '<div class="wd-idea"><div class="wd-ideaT">'+esc(T.t)+'</div>'+
+   '<div class="wd-ideaB">'+esc(T.b)+'</div>'+
+   '<div class="wd-ideaS"><span>'+esc(a.component)+'</span><span>'+esc(b.component)+'</span></div></div>';
+  return {el:el,title:T.t,sub:'idea — '+a.component+' × '+b.component,
+   start:function(){},stop:function(){}};
+}});
+
 function thumbnail(genome, W2, H2, cb){
   var holder = document.createElement('div');
   holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:'+W2+'px;pointer-events:none;overflow:hidden;';
@@ -2931,143 +5607,312 @@ function mountFeed(host, opts){
   st.textContent = CSS;
   host.innerHTML =
     '<div class="wd-feed" id="wd-feed">'+
+      '<div class="wd-chrome">'+
       '<div class="wd-head"><b>✨ WONDER FEED</b>'+
       '<span class="wd-hr">'+
-        '<span class="wd-tastepill" id="wd-taste" hidden>tuned to your likes · <button id="wd-reset">reset</button></span>'+
+        '<span class="wd-tabs">'+
+          '<button class="wd-hbtn wd-tab on" data-f="wonders">wonders</button>'+
+          '<button class="wd-hbtn wd-tab" data-f="components">components</button>'+
+          '<button class="wd-hbtn wd-tab" data-f="ideas">ideas</button>'+
+        '</span>'+
+        '<span class="wd-tastepill" id="wd-taste" hidden>tuned to you · <button id="wd-reset">reset</button></span>'+
+        '<button class="wd-hbtn" id="wd-intobtn">what i\'m into</button>'+
         '<button class="wd-hbtn" id="wd-libbtn">library <span id="wd-libn"></span></button>'+
         (fullscreen ? '' : '<a class="wd-fullink" href="'+SHARE_BASE+'" target="_blank" rel="noopener">full screen ↗</a>')+
         '<span id="wd-seedlbl"></span>'+
       '</span></div>'+
+      '<div class="wd-steer" id="wd-steer">'+
+        '<input id="wd-steerin" placeholder="steer the feed — more glass, less rain…" spellcheck="false" autocomplete="off" enterkeyhint="go">'+
+        '<button id="wd-steergo" title="steer">→</button>'+
+        '<button id="wd-steertog" title="collapse">–</button>'+
+      '</div>'+
+      '<div id="wd-chips"></div>'+
+      '</div>'+
+      '<div id="wd-body"></div>'+
     '</div>';
   host.appendChild(st);
 
-  var feed = host.querySelector('#wd-feed');
+  Taste2.migrate();
+  Steer.boot();
+
+  var scroller = host.querySelector('#wd-feed');
+  var body = host.querySelector('#wd-body');
   var sessionSeed = (Date.now() % 1000000) | 0;
   host.querySelector('#wd-seedlbl').textContent = 'session '+sessionSeed;
-  var seqRng = mulberry32((sessionSeed ^ 0x9e3779b9) >>> 0);
-  var live = [];
-  var lastType = null;
-  var drawer = null;
+  var drawer = null, intoEl = null;
 
   function refreshChrome(){
-    host.querySelector('#wd-taste').hidden = !Taste.list().length;
+    host.querySelector('#wd-taste').hidden = !(Taste2.hasSignal()||Taste.list().length||Steer.list().length);
     var n = Library.list().length;
     host.querySelector('#wd-libn').textContent = n ? '('+n+')' : '';
+    renderChips();
   }
 
-  /* 60% open random / 40% from taste (mutate one, or crossover two) */
-  function nextGenome(){
-    var taste = Taste.list(), g;
-    if (taste.length && seqRng() < 0.4){
-      var a = taste[(seqRng()*taste.length)|0];
-      if (taste.length > 1 && seqRng() < 0.35){
-        var b = taste[(seqRng()*taste.length)|0];
-        g = crossoverGenomes(a, b, seqRng);
-      } else {
-        g = mutateGenome(a, seqRng);
-      }
-    } else {
-      g = randomGenome(seqRng);
-      if (g.type === lastType) g = randomGenome(seqRng);
+  /* ---------- generic infinite feed core with dwell tracking ---------- */
+  function feedCore(feedEl, o){
+    var live = [];
+    function startRec(rec){
+      if (rec.started) return;
+      rec.started = true; rec.viewT0 = Date.now();
+      try{ if (rec.w) rec.w.start(); }catch(e){}
     }
-    lastType = g.type;
-    return g;
-  }
-
-  function wireActions(rec){
-    var el = rec.el, g = rec.genome;
-    var likeBtn = el.querySelector('[data-a="like"]');
-    function paintLike(){ likeBtn.classList.toggle('liked', Taste.has(g)); }
-    paintLike();
-    likeBtn.onclick = function(){
-      if (Taste.has(g)){ Taste.remove(g); toast('unliked — feed widening'); }
-      else {
-        Taste.add(g);
-        Library.save(g, rec.w.title, rec.w.sub);
-        toast('♥ liked — feed tuning to your taste');
-      }
-      paintLike(); refreshChrome();
-    };
-    var saveBtn = el.querySelector('[data-a="save"]');
-    saveBtn.onclick = function(){
-      Library.save(g, rec.w.title, rec.w.sub);
-      saveBtn.classList.add('savedflash');
-      setTimeout(function(){ saveBtn.classList.remove('savedflash'); }, 1200);
-      toast('saved to library');
-      refreshChrome();
-    };
-    el.querySelector('[data-a="share"]').onclick = function(){
-      var url = SHARE_BASE + '#w=' + b64urlEncode(JSON.stringify(sanitizeGenome(g)));
-      copyText(url, function(ok){ toast(ok ? 'link copied — opens this exact wonder' : 'copy failed'); });
-    };
-    var cbox = el.querySelector('.wd-commentbox');
-    var cinput = cbox.querySelector('input');
-    el.querySelector('[data-a="comment"]').onclick = function(){
-      var ex = '';
-      Library.list().forEach(function(e){ if (genomeKey(e.genome)===genomeKey(g)) ex = e.comment||''; });
-      cinput.value = ex;
-      cbox.hidden = !cbox.hidden;
-      if (!cbox.hidden) cinput.focus();
-    };
-    function submitComment(){
-      var txt = cinput.value.trim();
-      Library.save(g, rec.w.title, rec.w.sub);
-      Library.setComment(g, txt);
-      cbox.hidden = true;
-      toast(txt ? '💬 comment saved' : 'comment cleared');
-      refreshChrome();
+    function stopRec(rec){
+      if (!rec.started) return;
+      rec.started = false;
+      try{ if (rec.w) rec.w.stop(); }catch(e){}
+      var dt = Date.now()-(rec.viewT0||Date.now());
+      try{
+        if (rec.genome) Attention.viewEnd(rec.genome, dt);
+        else Attention.viewEndSig(rec.attKey, rec.attSig, rec.attParams, dt, rec.capId);
+      }catch(e){}
     }
-    cbox.querySelector('button').onclick = submitComment;
-    cinput.addEventListener('keydown', function(e){
-      if (e.key === 'Enter') submitComment();
-      e.stopPropagation();
-    });
-  }
-
-  function addWonder(genome){
-    genome = genome ? sanitizeGenome(genome) : nextGenome();
-    var w = makeWonder(genome);
-    var rec = {genome:genome, w:w, el:w.el, started:false};
-    live.push(rec);
-    var sent = feed.querySelector('.wd-sentinel');
-    if (sent) feed.insertBefore(w.el, sent); else feed.appendChild(w.el);
-    wireActions(rec);
-    visObs.observe(w.el);
-    return rec;
-  }
-
-  function ensureSentinel(){
-    var s = feed.querySelector('.wd-sentinel');
-    if (!s){
-      s = document.createElement('div');
-      s.className = 'wd-sentinel'; s.textContent = '· · ·';
-      feed.appendChild(s);
-      sentObs.observe(s);
-    }
-  }
-
-  var visObs = new IntersectionObserver(function(entries){
-    entries.forEach(function(en){
-      for (var i=0;i<live.length;i++){
-        if (live[i].el===en.target){
-          if (en.isIntersecting && en.intersectionRatio > 0.45){
-            if (!live[i].started){ try{ live[i].w.start(); }catch(e){} live[i].started=true; }
-          } else if (live[i].started){
-            try{ live[i].w.stop(); }catch(e){} live[i].started=false;
+    var visObs = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        for (var i=0;i<live.length;i++){
+          if (live[i].el===en.target){
+            if (en.isIntersecting && en.intersectionRatio > 0.45) startRec(live[i]);
+            else stopRec(live[i]);
           }
         }
+      });
+    }, {root: scroller, threshold:[0,0.45,1]});
+    function add(item){
+      var it = (item===undefined) ? o.next() : item;
+      if (it===null || it===undefined){
+        if (!feedEl.querySelector('.wd-empty2') && o.emptyHTML){
+          var d=document.createElement('div'); d.className='wd-empty2';
+          d.innerHTML=o.emptyHTML; feedEl.appendChild(d);
+        }
+        return null;
+      }
+      var rec = o.card(it);
+      live.push(rec);
+      var sent = feedEl.querySelector('.wd-sentinel');
+      if (sent) feedEl.insertBefore(rec.el, sent); else feedEl.appendChild(rec.el);
+      visObs.observe(rec.el);
+      return rec;
+    }
+    var sentObs = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if (en.isIntersecting){ add(); add(); } });
+    }, {root: scroller, rootMargin:'600px'});
+    var sent = document.createElement('div');
+    sent.className='wd-sentinel'; sent.textContent='· · ·';
+    feedEl.appendChild(sent);
+    sentObs.observe(sent);
+    return {
+      add: add,
+      destroy: function(){
+        live.forEach(stopRec);
+        live = [];
+        try{ visObs.disconnect(); }catch(e){}
+        try{ sentObs.disconnect(); }catch(e){}
+      }
+    };
+  }
+
+  function typeByKind(k){
+    for (var i=0;i<TYPES.length;i++) if (TYPES[i].kind===k) return TYPES[i];
+    return null;
+  }
+
+  /* ---------- wonders feed (visual genomes; ideas feed reuses with onlyKind) ---------- */
+  function buildVisualFeed(rng, onlyKind){
+    var feedEl = document.createElement('div');
+    body.appendChild(feedEl);
+    var lastType = null;
+    var ideaT = typeByKind('idea');
+
+    function visualKinds(){
+      var ks=[];
+      for (var i=0;i<TYPES.length;i++){
+        var k=TYPES[i].kind;
+        if (onlyKind){ if (k===onlyKind) ks.push(k); }
+        else if (!TYPES[i].noFeed) ks.push(k);
+      }
+      return ks;
+    }
+    function pickGenome(){
+      var g;
+      if (onlyKind){
+        g = {type:'idea', seed:(rng()*1000000000)|0, p:ideaT.params(rng)};
+        return sanitizeGenome(g);
+      }
+      if (Taste2.hasSignal() && rng() < 0.55){
+        var kind = Taste2.pickKind(rng, visualKinds());
+        var t = typeByKind(kind);
+        g = {type:kind, seed:(rng()*1000000000)|0, p:t.params(rng)};
+        g.p = Taste2.nudgeParams(g.p, rng);
+        if (rng() < 0.12) g = mutateGenome(g, rng);
+      } else {
+        g = randomGenome(rng);
+        if (g.type===lastType) g = randomGenome(rng);
+      }
+      return sanitizeGenome(g);
+    }
+    function nextGenome(){
+      var g, tries=0;
+      do { g = pickGenome(); tries++; }
+      while (tries<6 && Attention.isSuppressed(genomeKey(g)));
+      lastType = g.type;
+      return g;
+    }
+
+    function wireActions(rec){
+      var el = rec.el, g = rec.genome;
+      var likeBtn = el.querySelector('[data-a="like"]');
+      function paintLike(){ likeBtn.classList.toggle('liked', Taste.has(g)); }
+      paintLike();
+      likeBtn.onclick = function(){
+        if (Taste.has(g)){
+          Taste.remove(g);
+          try{ Attention.signal(g,'like',-1.5); }catch(e){}
+          toast('unliked — feed widening');
+        } else {
+          Taste.add(g);
+          Library.save(g, rec.w.title, rec.w.sub);
+          try{ Attention.signal(g,'like',1.5); }catch(e){}
+          toast('♥ liked — feed tuning to your taste');
+        }
+        paintLike(); refreshChrome();
+      };
+      var saveBtn = el.querySelector('[data-a="save"]');
+      saveBtn.onclick = function(){
+        Library.save(g, rec.w.title, rec.w.sub);
+        try{ Attention.signal(g,'save',2); }catch(e){}
+        saveBtn.classList.add('savedflash');
+        setTimeout(function(){ saveBtn.classList.remove('savedflash'); }, 1200);
+        toast('saved to library');
+        refreshChrome();
+      };
+      el.querySelector('[data-a="share"]').onclick = function(){
+        var url = SHARE_BASE + '#w=' + b64urlEncode(JSON.stringify(sanitizeGenome(g)));
+        try{ Attention.signal(g,'share',3); }catch(e){}
+        copyText(url, function(ok){ toast(ok ? 'link copied — opens this exact wonder' : 'copy failed'); });
+        refreshChrome();
+      };
+      var cbox = el.querySelector('.wd-commentbox');
+      var cinput = cbox.querySelector('input');
+      el.querySelector('[data-a="comment"]').onclick = function(){
+        var ex = '';
+        Library.list().forEach(function(e){ if (genomeKey(e.genome)===genomeKey(g)) ex = e.comment||''; });
+        cinput.value = ex;
+        cbox.hidden = !cbox.hidden;
+        if (!cbox.hidden) cinput.focus();
+      };
+      function submitComment(){
+        var txt = cinput.value.trim();
+        Library.save(g, rec.w.title, rec.w.sub);
+        Library.setComment(g, txt);
+        cbox.hidden = true;
+        if (txt){ try{ Attention.signal(g,'comment',1); }catch(e){} }
+        toast(txt ? '💬 comment saved' : 'comment cleared');
+        refreshChrome();
+      }
+      cbox.querySelector('button').onclick = submitComment;
+      cinput.addEventListener('keydown', function(e){
+        if (e.key === 'Enter') submitComment();
+        e.stopPropagation();
+      });
+    }
+
+    var core = feedCore(feedEl, {
+      next: nextGenome,
+      card: function(genome){
+        var w = makeWonder(genome);
+        var rec = {genome:genome, w:w, el:w.el, started:false, viewT0:0};
+        wireActions(rec);
+        return rec;
       }
     });
-  }, {root: feed, threshold: [0, 0.45, 1]});
 
-  var sentObs = new IntersectionObserver(function(entries){
-    entries.forEach(function(en){
-      if (en.isIntersecting){ addWonder(); addWonder(); }
+    function insertGenome(g){
+      var rec = core.add(sanitizeGenome(g));
+      if (rec) setTimeout(function(){
+        try{ rec.el.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
+      }, 60);
+    }
+
+    var first = (!onlyKind) ? hashGenome() : null;
+    if (first){ core.add(first); core.add(); core.add(); }
+    else { core.add(); core.add(); core.add(); core.add(); }
+
+    return { destroy: core.destroy, insertGenome: insertGenome };
+  }
+
+  /* ---------- components feed: distilled capabilities as inspiration cards ---------- */
+  function buildComponentFeed(rng){
+    var feedEl = document.createElement('div');
+    body.appendChild(feedEl);
+    var C = caps();
+    var order = [], pos = 0;
+    function shuffle(){
+      order = [];
+      for (var i=0;i<C.length;i++) order.push(i);
+      for (var j=order.length-1;j>0;j--){
+        var k=(rng()*(j+1))|0, t=order[j]; order[j]=order[k]; order[k]=t;
+      }
+      pos = 0;
+    }
+    shuffle();
+    var liked = {};
+    function cardFor(cap){
+      var key='c:'+cap.id;
+      var el=document.createElement('div');
+      el.className='wd-card wd-comp';
+      el.innerHTML=
+        '<div class="wd-compverb">'+esc(cap.verb)+'</div>'+
+        '<div class="wd-comptitle">'+esc(cap.what)+'</div>'+
+        '<div class="wd-compmeta">'+esc(cap.component)+' · knobs: '+esc((cap.knobs||[]).join(', '))+'</div>'+
+        (cap.notes?'<div class="wd-compnotes">'+esc(cap.notes)+'</div>':'')+
+        '<div class="wd-actions">'+
+          '<button class="wd-act" data-a="like" title="like">♥</button>'+
+          '<button class="wd-act" data-a="share" title="share">↗</button>'+
+          '<button class="wd-act" data-a="remix" title="remix into a wonder">⟳</button>'+
+        '</div>';
+      var rec={el:el, key:key, cap:cap, attKey:key, attSig:'component',
+               attParams:null, capId:cap.id, started:false, viewT0:0};
+      var likeBtn=el.querySelector('[data-a="like"]');
+      function paint(){ likeBtn.classList.toggle('liked', !!liked[key]); }
+      paint();
+      likeBtn.onclick=function(){
+        if(liked[key]){ delete liked[key]; try{Attention.signalSig(key,'component',null,'like',-1.5,cap.id);}catch(e){} }
+        else{ liked[key]=1; try{Attention.signalSig(key,'component',null,'like',1.5,cap.id);}catch(e){} toast('♥ noted — more like this'); }
+        paint(); refreshChrome();
+      };
+      el.querySelector('[data-a="share"]').onclick=function(){
+        var txt=cap.verb+' '+cap.what+' — from '+cap.component+' (knobs: '+(cap.knobs||[]).join(', ')+')';
+        try{Attention.signalSig(key,'component',null,'share',3,cap.id);}catch(e){}
+        copyText(txt, function(ok){ toast(ok?'copied':'copy failed'); });
+        refreshChrome();
+      };
+      el.querySelector('[data-a="remix"]').onclick=function(){
+        try{Attention.signalSig(key,'component',null,'remix',2,cap.id);}catch(e){}
+        var r2=mulberry32(((Date.now()^hashStr(cap.id))>>>0)||1);
+        var kind=remixKindFor(cap, r2);
+        var t=kind?typeByKind(kind):null;
+        var g=t?{type:t.kind,seed:(r2()*1000000000)|0,p:t.params(r2)}:randomGenome(r2);
+        g=mutateGenome(sanitizeGenome(g), r2);
+        showFeed('wonders');
+        if(apiRef.insertGenome) apiRef.insertGenome(g);
+        toast('remixed into a wonder ⟳');
+      };
+      return rec;
+    }
+    var core=feedCore(feedEl, {
+      next: function(){
+        if(!C.length) return null;
+        if(pos>=order.length) shuffle();
+        return C[order[pos++]];
+      },
+      card: cardFor,
+      emptyHTML: '<div class="wd-empty">The distiller hasn\'t fed this yet.<br>Run the Component Distiller in Pulse.</div>'
     });
-  }, {root: feed, rootMargin: '600px'});
+    core.add(); core.add(); core.add();
+    return { destroy: core.destroy };
+  }
 
-  /* ---------- library drawer ---------- */
-  function closeDrawer(){ if (drawer) drawer.style.display = 'none'; }
+  /* ---------- library drawer (global) ---------- */
+  function closeDrawer(){ if (drawer) drawer.style.display='none'; }
   function typeIcon(t){
     for (var i=0;i<TYPES.length;i++) if (TYPES[i].kind===t) return TYPES[i].icon;
     return '✨';
@@ -3103,10 +5948,13 @@ function mountFeed(host, opts){
         });
       });
       io.observe(tile);
-      tile.querySelector('[data-t="open"]').onclick = function(){ closeDrawer(); insertGenome(g); };
+      tile.querySelector('[data-t="open"]').onclick = function(){
+        closeDrawer();
+        if (apiRef.insertGenome) apiRef.insertGenome(g);
+      };
       tile.querySelector('[data-t="remix"]').onclick = function(){
         closeDrawer();
-        insertGenome(mutateGenome(g, mulberry32(((Date.now()^g.seed)>>>0)||1)));
+        if (apiRef.insertGenome) apiRef.insertGenome(mutateGenome(g, mulberry32(((Date.now()^g.seed)>>>0)||1)));
       };
       tile.querySelector('[data-t="del"]').onclick = function(){
         Library.remove(g); refreshDrawer(); refreshChrome();
@@ -3128,40 +5976,118 @@ function mountFeed(host, opts){
     refreshDrawer();
     drawer.style.display = 'flex';
   }
-  function insertGenome(g){
-    var rec = addWonder(g);
-    setTimeout(function(){
-      try{ rec.el.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
-    }, 60);
+
+  /* ---------- "what i'm into" — the taste dashboard (read-only) ---------- */
+  function closeInto(){
+    if (intoEl && intoEl.parentNode) intoEl.parentNode.removeChild(intoEl);
+    intoEl = null;
+  }
+  function openInto(){
+    closeInto(); closeDrawer();
+    var tops=Taste2.topTypes(6), tps=Taste2.topParams(5), tcaps=Taste2.topCaps(6), stt=Attention.stats();
+    var maxS=1;
+    tops.forEach(function(x){ if(x.score>maxS) maxS=x.score; });
+    function trow(x){
+      var lbl=String(x.sig).replace(/^w:/,'');
+      return '<div class="wd-intorow"><b>'+esc(lbl)+'</b>'+
+        '<span class="wd-bar"><span style="width:'+Math.round(100*x.score/maxS)+'%"></span></span>'+
+        '<span class="wd-intoscore">'+x.score.toFixed(1)+'</span></div>';
+    }
+    function fmtMs(ms){ var s=Math.round(ms/1000); if(s<60) return s+'s'; return Math.floor(s/60)+'m '+(s%60)+'s'; }
+    var html='<div class="wd-intosec">top signals</div>'+
+      (tops.length? tops.map(trow).join('') : '<div class="wd-intonote">Nothing yet — scroll, dwell, like. The feed is listening.</div>');
+    html+='<div class="wd-intosec">param lean</div>';
+    if(tps.length) tps.forEach(function(pp){
+      html+='<div class="wd-intorow"><b>'+esc(pp.key)+'</b><span class="wd-intoscore">→ '+pp.mean.toFixed(1)+'</span></div>';
+    });
+    else html+='<div class="wd-intonote">No param lean yet.</div>';
+    if(tcaps.length){
+      html+='<div class="wd-intosec">capabilities you return to</div>';
+      tcaps.forEach(function(c){
+        var cap=capById(c.id);
+        html+='<div class="wd-intorow"><b>'+esc(cap?cap.component:c.id)+'</b><span class="wd-intoscore">'+c.score.toFixed(1)+'</span></div>';
+      });
+    }
+    html+='<div class="wd-intosec">attention</div>';
+    html+='<div class="wd-intorow"><b>views</b><span class="wd-intoscore">'+stt.views+'</span></div>';
+    html+='<div class="wd-intorow"><b>dwell</b><span class="wd-intoscore">'+fmtMs(stt.dwell)+'</span></div>';
+    html+='<div class="wd-intorow"><b>likes/shares/saves</b><span class="wd-intoscore">'+stt.likes+'/'+stt.shares+'/'+stt.saves+'</span></div>';
+    html+='<div class="wd-intorow"><b>skipped</b><span class="wd-intoscore">'+stt.skips+'</span></div>';
+    html+='<div class="wd-intonote">This is what the feed is learning about you — it drives what gets shown and what gets built next. Reset clears it.</div>';
+    var scrim=document.createElement('div');
+    scrim.className='wd-scrim';
+    scrim.innerHTML='<div class="wd-drawer"><div class="wd-dhead"><b>WHAT I\'M INTO</b><button id="wd-xclose">×</button></div><div class="wd-intobody">'+html+'</div></div>';
+    document.body.appendChild(scrim);
+    intoEl=scrim;
+    scrim.querySelector('#wd-xclose').onclick=closeInto;
+    scrim.addEventListener('click', function(e){ if(e.target===scrim) closeInto(); });
   }
 
-  host.querySelector('#wd-libbtn').onclick = openLibrary;
-  host.querySelector('#wd-reset').onclick = function(){
-    Taste.clear(); refreshChrome(); toast('taste reset — wide open again');
+  /* ---------- feed switching ---------- */
+  var active=null, activeName='';
+  var apiRef={insertGenome:null};
+  function showFeed(name){
+    if(active){ try{active.destroy();}catch(e){} active=null; }
+    body.innerHTML='';
+    var rng=mulberry32(((sessionSeed ^ hashStr(name))>>>0)||1);
+    if(name==='components') active=buildComponentFeed(rng);
+    else if(name==='ideas') active=buildVisualFeed(rng,'idea');
+    else active=buildVisualFeed(rng,null);
+    activeName=name;
+    apiRef.insertGenome=(active&&active.insertGenome)?active.insertGenome:null;
+    var tabs=host.querySelectorAll('.wd-tab');
+    for(var i=0;i<tabs.length;i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-f')===name);
+    refreshChrome();
+  }
+  var tabs=host.querySelectorAll('.wd-tab');
+  for(var ti=0;ti<tabs.length;ti++){
+    (function(tb){ tb.onclick=function(){ showFeed(tb.getAttribute('data-f')); }; })(tabs[ti]);
+  }
+
+  /* ---------- steering bar ---------- */
+  var steerIn=host.querySelector('#wd-steerin');
+  function submitSteer(){
+    var v=steerIn.value.trim();
+    if(!v) return;
+    Steer.add(v);
+    steerIn.value='';
+    refreshChrome();
+  }
+  host.querySelector('#wd-steergo').onclick=submitSteer;
+  steerIn.addEventListener('keydown', function(e){
+    if(e.key==='Enter') submitSteer();
+    e.stopPropagation();
+  });
+  host.querySelector('#wd-steertog').onclick=function(){
+    var sb=host.querySelector('#wd-steer');
+    var collapsed=sb.classList.toggle('collapsed');
+    this.textContent=collapsed?'+':'–';
+  };
+
+  /* ---------- header buttons ---------- */
+  host.querySelector('#wd-libbtn').onclick=openLibrary;
+  host.querySelector('#wd-intobtn').onclick=openInto;
+  host.querySelector('#wd-reset').onclick=function(){
+    Taste2.reset(); Steer.clear(); refreshChrome(); toast('taste reset — wide open again');
   };
   refreshChrome();
+  showFeed('wonders');
 
-  /* first cards: a shared genome wins if #w= is present */
-  var first = hashGenome();
-  if (first){ addWonder(first); addWonder(); addWonder(); }
-  else { addWonder(); addWonder(); addWonder(); addWonder(); }
-  ensureSentinel();
-
-  var api = {
-    stopAll: function(){
-      live.forEach(function(r){ try{ if(r.started) r.w.stop(); }catch(e){} });
-      live = [];
-      try{ visObs.disconnect(); }catch(e){}
-      try{ sentObs.disconnect(); }catch(e){}
-      closeDrawer();
-      if (drawer && drawer.parentNode) drawer.parentNode.removeChild(drawer);
-      drawer = null;
+  var api={
+    stopAll:function(){
+      if(active){ try{active.destroy();}catch(e){} active=null; }
+      closeDrawer(); closeInto();
+      if(drawer&&drawer.parentNode) drawer.parentNode.removeChild(drawer);
+      drawer=null;
     },
-    insertGenome: insertGenome
+    insertGenome:function(g){
+      if(activeName!=='wonders') showFeed('wonders');
+      if(active&&active.insertGenome) active.insertGenome(g);
+    }
   };
-  currentApi = api;
+  currentApi=api;
   mounts.push(api);
-  host._wonderApi = api;
+  host._wonderApi=api;
 }
 
 /* ================= EXPORT ================= */
