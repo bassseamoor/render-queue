@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>sign shop — moor billboards</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { background:#0b0d12; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+  body { padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 20px);
+    max-width:560px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  h1 .teal { color:#63f4ff; }
+  .sub { font-size:13px; color:#9aa0ae; margin:6px 0 16px; line-height:1.5; }
+  .sub b { color:#cfd4e0; }
+  .lbl { font-size:11px; font-weight:700; letter-spacing:.1em; color:#6b7180; margin:14px 0 8px; }
+  #styles { display:flex; gap:8px; }
+  .chip { flex:1; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05);
+    color:#cfd4e0; font-size:13px; font-weight:700; padding:13px 6px; border-radius:12px;
+    cursor:pointer; min-height:48px; }
+  .chip.on { border-color:rgba(99,244,255,.6); background:rgba(99,244,255,.12); color:#63f4ff; }
+  .chip:active { transform:scale(.97); }
+  #txt { width:100%; min-height:88px; background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.12); border-radius:12px; color:#e8eaf0;
+    font-size:16px; padding:12px; font-family:inherit; resize:vertical; }
+  #presets { display:flex; gap:8px; flex-wrap:wrap; }
+  .preset { border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05);
+    color:#9aa0ae; font-size:12px; font-weight:600; padding:10px 14px; border-radius:999px;
+    cursor:pointer; min-height:44px; }
+  .preset:active { transform:scale(.95); }
+  #previewWrap { margin-top:14px; border-radius:14px; overflow:hidden; background:#111;
+    border:1px solid rgba(255,255,255,.08); }
+  #preview { width:100%; display:block; }
+  .meta { font-size:11px; color:#6b7180; margin-top:8px; line-height:1.5; }
+  .meta b { color:#9aa0ae; }
+  #toast { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 30px); left:50%;
+    transform:translateX(-50%) translateY(20px); background:#1a1d26; color:#63f4ff;
+    font-size:13px; font-weight:600; padding:10px 20px; border-radius:999px; opacity:0;
+    transition:all .25s; pointer-events:none; border:1px solid rgba(99,244,255,.35); z-index:50; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<h1>sign <span class="teal">shop</span></h1>
+<p class="sub">moor's <b>billboard painters</b> — the same canvas routines that hang signs in the sky islands.
+Type anything, pick a style, get a real painted sign.</p>
+
+<div class="lbl">STYLE</div>
+<div id="styles">
+  <button class="chip on" data-s="neon">NEON SIGN</button>
+  <button class="chip" data-s="board">LEADERBOARD</button>
+  <button class="chip" data-s="tablet">INFO TABLET</button>
+</div>
+
+<div class="lbl">SIGN TEXT</div>
+<textarea id="txt" rows="3" maxlength="240" placeholder="Type your sign text…">MOOR CITY
+sky above the wasteland</textarea>
+
+<div class="lbl">PRESETS</div>
+<div id="presets">
+  <button class="preset" data-t="MOOR CITY&#10;sky above the wasteland" data-s="neon">city sign</button>
+  <button class="preset" data-t="RICHEST OF THE RING" data-s="board">rich list</button>
+  <button class="preset" data-t="THE DESCENT&#10;Walk over the front ledge to drop in." data-s="tablet">arrival guide</button>
+  <button class="preset" data-t="NO STEP ON SNEK&#10; violators will be launched" data-s="neon">warning</button>
+</div>
+
+<div class="lbl">LIVE PREVIEW</div>
+<div id="previewWrap"><canvas id="preview" width="1024" height="192"></canvas></div>
+<p class="meta"><b>NEON SIGN</b> = verbatim canvas paint from <b>dev-billboards.mjs</b> make().
+<b>LEADERBOARD</b> = verbatim <b>paint()</b> from balance-billboard.mjs.
+<b>INFO TABLET</b> = verbatim <b>drawTabletSpawnGuide()</b> from tablet-spawn-guide.mjs.</p>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ============ VERBATIM SOURCE 1 — dev-billboards.mjs make() ============
+ * Provenance: ~/workspace/moor-pc-mirror/moor-city/sky-islands/dev-billboards.mjs
+ * This is the canvas-paint half of make(item). The three.js sprite wrapping
+ * (T.Group/CanvasTexture/Sprite) is the game's — here we paint the same bytes
+ * onto our own preview canvas. Paint logic untouched. */
+function paintBillboardSign(cv, text){
+  const c = cv, p = c.getContext('2d');
+  p.font = '600 42px Arial';
+  const lines = [];
+  for(const paragraph of String(text).split('\n')){
+    let line = '';
+    for(const ch of paragraph){
+      if(p.measureText(line + ch).width > 870 && line){ lines.push(line); line = ''; }
+      line += ch;
+    }
+    lines.push(line);
+  }
+  c.width = 1024; c.height = Math.max(128, Math.min(4096, lines.length * 56 + 80));
+  p.fillStyle = 'rgba(10,27,31,.92)'; p.fillRect(0, 0, c.width, c.height);
+  p.strokeStyle = '#adcfc3'; p.lineWidth = 3; p.strokeRect(2, 2, c.width - 4, c.height - 4);
+  p.fillStyle = '#ffffff'; p.font = '600 42px Arial'; p.textAlign = 'center'; p.textBaseline = 'top';
+  lines.forEach((line, i) => p.fillText(line, 512, 40 + i * 56, 920));
+}
+
+/* ============ VERBATIM SOURCE 2 — balance-billboard.mjs paint() ============
+ * Provenance: ~/workspace/moor-pc-mirror/moor-city/sky-islands/balance-billboard.mjs
+ * (createBalanceBillboard). Closure refs replaced by params: canvas, rows, title,
+ * color, footer — the paint body is verbatim. Georgia stands in for the custom
+ * MoorDemonicBalance font (the source falls back to it the same way). */
+function paintLeaderboard(canvas, rows, title, color, footer){
+  canvas.height = rows.length ? 420 + rows.length * 116 : 640;
+  canvas.width = 2048;
+  const c = canvas.getContext('2d');
+  const players = rows;
+  const money = n => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  c.fillStyle = color || '#ffe234'; c.strokeStyle = '#132024'; c.shadowColor = '#000000';
+  c.shadowBlur = 8; c.lineWidth = 3; c.textBaseline = 'middle';
+  const text = (value, x, y, size, align = 'left', width = 1800) => {
+    c.font = size + 'px Georgia'; c.textAlign = align;
+    c.strokeText(value, x, y, width); c.fillText(value, x, y, width);
+  };
+  text(title || 'HIGHEST BALANCE', 1024, 124, title ? 100 : 135, 'center', 1850);
+  c.shadowBlur = 0; c.fillStyle = color || '#ffd633'; c.fillRect(95, 225, 1858, 3);
+  if(players.length){
+    text('#', 110, 284, 47); text('PLAYER', 265, 284, 47); text('BALANCE', 1930, 284, 47, 'right');
+    players.forEach((p, i) => {
+      const y = 380 + i * 116;
+      text(String(p.rank).padStart(2, '0'), 110, y, 65);
+      text(p.name, 265, y, 75, 'left', 950);
+      text(money(p.balance), 1930, y, 75, 'right', 670);
+    });
+  } else text('No recorded player balances yet', 1024, 350, 60, 'center', 1830);
+  text(footer || 'TOP 10 · LAST REPORTED SERVER BALANCES', 1024, canvas.height - 45, 32, 'center', 1840);
+}
+
+/* ============ VERBATIM SOURCE 3 — tablet-spawn-guide.mjs ============
+ * Provenance: ~/workspace/moor-pc-mirror/moor-city/sky-islands/tablet-spawn-guide.mjs
+ * drawTabletSpawnGuide(c, {...}) copied verbatim. Called with expanded=true and
+ * synthetic demo state; the caller's text goes into event.title / event.subtitle. */
+function drawTabletSpawnGuide(c, { expanded, crates, opened, wallet, oreValue, hasIsland, event, position }){
+  const text = (s, x, y, size = 24, color = '#e5eee5', weight = 400, max = 504) => {
+    c.fillStyle = color; c.font = `${weight} ${size}px system-ui`; c.fillText(String(s), x, y, max);
+  };
+  const line = y => {
+    c.strokeStyle = '#38514e'; c.beginPath(); c.moveTo(32, y); c.lineTo(544, y); c.stroke();
+  };
+  c.textAlign = 'left'; c.textBaseline = 'middle';
+  text('MOOR / ARRIVAL', 32, 47, 19, '#a6c2af', 700);
+  text('The Concourse', 32, 102, 43, '#f3f2df', 600);
+  text('Your place above the wasteland.', 32, 150, 23, '#a6c2af'); line(186);
+  const next = crates ? 'OPEN YOUR CRATE' : oreValue > 0 ? 'CASH IN YOUR RUN' : !hasIsland && opened ? 'BUILD YOUR ISLAND' : 'VENTURE BELOW';
+  text('NEXT / ' + next, 32, 223, 23, '#b5e8c9', 700);
+  const instructions = crates ? ['Follow the left path to the Crate Hall.', `${crates} earned crate${crates === 1 ? '' : 's'} waiting. Press F nearby.`]
+    : oreValue > 0 ? ['Take your ore to the Exchange.', 'Press F to sell, then build on your island.']
+    : !hasIsland && opened ? ['Your first crate funded your next step.', 'Visit YOUR ISLAND on the right.']
+    : ['Walk over the front ledge to drop in.', 'Gather ore. Fight mobs. Find an extraction pad.'];
+  instructions.forEach((s, i) => text(s, 32, 270 + i * 36, 23));
+  if(!expanded){
+    line(350); text('PLAZA DIRECTORY', 32, 388, 20, '#a6c2af', 700);
+  } else {
+    line(350); text('THE LOOP', 32, 389, 21, '#a6c2af', 700);
+    const rows = [['01 / DESCEND', 'Ore collects automatically. Click to fire a missile.'],
+      ['02 / PUSH FURTHER', 'New rings raise your extraction bonus.'],
+      ['03 / EXTRACT', 'Press F at a green extraction pad.'],
+      ['04 / RETURN TOGETHER', 'Crates open only here. Invest in your island.']];
+    rows.forEach(([a, b], i) => { text(a, 32, 438 + i * 82, 25, '#e6eedf', 700); text(b, 32, 472 + i * 82, 21, '#aec7bc'); });
+    line(749); text('EARN YOUR NEXT CRATE', 32, 787, 22, '#d8c698', 700);
+    text('Reach Ring 2 + extract with 24 new ore.', 32, 828, 24);
+    text('Deeper rings give better guaranteed rewards.', 32, 865, 21, '#a8c7b5');
+    text('No timer penalty ends your run. Keep exploring.', 32, 902, 20, '#a8c7b5');
+    text('$' + Math.floor(wallet).toLocaleString() + ' / available for your island', 32, 944, 22, '#b5e8c9');
+  }
+  text(expanded ? 'RELEASE ENTER / DIRECTORY' : 'HOLD ENTER / THE LOOP AND REWARDS', 32, 991, 18, '#8cae9f', 600);
+}
+
+/* ---- seeded demo leaderboard rows ---- */
+function mulberry32(a){
+  return function(){ a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const NAMES = ['Kessa', 'Dune', 'Rook', 'Mira', 'Juno', 'Pax', 'Sable', 'Ivo'];
+function boardRows(){
+  const r = mulberry32(7);
+  return NAMES.slice(0, 5).map((name, i) => ({
+    rank: i + 1, name, balance: Math.round((50000 * (5 - i) + r() * 9000) * 100) / 100
+  }));
+}
+
+/* ---- shop wiring ---- */
+const cv = document.getElementById('preview');
+const txt = document.getElementById('txt');
+let style = 'neon';
+
+function paint(){
+  const t = txt.value;
+  if(style === 'neon'){
+    paintBillboardSign(cv, t);
+  } else if(style === 'board'){
+    paintLeaderboard(cv, boardRows(), t.trim() ? t.trim().split('\n')[0] : 'HIGHEST BALANCE', '#ffe234',
+      'TOP 10 · LAST REPORTED SERVER BALANCES');
+  } else {
+    cv.width = 576; cv.height = 1024;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#0e1a1c'; c.fillRect(0, 0, 576, 1024);
+    const lines = t.split('\n');
+    drawTabletSpawnGuide(c, { expanded: true, crates: 0, opened: true, wallet: 12500,
+      oreValue: 0, hasIsland: false,
+      event: { title: lines[0] || '', subtitle: lines.slice(1).join(' ') },
+      position: { x: 0, z: 0 } });
+    // event title/subtitle block (drawn by the game on top of the guide in expanded view)
+    if(t.trim()){
+      c.textAlign = 'left'; c.textBaseline = 'middle';
+      c.fillStyle = '#d8c698'; c.font = '700 28px system-ui';
+      c.fillText(lines[0] || '', 32, 883, 504);
+      c.fillStyle = '#b6c9ba'; c.font = '23px system-ui';
+      c.fillText(lines.slice(1).join(' ') || '', 32, 927, 504);
+    }
+  }
+}
+
+document.querySelectorAll('.chip').forEach(ch => ch.addEventListener('click', () => {
+  document.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+  ch.classList.add('on');
+  style = ch.dataset.s;
+  paint();
+}));
+txt.addEventListener('input', paint);
+document.querySelectorAll('.preset').forEach(p => p.addEventListener('click', () => {
+  txt.value = p.dataset.t.replace(/\\n/g, '\n');
+  style = p.dataset.s;
+  document.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.s === style));
+  paint();
+}));
+paint();
+
+/* test hook: render(style, text) -> pixel variance of the preview */
+window.__sign = {
+  render: function(s, t){
+    const keep = style, keepT = txt.value;
+    style = s; txt.value = t; paint();
+    const c = cv.getContext('2d');
+    const d = c.getImageData(0, 0, cv.width, cv.height).data;
+    let mean = 0;
+    const np = d.length / 4;
+    for(let i = 0; i < d.length; i += 4){ mean += d[i]; }
+    mean /= np;
+    let v = 0;
+    for(let i = 0; i < d.length; i += 4){ const x = d[i] - mean; v += x * x; }
+    style = keep; txt.value = keepT; paint();
+    return v / np;
+  },
+  hash: function(s, t){
+    const keep = style, keepT = txt.value;
+    style = s; txt.value = t; paint();
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    let h1 = 0, h2 = 0;
+    for(let i = 0; i < d.length; i += 7){
+      h1 = (Math.imul(h1, 31) + d[i]) | 0;
+      h2 = (Math.imul(h2, 37) + d[i]) | 0;
+    }
+    const out = h1 + ':' + h2 + ':' + cv.width + 'x' + cv.height;
+    style = keep; txt.value = keepT; paint();
+    return out;
+  }
+};
+</script>
+</body>
+</html>
