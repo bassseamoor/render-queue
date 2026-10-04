@@ -34,6 +34,13 @@ var MOOD_WORDS = {dark:'night', bright:'day', alien:'alien', sunset:'sunset', ni
   misty:'misty', foggy:'misty', desert:'desert', sunny:'day', moody:'sunset'};
 var COUNT_WORDS = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
   twelve:12,twenty:20,forty:40};
+/* live self-config: the Stream tunes itself as you talk to it.
+ * "make the trees bigger" → treeScale ×1.3, rebuilds, live. */
+var CONFIG_DEFAULTS = {treeScale:1,treeCount:1,terrainAmp:1,creatureScale:1,creatureCount:1,
+  waterLevel:0.25,fogDensity:1,spacing:16};
+var CONFIG = JSON.parse(JSON.stringify(CONFIG_DEFAULTS));
+try{ var _sc=localStorage.getItem('stream-config'); if(_sc) CONFIG=JSON.parse(_sc); }catch(e){}
+function saveConfig(){ try{ localStorage.setItem('stream-config',JSON.stringify(CONFIG)); }catch(e){} }
 function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 function hx(c){ return [parseInt(c.slice(1,3),16)/255,parseInt(c.slice(3,5),16)/255,parseInt(c.slice(5,7),16)/255]; }
 
@@ -73,6 +80,30 @@ function isCoherent(txt, conf){
   var words=txt.toLowerCase().replace(/[^\w\s]/g,'').split(/\s+/)
     .filter(function(w){ return w&&FILLER.indexOf(w)<0; });
   return words.length>=2;
+}
+
+/* self-edit intents: tune the Stream itself, not a new scene */
+var SELF_EDITS = [
+  [/make the trees (bigger|taller)/,'treeScale',1.3],[/make the trees (smaller|shorter)/,'treeScale',0.75],
+  [/(more trees|trees.*\bmore\b)/,'treeCount',1.5], [/(fewer trees|less trees)/,'treeCount',0.6],
+  [/rougher terrain/,'terrainAmp',1.3],[/smoother terrain/,'terrainAmp',0.7],[/flatter/,'terrainAmp',0.7],
+  [/make the creatures bigger/,'creatureScale',1.3],[/make the creatures smaller/,'creatureScale',0.75],
+  [/more creatures/,'creatureCount',1.5],[/fewer creatures/,'creatureCount',0.6],
+  [/more water/,'waterLevel','+0.15'],[/less water/,'waterLevel','-0.15'],
+  [/more fog/,'fogDensity',1.4],[/less fog|clearer/,'fogDensity',0.7],
+  [/further apart/,'spacing','+4'],[/closer together/,'spacing','-4'],
+  [/\breset\b/,'__reset__',1]
+];
+function parseSelfEdit(text){
+  var t=' '+text.toLowerCase()+' ';
+  for (var i=0;i<SELF_EDITS.length;i++)
+    if (SELF_EDITS[i][0].test(t)) return {key:SELF_EDITS[i][1], val:SELF_EDITS[i][2]};
+  return null;
+}
+function looksLikeScene(text){
+  var t=' '+text.toLowerCase()+' ';
+  return /\bgive me\b/.test(t) ||
+    /\b(a|an|the|six|three|twelve|\d+)\b.{0,20}\b(forest|desert|ocean|city|creature|mountain|alien|misty|sunset|beach|jungle|night)\b/.test(t);
 }
 
 /* ================= 2D renderer (window mode) ================= */
@@ -202,13 +233,13 @@ function geoPlane(size){
     col:[1,1,1, 1,1,1, 1,1,1, 1,1,1],
     idx:[0,1,2, 0,2,3]};
 }
-function geoTerrain(nf,size,seg,mood){
+function geoTerrain(nf,size,seg,mood,amp){
   var pos=[],col=[],idx=[];
   var g0=hx(mood.ground[0]), g1=hx(mood.ground[1]);
   for (var j=0;j<=seg;j++) for (var i=0;i<=seg;i++){
     var x=(i/seg-0.5)*size, z=(j/seg-0.5)*size, u=i/seg, v=j/seg;
     var h=(nf(u*3,v*3)*0.55+nf(u*7+9,v*7+3)*0.3+nf(u*15+4,v*15+8)*0.15);
-    h=(h-0.45)*2.4;
+    h=(h-0.45)*2.4*(amp||1);
     var ex=Math.abs(u-0.5)*2, ez=Math.abs(v-0.5)*2;
     var fall=Math.max(0,1-Math.max(ex,ez));
     fall=fall*fall*(3-2*fall);
@@ -245,7 +276,7 @@ function terrainHeightAt(d,x,z){
   u=Math.max(0,Math.min(1,u)); v=Math.max(0,Math.min(1,v));
   var nf=d.nf;
   var h=(nf(u*3,v*3)*0.55+nf(u*7+9,v*7+3)*0.3+nf(u*15+4,v*15+8)*0.15);
-  h=(h-0.45)*2.4;
+  h=(h-0.45)*2.4*(d.amp||1);
   var ex=Math.abs(u-0.5)*2, ez=Math.abs(v-0.5)*2;
   var fall=Math.max(0,1-Math.max(ex,ez));
   fall=fall*fall*(3-2*fall);
@@ -297,16 +328,17 @@ function buildDiorama(spec){
   var rnd=streamFrom('stream:3d:'+spec.seed);
   var mood=MOODS[spec.mood]||MOODS.day;
   var nf=makeNoise(hashSeed('stream:nf:'+spec.seed),64,64);
-  var d={spec:spec, cx:0, nf:nf, mood:mood, trees:[], creatures:[], structs:[], water:spec.water};
+  var d={spec:spec, cx:0, nf:nf, mood:mood, trees:[], creatures:[], structs:[],
+         water:spec.water, amp:CONFIG.terrainAmp};
   if (hasComp(spec,'vegetation')){
-    var nT=8+Math.floor(rnd()*10);
+    var nT=Math.round((8+Math.floor(rnd()*10))*CONFIG.treeCount);
     for (var i=0;i<nT;i++)
-      d.trees.push({x:(rnd()-0.5)*10, z:(rnd()-0.5)*10, s:0.7+rnd()*0.8});
+      d.trees.push({x:(rnd()-0.5)*10, z:(rnd()-0.5)*10, s:(0.7+rnd()*0.8)*CONFIG.treeScale});
   }
   if (hasComp(spec,'softbody-creatures')){
-    var nC=1+Math.floor(rnd()*3);
+    var nC=Math.max(1,Math.round((1+Math.floor(rnd()*3))*CONFIG.creatureCount));
     for (var j=0;j<nC;j++)
-      d.creatures.push({x:(rnd()-0.5)*5, z:(rnd()-0.5)*5, s:0.8+rnd()*0.7,
+      d.creatures.push({x:(rnd()-0.5)*5, z:(rnd()-0.5)*5, s:(0.8+rnd()*0.7)*CONFIG.creatureScale,
         yaw:rnd()*Math.PI*2, phase:rnd()*7, tint:rnd()});
   }
   if (hasComp(spec,'mesh-builder')){
@@ -354,6 +386,7 @@ TOOLS.stream = { mount: function(host){
       '<div class="stm-sub" id="stm-sub">say what you want — worlds land in the space</div></div>'+
       '<button class="stm-voice" id="stm-voice">🔊 voice off</button>'+
       '<button class="stm-dev" id="stm-boop" style="color:#7fd4ff;border-color:#7fd4ff;">boop → screen</button>'+
+      '<span id="stm-tune-note" style="font-size:11px;color:#7fe0a8;opacity:0;transition:opacity .4s;"></span>'+
       '<button class="stm-dev" id="stm-dev">dev</button></div>'+
       '<canvas id="stm-gl" width="860" height="440"></canvas>'+
       '<canvas id="stm-screen" width="860" height="440" style="display:none;width:100%;border-radius:12px;"></canvas>'+
@@ -364,6 +397,7 @@ TOOLS.stream = { mount: function(host){
       '<button id="stm-ing">ingredients</button></span>'+
       '<button class="nav" id="stm-next">▶</button></div>'+
       '<div class="stm-ing" id="stm-ingbox"></div>'+
+      '<div class="stm-ing" id="stm-tunebox" style="display:none;"></div>'+
     '</div>'+
     '<div class="stm-bar"><div class="stm-row">'+
       '<input class="stm-in" id="stm-in" placeholder="a forest with creatures at sunset — or &quot;give me six&quot;" />'+
@@ -496,7 +530,7 @@ TOOLS.stream = { mount: function(host){
   /* diorama GL resources */
   function ensureGL(d){
     if (d.gl) return;
-    d.gl={ terrain:new Mesh(gl,geoTerrain(d.nf,12,40,d.mood)) };
+    d.gl={ terrain:new Mesh(gl,geoTerrain(d.nf,12,40,d.mood,d.amp)) };
     if (d.spec.present==='window'){
       var wc=document.createElement('canvas'); wc.width=320; wc.height=200;
       renderScene2D(wc,d.spec);
@@ -515,7 +549,7 @@ TOOLS.stream = { mount: function(host){
     gl.uniform3fv(u.uLight,[0.5,0.8,0.4]);
     gl.uniform3fv(u.uCam,eye);
     var fogC=hx(d.mood.fog);
-    gl.uniform3fv(u.uFog,fogC); gl.uniform2fv(u.uFogR,[30,90]);
+    gl.uniform3fv(u.uFog,fogC); gl.uniform2fv(u.uFogR,[30/CONFIG.fogDensity,90/CONFIG.fogDensity]);
     if (d.spec.present==='window'){
       // framed portal carrying the 2D stream view
       drawMesh(mBall,mMul(base,mMul(mT(0,2.2,0),mS(2.6,1.7,0.2))),mvp,[0.12,0.14,0.18],1);
@@ -542,7 +576,7 @@ TOOLS.stream = { mount: function(host){
     // water
     if (d.water){
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-      drawMesh(mPlane,mMul(base,mMul(mT(0,0.25+Math.sin(time*1.2)*0.03,0),mS(12,1,12))),mvp,[0.25,0.5,0.75],0.72);
+      drawMesh(mPlane,mMul(base,mMul(mT(0,CONFIG.waterLevel+Math.sin(time*1.2)*0.03,0),mS(12,1,12))),mvp,[0.25,0.5,0.75],0.72);
       gl.disable(gl.BLEND);
     }
     // trees
@@ -596,13 +630,51 @@ TOOLS.stream = { mount: function(host){
   }
 
   /* flow: speak/type → dioramas land downstream */
+  function clampNum(v,k){
+    if (k==='spacing') return Math.max(8,Math.min(40,v));
+    if (k==='waterLevel') return Math.max(-0.5,Math.min(1.2,v));
+    if (k==='fogDensity') return Math.max(0.3,Math.min(3,v));
+    return Math.max(0.25,Math.min(3,v));
+  }
+  function fmtN(v){ return (Math.round(v*100)/100).toString(); }
+  function tuneNote(msg){
+    var el=host.querySelector('#stm-tune-note');
+    if(!el) return;
+    el.textContent=msg; el.style.opacity=1;
+    clearTimeout(el._t); el._t=setTimeout(function(){ el.style.opacity=0; },2600);
+  }
+  function rebuildAll(){
+    dioramas.forEach(function(d,i){
+      var nd=buildDiorama(d.spec);
+      nd.cx=i*CONFIG.spacing;
+      dioramas[i]=nd;
+    });
+    var d=dioramas[focusIdx];
+    if (d) cam.gtx=d.cx;
+  }
+  function applySelfEdit(se,text){
+    if (se.key==='__reset__'){
+      CONFIG=JSON.parse(JSON.stringify(CONFIG_DEFAULTS));
+    } else if (typeof se.val==='number'){
+      CONFIG[se.key]=clampNum(CONFIG[se.key]*se.val,se.key);
+    } else {
+      var dv=parseFloat(se.val.slice(1));
+      CONFIG[se.key]=clampNum(CONFIG[se.key]+(se.val.charAt(0)==='+'?dv:-dv),se.key);
+    }
+    saveConfig();
+    rebuildAll();
+    tuneNote('tuned \u00b7 '+text+' \u2192 '+se.key+' = '+fmtN(CONFIG[se.key]));
+    refreshTunePanel();
+  }
   function flow(text){
+    var se=parseSelfEdit(text);
+    if (se && !looksLikeScene(text)){ applySelfEdit(se,text); return; }
     var parsed=parseInput(text);
     for (var i=0;i<parsed.count;i++){
       var spec=makeScene(seedBase+':'+Date.now()+':'+Math.random(), dioramas.length, parsed, 'f'+i);
       spec.caption=text;
       var d=buildDiorama(spec);
-      d.cx=dioramas.length*16;
+      d.cx=dioramas.length*CONFIG.spacing;
       dioramas.push(d);
     }
     setFocus(dioramas.length-1);
@@ -618,7 +690,7 @@ TOOLS.stream = { mount: function(host){
              raw:'more like "'+d.spec.caption+'"'};
       var spec=makeScene(d.spec.seed+':v'+i,dioramas.length,p,'m'+i);
       spec.caption=p.raw;
-      var nd=buildDiorama(spec); nd.cx=dioramas.length*16; dioramas.push(nd);
+      var nd=buildDiorama(spec); nd.cx=dioramas.length*CONFIG.spacing; dioramas.push(nd);
     }
     setFocus(dioramas.length-1);
   };
@@ -704,6 +776,62 @@ TOOLS.stream = { mount: function(host){
     }catch(e){ nudge.textContent='could not start voice — typing works.'; }
   };
 
+  var TUNE_KEYS=[['treeScale','trees size'],['treeCount','trees amount'],['terrainAmp','terrain roughness'],
+    ['creatureScale','creatures size'],['creatureCount','creatures amount'],
+    ['waterLevel','water level'],['fogDensity','fog'],['spacing','world spacing']];
+  function refreshTunePanel(){
+    var tb=host.querySelector('#stm-tunebox');
+    if (tb&&tb.style.display==='block') buildTunePanel();
+  }
+  function buildTunePanel(){
+    var tb=host.querySelector('#stm-tunebox');
+    var h='<div style="margin-bottom:6px;color:#ffd479;">tune the stream itself \u2014 live</div>';
+    TUNE_KEYS.forEach(function(k){
+      var key=k[0], label=k[1], v=CONFIG[key];
+      var min=key==='spacing'?8:(key==='waterLevel'?-0.5:0.25);
+      var max=key==='spacing'?40:(key==='waterLevel'?1.2:3);
+      var step=key==='spacing'?1:0.05;
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:2px 0;">'+
+         '<span style="width:130px;">'+label+'</span>'+
+         '<input type="range" min="'+min+'" max="'+max+'" step="'+step+'" value="'+v+'" data-k="'+key+'" style="flex:1">'+
+         '<span class="seed" data-v="'+key+'">'+fmtN(v)+'</span></div>';
+    });
+    h+='<div style="margin-top:6px;"><button id="stm-tune-reset" style="color:#7fd4ff;background:none;border:none;font-size:12px;cursor:pointer;">reset all</button> '+
+       '<span style="color:#5f7a92;font-size:11px;">or just say it: "make the trees bigger", "rougher terrain", "reset"</span></div>';
+    tb.innerHTML=h; tb.style.display='block';
+    Array.prototype.forEach.call(tb.querySelectorAll('input[type=range]'),function(r){
+      r.oninput=function(){
+        var k=r.getAttribute('data-k');
+        CONFIG[k]=clampNum(parseFloat(r.value),k);
+        saveConfig(); rebuildAll();
+        var lbl=tb.querySelector('[data-v="'+k+'"]'); if(lbl) lbl.textContent=fmtN(CONFIG[k]);
+      };
+    });
+    tb.querySelector('#stm-tune-reset').onclick=function(){
+      CONFIG=JSON.parse(JSON.stringify(CONFIG_DEFAULTS)); saveConfig(); rebuildAll(); buildTunePanel();
+      tuneNote('tuned \u00b7 reset to defaults');
+    };
+  }
+  /* dev toggle, sticky */
+  (function(){
+    var db=host.querySelector('#stm-dev');
+    try{ if(localStorage.getItem('stream-dev')==='1'){ dev=true; db.classList.add('on'); } }catch(e){}
+    var tb2=document.createElement('button');
+    tb2.className='stm-dev'; tb2.textContent='tune';
+    tb2.style.display=dev?'':'none';
+    db.parentNode.insertBefore(tb2,db.nextSibling);
+    tb2.onclick=function(){
+      var box=host.querySelector('#stm-tunebox');
+      if (box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; }
+      else buildTunePanel();
+    };
+    db.onclick=function(){
+      dev=!dev; db.classList.toggle('on',dev);
+      try{ localStorage.setItem('stream-dev',dev?'1':'0'); }catch(e){}
+      tb2.style.display=dev?'':'none';
+      if(!dev){ var box=host.querySelector('#stm-tunebox'); box.style.display='none'; box.innerHTML=''; }
+    };
+  })();
   /* never blank: three starter dioramas */
   [['misty forest',['terrain-core','vegetation','ambience-engine'],'misty',false,'diorama'],
    ['creatures at sunset',['terrain-core','softbody-creatures','ambience-engine'],'sunset',false,'diorama'],
@@ -711,7 +839,7 @@ TOOLS.stream = { mount: function(host){
   ].forEach(function(s,i){
     var p={comps:s[1],mood:s[2],water:s[3],present:s[4],raw:s[0]};
     var spec=makeScene('starter',i,p,'s'); spec.caption=s[0];
-    var d=buildDiorama(spec); d.cx=i*16; dioramas.push(d);
+    var d=buildDiorama(spec); d.cx=i*CONFIG.spacing; dioramas.push(d);
   });
   setFocus(0);
   frame();
