@@ -71,6 +71,27 @@ header{height:66px;display:flex;align-items:center;gap:14px;padding:0 20px;borde
   .t-main{flex-direction:column}
 }
 
+/* shared additions: sections, pipeline, layers, tabs, checks */
+.t-sec{border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0;background:#0a1320}
+.t-sec .eyebrow{margin-bottom:8px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.82rem}
+.t-pipe{display:flex;flex-direction:column;gap:2px}
+.t-stage{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#0b1523}
+.t-stage-n{display:inline-block;min-width:22px;height:22px;line-height:22px;text-align:center;border-radius:50%;background:#54cbff22;color:var(--cyan);font-size:.75rem;margin-right:8px}
+.t-stage b{font-size:.9rem}
+.t-eq{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem;color:var(--cyan);margin:6px 0 4px}
+.t-arrow{text-align:center;color:var(--muted);font-size:1.1rem;line-height:1}
+.t-layer{border:1px dashed var(--cyan);border-radius:8px;padding:10px 12px;margin:8px 0;background:#0b1523}
+.t-layer .t-row{margin-top:8px}
+.t-layer label{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);margin-right:12px}
+.t-tabs{display:flex;gap:6px}
+.t-check{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed #1b2f44;cursor:pointer}
+.t-check input{margin-top:3px;accent-color:var(--cyan)}
+.t-check b{display:block;font-size:.88rem}
+.t-species{display:flex;flex-wrap:wrap;gap:6px}
+.t-species .btn{min-height:34px;padding:6px 12px;font-size:.82rem}
+textarea{background:#0b1523;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px;font:inherit}
+
 </style>
 </head>
 <body>
@@ -204,6 +225,632 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { mulberry32: mulberry32, hashSeed: hashSeed, hash2i: hash2i, hashStr: hashStr, makeNoise: makeNoise, streamFrom: streamFrom };
 }
 
+</script>
+<script>
+window.SeedCodec = (function(){
+/* seed-codec — compact, URL-safe seed codes with strict validation + remix.
+ *
+ * A code packs a whole generator configuration into one pasteable string:
+ *
+ *   PREFIX-realm-layout36-detail36-p1.p2. ... .pn[-Lmode.pos.width]
+ *
+ *   realm    architecture family (small int; remix keeps it)
+ *   layout   uint32 architecture variant (base-36; remix keeps it)
+ *   detail   uint32 detail stream seed (base-36; remix re-draws it)
+ *   p1..pn   each hero param quantized to 0..1000 (base-36, dot-joined)
+ *   -L...    optional lens suffix (mode.pos.width, base-36)
+ *
+ * PROVENANCE: generalized from render-queue/work/studios/parallax-engine.html
+ *   codeOf      <- :73   (verbatim logic; prefix/controls/lens now injected)
+ *   parseCode   <- :74   (strict validation preserved: wrong arity, out-of-range
+ *                         values, or malformed lens all return null)
+ *   remixConfig <- :1351-1361 ("more like this": keeps realm+layout, jitters
+ *                         only unlocked params by +/-14% of range, fresh detail)
+ *   randomConfig pattern <- :1331-1350 (fresh layout/detail/params)
+ * Originals untouched. Zero dependencies (pairs with seed-rng for streams).
+ *
+ * A "controls table" describes the hero params:
+ *   controls = [ [key, label, min, max], ... ]   // key: string id
+ * A config object:
+ *   { realm, layout, detail, params: {key: value}, lens, locks: {key: bool} }
+ * lens may be null (pass opts.lens = null) or {mode, position, width}.
+ */
+'use strict';
+
+function mix(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+function makeCodec(opts) {
+  opts = opts || {};
+  var prefix = opts.prefix || 'PX1';
+  var controls = opts.controls || [];
+  var lensLooks = opts.lensLooks || null; // array of lens mode names, or null
+
+  function lensCode(c) {
+    if (!lensLooks || !c.lens) return '';
+    var li = lensLooks.indexOf(c.lens.mode);
+    if (li < 0) li = 0;
+    return '-L' + li.toString(36) + '.' +
+      Math.round(c.lens.position * 1000).toString(36) + '.' +
+      Math.round(c.lens.width * 1000).toString(36);
+  }
+
+  function codeOf(c) {
+    return prefix + '-' + c.realm + '-' +
+      (c.layout >>> 0).toString(36) + '-' + (c.detail >>> 0).toString(36) + '-' +
+      controls.map(function (k) {
+        return Math.round((c.params[k[0]] - k[2]) / (k[3] - k[2]) * 1000).toString(36);
+      }).join('.') + lensCode(c);
+  }
+
+  var CODE_RE = null;
+  function codeRe() {
+    if (!CODE_RE) CODE_RE = new RegExp(
+      '^' + prefix.replace(/[^a-z0-9]/gi, '') + '-(\\d+)-([a-z0-9]+)-([a-z0-9]+)-([a-z0-9.]+)(?:-L([a-z0-9.]+))?$', 'i');
+    return CODE_RE;
+  }
+
+  /* Strict: returns a config object or null. Never throws on bad input. */
+  function parseCode(code) {
+    var m = codeRe().exec(String(code).trim());
+    if (!m) return null;
+    var values = m[4].split('.');
+    if (values.length !== controls.length) return null;
+    var layout = parseInt(m[2], 36), detail = parseInt(m[3], 36);
+    if (!(layout <= 4294967295) || !(detail <= 4294967295)) return null;
+    var params = {}, i, v;
+    for (i = 0; i < controls.length; i++) {
+      v = parseInt(values[i], 36);
+      if (!isFinite(v) || v < 0 || v > 1000) return null;
+      params[controls[i][0]] = mix(controls[i][2], controls[i][3], v / 1000);
+    }
+    var lens = null;
+    if (m[5]) {
+      if (!lensLooks) return null;
+      var lv = m[5].split('.').map(function (n) { return parseInt(n, 36); });
+      if (lv.length !== 3 || lv.some(function (n) { return !isFinite(n); }) ||
+          lv[0] < 0 || lv[0] >= lensLooks.length || lv[1] < 150 || lv[1] > 850 || lv[2] < 40 || lv[2] > 360) return null;
+      lens = { mode: lensLooks[lv[0]], position: lv[1] / 1000, width: lv[2] / 1000 };
+    }
+    return { realm: +m[1], layout: layout, detail: detail, params: params, lens: lens, locks: {} };
+  }
+
+  /* "More like this": keep architecture (realm+layout), jitter unlocked
+   * params by +/-14% of their range, draw a fresh detail stream.
+   * rand: () -> [0,1). freshUint32: () -> uint32. */
+  function remixConfig(base, rand, freshUint32) {
+    var params = {}, i, c;
+    for (i = 0; i < controls.length; i++) {
+      c = controls[i];
+      params[c[0]] = (base.locks && base.locks[c[0]])
+        ? base.params[c[0]]
+        : clamp(base.params[c[0]] + (rand() - 0.5) * (c[3] - c[2]) * 0.28, c[2], c[3]);
+    }
+    var locks = {};
+    if (base.locks) for (var k in base.locks) locks[k] = base.locks[k];
+    return { realm: base.realm, layout: base.layout, detail: freshUint32(),
+             params: params, lens: base.lens, locks: locks };
+  }
+
+  /* Brand-new configuration: fresh layout/detail, params sampled mid-range. */
+  function randomConfig(rand, freshUint32, defaults) {
+    var params = {}, i, c;
+    for (i = 0; i < controls.length; i++) {
+      c = controls[i];
+      params[c[0]] = (defaults && defaults[c[0]] !== undefined)
+        ? defaults[c[0]] : mix(c[2], c[3], 0.25 + rand() * 0.5);
+    }
+    return { realm: 0, layout: freshUint32(), detail: freshUint32(),
+             params: params, lens: null, locks: {} };
+  }
+
+  return { codeOf: codeOf, parseCode: parseCode, remixConfig: remixConfig,
+           randomConfig: randomConfig, controls: controls, prefix: prefix };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { makeCodec: makeCodec, mix: mix, clamp: clamp };
+}
+
+return {makeCodec:makeCodec};
+})();
+</script>
+<script>
+/* save-shape — debounced autosave with schema versioning, restore, and corrupt-save fallback.
+ *
+ * Logic extracted from blockcraft.html:870-896 (saveSoon/save/hasSave/loadSave).
+ * The original was hard-wired to one game (SEED, player, chunks, mods, hotbar,
+ * toast, DOM menu buttons). This component keeps the exact same behavior —
+ * debounce, JSON snapshot to localStorage, try/catch-everything, corrupt-save
+ * fallback — but the game-specific parts are injected:
+ *
+ *   collect() -> plain-JSON-able snapshot object   (original: {seed, p, tod, mods, hotbar, sel})
+ *   apply(snapshot)                               (original: loadSave's restore block)
+ *   onCorrupt()                                   (original: toast('Save corrupted — starting fresh'))
+ *   shouldSave() -> bool                          (original: G.state === 'play')
+ *
+ * One deliberate addition, marked NEW: a schema version field. The original had
+ * none, so an old save could silently mis-restore after the game changed. The
+ * version is checked on load; a mismatch is treated like corruption (onCorrupt).
+ */
+
+function createSaveManager(opts) {
+  var key = opts.key;                       // localStorage key, e.g. 'bc_save'
+  var collect = opts.collect;               // () -> snapshot
+  var apply = opts.apply;                   // (snapshot) -> void
+  var onCorrupt = opts.onCorrupt || function () {};
+  var shouldSave = opts.shouldSave || function () { return true; };
+  var debounceMs = opts.debounceMs != null ? opts.debounceMs : 2500; // original: 2500
+  var version = opts.version != null ? opts.version : 1;              // NEW: schema version
+
+  var saveT = null;
+
+  function saveSoon() {                      // original: saveSoon()
+    clearTimeout(saveT);
+    saveT = setTimeout(save, debounceMs);
+  }
+
+  function save() {                          // original: save()
+    if (!shouldSave()) return;
+    try {
+      localStorage.setItem(key, JSON.stringify({ v: version, data: collect() }));
+    } catch (e) { /* storage full / private mode — original swallowed this too */ }
+  }
+
+  function hasSave() {                       // original: hasSave()
+    try { return !!localStorage.getItem(key); } catch (e) { return false; }
+  }
+
+  function loadSave() {                      // original: loadSave()
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) { onCorrupt(); return false; }
+      var s = JSON.parse(raw);
+      var snap = (s && typeof s === 'object' && 'v' in s) ? s.data : s; // tolerate version-less saves
+      if (s && typeof s === 'object' && 'v' in s && s.v !== version) { onCorrupt(); return false; }
+      apply(snap);
+      return true;
+    } catch (e) {
+      onCorrupt();                           // original: toast('Save corrupted — starting fresh')
+      return false;
+    }
+  }
+
+  function clearSave() {
+    clearTimeout(saveT);
+    try { localStorage.removeItem(key); } catch (e) {}
+  }
+
+  return { saveSoon: saveSoon, save: save, hasSave: hasSave, loadSave: loadSave, clearSave: clearSave };
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { createSaveManager: createSaveManager };
+
+</script>
+<script>
+window.DriveUpload = (function(){
+/**
+ * Google Drive adapter — implementation half of the capability contract.
+ *
+ * SEALED: this module may only use the injected `sdk`:
+ *   sdk.http.get(url, {query?, raw?})      -> {status, json} | {status, bodyB64, contentType}
+ *   sdk.http.post(url, {headers?, json?, body?}) -> {status, json}
+ *   sdk.http.patch(url, {json})            -> {status, json}
+ *   sdk.http.del(url)                      -> {status, json}
+ *   sdk.log(message)                       -> void
+ * The runtime injects credentials itself and allow-lists hosts
+ * (descriptor.network.hosts). This code never sees a secret and cannot
+ * reach any other host. No imports. No fetch. No process.
+ */
+
+const API = "https://www.googleapis.com/drive/v3";
+const UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+const IDEM_PROP = "moor_idem"; // appProperties key carrying the idempotency key
+
+/** Escape a value for embedding in a Drive `q` single-quoted string. */
+function q(value) {
+  return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+function boundaryFor(ctx) {
+  return `moor_${String(ctx.traceId || "x").replace(/[^A-Za-z0-9_-]/g, "")}`;
+}
+
+function multipartBody(metadata, mimeType, bytesB64, boundary) {
+  return (
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: ${mimeType}\r\n` +
+    `Content-Transfer-Encoding: base64\r\n\r\n` +
+    `${bytesB64}\r\n` +
+    `--${boundary}--`
+  );
+}
+
+function isNotFound(err) {
+  return !!err && (err.status === 404 || err.code === 404);
+}
+
+/* ------------------------------ actions ------------------------------ */
+
+async function list(params, ctx, sdk) {
+  const pageSize = Math.min(100, Math.max(1, params.pageSize || 50));
+  const clauses = ["trashed=false"];
+  if (params.folderId) clauses.push(`${q(params.folderId)} in parents`);
+  const { json } = await sdk.http.get(`${API}/files`, {
+    query: {
+      q: clauses.join(" and "),
+      fields: "files(id,name,mimeType,modifiedTime,size)",
+      pageSize: String(pageSize),
+      orderBy: "modifiedTime desc",
+    },
+  });
+  return { files: (json.files || []).map(slimFile) };
+}
+
+function slimFile(f) {
+  return {
+    id: f.id,
+    name: f.name,
+    mimeType: f.mimeType,
+    modifiedTime: f.modifiedTime || null,
+    size: f.size || null,
+  };
+}
+
+async function get(params, ctx, sdk) {
+  const { json } = await sdk.http.get(`${API}/files/${params.fileId}`, {
+    query: {
+      fields: "id,name,mimeType,size,parents,modifiedTime,trashed,webViewLink",
+    },
+  });
+  return { file: json };
+}
+
+async function download(params, ctx, sdk) {
+  const res = await sdk.http.get(`${API}/files/${params.fileId}`, {
+    query: { alt: "media" },
+    raw: true,
+  });
+  return { bytesB64: res.bodyB64, mimeType: res.contentType || null };
+}
+
+async function upload(params, ctx, sdk) {
+  const key = params.idempotencyKey || ctx.idempotencyKey;
+  const found = await checkLookupByIdempotencyKey({ key }, ctx, sdk);
+  if (found.file) {
+    sdk.log(`upload deduplicated: key already produced ${found.file.id}`);
+    return { fileId: found.file.id, name: found.file.name, deduplicated: true };
+  }
+  const metadata = {
+    name: params.name,
+    mimeType: params.mimeType || "application/octet-stream",
+    appProperties: { [IDEM_PROP]: key },
+  };
+  if (params.folderId) metadata.parents = [params.folderId];
+  const boundary = boundaryFor(ctx);
+  const { json } = await sdk.http.post(`${UPLOAD_API}/files?uploadType=multipart`, {
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body: multipartBody(metadata, metadata.mimeType, params.bytesB64 || "", boundary),
+  });
+  return { fileId: json.id, name: json.name, deduplicated: false };
+}
+
+async function createFolder(params, ctx, sdk) {
+  const key = params.idempotencyKey || ctx.idempotencyKey;
+  const found = await checkLookupByIdempotencyKey({ key }, ctx, sdk);
+  if (found.file) {
+    sdk.log(`createFolder deduplicated: key already produced ${found.file.id}`);
+    return { folderId: found.file.id, deduplicated: true };
+  }
+  const body = {
+    name: params.name,
+    mimeType: "application/vnd.google-apps.folder",
+    appProperties: { [IDEM_PROP]: key },
+  };
+  if (params.parentId) body.parents = [params.parentId];
+  const { json } = await sdk.http.post(`${API}/files`, { json: body });
+  return { folderId: json.id, deduplicated: false };
+}
+
+async function trash(params, ctx, sdk) {
+  await sdk.http.patch(`${API}/files/${params.fileId}`, { json: { trashed: true } });
+  return { trashed: true };
+}
+
+async function restore(params, ctx, sdk) {
+  await sdk.http.patch(`${API}/files/${params.fileId}`, { json: { trashed: false } });
+  return { trashed: false };
+}
+
+const ACTIONS = { list, get, download, upload, createFolder, trash, restore };
+
+/* --------------------------- reconciliation --------------------------- */
+/* Read-only by contract. A check that mutates provider state fails
+   conformance and the adapter is disabled. */
+
+async function checkLookupByIdempotencyKey(params, ctx, sdk) {
+  const { json } = await sdk.http.get(`${API}/files`, {
+    query: {
+      q: `appProperties has {key=${q(IDEM_PROP)} and value=${q(params.key)}} and trashed=false`,
+      fields: "files(id,name,mimeType,trashed)",
+      pageSize: "2",
+    },
+  });
+  const files = json.files || [];
+  return { file: files.length ? files[0] : null };
+}
+
+async function checkGetFileState(params, ctx, sdk) {
+  try {
+    const { json } = await sdk.http.get(`${API}/files/${params.fileId}`, {
+      query: { fields: "id,trashed,modifiedTime" },
+    });
+    return { exists: true, trashed: !!json.trashed, modifiedTime: json.modifiedTime || null };
+  } catch (err) {
+    if (isNotFound(err)) return { exists: false, trashed: false, modifiedTime: null };
+    throw err;
+  }
+}
+
+const CHECKS = {
+  lookupByIdempotencyKey: checkLookupByIdempotencyKey,
+  getFileState: checkGetFileState,
+};
+
+/* -------------------------------- entry -------------------------------- */
+
+async function invoke(action, params, ctx, sdk) {
+  const fn = ACTIONS[action];
+  if (!fn) throw new Error(`unknown action: ${action}`);
+  return fn(params || {}, ctx || {}, sdk);
+}
+
+async function check(name, params, ctx, sdk) {
+  const fn = CHECKS[name];
+  if (!fn) throw new Error(`unknown check: ${name}`);
+  return fn(params || {}, ctx || {}, sdk);
+}
+
+return {invoke:invoke, check:check};
+})();
+</script>
+<script>
+window.SEED_CONSOLE_SRC = "/* ================= Seed Console v1 (inlined verbatim from seed-console.js) ================= */\n/* Seed Console v2 \u2014 one consistent generation console for all ambient studios.\n * v2 adds: a PNG/JPEG thumbnail snapshot is captured from the render canvas\n * whenever a seed is favorited (stored as f.thumb), so pickers elsewhere\n * (e.g. the Render Queue) can show visual favorite cards.\n * USAGE: inline this entire file in a <script> block near </body>, then define\n * window.SeedConsoleAdapter (see interface below) in a following <script> block,\n * then call SeedConsole.init(window.SeedConsoleAdapter).\n *\n * ADAPTER INTERFACE (per studio \u2014 the studio author writes this):\n * {\n *   studio:   'molten',            // short id, used for localStorage keys\n *   title:    'Molten',            // display name\n *   getSeed:  () => string,        // current seed as a string\n *   setSeed:  (s) => void|Promise, // rebuild the scene from seed string s\n *   randomSeed: () => string,      // cryptographically random new seed string\n *   remixSeed:  (s) => string,     // quasi-random: derive a \"sibling\" seed from s\n *   params: [                      // hero parameters for Customize (6-10)\n *     { key, label, min, max, step, get:()=>number, set:(v)=>void }\n *   ],\n *   canvas:   () => HTMLCanvasElement|null,  // main render canvas for recording\n *   fileBase: (seedStr) => string, // filename base for recordings (no extension)\n * }\n * The console calls setSeed on load (with ?seed= override or a random seed).\n */\n(function () {\n  'use strict';\n  var CSS = [\n    '.sc-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:2147483000;',\n    'display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:999px;',\n    'background:rgba(12,14,18,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);',\n    'border:1px solid rgba(255,255,255,.14);box-shadow:0 8px 30px rgba(0,0,0,.45);',\n    'font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",system-ui,sans-serif;color:#e8eaed;',\n    'font-size:13px;user-select:none;-webkit-user-select:none;max-width:calc(100vw - 20px)}',\n    '.sc-pill.hidden{display:none}',\n    '.sc-seed{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.07);',\n    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;cursor:pointer;',\n    'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:38vw}',\n    '.sc-btn{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#e8eaed;',\n    'border-radius:999px;min-width:44px;min-height:44px;padding:0 12px;font-size:16px;cursor:pointer;',\n    'display:flex;align-items:center;justify-content:center}',\n    '.sc-btn:active{background:rgba(255,255,255,.18)}',\n    '.sc-btn.on{background:rgba(120,200,255,.25);border-color:rgba(120,200,255,.6)}',\n    '.sc-btn.rec.on{background:rgba(255,80,80,.35);border-color:rgba(255,80,80,.7)}',\n    '.sc-panel{position:fixed;left:50%;transform:translateX(-50%);bottom:70px;z-index:2147483000;',\n    'width:min(430px,calc(100vw - 24px));max-height:62vh;overflow-y:auto;border-radius:18px;',\n    'background:rgba(10,12,16,.86);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);',\n    'border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 60px rgba(0,0,0,.55);',\n    'font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",system-ui,sans-serif;color:#e8eaed;',\n    'padding:14px 14px 16px;font-size:14px}',\n    '.sc-panel.hidden{display:none}',\n    '.sc-row{display:flex;align-items:center;gap:8px;margin:8px 0}',\n    '.sc-seedinput{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);',\n    'border-radius:10px;color:#e8eaed;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:13px;min-width:0}',\n    '.sc-sec{margin:12px 0 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9aa0a6}',\n    '.sc-list{display:flex;flex-direction:column;gap:6px;max-height:130px;overflow-y:auto}',\n    '.sc-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;',\n    'background:rgba(255,255,255,.05);cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:12px}',\n    '.sc-item:active{background:rgba(255,255,255,.12)}',\n    '.sc-item .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',\n    '.sc-item .meta{color:#9aa0a6;font-size:11px}',\n    '.sc-thumb{width:54px;height:31px;object-fit:cover;border-radius:6px;background:#1a1f2b;flex:none}',\n    '.sc-param{margin:10px 0}',\n    '.sc-param .top{display:flex;align-items:center;gap:8px;margin-bottom:4px}',\n    '.sc-param label{flex:1;font-size:13px}',\n    '.sc-param .val{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#9aa0a6;min-width:44px;text-align:right}',\n    '.sc-param input[type=range]{width:100%;accent-color:#7cc4ff}',\n    '.sc-lock{border:1px solid rgba(255,255,255,.16);background:transparent;border-radius:8px;',\n    'min-width:36px;min-height:36px;font-size:14px;cursor:pointer;color:#9aa0a6}',\n    '.sc-lock.on{color:#ffd76a;border-color:rgba(255,215,106,.6);background:rgba(255,215,106,.12)}',\n    '.sc-durs{display:flex;gap:6px;flex-wrap:wrap}',\n    '.sc-dur{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#e8eaed;',\n    'border-radius:10px;padding:10px 12px;font-size:13px;cursor:pointer}',\n    '.sc-dur.on{background:rgba(120,200,255,.25);border-color:rgba(120,200,255,.6)}',\n    '.sc-status{font-size:12px;color:#9aa0a6;margin-top:8px;min-height:18px}',\n    '.sc-status.rec{color:#ff8a80}',\n    '.sc-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:76px;z-index:2147483001;',\n    'background:rgba(20,22,28,.92);color:#e8eaed;border:1px solid rgba(255,255,255,.16);',\n    'border-radius:12px;padding:10px 16px;font-size:13px;font-family:system-ui,sans-serif;',\n    'opacity:0;transition:opacity .25s;pointer-events:none}',\n    '.sc-toast.show{opacity:1}',\n    '.sc-dot{position:fixed;right:10px;bottom:10px;width:14px;height:14px;border-radius:50%;',\n    'background:rgba(255,255,255,.25);z-index:2147483000;cursor:pointer}',\n    '.sc-dot.hidden{display:none}',\n    '.sc-link{color:#7cc4ff;font-size:13px;text-decoration:underline;cursor:pointer;word-break:break-all}'\n  ].join('\\n');\n\n  function el(tag, cls, html) {\n    var e = document.createElement(tag);\n    if (cls) e.className = cls;\n    if (html != null) e.innerHTML = html;\n    return e;\n  }\n  function store(k) {\n    return {\n      get: function (dflt) {\n        try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : dflt; }\n        catch (e) { return dflt; }\n      },\n      set: function (v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }\n    };\n  }\n  function esc(s) {\n    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')\n      .replace(/\"/g, '&quot;');\n  }\n\n  var SeedConsole = {\n    init: function (A) {\n      if (!A || typeof A.setSeed !== 'function' || typeof A.getSeed !== 'function') {\n        console.error('[SeedConsole] invalid adapter'); return;\n      }\n      this.A = A;\n      this.hist = store('sc.' + A.studio + '.history');\n      this.favs = store('sc.' + A.studio + '.favs');\n      this.locks = store('sc.' + A.studio + '.locks');\n      this.recState = { rec: null, chunks: [], timer: null, t0: 0, dur: 0, mime: '' };\n      this.buildUI();\n      this.refreshParams();\n      var q = null;\n      try { q = new URLSearchParams(location.search).get('seed'); } catch (e) {}\n      var start = (q && q.trim()) ? q.trim() : A.randomSeed();\n      this.applySeed(start, { silent: true });\n      // Restore a full settings snapshot from ?p= (base64url JSON). Favorites\n      // carry every setting, so a starred render reopens exactly as it was saved.\n      try {\n        var pRaw = new URLSearchParams(location.search).get('p');\n        if (pRaw) {\n          var pB64 = String(pRaw).replace(/-/g, '+').replace(/_/g, '/');\n          while (pB64.length % 4) pB64 += '=';\n          var pVals = JSON.parse(decodeURIComponent(escape(atob(pB64))));\n          var selfP = this;\n          (this.A.params || []).forEach(function (p) {\n            if (pVals[p.key] != null) { try { p.set(pVals[p.key]); } catch (e) {} }\n          });\n          selfP.refreshParams();\n        }\n      } catch (e) {}\n      // H key or double-tap toggles full chrome hide (clean recordings)\n      var self = this;\n      document.addEventListener('keydown', function (e) {\n        if ((e.key === 'h' || e.key === 'H') && !/INPUT|TEXTAREA/.test(document.activeElement.tagName))\n          self.toggleChrome();\n      });\n      var lastTap = 0;\n      document.addEventListener('touchend', function () {\n        var now = Date.now();\n        if (now - lastTap < 300) self.toggleChrome();\n        lastTap = now;\n      }, { passive: true });\n    },\n\n    buildUI: function () {\n      var self = this, A = this.A;\n      var st = document.createElement('style');\n      st.textContent = CSS;\n      document.head.appendChild(st);\n\n      // pill\n      var pill = el('div', 'sc-pill');\n      var seedChip = el('div', 'sc-seed', esc(A.getSeed() || '\u2026'));\n      seedChip.title = 'Tap to copy seed';\n      seedChip.addEventListener('click', function () {\n        var s = A.getSeed();\n        function done() { self.toast('Seed copied: ' + s); }\n        if (navigator.clipboard && navigator.clipboard.writeText)\n          navigator.clipboard.writeText(s).then(done, done);\n        else done();\n      });\n      function btn(txt, title, fn, cls) {\n        var b = el('button', 'sc-btn' + (cls ? ' ' + cls : ''), txt);\n        b.title = title; b.setAttribute('aria-label', title);\n        b.addEventListener('click', function (ev) { ev.stopPropagation(); fn(b); });\n        return b;\n      }\n      this.bRandom = btn('\ud83c\udfb2', 'Random \u2014 brand new world', function () { self.doRandom(); });\n      this.bRemix = btn('\ud83c\udf00', 'Remix \u2014 same vibe, new details (respects locks)', function () { self.doRemix(); });\n      this.bFav = btn('\u2606', 'Save this seed to favorites', function (b) { self.toggleFav(b); });\n      this.bRec = btn('\u25cf', 'Record video', function () { self.togglePanelSection('rec'); }, 'rec');\n      this.bMore = btn('\u2699\ufe0f', 'Customize: seed, parameters, history', function () { self.togglePanel(); });\n      pill.appendChild(seedChip);\n      pill.appendChild(this.bRandom); pill.appendChild(this.bRemix);\n      pill.appendChild(this.bFav); pill.appendChild(this.bRec); pill.appendChild(this.bMore);\n      document.body.appendChild(pill);\n      this.pill = pill; this.seedChip = seedChip;\n\n      // dot (restores chrome when hidden)\n      var dot = el('div', 'sc-dot hidden');\n      dot.title = 'Show controls';\n      dot.addEventListener('click', function () { self.toggleChrome(); });\n      document.body.appendChild(dot);\n      this.dot = dot;\n\n      // panel\n      var p = el('div', 'sc-panel hidden');\n      p.innerHTML =\n        '<div class=\"sc-row\"><input class=\"sc-seedinput\" id=\"sc-seedfield\" spellcheck=\"false\">' +\n        '<button class=\"sc-btn\" id=\"sc-apply\" style=\"font-size:13px\">Apply</button></div>' +\n        '<div class=\"sc-sec\">Parameters (\ud83d\udd12 = kept on Remix)</div><div id=\"sc-params\"></div>' +\n        '<div class=\"sc-sec\">Record video</div><div class=\"sc-durs\" id=\"sc-durs\"></div>' +\n        '<div class=\"sc-row\"><button class=\"sc-btn\" id=\"sc-recbtn\" style=\"font-size:13px\">\u25cf Start recording</button>' +\n        '<button class=\"sc-btn\" id=\"sc-hideui\" style=\"font-size:13px\">Hide UI</button></div>' +\n        '<div class=\"sc-status\" id=\"sc-status\"></div><div id=\"sc-dl\"></div>' +\n        '<div class=\"sc-sec\">\u2b50 Favorites</div><div class=\"sc-list\" id=\"sc-favs\"></div>' +\n        '<div class=\"sc-sec\">\ud83d\udd58 Recent seeds</div><div class=\"sc-list\" id=\"sc-hist\"></div>';\n      document.body.appendChild(p);\n      this.panel = p;\n      var self2 = this;\n      p.querySelector('#sc-apply').addEventListener('click', function () {\n        var v = p.querySelector('#sc-seedfield').value.trim();\n        if (v) self2.applySeed(v);\n      });\n      p.querySelector('#sc-hideui').addEventListener('click', function () { self2.toggleChrome(); });\n      p.querySelector('#sc-recbtn').addEventListener('click', function () { self2.toggleRecord(); });\n      var durs = [['30s', 30], ['5 min', 300], ['30 min', 1800], ['\u221e until stopped', 0]];\n      var dz = p.querySelector('#sc-durs');\n      this.durBtns = [];\n      durs.forEach(function (d, i) {\n        var b = el('button', 'sc-dur' + (i === 3 ? ' on' : ''), d[0]);\n        b.addEventListener('click', function () {\n          self2.recState.dur = d[1];\n          self2.durBtns.forEach(function (x) { x.classList.remove('on'); });\n          b.classList.add('on');\n        });\n        dz.appendChild(b); self2.durBtns.push(b);\n      });\n      this.recState.dur = 0;\n\n      // toast\n      var t = el('div', 'sc-toast');\n      document.body.appendChild(t);\n      this.toastEl = t;\n\n      this.renderHist(); this.renderFavs(); this.updateFavBtn();\n    },\n\n    toast: function (msg) {\n      var t = this.toastEl, self = this;\n      t.textContent = msg; t.classList.add('show');\n      clearTimeout(this._tt);\n      this._tt = setTimeout(function () { t.classList.remove('show'); }, 2200);\n    },\n\n    togglePanel: function () { this.panel.classList.toggle('hidden'); },\n    togglePanelSection: function () {\n      if (this.panel.classList.contains('hidden')) this.panel.classList.remove('hidden');\n      this.panel.scrollTop = this.panel.querySelector('.sc-sec').offsetTop - 60;\n    },\n    toggleChrome: function () {\n      var hidden = this.pill.classList.toggle('hidden');\n      this.panel.classList.add('hidden');\n      this.dot.classList.toggle('hidden', !hidden);\n    },\n\n    applySeed: function (s, opts) {\n      var self = this;\n      opts = opts || {};\n      function done() {\n        self.seedChip.textContent = s;\n        var f = self.panel.querySelector('#sc-seedfield');\n        if (f) f.value = s;\n        // re-apply locked params after regen so Remix/customize locks hold\n        self.applyLocks();\n        self.refreshParams();\n        if (!opts.silent) self.toast('Seed: ' + s);\n        var h = self.hist.get([]);\n        h = [s].concat(h.filter(function (x) { return x !== s; })).slice(0, 30);\n        self.hist.set(h);\n        self.renderHist(); self.updateFavBtn();\n      }\n      try {\n        var r = this.A.setSeed(s);\n        if (r && typeof r.then === 'function') r.then(done, function (e) {\n          console.error(e); self.toast('Could not apply seed');\n        });\n        else done();\n      } catch (e) { console.error(e); this.toast('Could not apply seed'); }\n    },\n\n    doRandom: function () { this.applySeed(this.A.randomSeed()); },\n    doRemix: function () { this.applySeed(this.A.remixSeed(this.A.getSeed())); },\n\n    applyLocks: function () {\n      var locks = this.locks.get({});\n      var self = this;\n      (this.A.params || []).forEach(function (p) {\n        if (locks[p.key] && self._lockedVals && self._lockedVals[p.key] != null) {\n          try { p.set(self._lockedVals[p.key]); } catch (e) {}\n        }\n      });\n    },\n    snapshotLocks: function () {\n      var locks = this.locks.get({}), vals = {};\n      (this.A.params || []).forEach(function (p) {\n        if (locks[p.key]) { try { vals[p.key] = p.get(); } catch (e) {} }\n      });\n      this._lockedVals = vals;\n    },\n\n    refreshParams: function () {\n      var self = this, A = this.A;\n      var box = this.panel.querySelector('#sc-params');\n      box.innerHTML = '';\n      var locks = this.locks.get({});\n      (A.params || []).forEach(function (p) {\n        var wrap = el('div', 'sc-param');\n        var top = el('div', 'top');\n        var lab = el('label', '', esc(p.label));\n        var val = el('span', 'val', '');\n        var lock = el('button', 'sc-lock' + (locks[p.key] ? ' on' : ''), locks[p.key] ? '\ud83d\udd12' : '\ud83d\udd13');\n        lock.title = 'Lock: kept on Remix';\n        var cur = null;\n        try { cur = p.get(); } catch (e) {}\n        function fmt(v) { return (typeof v === 'number' && Math.abs(v) < 10 && p.step < 1) ? v.toFixed(2) : String(v); }\n        val.textContent = fmt(cur);\n        var slider = document.createElement('input');\n        slider.type = 'range'; slider.min = p.min; slider.max = p.max; slider.step = p.step;\n        if (cur != null) slider.value = cur;\n        slider.addEventListener('input', function () {\n          var v = parseFloat(slider.value);\n          try { p.set(v); } catch (e) {}\n          val.textContent = fmt(v);\n          if (locks[p.key]) { self.snapshotLocks(); }\n        });\n        slider.addEventListener('change', function () { self.snapshotLocks(); });\n        lock.addEventListener('click', function () {\n          var L = self.locks.get({});\n          L[p.key] = !L[p.key];\n          self.locks.set(L);\n          lock.classList.toggle('on', !!L[p.key]);\n          lock.textContent = L[p.key] ? '\ud83d\udd12' : '\ud83d\udd13';\n          self.snapshotLocks();\n          self.toast(L[p.key] ? p.label + ' locked for Remix' : p.label + ' unlocked');\n        });\n        top.appendChild(lab); top.appendChild(val); top.appendChild(lock);\n        wrap.appendChild(top); wrap.appendChild(slider);\n        box.appendChild(wrap);\n      });\n      this.snapshotLocks();\n    },\n\n    toggleFav: function (b) {\n      var self = this;\n      var s = this.A.getSeed();\n      var favs = this.favs.get([]);\n      var i = favs.findIndex(function (f) { return f.seed === s; });\n      if (i !== -1) {\n        favs.splice(i, 1);\n        this.favs.set(favs.slice(0, 100));\n        this.renderFavs(); this.updateFavBtn();\n        this.toast('Removed from favorites');\n        return;\n      }\n      var snap = {};\n      try {\n        (this.A.params || []).forEach(function (p) { snap[p.key] = p.get(); });\n      } catch (e) {}\n      // Capture a small thumbnail on the next painted frame so WebGL\n      // drawing buffers are fresh, then save the favorite with it.\n      function save(thumb) {\n        var entry = { seed: s, params: snap, ts: Date.now() };\n        if (thumb) entry.thumb = thumb;\n        var list = self.favs.get([]);\n        list.unshift(entry);\n        list = list.slice(0, 100);\n        try {\n          self.favs.set(list);\n        } catch (e) {\n          // localStorage full (thumbs are the bulk): strip thumbs, retry once\n          try {\n            list.forEach(function (f) { delete f.thumb; });\n            self.favs.set(list);\n          } catch (e2) {}\n        }\n        self.renderFavs(); self.updateFavBtn();\n        self.toast('\u2b50 Saved to favorites');\n      }\n      try {\n        requestAnimationFrame(function () {\n          requestAnimationFrame(function () { save(self.captureThumb()); });\n        });\n      } catch (e) { save(null); }\n    },\n    captureThumb: function () {\n      // Small 240px-wide JPEG snapshot of the current render for favorite cards.\n      var canvas = null;\n      try { canvas = this.A.canvas(); } catch (e) {}\n      if (!canvas || !canvas.width) return null;\n      try {\n        var w = 240, h = Math.max(1, Math.round(w * canvas.height / canvas.width));\n        var c = document.createElement('canvas');\n        c.width = w; c.height = h;\n        var ctx = c.getContext('2d');\n        ctx.drawImage(canvas, 0, 0, w, h);\n        var url = c.toDataURL('image/jpeg', 0.72);\n        // sanity: reject empty/degenerate captures\n        if (!url || url.length < 2000) return null;\n        return url;\n      } catch (e) { return null; }\n    },\n    updateFavBtn: function () {\n      var s = this.A.getSeed();\n      var favs = this.favs.get([]);\n      var on = favs.some(function (f) { return f.seed === s; });\n      this.bFav.textContent = on ? '\u2605' : '\u2606';\n      this.bFav.classList.toggle('on', on);\n    },\n    renderFavs: function () {\n      var self = this, box = this.panel.querySelector('#sc-favs');\n      box.innerHTML = '';\n      var favs = this.favs.get([]);\n      if (!favs.length) box.innerHTML = '<div class=\"meta\" style=\"color:#9aa0a6;font-size:12px\">Nothing saved yet \u2014 tap \u2606 on a seed you love.</div>';\n      favs.forEach(function (f) {\n        var it = el('div', 'sc-item');\n        var img = f.thumb\n          ? '<img class=\"sc-thumb\" src=\"' + f.thumb + '\" alt=\"\">'\n          : '<span class=\"sc-thumb\" style=\"display:flex;align-items:center;justify-content:center;color:#5a6378;font-size:14px\">\u2b50</span>';\n        it.innerHTML = img + '<span class=\"grow\">' + esc(f.seed) + '</span><span class=\"meta\">' +\n          new Date(f.ts).toLocaleDateString() + '</span>';\n        it.addEventListener('click', function () {\n          self.applySeed(f.seed);\n          if (f.params) {\n            setTimeout(function () {\n              (self.A.params || []).forEach(function (p) {\n                if (f.params[p.key] != null) { try { p.set(f.params[p.key]); } catch (e) {} }\n              });\n              self.refreshParams();\n            }, 50);\n          }\n          self.toast('Loaded favorite: ' + f.seed);\n        });\n        box.appendChild(it);\n      });\n    },\n    renderHist: function () {\n      var self = this, box = this.panel.querySelector('#sc-hist');\n      box.innerHTML = '';\n      var h = this.hist.get([]);\n      if (!h.length) box.innerHTML = '<div style=\"color:#9aa0a6;font-size:12px\">Your recent seeds will appear here.</div>';\n      h.forEach(function (s) {\n        var it = el('div', 'sc-item');\n        it.innerHTML = '<span class=\"grow\">' + esc(s) + '</span>';\n        it.addEventListener('click', function () { self.applySeed(s); });\n        box.appendChild(it);\n      });\n    },\n\n    // ---- recording ----\n    bestMime: function () {\n      if (!window.MediaRecorder) return '';\n      var cands = ['video/mp4', 'video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm'];\n      for (var i = 0; i < cands.length; i++) {\n        try { if (MediaRecorder.isTypeSupported(cands[i])) return cands[i]; } catch (e) {}\n      }\n      return '';\n    },\n    toggleRecord: function () {\n      if (this.recState.rec) this.stopRecord();\n      else this.startRecord();\n    },\n    startRecord: function () {\n      var self = this;\n      var canvas = null;\n      try { canvas = this.A.canvas(); } catch (e) {}\n      if (!canvas || !canvas.captureStream) { this.setStatus('Recording not supported on this canvas.'); return; }\n      var mime = this.bestMime();\n      if (!mime) { this.setStatus('No supported recording format in this browser.'); return; }\n      this.recState.mime = mime;\n      this.recState.chunks = [];\n      var stream;\n      try { stream = canvas.captureStream(60); } catch (e) { this.setStatus('Could not capture stream.'); return; }\n      var rec;\n      try {\n        rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 14000000 });\n      } catch (e) { this.setStatus('Recorder failed to start.'); return; }\n      rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) self.recState.chunks.push(ev.data); };\n      rec.onstop = function () { self.finishRecord(); };\n      try { rec.start(4000); } catch (e) { this.setStatus('Recorder failed to start.'); return; }\n      this.recState.rec = rec;\n      this.recState.t0 = Date.now();\n      this.bRec.classList.add('on');\n      this.panel.querySelector('#sc-recbtn').textContent = '\u25a0 Stop recording';\n      this.tickStatus();\n      if (this.recState.dur > 0) {\n        this.recState.timer = setTimeout(function () { self.stopRecord(); }, this.recState.dur * 1000);\n      }\n      this.toast('\u25cf Recording\u2026');\n    },\n    tickStatus: function () {\n      var self = this;\n      if (!this.recState.rec) return;\n      var s = Math.floor((Date.now() - this.recState.t0) / 1000);\n      var mm = Math.floor(s / 60), ss = ('0' + (s % 60)).slice(-2);\n      this.setStatus('\u25cf REC ' + mm + ':' + ss + ' \u2014 tap Stop when done', true);\n      setTimeout(function () { self.tickStatus(); }, 1000);\n    },\n    stopRecord: function () {\n      clearTimeout(this.recState.timer);\n      try { this.recState.rec.stop(); } catch (e) {}\n      this.setStatus('Finishing\u2026');\n    },\n    finishRecord: function () {\n      var self = this;\n      this.recState.rec = null;\n      this.bRec.classList.remove('on');\n      this.panel.querySelector('#sc-recbtn').textContent = '\u25cf Start recording';\n      var ext = this.recState.mime.indexOf('mp4') !== -1 ? 'mp4' : 'webm';\n      var blob = new Blob(this.recState.chunks, { type: this.recState.mime.split(';')[0] });\n      this.recState.chunks = [];\n      var base = 'seedconsole';\n      try { base = this.A.fileBase(this.A.getSeed()) || base; } catch (e) {}\n      var name = base + '.' + ext;\n      var file = null;\n      try { file = new File([blob], name, { type: blob.type }); } catch (e) {}\n      this.setStatus('Done \u2014 ' + (blob.size / 1048576).toFixed(1) + ' MB. Share it to Files \u2192 your SSD.');\n      var dl = this.panel.querySelector('#sc-dl');\n      dl.innerHTML = '';\n      function fallbackLink() {\n        var url = URL.createObjectURL(blob);\n        var a = el('a', 'sc-link', '\u2b07 Download ' + esc(name));\n        a.href = url; a.download = name;\n        dl.appendChild(a);\n      }\n      if (file && navigator.canShare && navigator.share) {\n        try {\n          if (navigator.canShare({ files: [file] })) {\n            navigator.share({ files: [file], title: name }).then(function () {\n              self.toast('Shared \u2014 pick Save to Files \u2192 your SSD');\n            }, function () { fallbackLink(); });\n            return;\n          }\n        } catch (e) {}\n      }\n      fallbackLink();\n      this.toast('Recording ready below');\n    },\n    setStatus: function (msg, rec) {\n      var s = this.panel.querySelector('#sc-status');\n      s.textContent = msg;\n      s.classList.toggle('rec', !!rec);\n    }\n  };\n\n  window.SeedConsole = SeedConsole;\n})();\n";
+</script>
+<script>
+window.MoorWasm = (function(){
+/* @ts-self-types="./moor_web.d.ts" */
+
+/**
+ * The single bridge between the page and the core. JSON in, JSON out:
+ * `handle(store_json, cmd_json)` returns
+ * `{"ok":true,"store":"<snapshot>","result":{...}}` or
+ * `{"ok":false,"error":"<plain-language message>"}`.
+ * Never panics on bad input — garbage in, honest error out.
+ * @param {string} store_json
+ * @param {string} cmd_json
+ * @returns {string}
+ */
+function handle(store_json, cmd_json) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(store_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(cmd_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.handle(ptr0, len0, ptr1, len1);
+        deferred3_0 = ret[0];
+        deferred3_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+function __wbg_get_imports() {
+    const import0 = {
+        __proto__: null,
+        __wbg___wbindgen_throw_41e9ee4f547fc59a: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_getRandomValues_a608c4436c19407a: function() { return handleError(function (arg0, arg1) {
+            globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
+        }, arguments); },
+        __wbg_now_aa4ccb83129e9e55: function() {
+            const ret = Date.now();
+            return ret;
+        },
+        __wbindgen_init_externref_table: function() {
+            const table = wasm.__wbindgen_externrefs;
+            const offset = table.grow(4);
+            table.set(0, undefined);
+            table.set(offset + 0, undefined);
+            table.set(offset + 1, null);
+            table.set(offset + 2, true);
+            table.set(offset + 3, false);
+        },
+    };
+    return {
+        __proto__: null,
+        "./moor_web_bg.js": import0,
+    };
+}
+
+function addToExternrefTable0(obj) {
+    const idx = wasm.__externref_table_alloc();
+    wasm.__wbindgen_externrefs.set(idx, obj);
+    return idx;
+}
+
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
+function getStringFromWasm0(ptr, len) {
+    return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint8ArrayMemory0 = null;
+function getUint8ArrayMemory0() {
+    if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
+        cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
+    }
+    return cachedUint8ArrayMemory0;
+}
+
+function handleError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        const idx = addToExternrefTable0(e);
+        wasm.__wbindgen_exn_store(idx);
+    }
+}
+
+function passStringToWasm0(arg, malloc, realloc) {
+    if (realloc === undefined) {
+        const buf = cachedTextEncoder.encode(arg);
+        const ptr = malloc(buf.length, 1) >>> 0;
+        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        WASM_VECTOR_LEN = buf.length;
+        return ptr;
+    }
+
+    let len = arg.length;
+    let ptr = malloc(len, 1) >>> 0;
+
+    const mem = getUint8ArrayMemory0();
+
+    let offset = 0;
+
+    for (; offset < len; offset++) {
+        const code = arg.charCodeAt(offset);
+        if (code > 0x7F) break;
+        mem[ptr + offset] = code;
+    }
+    if (offset !== len) {
+        if (offset !== 0) {
+            arg = arg.slice(offset);
+        }
+        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
+        const ret = cachedTextEncoder.encodeInto(arg, view);
+
+        offset += ret.written;
+        ptr = realloc(ptr, len, offset, 1) >>> 0;
+    }
+
+    WASM_VECTOR_LEN = offset;
+    return ptr;
+}
+
+let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+cachedTextDecoder.decode();
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
+function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
+    return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
+}
+
+const cachedTextEncoder = new TextEncoder();
+
+if (!('encodeInto' in cachedTextEncoder)) {
+    cachedTextEncoder.encodeInto = function (arg, view) {
+        const buf = cachedTextEncoder.encode(arg);
+        view.set(buf);
+        return {
+            read: arg.length,
+            written: buf.length
+        };
+    };
+}
+
+let WASM_VECTOR_LEN = 0;
+
+let wasmModule, wasmInstance, wasm;
+function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
+    wasm = instance.exports;
+    wasmModule = module;
+    cachedUint8ArrayMemory0 = null;
+    wasm.__wbindgen_start();
+    return wasm;
+}
+
+async function __wbg_load(module, imports) {
+    if (typeof Response === 'function' && module instanceof Response) {
+        if (!module.ok) {
+            throw new Error(`failed to fetch Wasm: ${module.status} ${module.statusText} fetching '${module.url}'`);
+        }
+
+        if (typeof WebAssembly.instantiateStreaming === 'function') {
+            try {
+                return await WebAssembly.instantiateStreaming(module, imports);
+            } catch (e) {
+                const validResponse = expectedResponseType(module.type);
+
+                if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
+                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
+
+                } else { throw e; }
+            }
+        }
+
+        const bytes = await module.arrayBuffer();
+        return await WebAssembly.instantiate(bytes, imports);
+    } else {
+        const instance = await WebAssembly.instantiate(module, imports);
+
+        if (instance instanceof WebAssembly.Instance) {
+            return { instance, module };
+        } else {
+            return instance;
+        }
+    }
+
+    function expectedResponseType(type) {
+        switch (type) {
+            case 'basic': case 'cors': case 'default': return true;
+        }
+        return false;
+    }
+}
+
+function initSync(module) {
+    if (wasm !== undefined) return wasm;
+
+
+    if (module !== undefined) {
+        if (Object.getPrototypeOf(module) === Object.prototype) {
+            ({module} = module)
+        } else {
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
+        }
+    }
+
+    const imports = __wbg_get_imports();
+    if (!(module instanceof WebAssembly.Module)) {
+        module = new WebAssembly.Module(module);
+    }
+    const instance = new WebAssembly.Instance(module, imports);
+    return __wbg_finalize_init(instance, module);
+}
+
+
+
+
+return {initSync:initSync, handle:handle};
+})();
 </script>
 <script>
 /* ambience-engine — deterministic stereo ambience beds.
@@ -1024,6 +1671,24 @@ var COMPS = [
    why:'Keeps 3D scenes playable on weak hardware without anyone tuning settings by hand.',
    technical:'perf-governor', source:'components/perf-governor/perf-governor.js', inMoor:false,
    toolGap:'It only reports a quality number — applying it (fewer particles, lower resolution) is the host\u2019s job. Thresholds are hardcoded in the component. The quality-over-time chart is a panel-side sample buffer.'},
+  {id:'planet-vegetation', tool:'vegetation', cats:['space','generators'], icon:'\u2740', label:'Plant generator',
+   short:'Grow the planet\u2019s plants from a seed.',
+   job:'Procedural plant geometry — conifers, broadleaf trees, soft ground plants, grass, flowers — scattered with wind sway, exactly as they grow in the planet scenes.',
+   why:'The living layer of every world. Same seed, same forest.',
+   technical:'planet-vegetation', source:'your_files/moor-planet-demo.html (plant builders)', inMoor:false,
+   toolGap:'The plant shapes are the real builders from the planet demo (run against a minimal geometry shim — no THREE.js here). The orbit camera, ground, and this wind sway are panel viewing code; the real placement shader is planet-field-specific.'},
+  {id:'terrain-pipeline', tool:'pipeline', cats:['generators'], icon:'\u224B', label:'Generator pipeline inspector',
+   short:'See inside the terrain generator, add layers.',
+   job:'The terrain generator\u2019s real pipeline as equations — no code — plus your own composable layers (terrace, amplify, ridge, smooth, grain) applied to the real output, seeded and deterministic.',
+   why:'Understand what a generator does, then shape it without touching code.',
+   technical:'terrain-pipeline', source:'components/terrain-core (pipeline) + panel layers', inMoor:false,
+   toolGap:'The base pipeline is the untouched component. Added layers are panel composition — real seeded math, but not part of the component.'},
+  {id:'softbody-creatures', tool:'creatures', cats:['space','generators'], icon:'\u25CF', label:'Soft-body creatures (prototype)',
+   short:'Viability test: creatures from world conditions.',
+   job:'NEW viability prototype (not recovered software): 2D soft-body creatures whose body plan — size, segments, stiffness, colors — derives from a real planet\u2019s data. Poke them; they squish, hop, and hold together.',
+   why:'Tests the design target: body plan follows the environment they spawn in.',
+   technical:'softbody-creatures', source:'new prototype (panel code)', inMoor:false,
+   toolGap:'2D only. A 3D creature needs a volumetric soft-body mesh and terrain-aware walk cycle — a real build, not a tweak. The verdict section gives the honest read.'},
 
   /* --- the rest of the inventory: explanation pages (no fake tools) --- */
   {id:'canvas-shell', tool:null, cats:['interface'], icon:'\u25A3', label:'MOOR canvas',
@@ -1038,10 +1703,11 @@ var COMPS = [
    short:'The production way MOOR builds apps.',
    job:'MOOR\u2019s working \u201cmake me X\u201d path: ask bar \u2192 harness router \u2192 generation rounds \u2192 a kept app in the Apps drawer.',
    why:'This is the pipeline that ships. Per standing decision, no replacement compiler gets built.', technical:'js-create-pipeline', source:'moor-v1 pipeline', inMoor:true},
-  {id:'rust-intent-compiler', tool:null, cats:['creation'], icon:'\u2692', label:'Intent compiler (reference)',
+  {id:'rust-intent-compiler', tool:'intent', cats:['creation'], icon:'\u2692', label:'Intent compiler (reference)',
    short:'Verified reference software, not production.',
-   job:'Deterministic rule-based compiler: plain request \u2192 application definition. Verified working from Node and Chromium via WASM.',
-   why:'Kept available as verified reference software. Production routing stays on the JS pipeline unless separately authorized.', technical:'rust-intent-compiler', source:'moor-core-v0 (Rust)', inMoor:false},
+   job:'Deterministic rule-based compiler: plain request \u2192 application definition. Type a request, see what it heard, vote on whether it got your intent right.',
+   why:'Kept available as verified reference software. Production routing stays on the JS pipeline unless separately authorized.', technical:'rust-intent-compiler', source:'moor-core-v0 (Rust, via WASM)', inMoor:false,
+   toolGap:'The compiler runs here as WebAssembly (bytes fetched from this site). Your thumbs up/down build a local log of how well it reads intent.'},
   {id:'seed-lab', tool:null, cats:['experiences'], icon:'\u2697', label:'Seed Lab',
    short:'Proves recovered parts work inside MOOR.',
    job:'Integration app proving recovery components work inside the real MOOR: seeded terrain, seed codes, remix, console, ambient beds.',
@@ -1050,38 +1716,46 @@ var COMPS = [
    short:'This dashboard.',
    job:'The project workspace you are looking at: inventory, tools, and activity for the MOOR recovery work.',
    why:'So the state of the work is visible in one place.', technical:'project-pulse', source:'this page', inMoor:true},
-  {id:'seed-rng', tool:null, cats:['shared'], icon:'\u2684', label:'Seeded random numbers',
+  {id:'seed-rng', tool:'rng', cats:['shared'], icon:'\u2684', label:'Seeded random numbers',
    short:'Deterministic randomness, no Math.random.',
    job:'Deterministic RNG, hashes, and 2D noise — the foundation; nothing in MOOR generates from Math.random().',
-   why:'Same seed, same output, on every device, every run.', technical:'seed-rng', source:'components/seed-rng/rng.js', inMoor:false},
-  {id:'seed-codec', tool:null, cats:['shared'], icon:'#', label:'Seed codes',
+   why:'Same seed, same output, on every device, every run.', technical:'seed-rng', source:'components/seed-rng/rng.js', inMoor:false,
+   toolGap:'Pure functions — the stream viewer and noise-field painter are panel code around the real mulberry32/hash/makeNoise.'},
+  {id:'seed-codec', tool:'codec', cats:['shared'], icon:'#', label:'Seed codes',
    short:'Short codes that capture a full setup.',
    job:'URL-safe seed codes with strict parsing, remix, and deep links (?seed=).',
-   why:'Share an exact generation as a short string.', technical:'seed-codec', source:'components/seed-codec/', inMoor:false},
-  {id:'seed-console', tool:null, cats:['shared'], icon:'\u2328', label:'Seed console',
+   why:'Share an exact generation as a short string.', technical:'seed-codec', source:'components/seed-codec/', inMoor:false,
+   toolGap:'The demo controls table is panel-defined; codeOf/parseCode/remixConfig are the real component.'},
+  {id:'seed-console', tool:'console', cats:['shared'], icon:'\u2328', label:'Seed console',
    short:'The standard generation bar.',
    job:'Standard generation UI: random, remix, favorites, history, recording.',
-   why:'Every generator gets the same controls.', technical:'seed-console', source:'components/seed-console/', inMoor:false},
-  {id:'save-shape', tool:null, cats:['shared'], icon:'\u2714', label:'Autosave',
+   why:'Every generator gets the same controls.', technical:'seed-console', source:'components/seed-console/', inMoor:false,
+   toolGap:'The console mounts to its own page by design, so it runs in a frame here against a demo studio. The console itself is verbatim.'},
+  {id:'save-shape', tool:'save', cats:['shared'], icon:'\u2714', label:'Autosave',
    short:'Autosave that survives corruption.',
    job:'Debounced versioned autosave with corrupt-save fallback.',
-   why:'Never lose work to a bad write.', technical:'save-shape', source:'components/save-shape/', inMoor:false},
-  {id:'release-gate', tool:null, cats:['shared'], icon:'\u26F3', label:'Release checks',
+   why:'Never lose work to a bad write.', technical:'save-shape', source:'components/save-shape/', inMoor:false,
+   toolGap:'The demo app (clicks + note) is panel code; the save manager is the real component on its own save slot.'},
+  {id:'release-gate', tool:'release', cats:['shared'], icon:'\u26F3', label:'Release checks',
    short:'Verify before you announce.',
    job:'Verify-before-advertising: the checks a build must pass before it ships.',
-   why:'Stops broken builds from reaching the user.', technical:'release-gate', source:'components/release-gate/', inMoor:false},
-  {id:'registry-triple', tool:null, cats:['shared'], icon:'\u2261', label:'Catalog checker',
+   why:'Stops broken builds from reaching the user.', technical:'release-gate', source:'components/release-gate/', inMoor:false,
+   toolGap:'The gate is a Python script and cannot run in this page — its real gates are presented as a runnable checklist.'},
+  {id:'registry-triple', tool:'registry', cats:['shared'], icon:'\u2261', label:'Catalog checker',
    short:'Keeps the catalog honest.',
    job:'Catalog check/scan/build tooling that keeps the component registry truthful.',
-   why:'The reason the inventory on this page can be trusted.', technical:'registry-triple', source:'components/registry-triple/', inMoor:false},
-  {id:'replace-file', tool:null, cats:['shared'], icon:'\u270E', label:'Safe file editing',
+   why:'The reason the inventory on this page can be trusted.', technical:'registry-triple', source:'components/registry-triple/', inMoor:false,
+   toolGap:'The check logic runs here against this page\u2019s own inventory — the scan/build halves need a repo checkout and stay in Node.'},
+  {id:'replace-file', tool:'replace', cats:['shared'], icon:'\u270E', label:'Safe file editing',
    short:'Edits only what it verified first.',
    job:'Safe remote-edit protocol: replaces a file only if it still matches the expected content — aborts otherwise.',
-   why:'Edits never silently clobber newer work.', technical:'replace-file', source:'components/replace-file/', inMoor:false},
-  {id:'idempotent-upload', tool:null, cats:['shared'], icon:'\u21E7', label:'Safe uploads',
+   why:'Edits never silently clobber newer work.', technical:'replace-file', source:'components/replace-file/', inMoor:false,
+   toolGap:'The protocol runs here against a demo document; the hash precondition and refusal behavior are the real logic.'},
+  {id:'idempotent-upload', tool:'upload', cats:['shared'], icon:'\u21E7', label:'Safe uploads',
    short:'Look before you leap.',
    job:'Lookup-before-write uploads: checks what is already there before sending anything.',
-   why:'Uploads that can be retried safely.', technical:'idempotent-upload', source:'components/idempotent-upload/', inMoor:false}
+   why:'Uploads that can be retried safely.', technical:'idempotent-upload', source:'components/idempotent-upload/', inMoor:false,
+   toolGap:'The real Drive adapter runs against a pretend Drive (mock SDK honoring its sealed contract).'},
 ];
 
 /* ---------------- state ---------------- */
@@ -1739,6 +2413,7 @@ TOOLS.mesh = {
  * Hierarchy position is the canonical address path (universe:prime/...). */
 (function(){
 'use strict';
+var planetGL = null, planetRAF = 0;
 TOOLS.world = {
   mount: function(host){
     var W = window.MoorWorld;
@@ -1749,11 +2424,26 @@ TOOLS.world = {
       '<div class="t-controls">'+
         '<span class="meta">'+counts.sectors+' sectors \u00B7 '+counts.systems+' systems \u00B7 '+counts.planets+' planets \u00B7 '+counts.zones+' zones \u00B7 seed '+W.UNIVERSE_SEED+'</span>'+
       '</div>'+
+      '<div class="t-controls"><div class="t-tabs">'+
+        '<button class="btn primary" id="w-tab-tree">Tree</button>'+
+        '<button class="btn" id="w-tab-planet">Planet view</button>'+
+      '</div></div>'+
+      '<div id="w-pane-tree">'+
       '<div class="t-controls">'+
         '<label>Find by address <input id="w-addr" placeholder="universe:prime/sector:S01/\u2026" spellcheck="false" style="width:280px"></label>'+
         '<button class="btn" id="w-go">Go</button>'+
       '</div>'+
-      '<div class="w-main"><div class="w-tree" id="w-tree"></div><div class="w-detail" id="w-detail"><div class="empty">Select a sector, system, planet, or zone.</div></div></div>';
+      '<div class="w-main"><div class="w-tree" id="w-tree"></div><div class="w-detail" id="w-detail"><div class="empty">Select a sector, system, planet, or zone.</div></div></div>'+
+      '</div>'+
+      '<div id="w-pane-planet" style="display:none">'+
+        '<div class="t-controls"><label>Planet <input id="w-psearch" placeholder="type a name…" spellcheck="false" style="width:200px"></label>'+
+        '<select id="w-planet" style="max-width:220px"></select>'+
+        '<button class="btn primary" id="w-view">View</button></div>'+
+        '<canvas id="w-cv" width="600" height="380" style="width:100%;border-radius:12px;touch-action:none"></canvas>'+
+        '<div class="meta" id="w-pinfo"></div>'+
+        '<div class="t-row"><a class="btn" href="https://bassseamoor.github.io/render-queue/moor-planet-demo.html" target="_blank" rel="noopener">Walk the surface in the planet demo ↗</a></div>'+
+        '<p class="meta">The sphere is panel composition — real planet data (name, type, address, climate) and real palette colors, with seeded relief. The full surface explorer is the planet demo.</p>'+
+      '</div>';
 
     function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
@@ -1824,8 +2514,176 @@ TOOLS.world = {
     };
 
     buildTree();
+
+    /* ---------- tabs ---------- */
+    var tabTree = host.querySelector('#w-tab-tree'), tabPlanet = host.querySelector('#w-tab-planet');
+    var paneTree = host.querySelector('#w-pane-tree'), panePlanet = host.querySelector('#w-pane-planet');
+    tabTree.onclick = function(){
+      tabTree.classList.add('primary'); tabPlanet.classList.remove('primary');
+      paneTree.style.display=''; panePlanet.style.display='none';
+    };
+    tabPlanet.onclick = function(){
+      tabPlanet.classList.add('primary'); tabTree.classList.remove('primary');
+      paneTree.style.display='none'; panePlanet.style.display='';
+      if (!planetGL) initPlanet();
+    };
+
+    /* ---------- planet view: 3D sphere from real data + real palettes ---------- */
+    var planetSel = host.querySelector('#w-planet'), psearch = host.querySelector('#w-psearch');
+    var allPlanets = [];
+    W.sectors().forEach(function(s){ s.systems.forEach(function(y){ y.planets.forEach(function(p){ allPlanets.push(p); }); }); });
+    function typeKey(p){
+      var n = (W.planetType(p).name||'').toUpperCase();
+      var m = {'TERRAN WORLD':'TERRAN','OCEAN WORLD':'OCEAN','DESERT WORLD':'DESERT','ICE WORLD':'ICE',
+               'LAVA WORLD':'LAVA','JUNGLE WORLD':'JUNGLE','BARREN ROCK':'BARREN','GAS GIANT':'GAS',
+               'CRYSTAL WORLD':'CRYSTAL','TOXIC WORLD':'TOXIC'};
+      return m[n] || 'TERRAN';
+    }
+    function fillPlanetList(filter){
+      planetSel.innerHTML='';
+      var f=(filter||'').toLowerCase();
+      allPlanets.filter(function(p){ return !f || p.name.toLowerCase().indexOf(f)>=0; })
+        .slice(0,60).forEach(function(p){
+          var o=document.createElement('option'); o.value=p.id;
+          o.textContent=p.name+' ('+typeKey(p)+')'; planetSel.appendChild(o);
+        });
+    }
+    fillPlanetList('');
+    psearch.oninput = function(){ fillPlanetList(psearch.value); };
+    host.querySelector('#w-view').onclick = function(){ if (planetGL) planetGL.setPlanet(planetSel.value); };
+
+    function initPlanet(){
+      var cv = host.querySelector('#w-cv'), gl = cv.getContext('webgl',{antialias:true,preserveDrawingBuffer:true});
+      if (!gl) return;
+      // UV sphere
+      var pos=[], nrm=[], idx=[], uv=[];
+      var NU=72, NV=48;
+      for (var j=0;j<=NV;j++) for (var i=0;i<=NU;i++){
+        var u=i/NU*Math.PI*2, v=j/NV*Math.PI;
+        var x=Math.sin(v)*Math.cos(u), y=Math.cos(v), z=Math.sin(v)*Math.sin(u);
+        pos.push(x,y,z); nrm.push(x,y,z); uv.push(i/NU, j/NV);
+      }
+      for (var y2=0;y2<NV;y2++) for (var x2=0;x2<NU;x2++){
+        var a=y2*(NU+1)+x2, b=a+1, c=a+NU+1, d=c+1;
+        idx.push(a,c,b, b,c,d);
+      }
+      var VS='attribute vec3 p;attribute vec3 n;attribute vec2 t;'+
+        'uniform mat4 mvp;uniform float uSeed;'+
+        'varying vec3 vN;varying vec2 vT;varying float vH;'+
+        'float h21(vec2 q){ vec3 p3=fract(vec3(q.xyx)*0.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }'+
+        'float vnoise(vec2 q){ vec2 i=floor(q), f=fract(q); vec2 u=f*f*(3.0-2.0*f);'+
+        ' return mix(mix(h21(i+uSeed),h21(i+vec2(1,0)+uSeed),u.x), mix(h21(i+vec2(0,1)+uSeed),h21(i+vec2(1,1)+uSeed),u.x), u.y); }'+
+        'float fbm(vec2 q){ float s=0.0,a=0.5; for(int k=0;k<4;k++){ s+=a*vnoise(q); q*=2.03; a*=0.5; } return s; }'+
+        'void main(){'+
+        ' float h=fbm(t*vec2(6.0,3.0));'+
+        ' float continents=smoothstep(0.35,0.65,fbm(t*vec2(2.0,1.0)+7.0));'+
+        ' float m=h*0.65+continents*0.35;'+
+        ' vec3 q=p*(1.0+(m-0.5)*0.14);'+
+        ' vH=m; vN=n; vT=t;'+
+        ' gl_Position=mvp*vec4(q,1.0);}';
+      var FS='precision mediump float;'+
+        'uniform vec3 uDeep,uShallow,uLandA,uLandB,uIce,uAtmo;uniform float uSea;'+
+        'varying vec3 vN;varying vec2 vT;varying float vH;'+
+        'void main(){'+
+        ' vec3 N=normalize(vN);'+
+        ' vec3 base;'+
+        ' if (vH<uSea){ float d=smoothstep(uSea,uSea-0.25,vH); base=mix(uShallow,uDeep,d); }'+
+        ' else { float d=smoothstep(uSea,uSea+0.45,vH); base=mix(uLandA,uLandB,d);'+
+        '   float ice=smoothstep(0.72,0.9,abs(vT.y*2.0-1.0)+ (vH-uSea)*0.4);'+
+        '   base=mix(base,uIce,ice); }'+
+        ' float ndl=max(dot(N,normalize(vec3(0.6,0.5,0.7))),0.0);'+
+        ' float night=smoothstep(0.0,-0.25,dot(N,normalize(vec3(0.6,0.5,0.7))));'+
+        ' vec3 lit=base*(0.12+0.95*ndl);'+
+        ' lit+=base*night*vec3(0.1,0.15,0.3)*0.4;'+
+        // atmosphere rim
+        ' vec3 V=vec3(0.0,0.0,1.0);'+
+        ' float rim=pow(1.0-abs(dot(N,V)),2.5);'+
+        ' lit+=uAtmo*rim*0.9;'+
+        ' gl_FragColor=vec4(lit,1.0);}';
+      function sh(t,s){ var h=gl.createShader(t); gl.shaderSource(h,s); gl.compileShader(h);
+        if (!gl.getShaderParameter(h,gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(h));
+        return h; }
+      var pr=gl.createProgram();
+      gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS)); gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));
+      gl.linkProgram(pr); gl.useProgram(pr);
+      function attr(nm,arr,size){
+        var l=gl.getAttribLocation(pr,nm), b=gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,size,gl.FLOAT,false,0,0);
+      }
+      attr('p',pos,3); attr('n',nrm,3); attr('t',uv,2);
+      var ib=gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(idx),gl.STATIC_DRAW);
+      var uMVP=gl.getUniformLocation(pr,'mvp'), uSeed=gl.getUniformLocation(pr,'uSeed');
+      var U={};
+      ['uDeep','uShallow','uLandA','uLandB','uIce','uAtmo'].forEach(function(nm){ U[nm]=gl.getUniformLocation(pr,nm); });
+      var uSea=gl.getUniformLocation(pr,'uSea');
+      function hx(c){ return [parseInt(c.slice(1,3),16)/255,parseInt(c.slice(3,5),16)/255,parseInt(c.slice(5,7),16)/255]; }
+
+      var yaw=0, dragging=false, lx=0, auto=true;
+      cv.addEventListener('pointerdown',function(e){ dragging=true; auto=false; lx=e.clientX; cv.setPointerCapture(e.pointerId); });
+      cv.addEventListener('pointermove',function(e){ if(dragging){ yaw+=(e.clientX-lx)*0.01; lx=e.clientX; } });
+      cv.addEventListener('pointerup',function(){ dragging=false; });
+
+      function setPlanet(pid){
+        var p = W.findById(pid);
+        if (!p || p.kind!=='planet') return;
+        var type = typeKey(p);
+        var T = (typeof PTEX!=='undefined' && PTEX[type]) || {};
+        var M = (typeof MAT!=='undefined' && MAT[type]) || {};
+        var seedH=0; for (var i=0;i<p.id.length;i++) seedH=(seedH*31+p.id.charCodeAt(i))%1000;
+        gl.uniform1f(uSeed, seedH);
+        function C(v, fb){ var c = v ? hx(v) : hx(fb); return c; }
+        var land = T.land || ['#5a4a3a','#7a6a4a'];
+        var water = T.water || ['#1a3a5a','#0a1a3a'];
+        var landA=C(land[0],'#5a4a3a'), landB=C(land[1],'#7a6a4a');
+        var leafA=C(M.leaf&&M.leaf[0],'#3a6a3a');
+        var waterA=C(water[0],'#1a3a5a'), waterB=C(water[1],'#0a1a3a');
+        var atmoNum = (typeof T.atmo==='number') ? T.atmo : 0x88bbff;
+        var atmoCss = '#'+('000000'+atmoNum.toString(16)).slice(-6);
+        var skyB=hx(atmoCss);
+        // land color leans toward the planet's vegetation tone
+        landB=[(landB[0]+leafA[0])/2,(landB[1]+leafA[1])/2,(landB[2]+leafA[2])/2];
+        gl.uniform3f(U.uDeep,waterB[0],waterB[1],waterB[2]);
+        gl.uniform3f(U.uShallow,waterA[0],waterA[1],waterA[2]);
+        gl.uniform3f(U.uLandA,landA[0],landA[1],landA[2]);
+        gl.uniform3f(U.uLandB,landB[0],landB[1],landB[2]);
+        gl.uniform3f(U.uIce,0.88,0.92,0.96);
+        gl.uniform3f(U.uAtmo,skyB[0]*1.5+0.1,skyB[1]*1.5+0.1,skyB[2]*1.5+0.2);
+        gl.uniform1f(uSea, (typeof T.sea==='number' && T.sea>0) ? T.sea : -1);
+        var cl=W.climate(p.id);
+        host.querySelector('#w-pinfo').innerHTML =
+          '<b>'+esc(p.name)+'</b> · '+esc(p.addr||p.id)+' · '+esc(type)+' · '+esc(cl.temp+', '+cl.air)+
+          ' — relief seeded by planet id, colors from its real palette.';
+      }
+      planetGL={setPlanet:setPlanet};
+
+      function persp(f,a,n,f2){ var t=1/Math.tan(f/2),o=new Float32Array(16);
+        o[0]=t/a;o[5]=t;o[10]=(f2+n)/(n-f2);o[11]=-1;o[14]=2*f2*n/(n-f2); return o; }
+      var t0=performance.now();
+      function frame(){
+        planetRAF=requestAnimationFrame(frame);
+        var t=(performance.now()-t0)/1000;
+        if (auto) yaw+=0.0016;
+        gl.viewport(0,0,cv.width,cv.height);
+        gl.clearColor(0.02,0.03,0.06,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.DEPTH_TEST);
+        // stars
+        // (skip — clean gradient bg)
+        var cy=Math.cos(yaw), sy=Math.sin(yaw);
+        var rot=new Float32Array([cy,0,-sy,0, 0,1,0,0, sy,0,cy,0, 0,0,-3.2,1]);
+        var mvp=new Float32Array(16), P=persp(0.8,cv.width/cv.height,0.1,50);
+        for (var i=0;i<4;i++) for (var j=0;j<4;j++)
+          mvp[i*4+j]=P[j]*rot[i*4]+P[4+j]*rot[i*4+1]+P[8+j]*rot[i*4+2]+P[12+j]*rot[i*4+3];
+        gl.uniformMatrix4fv(uMVP,false,mvp);
+        gl.drawElements(gl.TRIANGLES,idx.length,gl.UNSIGNED_SHORT,0);
+      }
+      frame();
+      if (planetSel.value) setPlanet(planetSel.value);
+    }
   },
-  unmount: function(){}
+  unmount: function(){ if (planetRAF) cancelAnimationFrame(planetRAF); planetRAF=0; planetGL=null; }
 };
 })();
 
@@ -2230,6 +3088,1324 @@ TOOLS.perf = {
   },
   unmount: function(){ if (this._stop) this._stop(); }
 };
+})();
+
+</script>
+<script>
+/* Shared tools — every one testable. Thin interactive panels around the real
+ * recovered modules (inlined verbatim by the build script).
+ * Panel-owned: the demo harnesses, mock SDKs, and demo documents. */
+(function(){
+'use strict';
+
+function el(tag, cls, html){
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html != null) e.innerHTML = html;
+  return e;
+}
+function esc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function sec(host, title, bodyHtml){
+  var d = el('div','t-sec','<div class="eyebrow">'+esc(title)+'</div>'+bodyHtml);
+  host.appendChild(d);
+  return d;
+}
+
+/* ================= seed-rng ================= */
+TOOLS.rng = { mount: function(host){
+  host.innerHTML =
+    '<div class="t-controls"><label>Seed <input id="r-seed" value="silver-coast" spellcheck="false"></label>'+
+    '<button class="btn primary" id="r-run">Run</button></div>'+
+    '<div class="t-sec"><div class="eyebrow">Same seed, same numbers — every time</div>'+
+    '<div class="meta" id="r-hash"></div><div class="meta mono" id="r-stream" style="word-break:break-all"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">2D noise field (the ground under generators)</div>'+
+    '<canvas id="r-noise" width="240" height="120" style="width:100%;border-radius:8px"></canvas></div>'+
+    '<p class="meta">Real seed-rng: mulberry32, hashSeed, hash2i, makeNoise. Nothing here uses Math.random().</p>';
+  function run(){
+    var s = host.querySelector('#r-seed').value || 'seed';
+    var h1 = hashSeed(s), st1 = streamFrom(s), st2 = streamFrom(s);
+    var a=[], b=[];
+    for (var i=0;i<10;i++){ a.push(st1().toFixed(4)); b.push(st2().toFixed(4)); }
+    host.querySelector('#r-hash').textContent = 'hash("'+s+'") = '+h1;
+    host.querySelector('#r-stream').innerHTML =
+      'run 1: '+a.join(' ')+'<br>run 2: '+b.join(' ')+'<br>'+
+      (a.join()===b.join() ? '✓ identical — deterministic' : '✗ MISMATCH');
+    var nz = makeNoise(s, 60, 30), cv = host.querySelector('#r-noise'), cx = cv.getContext('2d');
+    var img = cx.createImageData(60,30);
+    for (var y=0;y<30;y++) for (var x=0;x<60;x++){
+      var v = Math.floor(nz(x,y)*255), o=(y*60+x)*4;
+      img.data[o]=img.data[o+1]=img.data[o+2]=v; img.data[o+3]=255;
+    }
+    var off=document.createElement('canvas'); off.width=60; off.height=30;
+    off.getContext('2d').putImageData(img,0,0);
+    cx.imageSmoothingEnabled=false; cx.drawImage(off,0,0,240,120);
+  }
+  host.querySelector('#r-run').onclick = run;
+  host.querySelector('#r-seed').onchange = run;
+  run();
+}};
+
+/* ================= seed-codec ================= */
+TOOLS.codec = { mount: function(host){
+  var codec = SeedCodec.makeCodec({prefix:'DM1', controls:[
+    ['hills','Hills',0,100],['trees','Trees',0,100],['water','Water',0,100]
+  ]});
+  host.innerHTML =
+    '<div class="t-controls"><label>Hills <input id="c-hills" type="range" min="0" max="100" value="60"></label>'+
+    '<label>Trees <input id="c-trees" type="range" min="0" max="100" value="40"></label>'+
+    '<label>Water <input id="c-water" type="range" min="0" max="100" value="30"></label></div>'+
+    '<div class="t-row"><button class="btn primary" id="c-encode">Make code</button>'+
+    '<button class="btn" id="c-remix">Remix</button></div>'+
+    '<div class="t-sec"><div class="eyebrow">Code</div><div class="meta mono" id="c-code" style="word-break:break-all;font-size:15px"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Decoded back</div><div class="meta" id="c-back"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Try a code</div>'+
+    '<div class="t-row"><input id="c-in" spellcheck="false" placeholder="paste a code" style="flex:1">'+
+    '<button class="btn" id="c-parse">Decode</button></div><div class="meta" id="c-msg"></div></div>'+
+    '<p class="meta">Real seed-codec: codeOf / parseCode (strict) / remixConfig. A code packs a whole setup into one string.</p>';
+  var cur = null;
+  function show(code){
+    host.querySelector('#c-code').textContent = code;
+    var cfg = codec.parseCode(code);
+    host.querySelector('#c-back').textContent = cfg ?
+      'hills '+cfg.params.hills+', trees '+cfg.params.trees+', water '+cfg.params.water+' — round-trips exactly' :
+      'rejected by strict parsing';
+  }
+  host.querySelector('#c-encode').onclick = function(){
+    cur = {realm:0, layout:0, detail:0, params:{
+      hills:+host.querySelector('#c-hills').value,
+      trees:+host.querySelector('#c-trees').value,
+      water:+host.querySelector('#c-water').value}, lens:null, locks:{}};
+    // fresh random layout/detail like a real studio would
+    cur.layout = Math.floor(streamFrom('layout'+Date.now())()*4294967296);
+    cur.detail = Math.floor(streamFrom('detail'+Date.now())()*4294967296);
+    show(codec.codeOf(cur));
+  };
+  host.querySelector('#c-remix').onclick = function(){
+    if (!cur){ host.querySelector('#c-msg').textContent='Make a code first.'; return; }
+    cur = codec.remixConfig(cur);
+    show(codec.codeOf(cur));
+  };
+  host.querySelector('#c-parse').onclick = function(){
+    var code = host.querySelector('#c-in').value.trim();
+    var cfg = codec.parseCode(code);
+    host.querySelector('#c-msg').textContent = cfg ?
+      'Valid — hills '+cfg.params.hills+', trees '+cfg.params.trees+', water '+cfg.params.water :
+      'Invalid code (wrong shape, out-of-range value, or bad lens) — rejected, not guessed.';
+  };
+  host.querySelector('#c-encode').onclick();
+}};
+
+/* ================= seed-console ================= */
+TOOLS.console = { mount: function(host){
+  host.innerHTML =
+    '<p class="meta">The real Seed Console running against a tiny demo studio (a seeded pattern canvas). '+
+    'Random, remix, favorites, history, and the Customize sliders are all live — this is the exact component every generator is supposed to use.</p>'+
+    '<iframe id="sc-frame" title="Seed console demo" style="width:100%;height:420px;border:1px solid rgba(120,180,220,.18);border-radius:12px;background:#0a0f16"></iframe>'+
+    '<p class="meta">The console mounts to its own page inside the frame, the way it was designed to. The demo studio draws a seeded medallion; the sliders reshape it.</p>';
+  var src = window.SEED_CONSOLE_SRC || '';
+  var demo =
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+    '<style>html,body{margin:0;background:#0a0f16;color:#cfe3f5;font-family:system-ui}'+
+    '#stage{display:block;width:100%;height:340px}</style></head><body>'+
+    '<canvas id="stage" width="600" height="340"></canvas>'+
+    '<script>'+src+'<\/script>'+
+    '<script>\n'+
+    'var S={seed:"demo-1",petals:8,rings:5,twist:30};\n'+
+    'function draw(){\n'+
+    ' var cv=document.getElementById("stage"),cx=cv.getContext("2d");\n'+
+    ' var rnd=streamFrom(S.seed),W=cv.width,H=cv.height;\n'+
+    ' cx.fillStyle="#0a0f16";cx.fillRect(0,0,W,H);\n'+
+    ' cx.translate(W/2,H/2);\n'+
+    ' for(var r=0;r<S.rings;r++){\n'+
+    '  var rad=20+r*(Math.min(W,H)/2-30)/S.rings;\n'+
+    '  for(var p=0;p<S.petals;p++){\n'+
+    '   var a=(p/S.petals)*Math.PI*2+r*S.twist*Math.PI/180+rnd()*0.1;\n'+
+    '   var hue=(rnd()*70+180)|0;\n'+
+    '   cx.fillStyle="hsla("+hue+",60%,"+(40+r*8)+"%,.85)";\n'+
+    '   cx.beginPath();cx.ellipse(Math.cos(a)*rad,Math.sin(a)*rad,6+r*2,3+r, a,0,7);cx.fill();\n'+
+    '  }\n'+
+    ' }\n'+
+    ' cx.fillStyle="#cfe3f5";cx.font="13px system-ui";cx.textAlign="center";\n'+
+    ' cx.fillText("seed "+S.seed,-W/2+70,-H/2+24);\n'+
+    '}\n'+
+    'window.SeedConsoleAdapter={\n'+
+    ' studio:"pulse-demo",title:"Demo studio",\n'+
+    ' getSeed:function(){return S.seed;},\n'+
+    ' setSeed:function(s){S.seed=String(s);draw();},\n'+
+    ' randomSeed:function(){return "demo-"+Math.floor(streamFrom("r"+Date.now())()*1e6).toString(36);},\n'+
+    ' remixSeed:function(s){return s+"~"+Math.floor(streamFrom("m"+s)*1e4).toString(36);},\n'+
+    ' params:[\n'+
+    '  {key:"petals",label:"Petals",min:3,max:16,step:1,get:function(){return S.petals;},set:function(v){S.petals=v|0;draw();}},\n'+
+    '  {key:"rings",label:"Rings",min:1,max:9,step:1,get:function(){return S.rings;},set:function(v){S.rings=v|0;draw();}},\n'+
+    '  {key:"twist",label:"Twist",min:0,max:90,step:1,get:function(){return S.twist;},set:function(v){S.twist=+v;draw();}}\n'+
+    ' ]\n'+
+    '};\n'+
+    'SeedConsole.init(window.SeedConsoleAdapter);\n'+
+    '<\/script></body></html>';
+  host.querySelector('#sc-frame').srcdoc = demo;
+}};
+
+/* ================= save-shape ================= */
+TOOLS.save = { mount: function(host){
+  var mgr = createSaveManager({
+    key:'pulse.save-demo', version:1, debounceMs:800,
+    collect:function(){ return {clicks:clicks, note:host.querySelector('#s-note').value}; },
+    apply:function(s){ clicks=s.clicks||0; host.querySelector('#s-note').value=s.note||'';
+      host.querySelector('#s-clicks').textContent=clicks; },
+    onCorrupt:function(){ host.querySelector('#s-msg').textContent='Save was corrupted — started fresh (this is the fallback working).'; },
+    shouldSave:function(){ return true; }
+  });
+  var clicks = 0;
+  host.innerHTML =
+    '<div class="t-sec"><div class="eyebrow">A tiny app with autosave</div>'+
+    '<div class="t-row"><button class="btn primary" id="s-click">Click me</button>'+
+    '<span class="meta">clicks: <b id="s-clicks">0</b></span></div>'+
+    '<label>Note <input id="s-note" placeholder="type something…"></label>'+
+    '<div class="meta" id="s-msg">Edits autosave ~1s after you stop (debounced). Reload this page — your clicks and note come back.</div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Break it on purpose</div>'+
+    '<div class="t-row"><button class="btn" id="s-corrupt">Corrupt the save</button>'+
+    '<button class="btn" id="s-clear">Clear save</button></div>'+
+    '<div class="meta">Corrupting writes garbage to the save slot, then reloads — watch the fallback start fresh instead of crashing.</div></div>'+
+    '<p class="meta">Real save-shape: debounce, JSON snapshot, version check, corrupt-save fallback. This demo uses its own save slot so it never touches your real data.</p>';
+  if (mgr.hasSave()){ try{ mgr.loadSave(); }catch(e){} }
+  host.querySelector('#s-click').onclick = function(){ clicks++;
+    host.querySelector('#s-clicks').textContent = clicks; mgr.saveSoon(); };
+  host.querySelector('#s-note').oninput = function(){ mgr.saveSoon(); };
+  host.querySelector('#s-corrupt').onclick = function(){
+    try{ localStorage.setItem('pulse.save-demo','{"clicks":###garbage'); }catch(e){}
+    location.reload();
+  };
+  host.querySelector('#s-clear').onclick = function(){ mgr.clearSave(); location.reload(); };
+}};
+
+/* ================= release-gate ================= */
+TOOLS.release = { mount: function(host){
+  var gates = [
+    ['Version is pinned','The build carries an exact version string — no "latest" ambiguity.'],
+    ['Bytes verified','What the user downloads matches what was built, byte for byte.'],
+    ['Old version kept','The previous build stays reachable until the new one proves itself.'],
+    ['No silent failures','Every check reports pass/fail loudly — nothing is assumed.']
+  ];
+  var html = '<p class="meta">The release gate is a Python script (release.py) — it can\u2019t run inside this page, so here are its actual gates as a checklist you can run through. The script itself enforces them on every real release.</p><div class="t-sec"><div class="eyebrow">The gates</div>';
+  gates.forEach(function(g,i){
+    html += '<label class="t-check"><input type="checkbox" id="g-'+i+'"> <b>'+esc(g[0])+'</b><span class="meta">'+esc(g[1])+'</span></label>';
+  });
+  html += '<div class="t-row"><button class="btn primary" id="g-run">Run the gate</button></div><div class="meta" id="g-out"></div></div>';
+  host.innerHTML = html;
+  host.querySelector('#g-run').onclick = function(){
+    var all = gates.every(function(_,i){ return host.querySelector('#g-'+i).checked; });
+    host.querySelector('#g-out').innerHTML = all ?
+      '<b style="color:#7dffa8">✓ GATE PASSED</b> — this build may be announced.' :
+      '<b style="color:#ffb37d">✗ GATE BLOCKED</b> — unchecked gates above. Nothing ships until every gate passes.';
+  };
+}};
+
+/* ================= registry-triple ================= */
+TOOLS.registry = { mount: function(host){
+  host.innerHTML =
+    '<p class="meta">The catalog checker, turned on itself: it validates this dashboard\u2019s own component inventory — unique ids, known categories, every tool key resolving to a real mounted tool.</p>'+
+    '<div class="t-row"><button class="btn primary" id="rg-run">Check the catalog</button></div>'+
+    '<div class="t-sec"><div class="eyebrow">Results</div><div class="meta mono" id="rg-out">Not run yet.</div></div>'+
+    '<p class="meta">Real registry-triple logic: schema, uniqueness, and known-kind checks — the same checks that keep the App Wrangler honest. The scan/build halves need a repo checkout, so they stay in Node.</p>';
+  host.querySelector('#rg-run').onclick = function(){
+    var out = [], fails = 0;
+    function ok(name, cond, detail){
+      out.push((cond?'\u2713 ':'\u2717 ')+name+(detail?' — '+detail:''));
+      if (!cond) fails++;
+    }
+    var ids = {};
+    COMPS.forEach(function(c){
+      ok('unique id: '+c.id, !ids[c.id], ids[c.id]?'DUPLICATE':'');
+      ids[c.id]=1;
+      var badCats = (c.cats||[]).filter(function(k){ return !CATS.some(function(x){return x.id===k;}); });
+      ok('known categories: '+c.id, badCats.length===0, badCats.join(','));
+      if (c.tool) ok('tool resolves: '+c.tool, !!TOOLS[c.tool]);
+      ok('inMoor is a real boolean: '+c.id, typeof c.inMoor === 'boolean');
+    });
+    ok('inventory non-empty', COMPS.length > 0, COMPS.length+' entries');
+    host.querySelector('#rg-out').innerHTML = esc(out.join('\n'))+
+      '\n\n'+(fails? '\u2717 '+fails+' FAILURES' : '\u2713 ALL '+out.length+' CHECKS PASS');
+  };
+}};
+
+/* ================= replace-file ================= */
+TOOLS.replace = { mount: function(host){
+  var doc = 'Hello, MOOR.\nThis is line two.\n';
+  function sha(s){
+    if (crypto.subtle){
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function(b){
+        return Array.prototype.map.call(new Uint8Array(b), function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
+      });
+    }
+    var h=0; for (var i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; }
+    return Promise.resolve('fnv'+(h>>>0).toString(16));
+  }
+  function render(curHash){
+    host.querySelector('#rp-doc').textContent = doc;
+    host.querySelector('#rp-hash').textContent = 'sha256: '+curHash.slice(0,24)+'…';
+    host.querySelector('#rp-expect').value = curHash;
+  }
+  host.innerHTML =
+    '<p class="meta">The safe-edit protocol, live: an edit only lands if the file still matches the hash you saw. Try editing with the right hash (lands), then with a stale hash (refused).</p>'+
+    '<div class="t-sec"><div class="eyebrow">Document</div><div class="meta mono" id="rp-doc" style="white-space:pre-wrap"></div>'+
+    '<div class="meta mono" id="rp-hash"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Propose an edit</div>'+
+    '<label>New content <textarea id="rp-content" rows="3" style="width:100%">Hello, MOOR.\nThis is line two — edited.\n</textarea></label>'+
+    '<label>Expected hash <input id="rp-expect" class="mono" spellcheck="false" style="width:100%"></label>'+
+    '<div class="t-row"><button class="btn primary" id="rp-go">Replace file</button></div>'+
+    '<div class="meta" id="rp-out"></div></div>'+
+    '<p class="meta">Real replace-file protocol: hash precondition → atomic write → receipt. A wrong hash changes nothing — the edit is refused, not half-applied.</p>';
+  sha(doc).then(render);
+  host.querySelector('#rp-go').onclick = function(){
+    sha(doc).then(function(cur){
+      var exp = host.querySelector('#rp-expect').value.trim();
+      if (exp !== cur){
+        host.querySelector('#rp-out').innerHTML =
+          '<b style="color:#ffb37d">✗ REFUSED</b> — expected hash doesn\u2019t match. The document was not touched (someone else may have edited it first).';
+        return;
+      }
+      doc = host.querySelector('#rp-content').value;
+      sha(doc).then(function(h){
+        render(h);
+        host.querySelector('#rp-out').innerHTML =
+          '<b style="color:#7dffa8">✓ REPLACED</b> — hash matched, write applied atomically. New receipt issued.';
+      });
+    });
+  };
+}};
+
+/* ================= idempotent-upload ================= */
+TOOLS.upload = { mount: function(host){
+  // mock Drive SDK: in-memory file store honoring the sealed adapter's contract
+  var files = [], n = 0;
+  var sdk = {
+    log:function(m){ logEl.innerHTML += esc(m)+'\n'; },
+    http:{
+      get:function(url, o){
+        var m = /q=([^&]*)/.exec(url||'');
+        var found = [];
+        if (m){
+          var q = decodeURIComponent(m[1]);
+          var km = /'([^']+)'/.exec(q);
+          var key = km && km[1];
+          found = files.filter(function(f){ return !f.trashed && f.appProperties && f.appProperties.moor_idem===key; });
+        }
+        return Promise.resolve({status:200, json:{files:found}});
+      },
+      post:function(url, o){
+        n++;
+        var meta = {};
+        try {
+          var body = o.body||'';
+          var jm = /{[^{}]*"name"[^{}]*}/.exec(body);
+          if (jm) meta = JSON.parse(jm[0]);
+        } catch(e){}
+        if (o.json) meta = o.json;
+        var f = {id:'file-'+n, name:meta.name||'untitled', appProperties:meta.appProperties||{}};
+        files.push(f);
+        return Promise.resolve({status:200, json:f});
+      },
+      patch:function(){ return Promise.resolve({status:200, json:{}}); },
+      del:function(){ return Promise.resolve({status:200, json:{}}); }
+    }
+  };
+  host.innerHTML =
+    '<p class="meta">The real Drive upload adapter, running against a pretend Drive. Upload the same file twice with the same idempotency key — the second upload finds the first and sends nothing.</p>'+
+    '<div class="t-controls"><label>File name <input id="u-name" value="screenshot.png"></label>'+
+    '<label>Idempotency key <input id="u-key" value="shot-001" spellcheck="false"></label></div>'+
+    '<div class="t-row"><button class="btn primary" id="u-go">Upload</button>'+
+    '<button class="btn" id="u-retry">Upload again (retry)</button></div>'+
+    '<div class="t-sec"><div class="eyebrow">Adapter log</div><div class="meta mono" id="u-log" style="white-space:pre-wrap;min-height:80px"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Pretend Drive</div><div class="meta mono" id="u-files">(empty)</div></div>'+
+    '<p class="meta">Real idempotent-upload: lookup-before-write on the moor_idem key. Retries are safe — no duplicates, ever.</p>';
+  var logEl = host.querySelector('#u-log');
+  function showFiles(){
+    host.querySelector('#u-files').textContent = files.length ?
+      files.map(function(f){return f.id+'  '+f.name+'  key='+(f.appProperties.moor_idem||'?');}).join('\n') : '(empty)';
+  }
+  function upload(){
+    var name = host.querySelector('#u-name').value, key = host.querySelector('#u-key').value;
+    DriveUpload.invoke('upload', {name:name, idempotencyKey:key, mimeType:'image/png', bytesB64:'iVBORw0KGgo='},
+      {traceId:'demo'}, sdk).then(function(r){
+        logEl.innerHTML += (r.deduplicated ? '→ deduplicated, returned '+r.fileId+' (nothing sent)\n'
+                                           : '→ uploaded as '+r.fileId+'\n');
+        showFiles();
+      });
+  }
+  host.querySelector('#u-go').onclick = upload;
+  host.querySelector('#u-retry').onclick = upload;
+}};
+
+})();
+
+</script>
+<script>
+/* Planet vegetation — the real plant geometry builders from moor-planet-demo.html,
+ * running verbatim against a minimal THREE shim (only the geometry classes the
+ * builders use: BufferGeometry + 4 primitives). No THREE.js is loaded.
+ * Panel-owned: the shim, the orbit viewer, and the wind sway (the real wind
+ * shader is planet-field-specific and lives in the demo). */
+(function(){
+'use strict';
+
+/* ---------- minimal THREE geometry shim (panel code) ---------- */
+function BufAttr(arr, size){
+  this.array = (arr instanceof Float32Array) ? arr : new Float32Array(arr);
+  this.itemSize = size; this.count = this.array.length / size;
+}
+BufAttr.prototype.getX = function(i){ return this.array[i*3]; };
+BufAttr.prototype.getY = function(i){ return this.array[i*3+1]; };
+BufAttr.prototype.getZ = function(i){ return this.array[i*3+2]; };
+BufAttr.prototype.setXYZ = function(i,x,y,z){ var a=this.array,o=i*3; a[o]=x;a[o+1]=y;a[o+2]=z; };
+BufAttr.prototype.setXYZW = function(i,x,y,z,w){ var a=this.array,o=i*4; a[o]=x;a[o+1]=y;a[o+2]=z;a[o+3]=w; };
+
+function BufferGeometry(){
+  this.attributes = {}; this.index = null;
+}
+BufferGeometry.prototype.setAttribute = function(n,a){ this.attributes[n]=a; return this; };
+BufferGeometry.prototype.setIndex = function(idx){
+  this.index = (idx && idx.array) ? idx : {array: idx};
+  return this;
+};
+BufferGeometry.prototype.computeVertexNormals = function(){
+  var p = this.attributes.position, n = p.count;
+  var ns = new Float32Array(n*3);
+  var idx = this.index ? this.index.array : null;
+  function tri(a,b,c){
+    var ax=p.array[a*3],ay=p.array[a*3+1],az=p.array[a*3+2];
+    var bx=p.array[b*3],by=p.array[b*3+1],bz=p.array[b*3+2];
+    var cx=p.array[c*3],cy=p.array[c*3+1],cz=p.array[c*3+2];
+    var ux=bx-ax,uy=by-ay,uz=bz-az, vx=cx-ax,vy=cy-ay,vz=cz-az;
+    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    ns[a*3]+=nx;ns[a*3+1]+=ny;ns[a*3+2]+=nz;
+    ns[b*3]+=nx;ns[b*3+1]+=ny;ns[b*3+2]+=nz;
+    ns[c*3]+=nx;ns[c*3+1]+=ny;ns[c*3+2]+=nz;
+  }
+  if (idx){ for (var i=0;i<idx.length;i+=3) tri(idx[i],idx[i+1],idx[i+2]); }
+  else { for (var j=0;j<n;j+=3) tri(j,j+1,j+2); }
+  for (var k=0;k<n;k++){
+    var l = Math.hypot(ns[k*3],ns[k*3+1],ns[k*3+2]) || 1;
+    ns[k*3]/=l; ns[k*3+1]/=l; ns[k*3+2]/=l;
+  }
+  this.attributes.normal = new BufAttr(ns,3);
+};
+function xform(geo, fn){
+  var p = geo.attributes.position;
+  for (var i=0;i<p.count;i++) fn(p.array, i*3);
+  if (geo.attributes.normal) geo.computeVertexNormals();
+  return geo;
+}
+BufferGeometry.prototype.translate = function(x,y,z){
+  return xform(this, function(a,o){ a[o]+=x; a[o+1]+=y; a[o+2]+=z; });
+};
+BufferGeometry.prototype.scale = function(x,y,z){
+  return xform(this, function(a,o){ a[o]*=x; a[o+1]*=y; a[o+2]*=z; });
+};
+BufferGeometry.prototype.rotateX = function(a){
+  var c=Math.cos(a), s=Math.sin(a);
+  return xform(this, function(p,o){ var y=p[o+1],z=p[o+2]; p[o+1]=y*c-z*s; p[o+2]=y*s+z*c; });
+};
+BufferGeometry.prototype.rotateY = function(a){
+  var c=Math.cos(a), s=Math.sin(a);
+  return xform(this, function(p,o){ var x=p[o],z=p[o+2]; p[o]=x*c+z*s; p[o+2]=-x*s+z*c; });
+};
+
+function gridGeo(nu, nv, fn){
+  // fn(u,v) -> [x,y,z]; indexed grid with normals via computeVertexNormals
+  var pos = [], idx = [];
+  for (var j=0;j<=nv;j++) for (var i=0;i<=nu;i++){
+    var p = fn(i/nu, j/nv); pos.push(p[0],p[1],p[2]);
+  }
+  for (var y=0;y<nv;y++) for (var x=0;x<nu;x++){
+    var a=y*(nu+1)+x, b=a+1, c=a+nu+1, d=c+1;
+    idx.push(a,c,b, b,c,d);
+  }
+  var g = new BufferGeometry();
+  g.setAttribute('position', new BufAttr(pos,3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+function CylinderGeometry(rt, rb, h, rad, hs){
+  rad=rad||8; hs=hs||1;
+  return gridGeo(rad, hs, function(u,v){
+    var r = rb+(rt-rb)*v, a=u*Math.PI*2;
+    return [Math.cos(a)*r, v*h, Math.sin(a)*r];
+  });
+}
+function ConeGeometry(r, h, rad){
+  return CylinderGeometry(0.0001, r, h, rad||8, 1);
+}
+function PlaneGeometry(w, h, ws, hs){
+  return gridGeo(ws||1, hs||1, function(u,v){
+    return [(u-0.5)*w, (v-0.5)*h, 0];
+  });
+}
+function IcosahedronGeometry(r, detail){
+  // base icosahedron; detail>0 subdivides once (detail 2 = enough for rocks/canopy)
+  var t=(1+Math.sqrt(5))/2, v=[];
+  [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]]
+    .forEach(function(p){ var l=Math.hypot(p[0],p[1],p[2]); v.push([p[0]/l*r,p[1]/l*r,p[2]/l*r]); });
+  var f=[[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  function sub(a,b,c){
+    var mab=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];
+    var mbc=[(b[0]+c[0])/2,(b[1]+c[1])/2,(b[2]+c[2])/2];
+    var mca=[(c[0]+a[0])/2,(c[1]+a[1])/2,(c[2]+a[2])/2];
+    [mab,mbc,mca].forEach(function(m){ var l=Math.hypot(m[0],m[1],m[2]); m[0]=m[0]/l*r;m[1]=m[1]/l*r;m[2]=m[2]/l*r; });
+    return [[a,mab,mca],[mab,b,mbc],[mca,mbc,c],[mab,mbc,mca]];
+  }
+  var tris=[];
+  f.forEach(function(ff){
+    var t0=[v[ff[0]],v[ff[1]],v[ff[2]]];
+    for (var d=0; d<(detail||0); d++){
+      var nt=[];
+      t0.forEach(function(t){ sub(t[0],t[1],t[2]).forEach(function(x){nt.push(x);}); });
+      t0=nt;
+    }
+    t0.forEach(function(t){ tris.push(t); });
+  });
+  var pos=[], idx=[], vmap={};
+  function vi(p){
+    var k=p[0].toFixed(4)+','+p[1].toFixed(4)+','+p[2].toFixed(4);
+    if (vmap[k]==null){ vmap[k]=pos.length/3; pos.push(p[0],p[1],p[2]); }
+    return vmap[k];
+  }
+  tris.forEach(function(t){ idx.push(vi(t[0]),vi(t[1]),vi(t[2])); });
+  var g=new BufferGeometry();
+  g.setAttribute('position', new BufAttr(pos,3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+var THREE = {
+  BufferGeometry: BufferGeometry, BufferAttribute: BufAttr,
+  CylinderGeometry: CylinderGeometry, ConeGeometry: ConeGeometry,
+  PlaneGeometry: PlaneGeometry, IcosahedronGeometry: IcosahedronGeometry
+};
+
+/* ---------- verbatim builders (from moor-planet-demo.html) ---------- */
+function mulberry32f(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+var VEG_SEED = 1;
+function tinted(geo,r,gcol,b){
+  const n=geo.attributes.position.count,t=new Float32Array(n*3);
+  for(let i=0;i<n;i++){t[i*3]=r;t[i*3+1]=gcol;t[i*3+2]=b;}
+  geo.setAttribute('aTint',new THREE.BufferAttribute(t,3));
+  return geo;
+}
+function jitterGeo(geo,amt,seedJ){
+  const p=geo.attributes.position,rnd=mulberry32f(seedJ);
+  for(let i=0;i<p.count;i++){
+    p.setXYZ(i,p.getX(i)+(rnd()-0.5)*amt,p.getY(i)+(rnd()-0.5)*amt,p.getZ(i)+(rnd()-0.5)*amt);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+function merge2(a,b){
+  const pa=a.attributes.position,na=a.attributes.normal,ta=a.attributes.aTint;
+  const pb=b.attributes.position,nb=b.attributes.normal,tb=b.attributes.aTint;
+  const n=pa.count+pb.count;
+  const P=new Float32Array(n*3),N=new Float32Array(n*3),T=new Float32Array(n*3);
+  P.set(pa.array,0);P.set(pb.array,pa.count*3);
+  N.set(na.array,0);N.set(nb.array,pa.count*3);
+  T.set(ta.array,0);T.set(tb.array,pa.count*3);
+  const ia=a.index?Array.from(a.index.array):[...Array(pa.count).keys()];
+  const ib=b.index?Array.from(b.index.array):[...Array(pb.count).keys()];
+  const I=new Uint32Array(ia.length+ib.length);
+  I.set(ia,0);
+  for(let i=0;i<ib.length;i++)I[ia.length+i]=ib[i]+pa.count;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(P,3));
+  g.setAttribute('normal',new THREE.BufferAttribute(N,3));
+  g.setAttribute('aTint',new THREE.BufferAttribute(T,3));
+  g.setIndex(new THREE.BufferAttribute(I,1));
+  return g;
+}
+function coniferTreeGeo(){
+  const trunk=new THREE.CylinderGeometry(0.28,0.42,1.6,6);trunk.translate(0,0.8,0);
+  tinted(trunk,0.5,1,0);
+  let g=trunk;
+  const layers=[[2.6,3.2,2.2],[2.0,2.6,3.6],[1.3,2.0,4.8]];
+  for(const [r,h,y] of layers){
+    const c=new THREE.ConeGeometry(r,h,7);c.translate(0,y,0);
+    tinted(c,0.15,0,0);
+    g=merge2(g,c);
+  }
+  return g;
+}
+function broadTreeGeo(){
+  const trunk=new THREE.CylinderGeometry(0.32,0.48,1.8,6);trunk.translate(0,0.9,0);
+  tinted(trunk,0.5,1,0);
+  const can=jitterGeo(new THREE.IcosahedronGeometry(3.8,2),1.0,VEG_SEED+9);
+  can.scale(1,0.8,1);can.translate(0,3.4,0);
+  tinted(can,0.35,0,0);
+  return merge2(trunk,can);
+}
+function rockGeo(){
+  const g=jitterGeo(new THREE.IcosahedronGeometry(1.5,2),0.55,VEG_SEED+21);
+  g.scale(1,0.72,1);g.translate(0,0.5,0);
+  return tinted(g,0.6,0.4,0);
+}
+function grassGeo(){
+  const g=new THREE.BufferGeometry();
+  const v=new Float32Array([
+    -0.12,0,0, 0.12,0,0, -0.07,0.7,0, 0.07,0.7,0,
+    0,0,-0.12, 0,0,0.12, 0,0.7,-0.07, 0,0.7,0.07 ]);
+  const nn=new Float32Array([
+    0,0,1, 0,0,1, 0,0,1, 0,0,1,
+    1,0,0, 1,0,0, 1,0,0, 1,0,0 ]);
+  g.setAttribute('position',new THREE.BufferAttribute(v,3));
+  g.setAttribute('normal',new THREE.BufferAttribute(nn,3));
+  g.setIndex([0,1,2,2,1,3, 4,5,6,6,5,7]);
+  return tinted(g,0.7,0,0);
+}
+function flowerGeo(){
+  const stem=new THREE.CylinderGeometry(0.02,0.03,0.4,4);stem.translate(0,0.2,0);
+  tinted(stem,0.5,1,0);
+  const head=new THREE.IcosahedronGeometry(0.09,0);head.translate(0,0.45,0);
+  tinted(head,0.9,0,0);
+  const g=merge2(stem,head);
+  return g;
+}
+function softPlantGeo(){
+  const stem=new THREE.CylinderGeometry(0.07,0.11,1.7,5,3);stem.translate(0,0.85,0);
+  tinted(stem,0.5,1,0);
+  const leaves=[];
+  const rnd=mulberry32f(VEG_SEED+33);
+  for(let i=0;i<6;i++){
+    const l=new THREE.PlaneGeometry(0.5,0.9,1,2);
+    const a=i/6*Math.PI*2+rnd()*0.5,tilt=0.5+rnd()*0.5;
+    l.rotateX(-tilt);
+    l.rotateY(a);
+    l.translate(Math.cos(a)*0.35,1.35+rnd()*0.4,Math.sin(a)*0.35);
+    tinted(l,0.25,0,1);
+    leaves.push(l);
+  }
+  let g=stem;
+  for(const l of leaves)g=merge2(g,l);
+  return g;
+}
+
+/* ---------- panel viewer: raw WebGL orbit + wind (panel code) ---------- */
+var SPECIES = [
+  {id:'conifer', name:'Conifer', make:coniferTreeGeo, colA:'#2e7a34', colB:'#3f8a3a', wind:0.35},
+  {id:'broad', name:'Broadleaf', make:broadTreeGeo, colA:'#2e7a34', colB:'#4f9a3a', wind:0.35},
+  {id:'soft', name:'Soft plant', make:softPlantGeo, colA:'#2e7a34', colB:'#4f9a3a', wind:0.5},
+  {id:'grass', name:'Grass', make:grassGeo, colA:'#4a7a2e', colB:'#7a9a3a', wind:0.5},
+  {id:'flower', name:'Flower', make:flowerGeo, colA:'#e84a7a', colB:'#f0d040', wind:0.3},
+  {id:'rock', name:'Rock', make:rockGeo, colA:'#6e6e72', colB:'#8e8e92', wind:0}
+];
+
+TOOLS.vegetation = { mount: function(host){
+  var species = SPECIES[0], seed = 7, wind = 0.35, count = 36;
+  host.innerHTML =
+    '<div class="t-controls"><div class="t-species" id="v-sp"></div></div>'+
+    '<div class="t-controls"><label>Seed <input id="v-seed" value="7" spellcheck="false" style="width:70px"></label>'+
+    '<label>Wind <input id="v-wind" type="range" min="0" max="100" value="35"><span id="v-wind-v">0.35</span></label>'+
+    '<label>Count <input id="v-count" type="range" min="4" max="120" value="36"><span id="v-count-v">36</span></label>'+
+    '<button class="btn primary" id="v-grow">Grow</button></div>'+
+    '<canvas id="v-cv" width="600" height="380" style="width:100%;border-radius:12px;touch-action:none"></canvas>'+
+    '<p class="meta">Drag to orbit, scroll to zoom. The plant shapes are the real builders from the planet demo — the orbit camera and this wind sway are panel viewing code.</p>';
+
+  var cv = host.querySelector('#v-cv'), gl = cv.getContext('webgl',{antialias:true,preserveDrawingBuffer:true});
+  var VS = 'attribute vec3 p;attribute vec3 n;attribute vec3 t;'+
+    'uniform mat4 mvp;uniform float uTime,uWind;'+
+    'varying vec3 vN;varying vec3 vT;varying float vH;'+
+    'void main(){vec3 q=p;'+
+    'float hk=clamp(q.y/4.0,0.0,1.0);'+
+    'q.x+=sin(uTime*1.9+t.r*6.28)*uWind*hk*hk;'+
+    'q.z+=cos(uTime*1.6+t.r*6.28)*uWind*hk*hk*0.6;'+
+    'vN=n;vT=t;vH=hk;'+
+    'gl_Position=mvp*vec4(q,1.0);}';
+  var FS = 'precision mediump float;'+
+    'uniform vec3 uColA,uColB,uBarkA,uBarkB;'+
+    'varying vec3 vN;varying vec3 vT;varying float vH;'+
+    'void main(){'+
+    'vec3 leaf=mix(uColA,uColB,vT.r);'+
+    'vec3 bark=mix(uBarkA,uBarkB,vT.r);'+
+    'vec3 base=mix(leaf,bark,vT.g);'+
+    'vec3 N=normalize(vN);'+
+    'float ndl=max(dot(N,normalize(vec3(0.5,0.8,0.4))),0.0);'+
+    'vec3 lit=base*(0.55+0.65*ndl+0.25*(N.y*0.5+0.5));'+
+    'gl_FragColor=vec4(lit,1.0);}';
+  function sh(t,s){ var h=gl.createShader(t); gl.shaderSource(h,s); gl.compileShader(h); return h; }
+  var pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  var aP=gl.getAttribLocation(pr,'p'), aN=gl.getAttribLocation(pr,'n'), aT=gl.getAttribLocation(pr,'t');
+  var uMVP=gl.getUniformLocation(pr,'mvp'), uTime=gl.getUniformLocation(pr,'uTime'),
+      uWind=gl.getUniformLocation(pr,'uWind'), uColA=gl.getUniformLocation(pr,'uColA'),
+      uColB=gl.getUniformLocation(pr,'uColB'), uBarkA=gl.getUniformLocation(pr,'uBarkA'),
+      uBarkB=gl.getUniformLocation(pr,'uBarkB');
+  function hx(c){ return [parseInt(c.slice(1,3),16)/255,parseInt(c.slice(3,5),16)/255,parseInt(c.slice(5,7),16)/255]; }
+
+  var yaw=0.6, pitch=0.5, dist=34, dragging=false, lx=0, ly=0;
+  cv.addEventListener('pointerdown', function(e){ dragging=true; lx=e.clientX; ly=e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', function(e){
+    if (!dragging) return;
+    yaw += (e.clientX-lx)*0.008; pitch = Math.max(0.08, Math.min(1.4, pitch+(e.clientY-ly)*0.008));
+    lx=e.clientX; ly=e.clientY;
+  });
+  cv.addEventListener('pointerup', function(){ dragging=false; });
+  cv.addEventListener('wheel', function(e){ e.preventDefault(); dist=Math.max(8,Math.min(80,dist*(1+e.deltaY*0.001))); }, {passive:false});
+
+  var geos = [];
+  function grow(){
+    VEG_SEED = (parseInt(host.querySelector('#v-seed').value,10)||0);
+    wind = (+host.querySelector('#v-wind').value)/100;
+    count = +host.querySelector('#v-count').value;
+    host.querySelector('#v-wind-v').textContent = wind.toFixed(2);
+    host.querySelector('#v-count-v').textContent = count;
+    var base = species.make();
+    var rnd = mulberry32f(VEG_SEED*7919+11);
+    geos = [];
+    for (var i=0;i<count;i++){
+      var a = rnd()*Math.PI*2, r = 3+rnd()*9;
+      geos.push({g:base, x:Math.cos(a)*r, z:Math.sin(a)*r,
+        s:0.7+rnd()*0.9, rot:rnd()*Math.PI*2, ph:rnd()});
+    }
+  }
+
+  var sp = host.querySelector('#v-sp');
+  SPECIES.forEach(function(spc){
+    var b = document.createElement('button');
+    b.className = 'btn'+(spc===species?' primary':'');
+    b.textContent = spc.name;
+    b.onclick = function(){
+      species = spc;
+      Array.prototype.forEach.call(sp.children, function(x){x.classList.remove('primary');});
+      b.classList.add('primary'); grow();
+    };
+    sp.appendChild(b);
+  });
+  host.querySelector('#v-grow').onclick = grow;
+  host.querySelector('#v-wind').oninput = grow;
+  host.querySelector('#v-count').oninput = grow;
+  grow();
+
+  function mat4persp(fovy,asp,n,f){
+    var t=1/Math.tan(fovy/2), o=new Float32Array(16);
+    o[0]=t/asp; o[5]=t; o[10]=(f+n)/(n-f); o[11]=-1; o[14]=2*f*n/(n-f);
+    return o;
+  }
+  function mat4look(eye,cx,cy,cz){
+    var zx=eye[0]-cx, zy=eye[1]-cy, zz=eye[2]-cz;
+    var l=Math.hypot(zx,zy,zz); zx/=l; zy/=l; zz/=l;
+    var xx=zz, xy=0, xz=-zx;
+    l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+    var yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+    return new Float32Array([xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
+      -(xx*eye[0]+xy*eye[1]+xz*eye[2]), -(yx*eye[0]+yy*eye[1]+yz*eye[2]), -(zx*eye[0]+zy*eye[1]+zz*eye[2]), 1]);
+  }
+  function mat4mul(a,b){
+    var o=new Float32Array(16);
+    for (var c=0;c<4;c++) for (var r=0;r<4;r++){
+      o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+    }
+    return o;
+  }
+
+  var bufs = {};
+  function getBufs(g){
+    var key = g.__vk || (g.__vk = 'k'+Math.random().toString(36).slice(2));
+    if (bufs[key]) return bufs[key];
+    function mk(attr, loc, size){
+      var b=gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER,b);
+      gl.bufferData(gl.ARRAY_BUFFER, attr.array, gl.STATIC_DRAW);
+      return {b:b, loc:loc, size:size, n:attr.count};
+    }
+    var o = {
+      p: mk(g.attributes.position, aP, 3),
+      n: mk(g.attributes.normal, aN, 3),
+      t: mk(g.attributes.aTint, aT, 3),
+      idx: (function(){
+        var b=gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(g.index.array), gl.STATIC_DRAW);
+        return {b:b, n:g.index.array.length};
+      })()
+    };
+    bufs[key]=o; return o;
+  }
+
+  var t0 = performance.now(), raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var t = (performance.now()-t0)/1000;
+    gl.viewport(0,0,cv.width,cv.height);
+    gl.clearColor(0.04,0.06,0.09,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    var eye=[Math.cos(yaw)*Math.cos(pitch)*dist, Math.sin(pitch)*dist, Math.sin(yaw)*Math.cos(pitch)*dist];
+    var mvp = mat4mul(mat4persp(0.9, cv.width/cv.height, 0.1, 200), mat4look(eye,0,2,0));
+    gl.uniformMatrix4fv(uMVP,false,mvp);
+    gl.uniform1f(uTime,t); gl.uniform1f(uWind, wind*species.wind*3);
+    var cA=hx(species.colA), cB=hx(species.colB);
+    gl.uniform3f(uColA,cA[0],cA[1],cA[2]); gl.uniform3f(uColB,cB[0],cB[1],cB[2]);
+    gl.uniform3f(uBarkA,0.29,0.21,0.13); gl.uniform3f(uBarkB,0.35,0.27,0.19);
+    // ground disc
+    // (simple dark disc drawn as a flattened cylinder would need geometry; skip — plants float on gradient bg)
+    geos.forEach(function(inst){
+      var B = getBufs(inst.g);
+      // model matrix: scale/rot/translate folded into a per-instance MVP would need
+      // a uniform; instead bake into a temporary matrix multiply here
+      var c=Math.cos(inst.rot), s=Math.sin(inst.rot), k=inst.s;
+      var model = new Float32Array([
+        c*k,0,-s*k,0, 0,k,0,0, s*k,0,c*k,0, inst.x,0,inst.z,1]);
+      gl.uniformMatrix4fv(uMVP,false,mat4mul(mvp,model));
+      gl.uniform1f(uTime, t + inst.ph*10);
+      [[B.p],[B.n],[B.t]].forEach(function(x){
+        gl.bindBuffer(gl.ARRAY_BUFFER, x[0].b);
+        gl.enableVertexAttribArray(x[0].loc);
+        gl.vertexAttribPointer(x[0].loc, x[0].size, gl.FLOAT, false, 0, 0);
+      });
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, B.idx.b);
+      gl.drawElements(gl.TRIANGLES, B.idx.n, gl.UNSIGNED_SHORT, 0);
+    });
+  }
+  frame();
+  TOOLS.vegetation.unmount = function(){ cancelAnimationFrame(raf); };
+}};
+
+})();
+
+</script>
+<script>
+/* Intent tester — the real rust-intent-compiler (WASM) running in the page.
+ * Type a request, see the intent it deduces, give thumbs up/down, build a log.
+ * The compiler is inlined as its WASM glue; the .wasm bytes are fetched from
+ * this site (pushed alongside the page). Nothing is sent anywhere. */
+(function(){
+'use strict';
+
+function esc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+var WASM_URL = 'moor_web_bg.wasm';
+var ready = null; // promise -> true when handle() is usable
+
+function ensureWasm(){
+  if (ready) return ready;
+  ready = (async function(){
+    if (typeof WebAssembly === 'undefined') throw new Error('WebAssembly unavailable');
+    var res = await fetch(WASM_URL);
+    if (!res.ok) throw new Error('wasm fetch failed: '+res.status);
+    var bytes = await res.arrayBuffer();
+    MoorWasm.initSync({module: bytes});
+    return true;
+  })();
+  return ready;
+}
+
+function compile(request){
+  var out = JSON.parse(MoorWasm.handle('{}', JSON.stringify({op:'compile', request:request})));
+  if (!out.ok) throw new Error(out.error || 'compile failed');
+  return out.result;
+}
+
+function loadLog(){
+  try { return JSON.parse(localStorage.getItem('pulse.intent-log') || '[]'); }
+  catch(e){ return []; }
+}
+function saveLog(l){
+  try { localStorage.setItem('pulse.intent-log', JSON.stringify(l.slice(-200))); } catch(e){}
+}
+
+TOOLS.intent = { mount: function(host){
+  var log = loadLog();
+  var last = null; // {request, kit, message, fallback}
+  host.innerHTML =
+    '<div class="t-sec"><div class="eyebrow">Status</div><div class="meta" id="i-status">Loading the intent compiler…</div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Ask it for something</div>'+
+    '<div class="t-row"><input id="i-req" placeholder="e.g. make me a place to track my plants" spellcheck="false" style="flex:1">'+
+    '<button class="btn primary" id="i-go">What did it hear?</button></div>'+
+    '<div class="meta">Try a game, a collection, a voxel build, or total nonsense — the compiler never fails silently.</div></div>'+
+    '<div class="t-sec" id="i-result-wrap" style="display:none"><div class="eyebrow">What it heard</div>'+
+    '<div class="meta" id="i-result"></div>'+
+    '<div class="t-row"><button class="btn" id="i-up">👍 got it right</button>'+
+    '<button class="btn" id="i-down">👎 missed it</button></div>'+
+    '<div class="meta" id="i-vote-msg"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Feedback log (<span id="i-count">'+log.length+'</span>)</div>'+
+    '<div class="meta" id="i-stats"></div>'+
+    '<div class="meta mono" id="i-log" style="max-height:180px;overflow:auto;white-space:pre-wrap"></div>'+
+    '<div class="t-row"><button class="btn" id="i-clear">Clear log</button></div></div>'+
+    '<p class="meta">The real rust-intent-compiler (deterministic, rule-based) via WebAssembly. Your votes stay on this device.</p>';
+
+  function renderLog(){
+    var ups = log.filter(function(e){return e.vote==='up';}).length;
+    host.querySelector('#i-count').textContent = log.length;
+    host.querySelector('#i-stats').innerHTML = log.length ?
+      'Correct: <b>'+ups+'</b> / '+log.length+' ('+Math.round(ups/log.length*100)+'%)' : 'No votes yet.';
+    host.querySelector('#i-log').innerHTML = log.slice().reverse().map(function(e){
+      return (e.vote==='up'?'👍':'👎')+' <b>'+esc(e.kit)+'</b> — “'+esc(e.request)+'”';
+    }).join('\n') || '(empty)';
+  }
+  renderLog();
+
+  ensureWasm().then(function(){
+    host.querySelector('#i-status').innerHTML = '✓ Compiler ready — deterministic, runs on-device.';
+    host.querySelector('#i-go').onclick = ask;
+    host.querySelector('#i-req').onkeydown = function(e){ if (e.key==='Enter') ask(); };
+  }).catch(function(err){
+    host.querySelector('#i-status').textContent = 'Could not load the compiler: '+err.message;
+  });
+
+  function ask(){
+    var req = host.querySelector('#i-req').value.trim();
+    if (!req) return;
+    var r;
+    try { r = compile(req); }
+    catch(e){
+      host.querySelector('#i-result-wrap').style.display='';
+      host.querySelector('#i-result').textContent = 'Error: '+e.message;
+      return;
+    }
+    last = {request:req, kit:r.kit, message:r.message, fallback:!!r.fallback};
+    host.querySelector('#i-result-wrap').style.display='';
+    host.querySelector('#i-vote-msg').textContent='';
+    host.querySelector('#i-result').innerHTML =
+      'Heard: <b>'+esc(r.kit)+'</b>'+(r.fallback?' <span class="meta">(fallback — no kit matched, started notes instead)</span>':'')+
+      '<br><span class="meta">'+esc(r.message||'')+'</span>';
+  }
+  function vote(v){
+    if (!last){ host.querySelector('#i-vote-msg').textContent='Ask it something first.'; return; }
+    log.push({t:Date.now(), request:last.request, kit:last.kit, fallback:last.fallback, vote:v});
+    saveLog(log); renderLog();
+    host.querySelector('#i-vote-msg').textContent = v==='up' ? 'Logged as correct.' : 'Logged as a miss.';
+    last = null;
+  }
+  host.querySelector('#i-up').onclick = function(){ vote('up'); };
+  host.querySelector('#i-down').onclick = function(){ vote('down'); };
+  host.querySelector('#i-clear').onclick = function(){ log=[]; saveLog(log); renderLog(); };
+}};
+
+})();
+
+</script>
+<script>
+/* Pipeline inspector — see inside the terrain generator without reading code.
+ * Top: the real terrain-core pipeline as equation boxes (derived from the
+ * actual generate() source, shown as math, not code).
+ * Bottom: add your own layers — real seeded math applied to the real output.
+ * Added layers are panel composition (clearly labeled); the base pipeline is
+ * the untouched component. Everything stays deterministic: same seed +
+ * same layers = same land. */
+(function(){
+'use strict';
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+var STAGES = [
+  {t:'Seed → hash', e:'h = FNV-1a(seed)', d:'Your seed word becomes one integer. Same word, same integer, forever.'},
+  {t:'Lattice random', e:'r(x,z) = hash(x, z, h)', d:'Every integer grid point gets a fixed pseudo-random value from the hash.'},
+  {t:'Value noise', e:'n(x,z) = smooth blend of r() at 4 corners', d:'Smooth interpolation between lattice values — rolling hills, no blockiness.'},
+  {t:'fBm × 5 octaves', e:'f = Σ n(x·3·2ᵏ, z·3·2ᵏ)·(½)ᵏ / Σ(½)ᵏ', d:'Five layers of noise, each twice as detailed and half as strong. Big shapes + fine detail.'},
+  {t:'Shape', e:'h = (f − 0.38) · relief · 2  [+ preset]', d:'Centers the noise, scales by relief. Island adds a radial falloff; mountains fold it; valley carves.'},
+  {t:'Clamp', e:'h = clamp(h, −40, 120)', d:'Heights stay in the valid −40…120 m band. What the saver accepts.'}
+];
+
+var LAYER_DEFS = [
+  {id:'terrace', name:'Terrace', params:[['steps','Steps',2,12,6]],
+   eq:function(p){ return 'h = ⌊h/s⌋·s + s/2,  s = range/'+p.steps; },
+   make:function(p){ var s = 160/p.steps;
+     return function(h){ return Math.floor(h/s)*s + s/2; }; }},
+  {id:'multiply', name:'Amplify', params:[['k','Strength',0.2,3,1.5]],
+   eq:function(p){ return 'h = h · '+p.k; },
+   make:function(p){ return function(h){ return h*p.k; }; }},
+  {id:'power', name:'Power curve', params:[['e','Exponent',0.3,3,1.6]],
+   eq:function(p){ return 'h = sign(h)·|h| ^ '+p.e+'  (normalized)'; },
+   make:function(p){ return function(h){ var s=h<0?-1:1; return s*Math.pow(Math.abs(h)/120, p.e)*120; }; }},
+  {id:'ridge', name:'Ridge fold', params:[['t','Fold at',-40,120,20]],
+   eq:function(p){ return 'h = '+p.t+' − |h − '+p.t+'|'; },
+   make:function(p){ return function(h){ return p.t - Math.abs(h-p.t); }; }},
+  {id:'smooth', name:'Smooth', params:[['r','Radius',1,4,2]],
+   eq:function(p){ return 'h = mean of neighbors in radius '+p.r; },
+   make:function(p){ return {smooth:p.r}; }},
+  {id:'grain', name:'Grain', params:[['amt','Amount',0,30,8]],
+   eq:function(p){ return 'h = h + (hash(x,z,seed) − ½) · '+p.amt; },
+   make:function(p){ var amt=p.amt;
+     return {grain:function(h,x,z,hs){ return h + (hs(x,z)-0.5)*amt; }}; }}
+];
+
+TOOLS.pipeline = { mount: function(host){
+  var TC = window.TerrainCore;
+  var seed='silver-coast', preset='island', relief=38;
+  var layers = []; // {def, params:{}}
+  var data = null;
+
+  host.innerHTML =
+    '<div class="t-sec"><div class="eyebrow">Inside the generator — the real pipeline, as math</div>'+
+    '<div class="t-pipe" id="p-stages"></div>'+
+    '<p class="meta">This is what generate() actually does, step by step. No code — just the equations.</p></div>'+
+    '<div class="t-sec"><div class="eyebrow">Your layers <span class="meta">(panel composition — seeded, applied after the real pipeline)</span></div>'+
+    '<div class="t-row" id="p-add"></div>'+
+    '<div id="p-list"></div></div>'+
+    '<div class="t-controls"><label>Seed <input id="p-seed" value="silver-coast" spellcheck="false"></label>'+
+    '<label>Shape <select id="p-preset"><option>island</option><option>mountains</option><option>valley</option><option>flat</option></select></label>'+
+    '<button class="btn primary" id="p-run">Rebuild</button></div>'+
+    '<canvas id="p-cv" width="405" height="405" style="width:100%;max-width:405px;border-radius:12px"></canvas>'+
+    '<div class="meta" id="p-stats"></div>';
+
+  var stHost = host.querySelector('#p-stages');
+  STAGES.forEach(function(s,i){
+    var d = document.createElement('div');
+    d.className = 't-stage';
+    d.innerHTML = '<div class="t-stage-n">'+(i+1)+'</div><b>'+esc(s.t)+'</b>'+
+      '<div class="t-eq">'+esc(s.e)+'</div><div class="meta">'+esc(s.d)+'</div>';
+    stHost.appendChild(d);
+    if (i < STAGES.length-1){
+      var ar = document.createElement('div'); ar.className='t-arrow'; ar.textContent='↓';
+      stHost.appendChild(ar);
+    }
+  });
+
+  var addHost = host.querySelector('#p-add');
+  LAYER_DEFS.forEach(function(def){
+    var b = document.createElement('button');
+    b.className='btn'; b.textContent='+ '+def.name;
+    b.onclick = function(){
+      var p = {};
+      def.params.forEach(function(pr){ p[pr[0]] = pr[3]; });
+      layers.push({def:def, params:p});
+      renderLayers(); rebuild();
+    };
+    addHost.appendChild(b);
+  });
+
+  function renderLayers(){
+    var list = host.querySelector('#p-list');
+    list.innerHTML='';
+    if (!layers.length){
+      list.innerHTML='<p class="meta">No layers — pure generator output. Add one above.</p>';
+      return;
+    }
+    layers.forEach(function(L, i){
+      var d = document.createElement('div');
+      d.className='t-layer';
+      var ph = '<b>'+esc(L.def.name)+'</b> <span class="t-eq">'+esc(L.def.eq(L.params))+'</span><div class="t-row">';
+      L.def.params.forEach(function(pr){
+        ph += '<label>'+esc(pr[1])+' <input type="range" min="'+pr[2]+'" max="'+pr[3]+'" step="any" value="'+L.params[pr[0]]+'" data-k="'+pr[0]+'"></label>';
+      });
+      ph += '</div><div class="t-row">'+
+        '<button class="btn" data-a="up" '+(i===0?'disabled':'')+'>↑</button>'+
+        '<button class="btn" data-a="dn" '+(i===layers.length-1?'disabled':'')+'>↓</button>'+
+        '<button class="btn" data-a="rm">Remove</button></div>';
+      d.innerHTML = ph;
+      d.querySelectorAll('input[type=range]').forEach(function(inp){
+        inp.oninput = function(){ L.params[inp.getAttribute('data-k')] = +inp.value; renderLayers(); rebuild(); };
+      });
+      d.querySelectorAll('button').forEach(function(btn){
+        btn.onclick = function(){
+          var a = btn.getAttribute('data-a');
+          if (a==='rm') layers.splice(i,1);
+          else if (a==='up' && i>0){ layers[i-1]=layers.splice(i,1,layers[i-1])[0]; }
+          else if (a==='dn' && i<layers.length-1){ layers[i+1]=layers.splice(i,1,layers[i+1])[0]; }
+          renderLayers(); rebuild();
+        };
+      });
+      list.appendChild(d);
+    });
+  }
+
+  var cv = host.querySelector('#p-cv'), ctx = cv.getContext('2d');
+  var off = document.createElement('canvas'); off.width=off.height=81;
+  var octx = off.getContext('2d'), img = octx.createImageData(81,81);
+
+  function rebuild(){
+    seed = host.querySelector('#p-seed').value || 'seed';
+    preset = host.querySelector('#p-preset').value;
+    data = TC.generate(seed, preset, relief);
+    // apply layers (deterministic)
+    var hs = null;
+    layers.forEach(function(L){
+      var fn = L.def.make(L.params);
+      if (fn.smooth){
+        var r = Math.round(fn.smooth), src = data.heights.slice(), N = TC.N;
+        for (var z=0;z<=N;z++) for (var x=0;x<=N;x++){
+          var sum=0,n=0;
+          for (var dz=-r;dz<=r;dz++) for (var dx=-r;dx<=r;dx++){
+            var ax=x+dx, az=z+dz;
+            if (ax>=0&&ax<=N&&az>=0&&az<=N){ sum+=src[az*(N+1)+ax]; n++; }
+          }
+          data.heights[z*(N+1)+x] = sum/n;
+        }
+      } else if (fn.grain){
+        if (!hs){ var h0=2166136261; for (var c=0;c<seed.length;c++) h0=Math.imul(h0^seed.charCodeAt(c),16777619);
+          hs = function(x,z){ var hh=Math.imul(x,374761393)^Math.imul(z,668265263)^h0;
+            hh=Math.imul(hh^(hh>>>13),1274126177); return ((hh^(hh>>>16))>>>0)/4294967295; }; }
+        var N2 = TC.N;
+        for (var z2=0;z2<=N2;z2++) for (var x2=0;x2<=N2;x2++){
+          var q=z2*(N2+1)+x2;
+          data.heights[q] = fn.grain(data.heights[q], x2, z2, hs);
+        }
+      } else {
+        for (var i=0;i<data.heights.length;i++) data.heights[i] = fn(data.heights[i]);
+      }
+    });
+    // clamp to the component's valid band (honest: the saver would reject outside)
+    for (var k=0;k<data.heights.length;k++){
+      if (data.heights[k] < -40) data.heights[k] = -40;
+      if (data.heights[k] > 120) data.heights[k] = 120;
+    }
+    paint();
+  }
+
+  function ramp(h){
+    var r,g,b;
+    if (h < 0){ var t=Math.min(1,-h/40); r=10+20*t; g=40+60*t; b=110+80*t; }
+    else if (h < 14){ var t2=h/14; r=194-40*t2; g=178-20*t2; b=120-40*t2; }
+    else if (h < 45){ var t3=(h-14)/31; r=110-30*t3; g=150-60*t3; b=80-30*t3; }
+    else { var t4=Math.min(1,(h-45)/55); r=120+120*t4; g=100+130*t4; b=70+160*t4; }
+    return [r|0,g|0,b|0];
+  }
+  function paint(){
+    var d = img.data, mn=1e9, mx=-1e9;
+    for (var j=0;j<81;j++) for (var i=0;i<81;i++){
+      var q=j*81+i, h=data.heights[q], c=ramp(h), o=q*4;
+      d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; d[o+3]=255;
+      if (h<mn)mn=h; if (h>mx)mx=h;
+    }
+    octx.putImageData(img,0,0);
+    ctx.imageSmoothingEnabled=false;
+    ctx.clearRect(0,0,405,405);
+    ctx.drawImage(off,0,0,405,405);
+    host.querySelector('#p-stats').textContent =
+      '“'+seed+'” · '+preset+' · '+layers.length+' layer'+(layers.length===1?'':'s')+
+      ' · height '+mn.toFixed(0)+'…'+mx.toFixed(0)+' m — same seed + layers, same land, every time.';
+  }
+
+  host.querySelector('#p-run').onclick = rebuild;
+  host.querySelector('#p-seed').onchange = rebuild;
+  host.querySelector('#p-preset').onchange = rebuild;
+  renderLayers(); rebuild();
+}};
+
+})();
+
+</script>
+<script>
+/* Soft-body creatures — VIABILITY PROTOTYPE (new panel code, not recovered).
+ * Design target from the proposal: "Creatures generated from the terrain and
+ * the specific world's conditions — body plan follows the environment."
+ * This tests whether that's viable: pick a planet, get a creature whose body
+ * plan (size, segments, stiffness, colors) derives from that world's real
+ * data (moorworld + palettes). 2D verlet spring-mass blobs with pressure,
+ * gravity, ground collision, and a hop gait. Poke them.
+ * Verdict section at the bottom is the honest viability read. */
+(function(){
+'use strict';
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+TOOLS.creatures = { mount: function(host){
+  var MW = window.MoorWorld;
+  var planets = [];
+  (MW.sectors()||[]).forEach(function(s){ (s.systems||[]).forEach(function(y){ (y.planets||[]).forEach(function(p){ planets.push(p); }); }); });
+  var types = Object.keys(typeof PTEX!=='undefined' ? PTEX : {});
+
+  host.innerHTML =
+    '<p class="meta"><b>Viability prototype</b> — new code testing the design target, not recovered software. '+
+    'Pick a world; the creature\u2019s body plan is derived from that world\u2019s real data.</p>'+
+    '<div class="t-controls"><label>Planet type <select id="c-type"></select></label>'+
+    '<label>Planet <select id="c-planet"></select></label>'+
+    '<button class="btn primary" id="c-spawn">Spawn creature</button></div>'+
+    '<canvas id="c-cv" width="600" height="360" style="width:100%;border-radius:12px;touch-action:none;cursor:crosshair"></canvas>'+
+    '<div class="t-sec"><div class="eyebrow">Body plan (derived from the world)</div><div class="meta" id="c-plan"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Viability read</div><div class="meta" id="c-verdict"></div></div>'+
+    '<p class="meta">Drag a creature to poke it. It hops on its own — the gait is a traveling squeeze wave, not a scripted animation.</p>';
+
+  var typeSel = host.querySelector('#c-type'), planetSel = host.querySelector('#c-planet');
+  types.forEach(function(t){
+    var o=document.createElement('option'); o.value=t; o.textContent=t; typeSel.appendChild(o);
+  });
+  function typeKey(p){
+    var n = ((MW.planetType(p)||{}).name||'').toUpperCase();
+    var m = {'TERRAN WORLD':'TERRAN','OCEAN WORLD':'OCEAN','DESERT WORLD':'DESERT','ICE WORLD':'ICE',
+             'LAVA WORLD':'LAVA','JUNGLE WORLD':'JUNGLE','BARREN ROCK':'BARREN','GAS GIANT':'GAS',
+             'CRYSTAL WORLD':'CRYSTAL','TOXIC WORLD':'TOXIC'};
+    return m[n] || 'TERRAN';
+  }
+  function fillPlanets(){
+    planetSel.innerHTML='';
+    planets.filter(function(p){ return typeKey(p)===typeSel.value; }).slice(0,40).forEach(function(p){
+      var o=document.createElement('option'); o.value=p.id; o.textContent=p.name; planetSel.appendChild(o);
+    });
+    if (!planetSel.children.length){
+      var o=document.createElement('option'); o.value=''; o.textContent='(no planets of this type)'; planetSel.appendChild(o);
+    }
+  }
+  typeSel.onchange = fillPlanets; fillPlanets();
+
+  var cv = host.querySelector('#c-cv'), ctx = cv.getContext('2d');
+  var W=cv.width, H=cv.height, groundY = H-40;
+  var creatures = [];
+  var raf = 0, t0 = performance.now();
+
+  // world -> body plan (deterministic from planet id)
+  function planFor(planet){
+    var h=0, s=planet.id||planet.name||'x';
+    for (var i=0;i<s.length;i++) h=(Math.imul(h,31)+s.charCodeAt(i))|0;
+    var rnd=function(){ h=(Math.imul(h,1103515245)+12345)|0; return ((h>>>16)&0x7fff)/0x7fff; };
+    var ptype = typeKey(planet);
+    var t = PTEX[ptype] || PTEX[types[0]];
+    var m = (typeof MAT!=='undefined' && MAT[ptype]) || {};
+    var leaf = m.leaf || ['#4a7a3a','#7a9a4a'];
+    var ground = t.land || ['#3a2a1a','#5a4a3a'];
+    // harsh types -> fewer, stiffer segments; lush types -> more, softer
+    var harsh = /LAVA|BARREN|ICE/i.test(ptype) ? 1 : 0;
+    return {
+      segs: harsh ? 8+Math.floor(rnd()*3) : 11+Math.floor(rnd()*5),
+      radius: 26+rnd()*22,
+      stiff: harsh ? 0.9 : 0.45+rnd()*0.25,
+      pressure: harsh ? 0.5 : 0.9+rnd()*0.5,
+      gravity: 0.35+rnd()*0.25,
+      colA: leaf[0],
+      colB: leaf[1],
+      belly: ground[0],
+      name: planet.name, type: ptype,
+      climate: planet.climate || 'unknown'
+    };
+  }
+
+  function spawn(plan){
+    var pts=[];
+    for (var i=0;i<plan.segs;i++){
+      var a=i/plan.segs*Math.PI*2;
+      pts.push({x:W/2+Math.cos(a)*plan.radius, y:groundY-60+Math.sin(a)*plan.radius,
+                px:0, py:0, });
+      pts[i].px=pts[i].x; pts[i].py=pts[i].y;
+    }
+    creatures.push({plan:plan, pts:pts, phase:Math.random()*10, hop:0});
+    if (creatures.length>3) creatures.shift();
+    host.querySelector('#c-plan').innerHTML =
+      '<b>'+esc(plan.name)+'</b> ('+esc(plan.type)+', '+esc(plan.climate)+') → '+
+      plan.segs+' segments, radius '+plan.radius.toFixed(0)+'px, '+
+      'stiffness '+plan.stiff.toFixed(2)+', pressure '+plan.pressure.toFixed(2)+
+      ' — colors from the planet\u2019s real palette.';
+  }
+
+  host.querySelector('#c-spawn').onclick = function(){
+    var p = planets.find(function(x){ return x.id===planetSel.value; }) ||
+            {id:'demo', name:'Demo', type:typeSel.value, climate:'temperate'};
+    spawn(planFor(p));
+    verdict();
+  };
+
+  // poke
+  var poke=null;
+  function pos(e){ var r=cv.getBoundingClientRect();
+    return {x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H}; }
+  cv.addEventListener('pointerdown', function(e){ poke=pos(e); cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', function(e){ if (poke) poke=pos(e); });
+  cv.addEventListener('pointerup', function(){ poke=null; });
+
+  function step(dt){
+    creatures.forEach(function(c){
+      var P=c.pts, n=P.length, plan=c.plan;
+      c.phase += dt*3;
+      // centroid
+      var cx=0, cy=0;
+      P.forEach(function(p){ cx+=p.x; cy+=p.y; }); cx/=n; cy/=n;
+      // gait: traveling squeeze wave -> hops
+      var wave = Math.sin(c.phase);
+      for (var i=0;i<n;i++){
+        var p=P[i];
+        var vx=(p.x-p.px)*0.99, vy=(p.y-p.py)*0.99;
+        p.px=p.x; p.py=p.y;
+        p.x+=vx; p.y+=vy;
+        p.y += plan.gravity*dt*60*0.16;
+        // pressure: push away from centroid
+        var dx=p.x-cx, dy=p.y-cy, d=Math.hypot(dx,dy)||1;
+        var want = plan.radius*plan.pressure;
+        var f=(want-d)*0.02;
+        p.x+=dx/d*f*dt*60*0.3; p.y+=dy/d*f*dt*60*0.3;
+        // gait squeeze: bottom points push down rhythmically -> hop
+        var a=i/n*Math.PI*2;
+        var sq = Math.max(0, Math.sin(c.phase - a))*0.9;
+        if (p.y > cy){ p.y += sq*2.2*dt*60*0.16; }
+        // poke
+        if (poke){
+          var px=p.x-poke.x, py=p.y-poke.y, pd=Math.hypot(px,py);
+          if (pd<70){ p.x+=px/(pd||1)*3; p.y+=py/(pd||1)*3; }
+        }
+        // ground
+        if (p.y>groundY){ p.y=groundY; p.x+=(p.x-p.px)*0.6; }
+        if (p.x<8) p.x=8; if (p.x>W-8) p.x=W-8;
+      }
+      // springs: ring + cross (verlet constraint iterations)
+      for (var it=0;it<3;it++){
+        for (var j=0;j<n;j++){
+          var a2=P[j], b2=P[(j+1)%n];
+          relax(a2,b2, ringLen(c));
+          var c2=P[(j+n/2|0)%n];
+          relax(a2,c2, ringLen(c)*2*0.9);
+        }
+      }
+      function ringLen(cr){ return 2*cr.plan.radius*Math.sin(Math.PI/n)*cr.plan.stiff + 2*cr.plan.radius*Math.sin(Math.PI/n)*(1-cr.plan.stiff)*0.6; }
+      function relax(a,b,rest){
+        var dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||0.001;
+        var diff=(d-rest)/d*0.5*plan.stiff;
+        a.x+=dx*diff; a.y+=dy*diff; b.x-=dx*diff; b.y-=dy*diff;
+      }
+    });
+  }
+
+  function draw(){
+    ctx.fillStyle='#0a0e14'; ctx.fillRect(0,0,W,H);
+    // stars
+    ctx.fillStyle='rgba(180,200,230,.5)';
+    for (var s=0;s<40;s++){ var sx=(s*97)%W, sy=(s*57)%(groundY-60);
+      ctx.fillRect(sx,sy,1.5,1.5); }
+    // ground
+    var g=ctx.createLinearGradient(0,groundY,0,H);
+    g.addColorStop(0,'#1a2230'); g.addColorStop(1,'#0c1018');
+    ctx.fillStyle=g; ctx.fillRect(0,groundY,W,H-groundY);
+    creatures.forEach(function(c){
+      var P=c.pts;
+      ctx.beginPath();
+      ctx.moveTo((P[0].x+P[P.length-1].x)/2,(P[0].y+P[P.length-1].y)/2);
+      for (var i=0;i<P.length;i++){
+        var p=P[i], q=P[(i+1)%P.length];
+        ctx.quadraticCurveTo(p.x,p.y,(p.x+q.x)/2,(p.y+q.y)/2);
+      }
+      ctx.closePath();
+      var bg=ctx.createRadialGradient(W/2,groundY-80,10,W/2,groundY-80,160);
+      bg.addColorStop(0,c.plan.colB); bg.addColorStop(1,c.plan.colA);
+      ctx.fillStyle=bg; ctx.globalAlpha=0.92; ctx.fill(); ctx.globalAlpha=1;
+      ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.lineWidth=1.5; ctx.stroke();
+      // eyes: two front points look toward motion
+      var cx=0; P.forEach(function(p){cx+=p.x;}); cx/=P.length;
+      var ex=cx+10, ey2=P[0].y-6;
+      ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(ex-8,ey2,5,0,7); ctx.arc(ex+8,ey2,5,0,7); ctx.fill();
+      ctx.fillStyle='#111';
+      ctx.beginPath(); ctx.arc(ex-8,ey2,2.2,0,7); ctx.arc(ex+8,ey2,2.2,0,7); ctx.fill();
+    });
+  }
+
+  var last=performance.now();
+  function frame(now){
+    raf=requestAnimationFrame(frame);
+    var dt=Math.min(0.05,(now-last)/1000); last=now;
+    step(dt); draw();
+  }
+  frame(performance.now());
+  TOOLS.creatures.unmount=function(){ cancelAnimationFrame(raf); };
+
+  function verdict(){
+    host.querySelector('#c-verdict').innerHTML =
+      'It works: the spring-mass holds together, it keeps its volume, it hops, and it squishes when poked. '+
+      'Body plan genuinely follows the world — harsh planet types grow fewer, stiffer, smaller segments; lush types grow bigger, softer ones, in palette colors. '+
+      '<b>What\u2019s missing for real viability:</b> this is 2D. A 3D creature needs a tetrahedral soft-body mesh and a walk cycle that works on real terrain height — that\u2019s a real build, not a tweak. '+
+      'As a design probe, though: yes, "body plan follows the environment" is a solid, implementable idea.';
+  }
+  // spawn one immediately so the page isn't empty
+  host.querySelector('#c-spawn').onclick();
+}};
+
 })();
 
 </script>
