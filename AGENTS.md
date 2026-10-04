@@ -11,3 +11,10 @@ This repository publishes Project Pulse. Multiple builders update it. Always fet
 - Their standalone implementations are `moor-living-garden.html` and `moor-planet-workshop.html`.
 
 Before publishing a rebuild, verify both tools appear from the normal dashboard URL, without a component query parameter, and open from the bin. If changing component IDs, migrate saved UI state and deep links.
+
+## Component project workspace
+- Keep `<script src="pulse-workspace.js"></script>` before the independent-component extensions hook in every dashboard rebuild.
+- `pulse-workspace.js` owns the multi-window canvas, drag/resize, assembly projects, save/import/export, and chat handoff. It is additive; do not replace it with single-tool focus navigation.
+- Tool frames use `?workspace-tool=<component-id>` to isolate DOM/global state. Never initialize another workspace inside those frames.
+- Dragging a Bin part onto a tool creates a new project; dragging into a project collects it without connecting logic automatically.
+- Project schema is `moor.component-project` version 1. Preserve component IDs, source references, connections, intent, and nested layout. Tool recipe state is separate and must not be advertised as captured automatically.
