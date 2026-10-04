@@ -8688,6 +8688,12 @@ var COMPS = [
    why:'The creature system per the build handoff \u2014 one canonical anatomy, multiple compiled representations. No hand-modeling, no hand-animation.',
    technical:'softbody-creatures', source:'new: Creature Lab (handoff v1.0 Stage A)', inMoor:false,
    toolGap:'Stage A only: bilateral walkers (4/6 legs) on fixture terrain. Swimming, flight, climbing, burrowing, breeding, damage, ecosystems are planned (Stages B\u2013G), explicitly not present.'},
+  {id:'comp-holopanel', tool:'holopanel', toolSrc:'pulse-tools/tool-holopanel.js', version:'1.0', cats:['creation','interface'], icon:'\uD83D\uDDA5', label:'HoloPanel',
+   short:'Laser-holo display screens — advertise, play video, show images.',
+   job:'Modern, clean, crispy lasery screens in the beta-map visual language (laser contours, glowing lattice nodes on dark glass). Build an ad panel live — headline, sub, button, theme, aspect — or browse the showcase: a survey image panel and a live lattice-feed video panel. Mount one on any object to advertise, play a video, or display images.',
+   why:'The verse needs screens — shop signs, wayfinding, broadcasts, art — that look like they belong in the same reality as the holo map.',
+   technical:'holopanel v1.0', source:'components/holopanel/holopanel.js', inMoor:false,
+   toolGap:'DOM component for now: it lives in page space, not world space. The 3D path (panel canvas \u2192 WebGL texture on a world quad) is specced in components/holopanel/SPEC.md, not yet built.'},
 
   /* --- the rest of the inventory: explanation pages (no fake tools) --- */
   {id:'canvas-shell', variantOf:'canvas', version:'1.0', scope:'The canvas shell spec', tool:null, cats:['interface'], icon:'\u25A3', label:'MOOR canvas',
@@ -23511,6 +23517,368 @@ TOOLS.moorBeta={mount:mount,unmount:unmount};
 
 </script>
 <script>
+/* TAGS: holopanel, laser, hologram, screens, signage, advertising, video, ui
+ * HoloPanel — laser-holo display screens (component + Pulse tool).
+ * Component source is verbatim from components/holopanel/holopanel.js;
+ * the Pulse mount below adds a live ad studio + showcase. */
+/* HoloPanel — laser-holo display panels.
+ *
+ * A self-contained component (IIFE, zero dependencies, ES5) that renders
+ * modern, clean, crispy lasery screens. Put one on an object to advertise,
+ * play a video, or display an image.
+ *
+ * Visual language: the moor beta map's laser contours/lines + the
+ * wonderfeed lattice (glowing node points on dark glass).
+ *
+ * Usage:
+ *   var p = HoloPanel.create({
+ *     label: 'PROMO', theme: 'cyan', aspect: '16:9',
+ *     content: {kind:'ad', headline:'MOOR BETA', sub:'Claim your holding.', cta:'Stake a claim'}
+ *   });
+ *   document.body.appendChild(p.el);
+ *   p.setContent({kind:'video', src:'clip.mp4'});
+ *   p.setContent({kind:'video', canvas: myCanvas}); // plays a live canvas via captureStream
+ *   p.setContent({kind:'image', src:'pic.jpg'});
+ *   p.dispose();
+ */
+(function(global){
+'use strict';
+
+var CSS = [
+'.hp{--hp-main:#82e1ff;--hp-dim:rgba(0,170,255,.55);--hp-glow:rgba(91,216,255,.8);',
+' position:relative;background:rgba(4,10,18,.80);',
+' border:1px solid var(--hp-dim);border-radius:10px;',
+' box-shadow:0 0 18px rgba(0,0,0,.65),inset 0 0 26px rgba(0,40,70,.35),0 0 3px var(--hp-glow);',
+' backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);overflow:hidden;',
+' font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#eaf6ff;',
+' animation:hp-in .45s ease-out;}',
+'@keyframes hp-in{from{opacity:0;transform:scale(.96);}to{opacity:1;transform:scale(1);}}',
+'.hp-title{position:relative;z-index:2;padding:9px 16px 7px;font-size:11px;letter-spacing:.30em;',
+' color:var(--hp-main);border-bottom:1px solid var(--hp-dim);text-shadow:0 0 8px var(--hp-glow);}',
+'.hp-body{position:relative;z-index:2;min-height:120px;}',
+'.hp-body img,.hp-body video,.hp-body canvas.hp-media{display:block;width:100%;height:100%;object-fit:cover;}',
+'.hp-ar{position:relative;width:100%;}',
+'.hp-corners i{position:absolute;width:15px;height:15px;border:2px solid var(--hp-main);z-index:5;',
+' filter:drop-shadow(0 0 5px var(--hp-glow));pointer-events:none;}',
+'.hp-c.tl{top:-1px;left:-1px;border-right:0;border-bottom:0;border-top-left-radius:10px;}',
+'.hp-c.tr{top:-1px;right:-1px;border-left:0;border-bottom:0;border-top-right-radius:10px;}',
+'.hp-c.bl{bottom:-1px;left:-1px;border-right:0;border-top:0;border-bottom-left-radius:10px;}',
+'.hp-c.br{bottom:-1px;right:-1px;border-left:0;border-top:0;border-bottom-right-radius:10px;}',
+'.hp-nodes{position:absolute;top:0;left:14px;right:14px;height:0;z-index:5;pointer-events:none;}',
+'.hp-n{position:absolute;top:-3px;width:5px;height:5px;border-radius:50%;background:var(--hp-main);',
+' box-shadow:0 0 7px var(--hp-glow);transform:translateX(-50%);}',
+'.hp-scan{position:absolute;left:0;right:0;height:64px;top:-70px;z-index:4;pointer-events:none;',
+' background:linear-gradient(to bottom,transparent,var(--hp-glow) 55%,rgba(255,255,255,.55) 62%,transparent);',
+' opacity:.30;animation:hp-scan 4.5s linear infinite;}',
+'@keyframes hp-scan{from{top:-70px;}to{top:110%;}}',
+'.hp-ad{padding:30px 28px 32px;}',
+'.hp-ad h3{margin:0 0 10px;font-size:30px;letter-spacing:.10em;color:#fff;font-weight:800;',
+' text-shadow:0 0 16px var(--hp-glow);}',
+'.hp-ad p{margin:0 0 22px;font-size:15px;line-height:1.5;color:rgba(215,238,255,.78);}',
+'.hp-ad button{background:transparent;border:1px solid var(--hp-main);color:var(--hp-main);',
+' padding:11px 26px;letter-spacing:.22em;font-size:12px;font-weight:700;border-radius:6px;cursor:pointer;',
+' box-shadow:0 0 12px var(--hp-glow),inset 0 0 10px rgba(0,60,100,.45);transition:all .18s;}',
+'.hp-ad button:hover{background:var(--hp-main);color:#04121c;box-shadow:0 0 20px var(--hp-glow);}',
+'.hp-err{padding:30px;color:rgba(255,150,150,.8);font-size:13px;text-align:center;}'
+].join('\n');
+
+var THEMES = {
+  cyan:    {main:'#82e1ff', dim:'rgba(0,170,255,.55)',  glow:'rgba(91,216,255,.8)'},
+  amber:   {main:'#ffc35e', dim:'rgba(255,170,60,.55)',  glow:'rgba(255,195,94,.8)'},
+  magenta: {main:'#ff7ee2', dim:'rgba(255,80,180,.55)',  glow:'rgba(255,126,226,.8)'},
+  lime:    {main:'#a4ff7e', dim:'rgba(120,255,80,.50)',  glow:'rgba(164,255,126,.8)'}
+};
+
+var cssDone = false;
+function injectCSS(){
+  if(cssDone) return; cssDone = true;
+  var st = document.createElement('style');
+  st.setAttribute('data-holopanel','');
+  st.textContent = CSS;
+  document.head.appendChild(st);
+}
+
+function mk(tag, cls, parent){
+  var d = document.createElement(tag);
+  if(cls) d.className = cls;
+  if(parent) parent.appendChild(d);
+  return d;
+}
+
+function applyTheme(root, name){
+  var t = THEMES[name] || THEMES.cyan;
+  root.style.setProperty('--hp-main', t.main);
+  root.style.setProperty('--hp-dim', t.dim);
+  root.style.setProperty('--hp-glow', t.glow);
+  root.setAttribute('data-theme', name in THEMES ? name : 'cyan');
+}
+
+function clearBody(body){
+  while(body.firstChild){
+    var n = body.firstChild;
+    if(n.tagName === 'VIDEO'){ try{ n.pause(); }catch(e){} n.removeAttribute('src'); }
+    body.removeChild(n);
+  }
+}
+
+function setAd(body, c){
+  var box = mk('div','hp-ad',body);
+  var h = mk('h3','',box); h.textContent = c.headline || '';
+  var p = mk('p','',box); p.textContent = c.sub || '';
+  if(c.cta){
+    var b = mk('button','',box); b.textContent = c.cta;
+    b.addEventListener('click', function(){ if(typeof c.onCta === 'function') c.onCta(); });
+  }
+}
+
+function setImage(body, c){
+  var img = mk('img','hp-media',body);
+  img.alt = c.alt || '';
+  img.src = c.src;
+  img.addEventListener('error', function(){
+    clearBody(body);
+    var e = mk('div','hp-err',body); e.textContent = 'image failed to load';
+  });
+}
+
+function setVideo(body, c){
+  if(c.canvas){
+    var srcCanvas = c.canvas;
+    var v = mk('video','hp-media',body);
+    v.muted = true; v.loop = true; v.autoplay = true;
+    v.setAttribute('playsinline',''); v.setAttribute('muted','');
+    var ok = false;
+    try{
+      if(srcCanvas.captureStream){
+        v.srcObject = srcCanvas.captureStream(30);
+        var pr = v.play();
+        if(pr && pr.catch) pr.catch(function(){});
+        ok = true;
+      }
+    }catch(e){ ok = false; }
+    if(!ok){ /* fall back: show the live canvas itself */
+      body.removeChild(v);
+      srcCanvas.classList.add('hp-media');
+      body.appendChild(srcCanvas);
+    }
+    return;
+  }
+  var v2 = mk('video','hp-media',body);
+  v2.src = c.src;
+  v2.muted = c.muted !== false; v2.loop = c.loop !== false;
+  v2.setAttribute('playsinline','');
+  if(c.autoplay !== false){ v2.autoplay = true; var pr2 = v2.play(); if(pr2 && pr2.catch) pr2.catch(function(){}); }
+  if(c.controls) v2.controls = true;
+}
+
+function create(opts){
+  opts = opts || {};
+  injectCSS();
+  var root = mk('div','hp');
+  applyTheme(root, opts.theme);
+
+  if(opts.width) root.style.width = typeof opts.width === 'number' ? opts.width+'px' : opts.width;
+  if(opts.tilt){
+    root.style.transform = 'perspective(1000px) rotateX('+opts.tilt[0]+'deg) rotateY('+opts.tilt[1]+'deg)';
+  }
+
+  var cn = mk('div','hp-corners',root);
+  ['tl','tr','bl','br'].forEach(function(p){ mk('i','hp-c '+p,cn); });
+
+  var nodes = mk('div','hp-nodes',root);
+  var nn = opts.nodes || 9;
+  for(var k=0;k<nn;k++){
+    var s = mk('i','hp-n',nodes);
+    s.style.left = (nn===1?50:(k/(nn-1)*100))+'%';
+  }
+
+  var title = mk('div','hp-title',root);
+  var tspan = mk('span','',title);
+  tspan.textContent = opts.label || 'HOLO';
+
+  var ar = mk('div','hp-ar',root);
+  var ratios = {'16:9':'56.25%','4:3':'75%','1:1':'100%','21:9':'42.86%'};
+  ar.style.paddingTop = ratios[opts.aspect] || ratios['16:9'];
+  var body = mk('div','hp-body',ar);
+  body.style.position = 'absolute'; body.style.inset = '0';
+
+  mk('div','hp-scan',root);
+
+  var api = {
+    el: root,
+    setLabel: function(t){ tspan.textContent = t; },
+    setTheme: function(name){ applyTheme(root, name); },
+    setContent: function(c){
+      clearBody(body);
+      if(!c || !c.kind) return;
+      if(c.kind === 'ad') setAd(body, c);
+      else if(c.kind === 'image') setImage(body, c);
+      else if(c.kind === 'video') setVideo(body, c);
+    },
+    dispose: function(){
+      clearBody(body);
+      if(root.parentNode) root.parentNode.removeChild(root);
+    }
+  };
+  if(opts.content) api.setContent(opts.content);
+  return api;
+}
+
+global.HoloPanel = {create: create, themes: Object.keys(THEMES)};
+})(window);
+
+/* ---------- Pulse tool: HoloPanel studio + showcase ---------- */
+(function(){
+'use strict';
+
+function makeArt(){
+  var cv = document.createElement('canvas'); cv.width = 640; cv.height = 360;
+  var cx = cv.getContext('2d');
+  var g = cx.createLinearGradient(0,0,0,360);
+  g.addColorStop(0,'#0a1626'); g.addColorStop(.55,'#0d2036'); g.addColorStop(1,'#120f22');
+  cx.fillStyle = g; cx.fillRect(0,0,640,360);
+  function h(x,y){
+    return Math.sin(x*.021+1.7)*Math.cos(y*.017-.6)*46
+         + Math.sin(x*.043+y*.031)*18 + Math.cos(y*.06-x*.02)*9;
+  }
+  function T(p,q){ return p/(p-q); }
+  for(var lv=-40; lv<=60; lv+=8){
+    cx.strokeStyle = lv%24===0 ? 'rgba(130,225,255,.7)' : 'rgba(0,170,255,.28)';
+    cx.lineWidth = lv%24===0 ? 1.6 : 1;
+    cx.beginPath();
+    for(var j=0;j<90;j++) for(var i=0;i<160;i++){
+      var x0=i/160*640, y0=j/90*360, x1=(i+1)/160*640, y1=(j+1)/90*360;
+      var a=h(x0,y0)-lv, b=h(x1,y0)-lv, c=h(x1,y1)-lv, d=h(x0,y1)-lv;
+      var n=(a>0?8:0)|(b>0?4:0)|(c>0?2:0)|(d>0?1:0);
+      if(n===0||n===15) continue;
+      var Tp=[x0+(x1-x0)*T(a,b),y0], R=[x1,y0+(y1-y0)*T(b,c)],
+          B=[x0+(x1-x0)*T(d,c),y1], L=[x0,y0+(y1-y0)*T(a,d)];
+      var S=function(p,q){ cx.moveTo(p[0],p[1]); cx.lineTo(q[0],q[1]); };
+      switch(n){
+        case 1: case 14: S(L,B); break;
+        case 2: case 13: S(B,R); break;
+        case 3: case 12: S(L,R); break;
+        case 4: case 11: S(Tp,R); break;
+        case 5: S(Tp,L); S(B,R); break;
+        case 6: case 9: S(Tp,B); break;
+        case 7: case 8: S(Tp,L); break;
+        case 10: S(Tp,R); S(L,B); break;
+      }
+    }
+    cx.stroke();
+  }
+  for(var k=0;k<36;k++){
+    var nx2 = 24+k*17, ny2 = 180 + h(nx2,180)*1.4;
+    cx.fillStyle = 'rgba(140,230,255,.9)';
+    cx.shadowColor = 'rgba(91,216,255,.9)'; cx.shadowBlur = 8;
+    cx.beginPath(); cx.arc(nx2,ny2,2.4,0,7); cx.fill();
+  }
+  cx.shadowBlur = 0;
+  cx.fillStyle = 'rgba(200,235,255,.85)';
+  cx.font = '700 26px system-ui'; cx.fillText('HIGHLANDS SURVEY', 28, 330);
+  cx.font = '13px system-ui'; cx.fillStyle = 'rgba(160,210,245,.6)';
+  cx.fillText('SECTOR 7 \u00B7 ELEV 1,240M', 28, 350);
+  return cv.toDataURL('image/png');
+}
+
+function makeFeed(){
+  var cv = document.createElement('canvas'); cv.width = 480; cv.height = 270;
+  var vx = cv.getContext('2d');
+  var nodes = [];
+  for(var j=0;j<7;j++) for(var i=0;i<12;i++) nodes.push({x:20+i*40, y:20+j*38.3});
+  var t0 = performance.now(), raf = 0, alive = true;
+  (function tick(){
+    if(!alive) return;
+    var t = (performance.now()-t0)/1000;
+    vx.fillStyle = '#050b14'; vx.fillRect(0,0,480,270);
+    for(var k=0;k<nodes.length;k++){
+      var n = nodes[k];
+      var w = Math.sin(t*2.2 + n.x*.03 + n.y*.05);
+      var y = n.y + w*10;
+      var a = .35 + .65*Math.abs(w);
+      vx.fillStyle = 'rgba(255,126,226,'+a.toFixed(2)+')';
+      vx.shadowColor = 'rgba(255,126,226,.9)'; vx.shadowBlur = 9;
+      vx.beginPath(); vx.arc(n.x,y,2.6,0,7); vx.fill();
+      vx.shadowBlur = 0;
+      vx.strokeStyle = 'rgba(255,126,226,'+(a*.25).toFixed(2)+')';
+      vx.beginPath(); vx.moveTo(n.x,y); vx.lineTo(n.x,270); vx.stroke();
+    }
+    vx.fillStyle = 'rgba(255,200,235,.9)'; vx.font = '700 20px system-ui';
+    vx.fillText('LATTICE FEED \u00B7 LIVE', 18, 30);
+    raf = requestAnimationFrame(tick);
+  })();
+  return {canvas: cv, stop: function(){ alive = false; cancelAnimationFrame(raf); }};
+}
+
+TOOLS.holopanel = {
+  _p: [], _stops: [],
+  mount: function(host){
+    var self = this;
+    self._p = []; self._stops = [];
+    var wrap = document.createElement('div');
+    function lab(id, text, value){
+      return '<label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;font-size:12px;color:var(--muted)">'+text+
+        '<input id="'+id+'" type="text" value="'+value+'" style="background:#0b1523;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:7px 10px;font:inherit;"></label>';
+    }
+    function sel(id, text, opts){
+      var o = opts.map(function(v){ return '<option>'+v+'</option>'; }).join('');
+      return '<label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;font-size:12px;color:var(--muted)">'+text+
+        '<select id="'+id+'" style="background:#0b1523;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:7px 10px;font:inherit;">'+o+'</select></label>';
+    }
+    wrap.innerHTML =
+      '<div class="t-controls"><span class="meta">Laser-holo display screens in the beta-map visual language. Build an ad panel live below, or browse the showcase. Mount one on any object to advertise, play video, or show images.</span></div>'+
+      '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:20px;">'+
+        '<div style="flex:1 1 230px;min-width:220px;max-width:300px;">'+
+          lab('hps-label','Label','PROMO')+lab('hps-head','Headline','MOOR BETA')+
+          lab('hps-sub','Sub','Stake your holding. Raise your walls.')+lab('hps-cta','Button','CLAIM LAND')+
+          sel('hps-theme','Theme',['cyan','amber','magenta','lime'])+
+          sel('hps-aspect','Aspect',['16:9','4:3','1:1','21:9'])+
+        '</div>'+
+        '<div id="hps-preview" style="flex:2 1 300px;min-width:280px;"></div>'+
+      '</div>'+
+      '<div class="meta" style="margin:2px 0 10px;letter-spacing:.2em;font-size:11px;">SHOWCASE</div>'+
+      '<div style="display:flex;gap:18px;flex-wrap:wrap;">'+
+        '<div id="hps-img" style="flex:1 1 280px;min-width:260px;"></div>'+
+        '<div id="hps-vid" style="flex:1 1 280px;min-width:260px;"></div>'+
+      '</div>';
+    host.appendChild(wrap);
+
+    function val(id){ return wrap.querySelector('#'+id).value; }
+    var ad = null;
+    function buildAd(){
+      if(ad){ var i = self._p.indexOf(ad); if(i>=0) self._p.splice(i,1); ad.dispose(); }
+      ad = HoloPanel.create({label:val('hps-label'), theme:val('hps-theme'), aspect:val('hps-aspect'),
+        content:{kind:'ad', headline:val('hps-head'), sub:val('hps-sub'), cta:val('hps-cta')}});
+      var prev = wrap.querySelector('#hps-preview'); prev.innerHTML = '';
+      prev.appendChild(ad.el); self._p.push(ad);
+    }
+    buildAd();
+    ['hps-label','hps-head','hps-sub','hps-cta'].forEach(function(id){
+      wrap.querySelector('#'+id).addEventListener('input', function(){
+        ad.setLabel(val('hps-label'));
+        ad.setContent({kind:'ad', headline:val('hps-head'), sub:val('hps-sub'), cta:val('hps-cta')});
+      });
+    });
+    wrap.querySelector('#hps-theme').addEventListener('change', function(){ ad.setTheme(val('hps-theme')); });
+    wrap.querySelector('#hps-aspect').addEventListener('change', buildAd);
+
+    var img = HoloPanel.create({label:'SURVEY', theme:'amber', content:{kind:'image', src:makeArt()}});
+    wrap.querySelector('#hps-img').appendChild(img.el); self._p.push(img);
+
+    var feed = makeFeed(); self._stops.push(feed.stop);
+    var vid = HoloPanel.create({label:'FEED', theme:'magenta', content:{kind:'video', canvas:feed.canvas}});
+    wrap.querySelector('#hps-vid').appendChild(vid.el); self._p.push(vid);
+  },
+  unmount: function(){
+    this._stops.forEach(function(s){ try{ s(); }catch(e){} });
+    this._p.forEach(function(p){ try{ p.dispose(); }catch(e){} });
+    this._p = []; this._stops = [];
+  }
+};
+})();
+
+</script>
+<script>
 /* Project Pulse — Source drawer (non-invasive).
  * One button in the header (</>) opens this drawer. It exposes the
  * underlying logic for AI/human reuse: the machine-readable manifest,
@@ -24144,7 +24512,5 @@ init();
 })();
 
 </script>
-<script src="pulse-workspace.js?v=20261004-3"></script>
-<script src="pulse-component-extensions.js"></script>
 </body>
 </html>
