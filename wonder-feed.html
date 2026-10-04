@@ -14,9 +14,12 @@ html,body{margin:0;padding:0;height:100%;background:#05070d;overscroll-behavior:
 <div id="app"></div>
 <script>
 /* Wonder Feed v2 — infinite scroll through live generative wonders, now a creative instrument.
+ * TAGS: tool:wonder | cat:experiences | dep:webgl dep:canvas2d dep:webaudio dep:seed-rng dep:raf dep:localstorage |
+ *   prov:infinite-wonder-feed prov:spell-effects prov:3d-point-cloud prov:genome-library |
+ *   see:component-distiller | src:moor-city/particle-pack.mjs src:moor-city/particle-special.mjs
  *
  * GENOME: every wonder is fully determined by a serializable genome:
- *   {type:'planet'|'terrain'|'creature'|'particles'|'ambience'|'forest'|'tide',
+ *   {type:string (31 kinds: planet, terrain, creature, particles, ambience, forest, tide,
  *    seed:int, p:{...type-specific numeric params...}}
  * A genome is the "recipe" — save it, share it (#w=<base64url>), mutate it.
  *
@@ -2003,6 +2006,876 @@ TYPES.push({kind:'evolver', icon:'\u{1F9EC}', label:'Evolver',
   return { el:el, title:title, sub:sub,
     start:function(){ setup(); if(!raf) frame(); },
     stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } teardown(); } };
+}});
+
+/* ================= SPELL PACK — 10 procedural particle spell effects =================
+ * from: particle-pack.mjs effectPack (20 authored spell behaviors: lightning, chain,
+ *   explosion, plasma, smoke, dome, barrier, fire, splash, flash, splatter, swirl,
+ *   vines, wind) + particle-special.mjs drawSpecial (canvas spell renderers).
+ * 7 spell/event effects in 2D canvas + 3 WebGL point-sprite 3D effects.
+ * Shared WebGL point shader (PTVS/PTFS) for galaxy / firefountain / warp.
+ * TAGS: tool:wonder | cat:experiences | dep:webgl dep:canvas2d dep:seed-rng dep:raf |
+ *   prov:spell-effects prov:3d-point-cloud | see:particles see:ambience |
+ *   src:moor-city/particle-pack.mjs src:moor-city/particle-special.mjs */
+Object.assign(RANGES, {
+  arc:[0.2,1,0], size:[0.5,2,0], pulses:[1,4,1], shards:[20,90,1],
+  bolts:[1,4,1], rise:[0.4,1.6,0], drift:[0.2,1.4,0], pops:[2,6,1],
+  arms:[2,4,1], tilt:[0.15,1.25,0], pcount:[900,3200,1], power:[0.6,1.8,0],
+  spread:[0.2,1,0], density:[300,1400,1]
+});
+function spellSprite(hue, sat, li){
+  var c = document.createElement('canvas'); c.width = c.height = 64;
+  var x = c.getContext('2d');
+  var g = x.createRadialGradient(32,32,1,32,32,32);
+  g.addColorStop(0,'hsla('+hue+','+sat+'%,'+Math.min(97,li+32)+'%,1)');
+  g.addColorStop(0.35,'hsla('+hue+','+sat+'%,'+li+'%,0.8)');
+  g.addColorStop(1,'hsla('+hue+','+sat+'%,'+li+'%,0)');
+  x.fillStyle = g; x.fillRect(0,0,64,64);
+  return c;
+}
+function hslRGB(h,s,l){
+  h=(((h%360)+360)%360)/360; s=Math.max(0,Math.min(1,s/100)); l=Math.max(0,Math.min(1,l/100));
+  function f(n){ var k=(n+h*12)%12, a=s*Math.min(l,1-l);
+    return l-a*Math.max(-1,Math.min(k-3,9-k,1)); }
+  return [f(0),f(8),f(4)];
+}
+/* shared WebGL point-sprite shader */
+var PTVS='attribute vec3 aP;attribute vec3 aC;attribute float aS;'+
+ 'uniform mat4 uM;uniform float uPx;varying vec3 vC;'+
+ 'void main(){vC=aC;vec4 mv=uM*vec4(aP,1.0);gl_Position=mv;'+
+ 'gl_PointSize=min(aS*uPx*(14.0/max(0.5,-mv.z)),42.0);}';
+var PTFS='precision mediump float;varying vec3 vC;'+
+ 'void main(){vec2 q=gl_PointCoord-0.5;float d=length(q);'+
+ 'float a=smoothstep(0.5,0.04,d);a*=a;gl_FragColor=vec4(vC*a,a);}';
+function ptCompile(gl, t, s){
+  var h=gl.createShader(t); gl.shaderSource(h,s); gl.compileShader(h);
+  if(!gl.getShaderParameter(h,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(h));
+  return h;
+}
+function ptProgram(gl){
+  var pr=gl.createProgram();
+  gl.attachShader(pr,ptCompile(gl,gl.VERTEX_SHADER,PTVS));
+  gl.attachShader(pr,ptCompile(gl,gl.FRAGMENT_SHADER,PTFS));
+  gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) throw new Error('pt link');
+  return pr;
+}
+function ptFadeProgram(gl){
+  var pr=gl.createProgram();
+  gl.attachShader(pr,ptCompile(gl,gl.VERTEX_SHADER,'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}'));
+  gl.attachShader(pr,ptCompile(gl,gl.FRAGMENT_SHADER,'precision mediump float;uniform vec3 uC;uniform float uA;void main(){gl_FragColor=vec4(uC,uA);}'));
+  gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) throw new Error('fade link');
+  return pr;
+}
+function ptBuffer(gl, arr, usage){
+  var b=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,b);
+  gl.bufferData(gl.ARRAY_BUFFER,arr,usage||gl.STATIC_DRAW);
+  return b;
+}
+function drawPoints(gl, pr, B, N, mvp, px){
+  gl.useProgram(pr);
+  gl.uniformMatrix4fv(gl.getUniformLocation(pr,'uM'),false,mvp);
+  gl.uniform1f(gl.getUniformLocation(pr,'uPx'),px);
+  function at(nm,buf,sz){
+    var l=gl.getAttribLocation(pr,nm);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.enableVertexAttribArray(l);
+    gl.vertexAttribPointer(l,sz,gl.FLOAT,false,0,0);
+  }
+  at('aP',B.p,3); at('aC',B.c,3); at('aS',B.s,1);
+  gl.drawArrays(gl.POINTS,0,N);
+}
+function mm4(A,B){ var o=new Float32Array(16);
+  for(var c=0;c<4;c++) for(var r=0;r<4;r++)
+    o[c*4+r]=A[0*4+r]*B[c*4+0]+A[1*4+r]*B[c*4+1]+A[2*4+r]*B[c*4+2]+A[3*4+r]*B[c*4+3];
+  return o; }
+function mRotY(a){ var c=Math.cos(a),s=Math.sin(a);
+  return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]); }
+function mRotX(a){ var c=Math.cos(a),s=Math.sin(a);
+  return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]); }
+function mTrans(x,y,z){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]); }
+function mPersp(f,asp,n,f2){ var t=1/Math.tan(f/2);
+  return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(f2+n)/(n-f2),-1, 0,0,2*f2*n/(n-f2),0]); }
+var M_IDENT=new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+/* ---------- 22. FIREBALL — arcing spell projectile + impact burst ----------
+ * from: particle-pack 'Fireball explosion' (radial blast + shock ring) */
+TYPES.push({kind:'fireball', icon:'🔥', label:'Fireball',
+ params: function(r){ return {hue:12+r()*30, arc:0.3+r()*0.7, speed:0.6+r()*0.9, size:0.7+r()*0.9}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Fireball', sub = 'spell effect — from the particle pack';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, SZ = P.size;
+  var spr = spellSprite(hue, 95, 55), sprW = spellSprite(hue, 100, 88);
+  var t = 0, raf = 0;
+  var travel = 2.6/P.speed, pause = 0.9, ct = 0, mode = 0;
+  var bx = 0, by = 0, dir = 1;
+  var trail = [], burst = [], flash = 0, ring = -1, scorch = 0, scorchX = 0;
+  function spawnBall(){
+    dir = rng()<0.5?1:-1;
+    bx = dir>0 ? -50 : Wd+50; mode = 0; ct = 0; trail.length = 0;
+  }
+  spawnBall();
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt;
+    ctx.globalCompositeOperation = 'source-over';
+    var bg = ctx.createLinearGradient(0,0,0,Ht);
+    bg.addColorStop(0,'#0b0705'); bg.addColorStop(1,'#050303');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.globalCompositeOperation = 'lighter';
+    if (mode===0){
+      ct += dt;
+      var pr = ct/travel;
+      if (pr>=1){
+        mode = 1; ct = 0;
+        scorchX = dir>0?Wd-30:30; scorch = 1;
+        flash = 1; ring = 0;
+        for (var i=0;i<90;i++){
+          var a = rng()*6.2832, sp = 60+rng()*340;
+          burst.push({x:scorchX, y:by, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-60,
+            life:0, max:0.6+rng()*0.9, s:(8+rng()*22)*SZ, h:hue+(rng()-0.5)*26});
+        }
+      } else {
+        bx = (dir>0?-50:Wd+50) + dir*pr*(Wd+100);
+        by = Ht*0.62 - Math.sin(pr*Math.PI)*Ht*0.38*P.arc;
+        for (var e=0;e<5;e++){
+          trail.push({x:bx+(rng()-0.5)*16*SZ, y:by+(rng()-0.5)*16*SZ,
+            vx:(rng()-0.5)*36-dir*50, vy:(rng()-0.5)*44-24,
+            life:0, max:0.5+rng()*0.6, s:(7+rng()*15)*SZ, h:hue+(rng()-0.5)*22});
+        }
+      }
+    } else {
+      ct += dt;
+      if (ct>pause) spawnBall();
+    }
+    var k;
+    for (k=trail.length-1;k>=0;k--){
+      var p = trail[k]; p.life += dt;
+      if (p.life>=p.max){ trail.splice(k,1); continue; }
+      p.x += p.vx*dt; p.y += p.vy*dt; p.vy -= 34*dt;
+      var a2 = 1-p.life/p.max;
+      ctx.globalAlpha = a2*0.85;
+      var s2 = p.s*(1-p.life/p.max*0.5);
+      ctx.drawImage(spr, p.x-s2/2, p.y-s2/2, s2, s2);
+    }
+    for (k=burst.length-1;k>=0;k--){
+      var q = burst[k]; q.life += dt;
+      if (q.life>=q.max){ burst.splice(k,1); continue; }
+      q.x += q.vx*dt; q.y += q.vy*dt;
+      q.vx *= (1-1.9*dt); q.vy *= (1-1.9*dt); q.vy += 160*dt;
+      var a3 = 1-q.life/q.max;
+      ctx.globalAlpha = a3;
+      var s3 = q.s*(0.5+a3*0.5);
+      ctx.drawImage(spr, q.x-s3/2, q.y-s3/2, s3, s3);
+    }
+    if (mode===0){
+      var bs = 46*SZ;
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(spr, bx-bs, by-bs, bs*2, bs*2);
+      ctx.globalAlpha = 0.95;
+      var bs2 = 22*SZ;
+      ctx.drawImage(sprW, bx-bs2, by-bs2, bs2*2, bs2*2);
+    }
+    if (scorch>0){
+      scorch = Math.max(0, scorch-dt*0.5);
+      ctx.globalAlpha = scorch*0.5;
+      var gs = 130*SZ;
+      ctx.drawImage(spr, scorchX-gs/2, by-gs/2, gs, gs);
+    }
+    if (flash>0){
+      flash = Math.max(0, flash-dt*3.2);
+      var fg = ctx.createRadialGradient(scorchX,by,2,scorchX,by,190);
+      fg.addColorStop(0,'rgba(255,244,214,'+(0.85*flash)+')');
+      fg.addColorStop(0.4,'hsla('+hue+',95%,60%,'+(0.4*flash)+')');
+      fg.addColorStop(1,'hsla('+hue+',95%,55%,0)');
+      ctx.globalAlpha = 1; ctx.fillStyle = fg;
+      ctx.fillRect(scorchX-190,by-190,380,380);
+    }
+    if (ring>=0){
+      ring += dt*2.4;
+      if (ring>=1) ring = -1;
+      else {
+        ctx.globalAlpha = (1-ring)*0.8;
+        ctx.strokeStyle = 'hsla('+hue+',95%,65%,1)';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.arc(scorchX, by, 12+ring*250, 0, 6.2832); ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 23. FROST NOVA — expanding ice ring + crystalline shards ---------- */
+TYPES.push({kind:'frostnova', icon:'❄️', label:'Frost Nova',
+ params: function(r){ return {hue:185+r()*40, pulses:1+((r()*3)|0), shards:24+((r()*56)|0), speed:0.5+r()*1.0}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Frost Nova', sub = 'spell effect — from the particle pack';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue;
+  var cx = Wd/2, cy = Ht*0.46;
+  var period = 3.4/P.speed, ct = period*0.7, nt = 99;
+  var shards = [], snow = [];
+  var i;
+  for (i=0;i<34;i++) snow.push({x:rng()*Wd, y:rng()*Ht, s:0.8+rng()*2, ph:rng()*6.28, v:12+rng()*22});
+  function trigger(){
+    nt = 0; shards.length = 0;
+    for (var j=0;j<P.shards;j++){
+      shards.push({ang:rng()*6.2832, d0:20+rng()*40, sp:200+rng()*260,
+        rot:rng()*6.2832, vr:(rng()-0.5)*6, len:14+rng()*30, w:2+rng()*3});
+    }
+  }
+  var t = 0, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt; ct += dt;
+    if (ct>=period){ ct = 0; trigger(); }
+    if (nt<3) nt += dt;
+    ctx.globalCompositeOperation = 'source-over';
+    var bg = ctx.createLinearGradient(0,0,0,Ht);
+    bg.addColorStop(0,'#081426'); bg.addColorStop(1,'#030710');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    var s2;
+    for (s2=0;s2<snow.length;s2++){
+      var f = snow[s2];
+      f.y += f.v*dt; f.x += Math.sin(t*0.8+f.ph)*8*dt;
+      if (f.y>Ht+6){ f.y = -6; f.x = rng()*Wd; }
+      ctx.fillStyle = 'rgba(200,225,255,0.35)';
+      ctx.beginPath(); ctx.arc(f.x,f.y,f.s,0,6.2832); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    if (nt<0.6){
+      var fl = ctx.createRadialGradient(cx,cy,2,cx,cy,220);
+      var fa = 1-nt/0.6;
+      fl.addColorStop(0,'rgba(240,250,255,'+(0.8*fa)+')');
+      fl.addColorStop(0.5,'hsla('+hue+',85%,70%,'+(0.35*fa)+')');
+      fl.addColorStop(1,'hsla('+hue+',85%,70%,0)');
+      ctx.fillStyle = fl; ctx.fillRect(cx-220,cy-220,440,440);
+    }
+    var pr2;
+    for (pr2=0;pr2<P.pulses;pr2++){
+      var rr = nt*380*P.speed - pr2*70;
+      if (rr<=0) continue;
+      var ra = Math.max(0, 1-nt/1.7)*0.55;
+      if (ra<=0) continue;
+      ctx.globalAlpha = ra;
+      ctx.strokeStyle = 'hsla('+hue+',85%,72%,1)';
+      ctx.lineWidth = 3-pr2*0.6;
+      ctx.beginPath(); ctx.arc(cx,cy,rr,0,6.2832); ctx.stroke();
+      ctx.globalAlpha = ra*0.5;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(cx,cy,rr*0.93,0,6.2832); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    var sh;
+    for (sh=0;sh<shards.length;sh++){
+      var sd = shards[sh];
+      var d = sd.d0 + nt*sd.sp*P.speed;
+      var sa = Math.max(0, 1-nt/1.5);
+      if (sa<=0) continue;
+      var sx = cx+Math.cos(sd.ang)*d, sy = cy+Math.sin(sd.ang)*d*0.9;
+      ctx.save(); ctx.translate(sx,sy); ctx.rotate(sd.rot+nt*sd.vr);
+      ctx.globalAlpha = sa*0.9;
+      ctx.fillStyle = 'hsla('+hue+',85%,74%,1)';
+      ctx.beginPath();
+      ctx.moveTo(0,-sd.len/2); ctx.lineTo(sd.w,0); ctx.lineTo(0,sd.len/2); ctx.lineTo(-sd.w,0);
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = sa;
+      ctx.strokeStyle = '#f2faff'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0,-sd.len/2); ctx.lineTo(0,sd.len/2); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 24. LIGHTNING — branching bolts + strike flash ----------
+ * from: particle-special drawSpecial 'lightning' (jagged bolt renderer) */
+TYPES.push({kind:'lightning', icon:'⚡', label:'Lightning',
+ params: function(r){ return {hue:205+r()*55, bolts:1+((r()*2)|0), rate:0.5+r()*1.0}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Lightning', sub = 'spell effect — from the particle pack';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue;
+  var strikes = [], timer = 1.0;
+  var t = 0, raf = 0;
+  function strike(){
+    var b;
+    for (b=0;b<P.bolts;b++){
+      var x = Wd*0.08+rng()*Wd*0.84;
+      var gy = Ht*(0.66+rng()*0.24);
+      var pts = [[x,-20]], i;
+      for (i=1;i<=18;i++){
+        var u = i/18;
+        pts.push([x+(rng()-0.5)*90*Math.sin(u*Math.PI)+(rng()-0.5)*30, -20+u*(gy+20)]);
+      }
+      pts[18][0] = x+(rng()-0.5)*40;
+      var branches = [], nb = 2+((rng()*2)|0), bb;
+      for (bb=0;bb<nb;bb++){
+        var si = 3+((rng()*11)|0);
+        var bp = [[pts[si][0],pts[si][1]]];
+        var bx2 = pts[si][0], by2 = pts[si][1], bdir = rng()<0.5?-1:1;
+        for (var s2=0;s2<5;s2++){ bx2 += bdir*(14+rng()*26); by2 += 10+rng()*26; bp.push([bx2,by2]); }
+        branches.push(bp);
+      }
+      strikes.push({pts:pts, branches:branches, x:x, gy:gy, life:0, max:0.26+rng()*0.14});
+    }
+  }
+  function drawBolt(pts, w, style, alpha){
+    ctx.strokeStyle = style; ctx.lineWidth = w; ctx.globalAlpha = alpha;
+    ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+    for (var i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]);
+    ctx.stroke();
+  }
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt; timer -= dt;
+    if (timer<=0){ timer = 1.7/P.rate*(0.6+rng()*0.8); strike(); }
+    ctx.globalCompositeOperation = 'source-over';
+    var bg = ctx.createLinearGradient(0,0,0,Ht);
+    bg.addColorStop(0,'#0a0f1e'); bg.addColorStop(0.7,'#070b14'); bg.addColorStop(1,'#04060c');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.globalCompositeOperation = 'lighter';
+    var s2;
+    for (s2=strikes.length-1;s2>=0;s2--){
+      var s = strikes[s2]; s.life += dt;
+      var kk = s.life/s.max;
+      if (kk>=1){ strikes.splice(s2,1); continue; }
+      var flick = kk<0.45 ? 1 : (0.12+0.88*Math.abs(Math.sin(t*95+s.x)));
+      drawBolt(s.pts, 8, 'hsla('+hue+',90%,62%,1)', 0.22*flick);
+      drawBolt(s.pts, 3, 'hsla('+hue+',95%,72%,1)', 0.65*flick);
+      drawBolt(s.pts, 1.3, '#f4fbff', 0.95*flick);
+      for (var b2=0;b2<s.branches.length;b2++)
+        drawBolt(s.branches[b2], 2, 'hsla('+hue+',95%,72%,1)', 0.5*flick);
+      var ig = ctx.createRadialGradient(s.x,s.gy,2,s.x,s.gy,130);
+      ig.addColorStop(0,'rgba(240,250,255,'+(0.55*flick*(1-kk))+')');
+      ig.addColorStop(1,'hsla('+hue+',90%,60%,0)');
+      ctx.globalAlpha = 1; ctx.fillStyle = ig;
+      ctx.fillRect(s.x-130,s.gy-130,260,260);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 25. PORTAL — swirling vortex + spark eruptions ----------
+ * from: particle-pack 'Plasma detonation' (violet energy burst + rings) */
+TYPES.push({kind:'portal', icon:'🌀', label:'Portal',
+ params: function(r){ return {hue:265+r()*35, hue2:160+r()*40, swirl:0.6+r()*1.4, rate:0.5+r()*1.0}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Portal', sub = 'spell effect — from the particle pack';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue, hue2 = P.hue2;
+  var cx = Wd/2, cy = Ht*0.48;
+  var sprs = [];
+  var si;
+  for (si=0;si<4;si++) sprs.push(spellSprite(hue+(hue2-hue)*si/3, 90, 62));
+  var N = 200, ps = [], i;
+  for (i=0;i<N;i++) ps.push({ang:rng()*6.2832, rad:30+rng()*300,
+    aspd:(0.5+rng()*1.4)*(rng()<0.5?-1:1), ir:26+rng()*40, s:3+rng()*7});
+  var sparks = [], timer = 1.4, ringT = 99;
+  var t = 0, raf = 0, first = true;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt; timer -= dt; ringT += dt;
+    ctx.globalCompositeOperation = 'source-over';
+    if (first){ first = false; ctx.fillStyle = '#070512'; ctx.fillRect(0,0,Wd,Ht); }
+    else { ctx.fillStyle = 'rgba(7,5,18,0.18)'; ctx.fillRect(0,0,Wd,Ht); }
+    ctx.globalCompositeOperation = 'lighter';
+    var k;
+    for (k=0;k<N;k++){
+      var p = ps[k];
+      p.ang += p.aspd*dt*P.swirl; p.rad -= p.ir*dt*P.swirl;
+      if (p.rad<13){ p.rad = 300+rng()*40; p.ang = rng()*6.2832; }
+      var x = cx+Math.cos(p.ang)*p.rad*1.3, y = cy+Math.sin(p.ang)*p.rad*0.82;
+      var mix = Math.max(0, Math.min(1, 1-p.rad/340));
+      var spr = sprs[Math.min(3,(mix*3)|0)];
+      ctx.globalAlpha = 0.8;
+      ctx.drawImage(spr, x-p.s/2, y-p.s/2, p.s, p.s);
+    }
+    if (timer<=0){
+      timer = 2.2/P.rate;
+      for (var e=0;e<34;e++){
+        var a = rng()*6.2832, sp = 120+rng()*260;
+        sparks.push({x:cx, y:cy, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+          life:0, max:0.5+rng()*0.5, s:4+rng()*8});
+      }
+      ringT = 0;
+    }
+    for (k=sparks.length-1;k>=0;k--){
+      var q = sparks[k]; q.life += dt;
+      if (q.life>=q.max){ sparks.splice(k,1); continue; }
+      q.x += q.vx*dt; q.y += q.vy*dt;
+      var a2 = 1-q.life/q.max;
+      ctx.globalAlpha = a2;
+      ctx.drawImage(sprs[3], q.x-q.s/2, q.y-q.s/2, q.s, q.s);
+    }
+    if (ringT<1.2){
+      ctx.globalAlpha = (1-ringT/1.2)*0.6;
+      ctx.strokeStyle = 'hsla('+hue2+',90%,65%,1)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(cx,cy,20+ringT*200,14+ringT*130,0,0,6.2832); ctx.stroke();
+    }
+    var pulse = 0.75+0.25*Math.sin(t*3.1);
+    var cg = ctx.createRadialGradient(cx,cy,1,cx,cy,58*pulse);
+    cg.addColorStop(0,'rgba(255,255,255,0.95)');
+    cg.addColorStop(0.35,'hsla('+hue+',92%,66%,0.85)');
+    cg.addColorStop(1,'hsla('+hue+',92%,60%,0)');
+    ctx.globalAlpha = 1; ctx.fillStyle = cg;
+    ctx.fillRect(cx-60,cy-60,120,120);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 26. HEAL — rising green-gold motes ---------- */
+TYPES.push({kind:'heal', icon:'💚', label:'Heal',
+ params: function(r){ return {hue:90+r()*55, count:40+((r()*80)|0), rise:0.5+r()*1.0}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Heal', sub = 'spell effect — from the particle pack';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue;
+  var spr = spellSprite(hue, 85, 60);
+  var motes = [], i;
+  for (i=0;i<P.count;i++) motes.push({x:rng()*Wd, y:rng()*Ht, vy:22+rng()*46,
+    ph:rng()*6.28, s:2.5+rng()*5, cross:rng()<0.22});
+  var t = 0, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt;
+    ctx.globalCompositeOperation = 'source-over';
+    var bg = ctx.createLinearGradient(0,0,0,Ht);
+    bg.addColorStop(0,'#07130c'); bg.addColorStop(1,'#020604');
+    ctx.fillStyle = bg; ctx.fillRect(0,0,Wd,Ht);
+    var gg = ctx.createRadialGradient(Wd/2,Ht,10,Wd/2,Ht,Wd*0.55);
+    gg.addColorStop(0,'hsla('+hue+',80%,45%,'+(0.10+0.04*Math.sin(t*1.2))+')');
+    gg.addColorStop(1,'hsla('+hue+',80%,45%,0)');
+    ctx.fillStyle = gg; ctx.fillRect(0,0,Wd,Ht);
+    ctx.globalCompositeOperation = 'lighter';
+    var k;
+    for (k=0;k<motes.length;k++){
+      var m = motes[k];
+      m.y -= m.vy*dt*P.rise;
+      m.x += Math.sin(t*1.6+m.ph)*22*dt;
+      if (m.y<-12){ m.y = Ht+12; m.x = rng()*Wd; }
+      var tw = 0.35+0.65*Math.abs(Math.sin(t*2.1+m.ph));
+      ctx.globalAlpha = tw*0.9;
+      var s = m.s*(0.8+0.4*Math.sin(t*2.1+m.ph));
+      ctx.drawImage(spr, m.x-s/2, m.y-s/2, s, s);
+      if (m.cross){
+        ctx.globalAlpha = tw*0.5;
+        ctx.strokeStyle = '#f4ffe8'; ctx.lineWidth = 1.1;
+        var cs = s*1.1;
+        ctx.beginPath();
+        ctx.moveTo(m.x-cs,m.y); ctx.lineTo(m.x+cs,m.y);
+        ctx.moveTo(m.x,m.y-cs); ctx.lineTo(m.x,m.y+cs);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 27. SOUL WISPS — drifting ethereal orbs with ghost trails ----------
+ * from: particle-pack 'Ghost smoke ribbon' (slow teal wisps) */
+TYPES.push({kind:'soulwisps', icon:'👻', label:'Soul Wisps',
+ params: function(r){ return {hue:165+r()*40, count:8+((r()*16)|0), drift:0.3+r()*0.9}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Soul Wisps', sub = 'spell effect — from the particle pack';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var hue = P.hue;
+  var sprs = [spellSprite(hue-14,80,58), spellSprite(hue,80,58), spellSprite(hue+14,80,58)];
+  var core = spellSprite(hue, 60, 85);
+  var orbs = [], i;
+  for (i=0;i<P.count;i++) orbs.push({x:rng()*Wd, y:rng()*Ht,
+    vx:(rng()-0.5)*36, vy:(rng()-0.5)*28, r:26+rng()*44,
+    ph:rng()*6.28, pulse:0.6+rng()*0.8, vi:(rng()*3)|0});
+  var t = 0, raf = 0, first = true;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt;
+    ctx.globalCompositeOperation = 'source-over';
+    if (first){ first = false; ctx.fillStyle = '#03050b'; ctx.fillRect(0,0,Wd,Ht); }
+    else { ctx.fillStyle = 'rgba(3,5,11,0.075)'; ctx.fillRect(0,0,Wd,Ht); }
+    ctx.globalCompositeOperation = 'lighter';
+    var k;
+    for (k=0;k<orbs.length;k++){
+      var o = orbs[k];
+      o.x += o.vx*dt*P.drift; o.y += o.vy*dt*P.drift + Math.sin(t*0.9+o.ph)*6*dt;
+      if (o.x<-80) o.x = Wd+80; if (o.x>Wd+80) o.x = -80;
+      if (o.y<-80) o.y = Ht+80; if (o.y>Ht+80) o.y = -80;
+      var br = 0.55+0.45*Math.sin(t*o.pulse+o.ph);
+      ctx.globalAlpha = 0.15+0.5*br;
+      ctx.drawImage(sprs[o.vi], o.x-o.r, o.y-o.r, o.r*2, o.r*2);
+      ctx.globalAlpha = 0.85*br;
+      var cr = o.r*0.32;
+      ctx.drawImage(core, o.x-cr, o.y-cr, cr*2, cr*2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 28. CELEBRATION — fireworks + confetti ----------
+ * from: particle-pack 'Celebration confetti' + 'Camera flash' */
+TYPES.push({kind:'celebration', icon:'🎉', label:'Celebration',
+ params: function(r){ return {pops:2+((r()*4)|0), hue:r()*360}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Celebration', sub = 'spell effect — from the particle pack';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var mc = makeCanvas(680, 460); vis.appendChild(mc.cv);
+  var ctx = mc.ctx, Wd = mc.cv.width, Ht = mc.cv.height;
+  var sprs = [];
+  var si;
+  for (si=0;si<6;si++) sprs.push(spellSprite((P.hue+si*60)%360, 95, 62));
+  var rockets = [], sparks = [], flashes = [], confetti = [], i;
+  for (i=0;i<54;i++) confetti.push({x:rng()*Wd, y:rng()*Ht, vy:34+rng()*70,
+    ph:rng()*6.28, rot:rng()*6.28, vr:(rng()-0.5)*6, h:rng()*360, w:5+rng()*6, hh:7+rng()*9});
+  var timer = 0.4;
+  var t = 0, raf = 0;
+  function frame(){
+    raf = requestAnimationFrame(frame);
+    var dt = 0.016; t += dt; timer -= dt;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#070810'; ctx.fillRect(0,0,Wd,Ht);
+    ctx.globalCompositeOperation = 'lighter';
+    if (timer<=0 && rockets.length<P.pops){
+      timer = 0.5+rng()*0.9;
+      rockets.push({x:Wd*0.12+rng()*Wd*0.76, y:Ht+12,
+        vy:-(Ht*(0.62+rng()*0.3))/1.05, ty:Ht*(0.18+rng()*0.34),
+        h:(P.hue+rng()*120)%360, vi:(rng()*6)|0});
+    }
+    var k;
+    for (k=rockets.length-1;k>=0;k--){
+      var rk = rockets[k];
+      rk.y += rk.vy*dt;
+      var rs = 10;
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(sprs[rk.vi], rk.x-rs/2, rk.y-rs/2, rs, rs);
+      if (rk.y<=rk.ty){
+        rockets.splice(k,1);
+        var ns = 64+((rng()*40)|0);
+        for (var e=0;e<ns;e++){
+          var a = rng()*6.2832, sp = 50+rng()*240;
+          sparks.push({x:rk.x, y:rk.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+            life:0, max:1.1+rng()*1.3, h:(rk.h+(rng()-0.5)*60+360)%360,
+            s:3+rng()*5, vi:(rng()*6)|0});
+        }
+        flashes.push({x:rk.x, y:rk.y, r:0, a:1});
+      }
+    }
+    for (k=sparks.length-1;k>=0;k--){
+      var sp2 = sparks[k]; sp2.life += dt;
+      if (sp2.life>=sp2.max){ sparks.splice(k,1); continue; }
+      sp2.vy += 150*dt;
+      sp2.vx *= (1-0.6*dt); sp2.vy *= (1-0.6*dt);
+      sp2.x += sp2.vx*dt; sp2.y += sp2.vy*dt;
+      var tw = 0.4+0.6*Math.abs(Math.sin(t*9+sp2.x));
+      ctx.globalAlpha = (1-sp2.life/sp2.max)*tw;
+      ctx.drawImage(sprs[sp2.vi], sp2.x-sp2.s/2, sp2.y-sp2.s/2, sp2.s, sp2.s);
+    }
+    for (k=flashes.length-1;k>=0;k--){
+      var fl = flashes[k];
+      fl.r += 380*dt; fl.a -= 2.4*dt;
+      if (fl.a<=0){ flashes.splice(k,1); continue; }
+      var fg = ctx.createRadialGradient(fl.x,fl.y,2,fl.x,fl.y,Math.max(2,fl.r));
+      fg.addColorStop(0,'rgba(255,255,255,'+(0.7*fl.a)+')');
+      fg.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.globalAlpha = 1; ctx.fillStyle = fg;
+      ctx.fillRect(fl.x-fl.r,fl.y-fl.r,fl.r*2,fl.r*2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    for (k=0;k<confetti.length;k++){
+      var c = confetti[k];
+      c.y += c.vy*dt; c.x += Math.sin(t*2+c.ph)*30*dt; c.rot += c.vr*dt;
+      if (c.y>Ht+20){ c.y = -20; c.x = rng()*Wd; }
+      ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.rot);
+      ctx.fillStyle = 'hsl('+c.h+',85%,62%)';
+      ctx.fillRect(-c.w/2,-c.hh/2,c.w,c.hh);
+      ctx.restore();
+    }
+  }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(!raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 29. GALAXY — 3D spiral point galaxy ---------- */
+TYPES.push({kind:'galaxy', icon:'🌌', label:'Galaxy',
+ params: function(r){ return {arms:2+((r()*3)|0), hue:200+r()*80, hue2:280+r()*60, spin:0.2+r()*1.0, tilt:0.2+r()*1.0}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Galaxy', sub = '3D point spiral — from the particle studio';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var cv = document.createElement('canvas');
+  cv.width = 640; cv.height = 440;
+  cv.style.aspectRatio = '640/440';
+  vis.appendChild(cv);
+  var raf = 0, gl = null, ok = false, B = null;
+  var N = 2600, yaw = rng()*6.28;
+  try{
+    gl = cv.getContext('webgl',{antialias:true,alpha:false,preserveDrawingBuffer:true});
+    if (!gl) throw new Error('no gl');
+    var pr = ptProgram(gl);
+    var pos = new Float32Array(N*3), col = new Float32Array(N*3), siz = new Float32Array(N);
+    var dir = rng()<0.5?1:-1;
+    var cCore = [1,0.96,0.88], cMid = hslRGB(P.hue,80,66), cEdge = hslRGB(P.hue2,85,62);
+    var i;
+    for (i=0;i<N;i++){
+      var arm = i%P.arms, tt = Math.pow(rng(),0.62);
+      var ga = (rng()+rng()+rng()-1.5)*0.5;
+      var ang = arm*6.2832/P.arms + tt*5.4*dir + ga*0.9*(1-tt*0.4);
+      var rr = tt*1.75;
+      pos[i*3] = Math.cos(ang)*rr;
+      pos[i*3+1] = ga*0.22*(1-tt*0.6);
+      pos[i*3+2] = Math.sin(ang)*rr;
+      var c, m2;
+      if (tt<0.5){ m2 = tt*2; c = [cCore[0]+(cMid[0]-cCore[0])*m2, cCore[1]+(cMid[1]-cCore[1])*m2, cCore[2]+(cMid[2]-cCore[2])*m2]; }
+      else { m2 = (tt-0.5)*2; c = [cMid[0]+(cEdge[0]-cMid[0])*m2, cMid[1]+(cEdge[1]-cMid[1])*m2, cMid[2]+(cEdge[2]-cMid[2])*m2]; }
+      var br = 0.55+rng()*0.45;
+      col[i*3] = c[0]*br; col[i*3+1] = c[1]*br; col[i*3+2] = c[2]*br;
+      siz[i] = (1.1+2.4*(1-tt))*(0.6+rng()*0.8);
+    }
+    B = {p:ptBuffer(gl,pos), c:ptBuffer(gl,col), s:ptBuffer(gl,siz)};
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    var persp = mPersp(0.85, 640/440, 0.1, 50);
+    var tro = mTrans(0,0,-3.9), rx = mRotX(P.tilt*0.9);
+    function draw(){
+      gl.viewport(0,0,cv.width,cv.height);
+      gl.clearColor(0.016,0.023,0.05,1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      var mvp = mm4(persp, mm4(tro, mm4(rx, mRotY(yaw))));
+      drawPoints(gl, pr, B, N, mvp, 1);
+    }
+    ok = true;
+    draw();
+    function frame(){
+      raf = requestAnimationFrame(frame);
+      yaw += 0.0032*P.spin*3.2;
+      draw();
+    }
+  }catch(e){ ok = false; }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(ok && !raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 30. FIRE FOUNTAIN — 3D gravity particle fountain ---------- */
+TYPES.push({kind:'firefountain', icon:'⛲', label:'Fire Fountain',
+ params: function(r){ return {hue:15+r()*35, pcount:900+((r()*2300)|0), power:0.7+r()*0.9, spread:0.25+r()*0.75}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Fire Fountain', sub = '3D gravity well — from the particle studio';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var cv = document.createElement('canvas');
+  cv.width = 640; cv.height = 440;
+  cv.style.aspectRatio = '640/440';
+  vis.appendChild(cv);
+  var raf = 0, gl = null, ok = false;
+  var N = Math.min(P.pcount, 3200);
+  try{
+    gl = cv.getContext('webgl',{antialias:true,alpha:false,preserveDrawingBuffer:true});
+    if (!gl) throw new Error('no gl');
+    var pr = ptProgram(gl);
+    var pos = new Float32Array(N*3), col = new Float32Array(N*3), siz = new Float32Array(N);
+    var px = new Float32Array(N), py = new Float32Array(N), pz = new Float32Array(N);
+    var vx = new Float32Array(N), vy = new Float32Array(N), vz = new Float32Array(N);
+    var life = new Float32Array(N), maxl = new Float32Array(N), brt = new Float32Array(N);
+    var c0 = [1,0.93,0.72], c1 = hslRGB(P.hue,96,56), c2 = [0.32,0.07,0.04];
+    var i;
+    function spawn(j){
+      px[j] = (rng()+rng()-1)*0.09; pz[j] = (rng()+rng()-1)*0.09; py[j] = 0;
+      var a = rng()*6.2832, rr = rng()*P.spread*0.5;
+      vx[j] = Math.cos(a)*rr; vz[j] = Math.sin(a)*rr;
+      vy[j] = (2.3+rng()*1.4)*P.power;
+      life[j] = 0; maxl[j] = 1.1+rng()*0.9; brt[j] = 0.7+rng()*0.5;
+    }
+    for (i=0;i<N;i++){ spawn(i); life[i] = rng()*maxl[i]; }
+    var Bp = ptBuffer(gl,pos,gl.DYNAMIC_DRAW), Bc = ptBuffer(gl,col,gl.DYNAMIC_DRAW), Bs = ptBuffer(gl,siz,gl.DYNAMIC_DRAW);
+    var B = {p:Bp, c:Bc, s:Bs};
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    var persp = mPersp(0.9, 640/440, 0.1, 50);
+    var mvp = mm4(persp, mm4(mTrans(0,-1.0,-3.6), mRotX(-0.28)));
+    function step(dt){
+      for (var j=0;j<N;j++){
+        life[j] += dt;
+        if (life[j]>maxl[j] || py[j]<-0.6){ spawn(j); continue; }
+        vy[j] -= 3.6*dt;
+        px[j] += vx[j]*dt; py[j] += vy[j]*dt; pz[j] += vz[j]*dt;
+        var kk = life[j]/maxl[j];
+        pos[j*3] = px[j]; pos[j*3+1] = py[j]; pos[j*3+2] = pz[j];
+        var c, m2;
+        if (kk<0.3){ m2 = kk/0.3; c = [c0[0]+(c1[0]-c0[0])*m2, c0[1]+(c1[1]-c0[1])*m2, c0[2]+(c1[2]-c0[2])*m2]; }
+        else { m2 = (kk-0.3)/0.7; c = [c1[0]+(c2[0]-c1[0])*m2, c1[1]+(c2[1]-c1[1])*m2, c1[2]+(c2[2]-c1[2])*m2]; }
+        col[j*3] = c[0]*brt[j]; col[j*3+1] = c[1]*brt[j]; col[j*3+2] = c[2]*brt[j];
+        siz[j] = (2.2+(j%7)*0.5)*(1-kk*0.65);
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER,Bp); gl.bufferData(gl.ARRAY_BUFFER,pos,gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER,Bc); gl.bufferData(gl.ARRAY_BUFFER,col,gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER,Bs); gl.bufferData(gl.ARRAY_BUFFER,siz,gl.DYNAMIC_DRAW);
+    }
+    function draw(){
+      gl.viewport(0,0,cv.width,cv.height);
+      gl.clearColor(0.03,0.02,0.02,1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      drawPoints(gl, pr, B, N, mvp, 1);
+    }
+    ok = true;
+    for (var w=0;w<40;w++) step(0.016);
+    draw();
+    function frame(){
+      raf = requestAnimationFrame(frame);
+      step(0.016);
+      draw();
+    }
+  }catch(e){ ok = false; }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(ok && !raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
+}});
+
+/* ---------- 31. WARP — FTL starfield with streak trails ---------- */
+TYPES.push({kind:'warp', icon:'🚀', label:'Warp',
+ params: function(r){ return {hue:205+r()*55, speed:0.6+r()*1.4, density:300+((r()*1100)|0)}; },
+ make: function(genome){
+  var P = genome.p, seed = genome.seed;
+  var rng = mulberry32(seed);
+  var title = 'Warp', sub = 'FTL starfield — from the particle studio';
+  var el = cardShell(genome, title, sub);
+  var vis = el.querySelector('.wd-visual');
+  var cv = document.createElement('canvas');
+  cv.width = 640; cv.height = 440;
+  cv.style.aspectRatio = '640/440';
+  vis.appendChild(cv);
+  var raf = 0, gl = null, ok = false;
+  var N = Math.min(P.density, 1400);
+  try{
+    gl = cv.getContext('webgl',{antialias:true,alpha:false,preserveDrawingBuffer:true});
+    if (!gl) throw new Error('no gl');
+    var pr = ptProgram(gl), fpr = ptFadeProgram(gl);
+    var pos = new Float32Array(N*3), col = new Float32Array(N*3), siz = new Float32Array(N);
+    var sx = new Float32Array(N), sy = new Float32Array(N), sz = new Float32Array(N);
+    var ss = new Float32Array(N), sb = new Float32Array(N);
+    var i;
+    function respawn(j, init){
+      sx[j] = (rng()-0.5)*8; sy[j] = (rng()-0.5)*8;
+      sz[j] = init ? -0.8-rng()*13 : -13.5;
+      ss[j] = 0.6+rng()*0.9; sb[j] = 1+rng()*1.6;
+      var warm = rng()<0.12;
+      var c = warm ? hslRGB(35,90,75) : hslRGB(P.hue+(rng()-0.5)*30, 55, 72+rng()*20);
+      col[j*3] = c[0]; col[j*3+1] = c[1]; col[j*3+2] = c[2];
+    }
+    for (i=0;i<N;i++) respawn(i, true);
+    var Bp = ptBuffer(gl,pos,gl.DYNAMIC_DRAW);
+    var B = {p:Bp, c:ptBuffer(gl,col), s:ptBuffer(gl,siz)};
+    var quad = ptBuffer(gl, new Float32Array([-1,-1, 3,-1, -1,3]));
+    gl.disable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    var persp = mPersp(1.05, 640/440, 0.1, 40);
+    gl.clearColor(0.016,0.023,0.05,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    function draw(){
+      gl.viewport(0,0,cv.width,cv.height);
+      gl.useProgram(fpr);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.bindBuffer(gl.ARRAY_BUFFER,quad);
+      var pl = gl.getAttribLocation(fpr,'p');
+      gl.enableVertexAttribArray(pl);
+      gl.vertexAttribPointer(pl,2,gl.FLOAT,false,0,0);
+      gl.uniform3f(gl.getUniformLocation(fpr,'uC'),0.016,0.023,0.05);
+      gl.uniform1f(gl.getUniformLocation(fpr,'uA'),0.26);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      drawPoints(gl, pr, B, N, persp, 1);
+    }
+    ok = true;
+    function frame(){
+      raf = requestAnimationFrame(frame);
+      var dt = 0.016, v = dt*P.speed*6.5;
+      for (var j=0;j<N;j++){
+        sz[j] += v*ss[j];
+        if (sz[j]>-0.9) respawn(j, false);
+        pos[j*3] = sx[j]; pos[j*3+1] = sy[j]; pos[j*3+2] = sz[j];
+        var depth = Math.max(0, Math.min(1, 1-(sz[j]+14)/13.5));
+        siz[j] = sb[j]*(0.6+depth*2.4);
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER,Bp);
+      gl.bufferData(gl.ARRAY_BUFFER,pos,gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER,B.s);
+      gl.bufferData(gl.ARRAY_BUFFER,siz,gl.DYNAMIC_DRAW);
+      draw();
+    }
+    frame();
+    cancelAnimationFrame(raf); raf = 0;
+  }catch(e){ ok = false; }
+  return { el:el, title:title, sub:sub,
+    start:function(){ if(ok && !raf) frame(); },
+    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } } };
 }});
 
 function thumbnail(genome, W2, H2, cb){
