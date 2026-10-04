@@ -2022,6 +2022,846 @@ if (typeof module !== 'undefined' && module.exports) module.exports = { CityMesh
 
 </script>
 <script>
+window.Struct = (function(){
+/* STRUCT v1 — layered structural system for MOOR.
+ * Spec: components/struct/SPEC.md (law).
+ * Zero dependencies except CityMesh from ../mesh-builder/mesh-builder.js.
+ * Pure logic + geometry math: no `window`/`document` references, node-testable.
+ * Units meters. Wall thickness 0.15. Grid snap 0.5. Y-up, ground y=0.
+ *
+ * DUAL-MODE: emit(mesh, building) fills mesh.data/indices (triangles).
+ * emitCollision(building) makes a CityMesh with mesh.solids=[], runs the SAME
+ * emission, returns the AABB array. Every box() call yields exactly one AABB.
+ * (CityMesh.box pushes one {lo,hi,c,mat,kind,anchor} record per call when
+ *  mesh.solids is set; degenerate boxes emit nothing in either mode.)
+ */
+
+/* CityMesh loader — works in node (require) and browser (script tag first).
+ * NOTE: mesh-builder.js declares `class CityMesh` at top level. In a classic
+ * browser script that creates a global LEXICAL binding (NOT window.CityMesh),
+ * and a `var CityMesh` here would throw "already declared". So we never
+ * declare that name: `typeof CityMesh` safely resolves the lexical binding. */
+var CityMeshCtor = (function () {
+  try { if (typeof CityMesh !== 'undefined' && CityMesh) return CityMesh; } catch (e) {}
+  if (typeof require === 'function') {
+    try { return require('../mesh-builder/mesh-builder.js').CityMesh; } catch (e) {}
+  }
+  return null;
+})();
+
+/* ---------------- constants ---------------- */
+var WALL_T = 0.15;          // wall thickness (frame core)
+var SKIN_T = 0.02;          // face skin proud offset
+var GRID = 0.5;             // grid snap
+var WALL_H = 2.7;           // default story height
+var SLAB_T = 0.12;          // floor slab thickness
+var JUNCTION_TOL = 0.08;    // endpoint clustering distance
+var PERIM_TOL = 0.01;       // room perimeter membership tolerance
+var MIN_WALL_LEN = 1.0;
+
+/* ---------------- seeded RNG (mulberry32 + FNV-1a) ---------------- */
+function hashSeed(str) {
+  var h = 0x811c9dc5; // FNV-1a 32-bit
+  str = String(str);
+  for (var i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/* RNG(seed) -> {f, i, pick, chance, range} */
+function RNG(seed) {
+  var next = mulberry32(hashSeed(seed));
+  return {
+    f: function () { return next(); },
+    range: function (lo, hi) { return lo + next() * (hi - lo); },
+    i: function (lo, hi) { return lo + Math.floor(next() * (hi - lo + 1)); },
+    pick: function (arr) { return arr[Math.floor(next() * arr.length)]; },
+    chance: function (p) { return next() < p; },
+    _next: next
+  };
+}
+
+/* ---------------- materials pool v1 ---------------- */
+var MATERIALS = [
+  { id: 'wood-frame',  name: 'Framing lumber',   kind: 'frame',  color: '#8a6b45' },
+  { id: 'metal-frame', name: 'Steel studs',      kind: 'frame',  color: '#7d8590' },
+  { id: 'drywall',     name: 'Painted drywall',  kind: 'inner',  color: '#e8e4da' },
+  { id: 'wallpaper',   name: 'Pattern wallpaper',kind: 'inner',  color: '#c9b8a3' },
+  { id: 'plaster',     name: 'Lime plaster',     kind: 'inner',  color: '#ded5c4' },
+  { id: 'brick',       name: 'Fired brick',       kind: 'outer',  color: '#9a4f38' },
+  { id: 'siding',      name: 'Lap siding',        kind: 'outer',  color: '#b8c4cc' },
+  { id: 'concrete',    name: 'Poured concrete',   kind: 'both',   color: '#a3a5a8' },
+  { id: 'stone',       name: 'Fieldstone',        kind: 'outer',  color: '#8d867a' },
+  { id: 'glass-pane',  name: 'Glazing',           kind: 'socket', color: '#bfe0ea' },
+  { id: 'shingle',     name: 'Asphalt shingle',   kind: 'roof',   color: '#4a4d52' },
+  { id: 'metal-roof',  name: 'Standing seam',     kind: 'roof',   color: '#6b7280' },
+  { id: 'hardwood',    name: 'Oak floor',         kind: 'floor',  color: '#a97e4f' },
+  { id: 'tile',        name: 'Ceramic tile',      kind: 'floor',  color: '#c9c2b4' },
+  { id: 'carpet',      name: 'Cut pile',         kind: 'floor',  color: '#7a6a8f' }
+];
+var MAT_BY_ID = {};
+MATERIALS.forEach(function (m) { MAT_BY_ID[m.id] = m; });
+
+function hexRgb(hex) {
+  var n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+/* mat(id, role='inner') -> material record. Never throws.
+ * Unknown id (or wrong kind for role) falls back per spec: drywall for inner,
+ * brick for outer. role 'frame'->wood-frame, 'roof'->shingle, 'floor'->hardwood. */
+function mat(id, role) {
+  role = role || 'inner';
+  var m = MAT_BY_ID[id];
+  var ok = m && (role === 'inner' ? (m.kind === 'inner' || m.kind === 'both')
+              : role === 'outer' ? (m.kind === 'outer' || m.kind === 'both')
+              : true);
+  if (ok) return m;
+  if (role === 'outer') return MAT_BY_ID.brick;
+  if (role === 'frame') return MAT_BY_ID['wood-frame'];
+  if (role === 'roof') return MAT_BY_ID.shingle;
+  if (role === 'floor') return MAT_BY_ID.hardwood;
+  return MAT_BY_ID.drywall;
+}
+function matColor(id, role) { return hexRgb(mat(id, role).color); }
+
+/* ---------------- window / door styles v1 ---------------- */
+var WINDOW_STYLES = {
+  'double-hung': { w: 1.2, h: 1.4, sill: 0.9 },
+  'slider':      { w: 1.8, h: 1.2, sill: 1.0 },
+  'picture':     { w: 2.4, h: 1.5, sill: 0.8 },
+  'round':       { w: 0.9, h: 0.9, sill: 1.25 }  // ø0.9, center 1.7 → sill 1.25
+};
+var DOOR_STYLES = {
+  'panel':  { w: 0.9, h: 2.1, sill: 0 },
+  'double': { w: 1.6, h: 2.1, sill: 0 },
+  'sliding':{ w: 1.8, h: 2.1, sill: 0 }
+};
+function socketDims(sock) {
+  var table = sock.kind === 'door' ? DOOR_STYLES : WINDOW_STYLES;
+  return table[sock.style] || table[sock.kind === 'door' ? 'panel' : 'double-hung'];
+}
+
+/* ---------------- room types v1 ---------------- */
+var ROOM_TYPES = {
+  living:  { floor: 'hardwood', min: 9 },
+  bed:     { floor: 'hardwood', min: 6 },
+  bath:    { floor: 'tile',     min: 2 },
+  kitchen: { floor: 'tile',     min: 6 },
+  hall:    { floor: 'hardwood', min: 2 },
+  garage:  { floor: 'concrete', min: 12 },
+  civic:   { floor: 'tile',     min: 16 }
+};
+
+/* ---------------- themes v1 ---------------- */
+var THEMES = {
+  craftsman: { frame: 'wood-frame',  outer: 'siding',   roof: 'gable', win: ['double-hung', 'double-hung', 'picture'] },
+  modern:    { frame: 'metal-frame', outer: 'concrete', roof: 'flat',  win: ['picture', 'slider', 'picture'] },
+  'brick-row':{ frame: 'wood-frame', outer: 'brick',    roof: 'gable', win: ['double-hung'] },
+  civic:     { frame: 'metal-frame', outer: 'stone',    roof: 'hip',   win: ['picture', 'picture', 'slider'] }
+};
+function themeOf(name) { return THEMES[name] || THEMES.craftsman; }
+
+/* ---------------- small math ---------------- */
+function snap(v) { return Math.round(v / GRID) * GRID; }
+function dist2(ax, az, bx, bz) { var dx = ax - bx, dz = az - bz; return dx * dx + dz * dz; }
+function wallLen(w) { return Math.hypot(w.b.x - w.a.x, w.b.z - w.a.z); }
+function isXWall(w) { return Math.abs(w.b.z - w.a.z) < 1e-9; }
+function isZWall(w) { return Math.abs(w.b.x - w.a.x) < 1e-9; }
+function isAxisAligned(w) { return isXWall(w) || isZWall(w); }
+/* interior normal for a wall: left of a→b direction (plan view, +x right, +z up).
+ * For room walls wound CCW, interior is on the left — no flip needed. */
+function leftNormal(w) {
+  var dx = w.b.x - w.a.x, dz = w.b.z - w.a.z, l = Math.hypot(dx, dz) || 1;
+  return { x: -dz / l, z: dx / l };
+}
+
+/* ---------------- junction resolution ---------------- */
+/* resolveJunctions(walls) -> new walls with endpoints clustered within
+ * 0.08m merged to their centroid (union-find, so chains merge). BEFORE emission. */
+function resolveJunctions(walls) {
+  var pts = [];
+  walls.forEach(function (w, i) {
+    pts.push({ x: w.a.x, z: w.a.z, wi: i, end: 'a' });
+    pts.push({ x: w.b.x, z: w.b.z, wi: i, end: 'b' });
+  });
+  var parent = pts.map(function (_, i) { return i; });
+  function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+  function union(i, j) { parent[find(i)] = find(j); }
+  var tol2 = JUNCTION_TOL * JUNCTION_TOL;
+  for (var i = 0; i < pts.length; i++)
+    for (var j = i + 1; j < pts.length; j++)
+      if (dist2(pts[i].x, pts[i].z, pts[j].x, pts[j].z) <= tol2) union(i, j);
+  var sums = {};
+  pts.forEach(function (p, i) {
+    var r = find(i), s = sums[r] || (sums[r] = { x: 0, z: 0, n: 0 });
+    s.x += p.x; s.z += p.z; s.n++;
+  });
+  var centroid = {};
+  Object.keys(sums).forEach(function (r) {
+    centroid[r] = { x: sums[r].x / sums[r].n, z: sums[r].z / sums[r].n };
+  });
+  return walls.map(function (w, i) {
+    var c = JSON.parse(JSON.stringify(w));
+    var ca = centroid[find(i * 2)], cb = centroid[find(i * 2 + 1)];
+    c.a = { x: ca.x, z: ca.z }; c.b = { x: cb.x, z: cb.z };
+    return c;
+  });
+}
+
+/* ---------------- wall emission ---------------- */
+/* A wall emits as LAYERED boxes: frame core (0.15 full height), inner skin
+ * (0.02 proud, interior side), outer skin (0.02 proud, exterior side).
+ * opts: {y0} base height (default 0), {inward} interior normal {x,z}
+ * (default: left of a→b). Sockets split the wall into runs around openings. */
+function emitRun(mesh, wall, t0, t1, yLo, yHi, n) {
+  var h = yHi - yLo;
+  if (h <= 0 || t1 - t0 <= 0) return;
+  function pt(t) { return { x: wall.a.x + (wall.b.x - wall.a.x) * t, z: wall.a.z + (wall.b.z - wall.a.z) * t }; }
+  var p0 = pt(t0), p1 = pt(t1);
+  var frameC = matColor(wall.frame, 'frame');
+  var innerC = matColor(wall.inner, 'inner');
+  // partitions (exterior===false) are interior on both faces
+  var outerC = matColor(wall.outer, wall.exterior === false ? 'inner' : 'outer');
+  var xWall = Math.abs(p1.z - p0.z) < Math.abs(p1.x - p0.x); // dominant axis
+  if (xWall) {
+    var xa = Math.min(p0.x, p1.x), len = Math.abs(p1.x - p0.x), zc = (p0.z + p1.z) / 2;
+    var s = n.z >= 0 ? 1 : -1; // interior side sign along z
+    mesh.box(xa, yLo, zc - WALL_T / 2, len, h, WALL_T, frameC);
+    mesh.box(xa, yLo, s > 0 ? zc + WALL_T / 2 : zc - WALL_T / 2 - SKIN_T, len, h, SKIN_T, innerC);
+    mesh.box(xa, yLo, s > 0 ? zc - WALL_T / 2 - SKIN_T : zc + WALL_T / 2, len, h, SKIN_T, outerC);
+  } else {
+    var za = Math.min(p0.z, p1.z), len2 = Math.abs(p1.z - p0.z), xc = (p0.x + p1.x) / 2;
+    var s2 = n.x >= 0 ? 1 : -1;
+    mesh.box(xc - WALL_T / 2, yLo, za, WALL_T, h, len2, frameC);
+    mesh.box(s2 > 0 ? xc + WALL_T / 2 : xc - WALL_T / 2 - SKIN_T, yLo, za, SKIN_T, h, len2, innerC);
+    mesh.box(s2 > 0 ? xc - WALL_T / 2 - SKIN_T : xc + WALL_T / 2, yLo, za, SKIN_T, h, len2, outerC);
+  }
+}
+
+/* Cut runs around sockets. Returns array of {t0,t1,yLo,yHi} full-height runs
+ * plus opening descriptors for trim/glazing. */
+function cutRuns(wall) {
+  var L = wallLen(wall), H = wall.h || WALL_H;
+  var ops = (wall.sockets || []).map(function (s) {
+    var d = socketDims(s);
+    var hw = (d.w / 2) / L;
+    return { t0: s.t - hw, t1: s.t + hw, kind: s.kind, w: d.w, h: d.h, sill: d.sill };
+  }).sort(function (p, q) { return p.t0 - q.t0; });
+  var runs = [], cur = 0;
+  ops.forEach(function (o) {
+    if (o.t0 > cur) runs.push({ t0: cur, t1: o.t0, yLo: 0, yHi: H });
+    runs.push({ t0: o.t0, t1: o.t1, yLo: o.sill + o.h, yHi: H });       // header
+    if (o.kind === 'window' && o.sill > 0)
+      runs.push({ t0: o.t0, t1: o.t1, yLo: 0, yHi: o.sill });           // sill
+    cur = o.t1;
+  });
+  if (cur < 1) runs.push({ t0: cur, t1: 1, yLo: 0, yHi: H });
+  return { runs: runs, openings: ops, H: H };
+}
+
+function ptAt(wall, t) {
+  return { x: wall.a.x + (wall.b.x - wall.a.x) * t, z: wall.a.z + (wall.b.z - wall.a.z) * t };
+}
+
+/* Emit trim frame + glazing for one opening. Trim boxes in frame material;
+ * windows get a thin glass-pane glazing box. */
+function emitOpening(mesh, wall, o, y0, n) {
+  var frameC = matColor(wall.frame, 'frame');
+  var c0 = ptAt(wall, o.t0), c1 = ptAt(wall, o.t1);
+  var xWall = Math.abs(c1.z - c0.z) < Math.abs(c1.x - c0.x);
+  var base = y0 + o.sill, top = y0 + o.sill + o.h, tw = 0.08; // trim width
+  function hbox(cx, cz, w, d, yA, yB) { mesh.box(cx - w / 2, yA, cz - d / 2, w, yB - yA, d, frameC); }
+  if (xWall) {
+    var zc = (c0.z + c1.z) / 2, xa = Math.min(c0.x, c1.x), xb = Math.max(c0.x, c1.x);
+    var td = WALL_T + 0.04;
+    hbox(xa, zc, tw, td, base, top);            // jamb L
+    hbox(xb, zc, tw, td, base, top);            // jamb R
+    hbox((xa + xb) / 2, zc, (xb - xa) + tw, td, top, top + tw); // head
+    if (o.kind === 'window')
+      hbox((xa + xb) / 2, zc, (xb - xa) + tw, td, base - tw, base); // sill trim
+    else
+      hbox((xa + xb) / 2, zc, (xb - xa) + tw, td, base, base + 0.02); // threshold
+    if (o.kind === 'window')
+      mesh.box(xa, base, zc - 0.01, xb - xa, o.h, 0.02, matColor('glass-pane', 'socket'));
+  } else {
+    var xc = (c0.x + c1.x) / 2, za = Math.min(c0.z, c1.z), zb = Math.max(c0.z, c1.z);
+    var td2 = WALL_T + 0.04;
+    hbox(xc, za, td2, tw, base, top);
+    hbox(xc, zb, td2, tw, base, top);
+    hbox(xc, (za + zb) / 2, td2, (zb - za) + tw, top, top + tw);
+    if (o.kind === 'window')
+      hbox(xc, (za + zb) / 2, td2, (zb - za) + tw, base - tw, base);
+    else
+      hbox(xc, (za + zb) / 2, td2, (zb - za) + tw, base, base + 0.02);
+    if (o.kind === 'window')
+      mesh.box(xc - 0.01, base, za, 0.02, o.h, zb - za, matColor('glass-pane', 'socket'));
+  }
+}
+
+/* Non-axis-aligned walls: approximate with stepped axis-aligned boxes along
+ * the dominant axis (documented approximation; generator only makes axis
+ * walls). Sockets are ignored on diagonal walls (validate warns). */
+function emitDiagonal(mesh, wall, y0) {
+  var steps = Math.max(2, Math.ceil(wallLen(wall) / GRID));
+  var frameC = matColor(wall.frame, 'frame');
+  for (var i = 0; i < steps; i++) {
+    var p0 = ptAt(wall, i / steps), p1 = ptAt(wall, (i + 1) / steps);
+    var xa = Math.min(p0.x, p1.x), za = Math.min(p0.z, p1.z);
+    var w = Math.max(Math.abs(p1.x - p0.x), 0.05), d = Math.max(Math.abs(p1.z - p0.z), 0.05);
+    mesh.box(xa - WALL_T / 4, y0, za - WALL_T / 4, w + WALL_T / 2, wall.h || WALL_H, d + WALL_T / 2, frameC);
+  }
+}
+
+/* emitWall(mesh, wall, opts) — full layered wall with sockets. */
+function emitWall(mesh, wall, opts) {
+  opts = opts || {};
+  var y0 = wall.y0 || opts.y0 || 0;
+  if (!isAxisAligned(wall)) { emitDiagonal(mesh, wall, y0); return; }
+  var n = opts.inward || leftNormal(wall);
+  var cut = cutRuns(wall);
+  cut.runs.forEach(function (r) { emitRun(mesh, wall, r.t0, r.t1, y0 + r.yLo, y0 + r.yHi, n); });
+  cut.openings.forEach(function (o) { emitOpening(mesh, wall, o, y0, n); });
+}
+
+/* ---------------- floor slabs ---------------- */
+/* Slab per room rect: 0.12 thick, top at room floor level (y0). */
+function emitSlab(mesh, room) {
+  var y0 = room.y0 || 0;
+  var r = room.rect;
+  mesh.box(r.x, y0 - SLAB_T, r.z, r.w, SLAB_T, r.d, matColor(room.floor, 'floor'));
+}
+
+/* ---------------- roofs v1 ---------------- */
+/* Helper: push one AABB record directly (collision mode for non-box geometry). */
+function pushAABB(mesh, lo, hi, c) {
+  mesh.solids.push({ lo: lo, hi: hi, c: c, mat: mesh.material, kind: 0, anchor: 0 });
+}
+/* Sloped quad via explicit corners (triangle mode). In collision mode the
+ * caller pushes a manual AABB instead; face() writes only to mesh.data. */
+function quad(mesh, a, b, c, d, col) {
+  mesh.face(a, b, c, d, col, null);
+}
+function tri(mesh, a, b, c, col) {
+  var n = null, base = mesh.data.length / 23;
+  mesh.vertex(a, [0, 1, 0], col, [0, 0]);
+  mesh.vertex(b, [0, 1, 0], col, [1, 0]);
+  mesh.vertex(c, [0, 1, 0], col, [0, 1]);
+  mesh.indices.push(base, base + 1, base + 2);
+}
+function aabbOf(points) {
+  var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  points.forEach(function (p) {
+    for (var i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i]); hi[i] = Math.max(hi[i], p[i]); }
+  });
+  return { lo: lo, hi: hi };
+}
+
+function lerp3(a, b, f) { return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f]; }
+/* Stepped slope: quad A,B = eave edge, D,C = ridge edge (D↔A, C↔B; C==D for a
+ * triangle face). Emits N thin axis-aligned boxes staircasing up the slope —
+ * IDENTICAL box() calls in triangle and collision mode, so dual-mode parity
+ * holds exactly. In triangle mode a smooth quad face is ALSO emitted for looks
+ * (render-only: face() never touches mesh.solids, never calls box()). */
+function emitSlope(mesh, A, B, C, D, color) {
+  var N = 6, th = 0.12, collision = !!mesh.solids;
+  for (var i = 0; i < N; i++) {
+    var f0 = i / N, f1 = (i + 1) / N;
+    var pA0 = lerp3(A, D, f0), pB0 = lerp3(B, C, f0);
+    var pA1 = lerp3(A, D, f1), pB1 = lerp3(B, C, f1);
+    var xs = [pA0[0], pB0[0], pA1[0], pB1[0]], zs = [pA0[2], pB0[2], pA1[2], pB1[2]];
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
+    if (x1 - x0 < 0.05) { var cx = (x0 + x1) / 2; x0 = cx - 0.025; x1 = cx + 0.025; }
+    if (z1 - z0 < 0.05) { var cz = (z0 + z1) / 2; z0 = cz - 0.025; z1 = cz + 0.025; }
+    var yLo = Math.min(pA0[1], pB0[1]) - th, yHi = Math.max(pA1[1], pB1[1]);
+    mesh.box(x0, yLo, z0, x1 - x0, yHi - yLo, z1 - z0, color);
+  }
+  if (!collision) quad(mesh, A, B, C, D, color);
+}
+
+function emitRoof(mesh, building) {
+  var fp = building.footprint, top = building.stories * WALL_H;
+  var x0 = -fp.w / 2, x1 = fp.w / 2, z0 = -fp.d / 2, z1 = fp.d / 2;
+  var oh = 0.3, col = matColor(building.roof.mat, 'roof');
+  var collision = !!mesh.solids;
+  var type = building.roof.type;
+  if (type === 'flat') {
+    mesh.box(x0 - oh, top, z0 - oh, fp.w + 2 * oh, 0.15, fp.d + 2 * oh, col);
+    var ph = 0.4, pt = 0.12, py = top + 0.15; // parapet
+    mesh.box(x0 - oh, py, z0 - oh, fp.w + 2 * oh, ph, pt, col);
+    mesh.box(x0 - oh, py, z1 + oh - pt, fp.w + 2 * oh, ph, pt, col);
+    mesh.box(x0 - oh, py, z0 - oh, pt, ph, fp.d + 2 * oh, col);
+    mesh.box(x1 + oh - pt, py, z0 - oh, pt, ph, fp.d + 2 * oh, col);
+    return;
+  }
+  if (type === 'gable') {
+    // Ridge along longest axis, 30° pitch. Sloped panels go through emitSlope
+    // (stepped boxes in BOTH modes + a smooth face in triangle mode only).
+    // Gable end triangles are true triangles via vertex()+indices — render-only
+    // in collision mode (walls carry the collision); they never call box(),
+    // so parity is unaffected.
+    var alongX = fp.w >= fp.d;
+    var half = (alongX ? fp.d : fp.w) / 2 + oh;
+    var rise = Math.tan(Math.PI / 6) * half; // 30°
+    if (alongX) {
+      var zc = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x1 + oh, top, z0 - oh],
+                      [x1 + oh, top + rise, zc], [x0 - oh, top + rise, zc], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x0 - oh, top, z1 + oh],
+                      [x0 - oh, top + rise, zc], [x1 + oh, top + rise, zc], col);
+      if (!collision) {
+        tri(mesh, [x0, top, z0], [x0, top, z1], [x0, top + rise, zc], col);
+        tri(mesh, [x1, top, z1], [x1, top, z0], [x1, top + rise, zc], col);
+      }
+    } else {
+      var xc = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x0 - oh, top, z1 + oh],
+                      [xc, top + rise, z1 + oh], [xc, top + rise, z0 - oh], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x1 + oh, top, z0 - oh],
+                      [xc, top + rise, z0 - oh], [xc, top + rise, z1 + oh], col);
+      if (!collision) {
+        tri(mesh, [x0, top, z0], [x1, top, z0], [xc, top + rise, z0], col);
+        tri(mesh, [x1, top, z1], [x0, top, z1], [xc, top + rise, z1], col);
+      }
+    }
+    return;
+  }
+  if (type === 'hip') {
+    // 28° pitch, all sides slope. Ridge centered along longest axis.
+    // Each face (2 trapezoids + 2 triangles, C==D for triangles) via
+    // emitSlope — stepped boxes in both modes, dual-mode clean.
+    var inset = Math.min(fp.w, fp.d) / 2 + oh;
+    var rise2 = Math.tan(28 * Math.PI / 180) * inset;
+    var alongX2 = fp.w >= fp.d;
+    if (alongX2) {
+      var r0 = x0 + inset, r1 = x1 - inset, zc2 = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x1 + oh, top, z0 - oh],
+                      [r1, top + rise2, zc2], [r0, top + rise2, zc2], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x0 - oh, top, z1 + oh],
+                      [r0, top + rise2, zc2], [r1, top + rise2, zc2], col);
+      emitSlope(mesh, [x0 - oh, top, z1 + oh], [x0 - oh, top, z0 - oh],
+                      [r0, top + rise2, zc2], [r0, top + rise2, zc2], col);
+      emitSlope(mesh, [x1 + oh, top, z0 - oh], [x1 + oh, top, z1 + oh],
+                      [r1, top + rise2, zc2], [r1, top + rise2, zc2], col);
+    } else {
+      var s0 = z0 + inset, s1 = z1 - inset, xc2 = 0;
+      emitSlope(mesh, [x0 - oh, top, z0 - oh], [x0 - oh, top, z1 + oh],
+                      [xc2, top + rise2, s1], [xc2, top + rise2, s0], col);
+      emitSlope(mesh, [x1 + oh, top, z1 + oh], [x1 + oh, top, z0 - oh],
+                      [xc2, top + rise2, s0], [xc2, top + rise2, s1], col);
+      emitSlope(mesh, [x1 + oh, top, z0 - oh], [x0 - oh, top, z0 - oh],
+                      [xc2, top + rise2, s0], [xc2, top + rise2, s0], col);
+      emitSlope(mesh, [x0 - oh, top, z1 + oh], [x1 + oh, top, z1 + oh],
+                      [xc2, top + rise2, s1], [xc2, top + rise2, s1], col);
+    }
+    return;
+  }
+}
+
+/* ---------------- room assembly ---------------- */
+/* roomsFromWalls(walls) — detect axis-aligned rectangular rooms: candidate
+ * rects from wall coordinate lines; a rect is a room when wall segments cover
+ * each of its 4 edges within 0.01. Largest-first, no interior overlap.
+ * Type heuristic (documented): aspect > 2.5 → hall; area < 6 → bath;
+ * area < 14 → bed; else living. */
+function roomsFromWalls(walls) {
+  var xs = {}, zs = {};
+  var hWalls = [], vWalls = []; // h: constant z (x-span), v: constant x (z-span)
+  walls.forEach(function (w, i) {
+    if (isXWall(w)) { hWalls.push({ c: w.a.z, a: Math.min(w.a.x, w.b.x), b: Math.max(w.a.x, w.b.x), i: i }); xs[w.a.x] = 1; xs[w.b.x] = 1; }
+    else if (isZWall(w)) { vWalls.push({ c: w.a.x, a: Math.min(w.a.z, w.b.z), b: Math.max(w.a.z, w.b.z), i: i }); zs[w.a.z] = 1; zs[w.b.z] = 1; }
+  });
+  var X = Object.keys(xs).map(Number).sort(function (a, b) { return a - b; });
+  var Z = Object.keys(zs).map(Number).sort(function (a, b) { return a - b; });
+  function coversEdge(segs, at, lo, hi) {
+    var runs = segs.filter(function (s) { return Math.abs(s.c - at) <= PERIM_TOL; })
+      .map(function (s) { return [Math.max(s.a, lo), Math.min(s.b, hi)]; })
+      .filter(function (r) { return r[1] > r[0]; })
+      .sort(function (p, q) { return p[0] - q[0]; });
+    var cur = lo;
+    for (var k = 0; k < runs.length; k++) {
+      if (runs[k][0] > cur + PERIM_TOL) return false;
+      cur = Math.max(cur, runs[k][1]);
+    }
+    return cur >= hi - PERIM_TOL;
+  }
+  var cands = [];
+  for (var xi = 0; xi < X.length; xi++) for (var xj = xi + 1; xj < X.length; xj++)
+    for (var zi = 0; zi < Z.length; zi++) for (var zj = zi + 1; zj < Z.length; zj++) {
+      var x0 = X[xi], x1 = X[xj], z0 = Z[zi], z1 = Z[zj];
+      if (x1 - x0 < 1 || z1 - z0 < 1) continue;
+      if (!coversEdge(hWalls, z0, x0, x1)) continue;
+      if (!coversEdge(hWalls, z1, x0, x1)) continue;
+      if (!coversEdge(vWalls, x0, z0, z1)) continue;
+      if (!coversEdge(vWalls, x1, z0, z1)) continue;
+      // reject rects with wall segments strictly inside (e.g. the whole
+      // footprint shell when partitions subdivide it): midpoint-inside test
+      var hasInterior = walls.some(function (w) {
+        var mx = (w.a.x + w.b.x) / 2, mz = (w.a.z + w.b.z) / 2;
+        return mx > x0 + 0.05 && mx < x1 - 0.05 && mz > z0 + 0.05 && mz < z1 - 0.05;
+      });
+      if (hasInterior) continue;
+      cands.push({ x: x0, z: z0, w: x1 - x0, d: z1 - z0 });
+    }
+  cands.sort(function (a, b) { return (b.w * b.d) - (a.w * a.d); });
+  var rooms = [], n = 0;
+  cands.forEach(function (r) {
+    var overlap = rooms.some(function (o) {
+      return r.x < o.rect.x + o.rect.w - 1e-9 && o.rect.x < r.x + r.w - 1e-9 &&
+             r.z < o.rect.z + o.rect.d - 1e-9 && o.rect.z < r.z + r.d - 1e-9;
+    });
+    if (overlap) return;
+    var area = r.w * r.d, aspect = Math.max(r.w, r.d) / Math.min(r.w, r.d);
+    var type = aspect > 2.5 ? 'hall' : area < 6 ? 'bath' : area < 14 ? 'bed' : 'living';
+    var wallIds = [];
+    walls.forEach(function (w, i) {
+      var onPerim = false;
+      if (isXWall(w) && (Math.abs(w.a.z - r.z) <= PERIM_TOL || Math.abs(w.a.z - (r.z + r.d)) <= PERIM_TOL)) {
+        var a = Math.min(w.a.x, w.b.x), b = Math.max(w.a.x, w.b.x);
+        onPerim = b > r.x + PERIM_TOL && a < r.x + r.w - PERIM_TOL;
+      } else if (isZWall(w) && (Math.abs(w.a.x - r.x) <= PERIM_TOL || Math.abs(w.a.x - (r.x + r.w)) <= PERIM_TOL)) {
+        var a2 = Math.min(w.a.z, w.b.z), b2 = Math.max(w.a.z, w.b.z);
+        onPerim = b2 > r.z + PERIM_TOL && a2 < r.z + r.d - PERIM_TOL;
+      }
+      if (onPerim) wallIds.push(i);
+    });
+    rooms.push({ id: 'room-' + (n++), type: type, rect: r, floor: ROOM_TYPES[type].floor, wallIds: wallIds });
+  });
+  return rooms;
+}
+
+function wkey(a, b, y0) {
+  var p = [a.x, a.z], q = [b.x, b.z];
+  if (p[0] > q[0] || (p[0] === q[0] && p[1] > q[1])) { var t = p; p = q; q = t; }
+  return y0 + '|' + p[0] + ',' + p[1] + '|' + q[0] + ',' + q[1];
+}
+/* Split walls at T-junctions: any other wall's endpoint lying on this wall's
+ * segment (within 0.01, not near its own ends) becomes a split point.
+ * After this, every endpoint coincides with another wall's endpoint —
+ * no orphan ends, no mid-wall T stems. Sockets must be added AFTER. */
+function pointOnWallT(w, p) {
+  if (isXWall(w)) {
+    if (Math.abs(p.z - w.a.z) > PERIM_TOL) return -1;
+    var t = (p.x - w.a.x) / (w.b.x - w.a.x);
+    return (t > 0.001 && t < 0.999) ? t : -1;
+  }
+  if (isZWall(w)) {
+    if (Math.abs(p.x - w.a.x) > PERIM_TOL) return -1;
+    var t2 = (p.z - w.a.z) / (w.b.z - w.a.z);
+    return (t2 > 0.001 && t2 < 0.999) ? t2 : -1;
+  }
+  return -1;
+}
+function splitWalls(walls) {
+  var out = [];
+  walls.forEach(function (w, wi) {
+    var ts = [0, 1];
+    walls.forEach(function (v, vi) {
+      if (vi === wi) return;
+      [v.a, v.b].forEach(function (p) {
+        var t = pointOnWallT(w, p);
+        if (t > 0) ts.push(t);
+      });
+    });
+    ts.sort(function (a, b) { return a - b; });
+    var uniq = ts.filter(function (t, i) { return i === 0 || t - ts[i - 1] > 1e-6; });
+    for (var i = 0; i < uniq.length - 1; i++) {
+      var sub = {
+        a: ptAt(w, uniq[i]), b: ptAt(w, uniq[i + 1]),
+        h: w.h, y0: w.y0, frame: w.frame, inner: w.inner, outer: w.outer,
+        sockets: [], rooms: w.rooms.slice(), exterior: true
+      };
+      out.push(sub);
+    }
+  });
+  // dedupe by endpoint pair: coincident segments are shared partitions
+  var map = {};
+  out.forEach(function (w) {
+    var k = wkey(w.a, w.b, w.y0);
+    if (!map[k]) { map[k] = w; return; }
+    var keep = map[k];
+    w.rooms.forEach(function (ri) { if (keep.rooms.indexOf(ri) < 0) keep.rooms.push(ri); });
+    keep.inner = 'drywall'; keep.outer = 'drywall'; keep.exterior = false;
+  });
+  return Object.keys(map).map(function (k) { return map[k]; });
+}
+
+/* ---------------- procedural generator ---------------- */
+/* makeBuilding(seed, theme, footprint{w,d}, stories) -> Building.
+ * Robust for footprints 6×6..14×10, stories 1–2. ALL from the seeded RNG.
+ * Layout: split footprint along the long axis into 2–4 rooms (each ≥2.5m);
+ * if the short axis ≥ 7, carve a 1.5m hall strip first. Walls wound CCW per
+ * room (interior = left of a→b), shared partitions deduped by endpoint pair
+ * and emitted once (both faces interior). Windows on exterior walls ~2.5m
+ * apart; one exterior door + one door per partition. */
+function makeBuilding(seed, theme, footprint, stories) {
+  var th = themeOf(theme);
+  var rng = RNG(seed + '|' + theme);
+  stories = stories === 2 ? 2 : 1;
+  var W = Math.max(6, snap(footprint.w)), D = Math.max(6, snap(footprint.d));
+  var x0 = -W / 2, z0 = -D / 2;
+
+  // --- room rects ---
+  var rects = []; // {x,z,w,d,type}
+  var hallDepth = 1.5;
+  var deep = Math.min(W, D) >= 7;
+  var field = { x: x0, z: z0, w: W, d: D }; // area rooms fill
+  var hallRect = null;
+  if (deep) {
+    // carve hall along the -z side of the footprint
+    hallRect = { x: x0, z: z0, w: W, d: hallDepth, type: 'hall' };
+    field = { x: x0, z: z0 + hallDepth, w: W, d: D - hallDepth };
+    rects.push(hallRect);
+  }
+  var longAxis = field.w >= field.d ? 'x' : 'z';
+  var longLen = longAxis === 'x' ? field.w : field.d;
+  var maxN = Math.max(2, Math.floor(longLen / 3));
+  var n = Math.min(2 + rng.i(0, 2), maxN); // 2..4 rooms
+  // split points, each room ≥ 2.5m, snapped
+  var cuts = [0];
+  for (var c = 1; c < n; c++) {
+    var lo = cuts[c - 1] + 2.5, hi = longLen - (n - c) * 2.5;
+    cuts.push(snap(lo + rng.f() * Math.max(0, hi - lo)));
+  }
+  cuts.push(longLen);
+  for (var r = 0; r < n; r++) {
+    var a = cuts[r], b = cuts[r + 1];
+    var rect = longAxis === 'x'
+      ? { x: snap(field.x + a), z: field.z, w: snap(b - a), d: field.d }
+      : { x: field.x, z: snap(field.z + a), w: field.w, d: snap(b - a) };
+    rects.push(rect);
+  }
+  // type assignment: largest→living, smallest→bath, second-largest→kitchen, rest→bed
+  var order = rects.filter(function (rc) { return rc !== hallRect; })
+    .sort(function (p, q) { return (q.w * q.d) - (p.w * p.d); });
+  order.forEach(function (rc, i) {
+    rc.type = i === 0 ? 'living' : i === order.length - 1 ? 'bath' : (i === 1 && order.length >= 4 ? 'kitchen' : 'bed');
+  });
+
+  // --- walls: CCW per room (interior = left of a→b), whole edges first ---
+  var whole = [];
+  var innerMats = ['drywall', 'drywall', 'wallpaper', 'plaster'];
+  rects.forEach(function (rc, ri) {
+    var inner = rc.type === 'bath' || rc.type === 'kitchen' ? 'plaster' : rng.pick(innerMats);
+    for (var s = 0; s < stories; s++) {
+      var y0 = s * WALL_H;
+      var edges = [
+        [{ x: rc.x, z: rc.z }, { x: rc.x + rc.w, z: rc.z }],
+        [{ x: rc.x + rc.w, z: rc.z }, { x: rc.x + rc.w, z: rc.z + rc.d }],
+        [{ x: rc.x + rc.w, z: rc.z + rc.d }, { x: rc.x, z: rc.z + rc.d }],
+        [{ x: rc.x, z: rc.z + rc.d }, { x: rc.x, z: rc.z }]
+      ];
+      edges.forEach(function (e) {
+        whole.push({
+          a: { x: snap(e[0].x), z: snap(e[0].z) }, b: { x: snap(e[1].x), z: snap(e[1].z) },
+          h: WALL_H, y0: y0, frame: th.frame, inner: inner, outer: th.outer,
+          sockets: [], rooms: [ri], exterior: true
+        });
+      });
+    }
+  });
+  // split at T-junctions, then dedupe coincident segments into partitions
+  var walls = splitWalls(whole);
+
+  // --- sockets ---
+  function addSocket(wall, t, kind, style) {
+    var d = socketDims({ kind: kind, style: style });
+    var L = wallLen(wall);
+    var half = (d.w / 2 + 0.3) / L; // keep 0.3m clear of corners/edges
+    if (t - half < 0.02 || t + half > 0.98) return false;
+    var clash = wall.sockets.some(function (s) {
+      var d2 = socketDims(s);
+      return Math.abs(s.t - t) * L < (d.w + d2.w) / 2 + 0.4;
+    });
+    if (clash) return false;
+    wall.sockets.push({ t: t, kind: kind, style: style });
+    wall.sockets.sort(function (p, q) { return p.t - q.t; });
+    return true;
+  }
+  // exterior door: front wall (z == z0) of ground story, longest one
+  var frontWalls = walls.filter(function (w) {
+    return w.y0 === 0 && w.exterior && isXWall(w) && Math.abs(w.a.z - z0) < 1e-9;
+  }).sort(function (a, b) { return wallLen(b) - wallLen(a); });
+  if (frontWalls.length) addSocket(frontWalls[0], 0.5, 'door', rng.pick(['panel', 'panel', 'double']));
+  // interior doors: one per partition wall (ground + upper)
+  walls.forEach(function (w) {
+    if (!w.exterior && wallLen(w) >= 2.0) addSocket(w, 0.5, 'door', 'panel');
+  });
+  // windows on exterior walls every ~2.5m
+  walls.forEach(function (w) {
+    if (!w.exterior) return;
+    var L = wallLen(w);
+    var nWin = Math.max(1, Math.round(L / 2.5));
+    var style = rng.pick(th.win);
+    var dw = socketDims({ kind: 'window', style: style }).w;
+    while (nWin > 0 && (L - 1.2) / nWin < dw + 0.4) nWin--;
+    for (var i = 0; i < nWin; i++) addSocket(w, (i + 0.5) / nWin, 'window', style);
+  });
+
+  // --- rooms ---
+  var rooms = rects.map(function (rc, i) {
+    var fl = ROOM_TYPES[rc.type].floor;
+    if (fl === 'hardwood' && rng.chance(0.35)) fl = 'carpet';
+    return {
+      id: 'room-' + i, type: rc.type,
+      rect: { x: rc.x, z: rc.z, w: rc.w, d: rc.d },
+      floor: fl, wallIds: []
+    };
+  });
+  // rooms for upper story (same plan)
+  if (stories === 2) {
+    var base = rooms.length;
+    rects.forEach(function (rc, i) {
+      rooms.push({
+        id: 'room-' + (base + i), type: rc.type,
+        rect: { x: rc.x, z: rc.z, w: rc.w, d: rc.d }, y0: WALL_H,
+        floor: rooms[i].floor, wallIds: []
+      });
+    });
+  }
+  // link wallIds by index
+  var wallIndex = {};
+  walls.forEach(function (w, i) { wallIndex[wkey(w.a, w.b, w.y0)] = i; });
+  walls.forEach(function (w, i) {
+    (w.rooms || []).forEach(function (ri) {
+      var room = rooms[ri + (w.y0 > 0 ? rects.length : 0)];
+      if (room && room.wallIds.indexOf(i) < 0) room.wallIds.push(i);
+    });
+  });
+
+  // --- roof ---
+  var roofMat = th.roof === 'flat' ? 'metal-roof' : th.roof === 'hip' ? 'metal-roof' : 'shingle';
+  var building = {
+    seed: seed, theme: theme in THEMES ? theme : 'craftsman',
+    frame: th.frame, rooms: rooms, walls: walls,
+    roof: { type: th.roof, mat: roofMat }, stories: stories,
+    footprint: { w: W, d: D }
+  };
+  return building;
+}
+
+/* ---------------- emission entry points ---------------- */
+function emitInto(mesh, building) {
+  if (!CityMeshCtor) throw new Error('STRUCT: CityMesh not loaded (need mesh-builder.js first, or node require).');
+  var walls = resolveJunctions(building.walls || []);
+  walls.forEach(function (w) { emitWall(mesh, w); });
+  (building.rooms || []).forEach(function (r) { emitSlab(mesh, r); });
+  emitRoof(mesh, building);
+  return mesh;
+}
+/* emit(mesh, building) — triangles into mesh.data/indices. */
+function emit(mesh, building) {
+  mesh.solids = undefined; // force triangle mode
+  return emitInto(mesh, building);
+}
+/* emitCollision(building) — same emission, AABBs. Returns mesh.solids. */
+function emitCollision(building) {
+  if (!CityMeshCtor) throw new Error('STRUCT: CityMesh not loaded (need mesh-builder.js first, or node require).');
+  var mesh = new CityMeshCtor();
+  mesh.solids = [];
+  emitInto(mesh, building);
+  return mesh.solids;
+}
+
+/* ---------------- validation (never throws) ---------------- */
+function validate(building) {
+  var errs = [];
+  function E(s) { errs.push(s); }
+  if (!building || typeof building !== 'object') return ['building is not an object'];
+  var walls = building.walls instanceof Array ? building.walls : [];
+  var rooms = building.rooms instanceof Array ? building.rooms : [];
+  if (!(building.walls instanceof Array)) E('walls missing/not an array');
+  if (!(building.rooms instanceof Array)) E('rooms missing/not an array');
+  var themes = Object.keys(THEMES);
+  if (themes.indexOf(building.theme) < 0) E('unknown theme: ' + building.theme);
+  if (building.stories !== 1 && building.stories !== 2) E('stories must be 1 or 2, got ' + building.stories);
+  var rt = building.roof || {};
+  if (['flat', 'gable', 'hip'].indexOf(rt.type) < 0) E('unknown roof type: ' + rt.type);
+  if (!MAT_BY_ID[rt.mat]) E('unknown roof material: ' + rt.mat);
+  else if (!(MAT_BY_ID[rt.mat].kind === 'roof' || MAT_BY_ID[rt.mat].kind === 'both')) E('roof material wrong kind: ' + rt.mat);
+  walls.forEach(function (w, i) {
+    var tag = 'wall[' + i + ']';
+    ['a', 'b'].forEach(function (e) {
+      if (!w[e] || typeof w[e].x !== 'number' || typeof w[e].z !== 'number') E(tag + '.' + e + ' not a point');
+    });
+    if (w.a && w.b) {
+      var L = wallLen(w);
+      if (!(L >= MIN_WALL_LEN)) E(tag + ' length ' + L.toFixed(2) + ' < 1.0');
+      [w.a, w.b].forEach(function (p, k) {
+        ['x', 'z'].forEach(function (ax) {
+          var g = p[ax] / GRID;
+          if (Math.abs(g - Math.round(g)) > 1e-6) E(tag + ' endpoint ' + (k ? 'b' : 'a') + '.' + ax + '=' + p[ax] + ' off 0.5 grid');
+        });
+      });
+      if (!isAxisAligned(w)) E(tag + ' not axis-aligned (diagonal approx, sockets ignored)');
+    }
+    if (!(w.h > 0)) E(tag + ' bad height ' + w.h);
+    if (!MAT_BY_ID[w.frame]) E(tag + ' unknown frame material ' + w.frame);
+    if (mat(w.inner, 'inner').id !== w.inner) E(tag + ' inner material falls back: ' + w.inner);
+    // partitions (exterior===false) are interior on both faces: outer follows inner rule
+    var oRole = w.exterior === false ? 'inner' : 'outer';
+    if (mat(w.outer, oRole).id !== w.outer) E(tag + ' outer material falls back: ' + w.outer);
+    (w.sockets || []).forEach(function (s, si) {
+      var st = tag + '.sockets[' + si + ']';
+      if (typeof s.t !== 'number' || s.t < 0 || s.t > 1) E(st + ' t out of range');
+      if (s.kind !== 'window' && s.kind !== 'door') E(st + ' bad kind ' + s.kind);
+      var table = s.kind === 'door' ? DOOR_STYLES : WINDOW_STYLES;
+      if (!table[s.style]) E(st + ' unknown style ' + s.style);
+      else if (w.a && w.b) {
+        var d = table[s.style], L2 = wallLen(w);
+        if (d.w > L2 - 0.6) E(st + ' opening wider than wall');
+        if (s.t * L2 < d.w / 2 + 0.3 || (1 - s.t) * L2 < d.w / 2 + 0.3) E(st + ' opening too close to wall end');
+        if (d.sill + d.h > (w.h || WALL_H)) E(st + ' opening taller than wall');
+      }
+    });
+  });
+  (rooms).forEach(function (r, i) {
+    var tag = 'room[' + i + ']';
+    var rc = r.rect || {};
+    if (!(rc.w > 0 && rc.d > 0)) E(tag + ' bad rect');
+    if (!ROOM_TYPES[r.type]) E(tag + ' unknown type ' + r.type);
+    if (!MAT_BY_ID[r.floor]) E(tag + ' unknown floor material ' + r.floor);
+  });
+  return errs;
+}
+
+/* ---------------- exports ---------------- */
+var Struct = {
+  // constants
+  WALL_T: WALL_T, SKIN_T: SKIN_T, GRID: GRID, WALL_H: WALL_H, SLAB_T: SLAB_T,
+  JUNCTION_TOL: JUNCTION_TOL, PERIM_TOL: PERIM_TOL,
+  // rng
+  hashSeed: hashSeed, mulberry32: mulberry32, RNG: RNG,
+  // materials / styles / themes
+  MATERIALS: MATERIALS, mat: mat, matColor: matColor,
+  WINDOW_STYLES: WINDOW_STYLES, DOOR_STYLES: DOOR_STYLES,
+  ROOM_TYPES: ROOM_TYPES, THEMES: THEMES,
+  // core
+  makeBuilding: makeBuilding,
+  roomsFromWalls: roomsFromWalls,
+  resolveJunctions: resolveJunctions,
+  emit: emit, emitCollision: emitCollision,
+  emitWall: emitWall, emitSlab: emitSlab, emitRoof: emitRoof,
+  validate: validate,
+  // utils
+  snap: snap, wallLen: wallLen, socketDims: socketDims,
+  CityMesh: function () { return CityMeshCtor; }
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = Struct;
+
+return Struct;
+})();
+</script>
+<script>
 /* palettes — 10 planet-type color tables.
  * Extracted verbatim from your_files/moor-planet-demo.html:326-360.
  * PTEX: land/water/atmo/sea/spec/mode + sky/tree (via Object.assign).
@@ -5768,6 +6608,30 @@ var COMPS = [
    why:'Reuse the shape helpers and material library when building city scenes instead of writing geometry code again.',
    technical:'mesh-builder', source:'components/mesh-builder/mesh-builder.js', inMoor:false,
    toolGap:'Materials 20 (blimp marquee) and 21 (billboard) need texture painters that were not recovered — they render flat grey here, labeled honestly. No save/load in the component; the shape list is panel state.'},
+  {id:'struct', tool:'struct', toolSrc:'pulse-tools/tool-struct.js', cats:['shared'], icon:'\u1F9F1', label:'STRUCT · building engine',
+   short:'Seeded walls → rooms → buildings, with matching collision.',
+   job:'The structural foundation: layered walls (frame + inner/outer skins), window/door sockets, flat/gable/hip roofs, room assembly, and a seeded procedural building generator. One description yields render mesh AND collision volumes via the dual-mode pattern.',
+   why:'Every house, station, and town hall in MOOR builds on this — deterministic, so a seed is all you store.',
+   technical:'struct', source:'components/struct/struct.js', inMoor:false,
+   toolGap:'Engine is data + math, no renderer. The live proof panel runs determinism and collision-parity checks in-page.'},
+  {id:'struct-builder', demoOf:'struct', tool:'structbuilder', toolSrc:'pulse-tools/tool-structbuilder.js', cats:['space'], icon:'\u1F3D7', label:'Struct Builder',
+   short:'Draw walls on a plot. Super easy 3D building.',
+   job:'Interactive 3D builder on a 12×12m plot: tap-drag walls on the 0.5m grid, pick inner/outer materials, wood/steel frame, cut window/door sockets, cap a roof, auto-detect rooms, toggle collision view.',
+   why:'The "super easy to build" UX — if drawing a house isn\u2019t fun here, the system is wrong.',
+   technical:'struct-builder', source:'your_files/struct-builder.html', inMoor:false,
+   toolGap:'Furniture placeholders are plain boxes, honestly labeled. Diagonals out of scope for hand drawing (axis-locked).'},
+  {id:'struct-xray', tool:'structxray', toolSrc:'pulse-tools/tool-structxray.js', cats:['workshop'], icon:'\u1FA7B', label:'Struct X-Ray',
+   short:'DEV — see through buildings to their structure.',
+   job:'Laser x-ray of any STRUCT building in the glass-map aesthetic: toggle frame/inner/outer/rooms/collision layers, peel stories with a slider, shuffle seeds and themes.',
+   why:'His hidden dev tool — rewardable later. For now it lives in the Workshop.',
+   technical:'struct-xray', source:'your_files/struct-xray.html', inMoor:false,
+   toolGap:'Layer routing classifies emitted boxes by material color; peel is a shader discard.'},
+  {id:'struct-prefabs', demoOf:'struct', tool:'structprefab', toolSrc:'pulse-tools/tool-structprefab.js', cats:['space'], icon:'\u1F3D8', label:'Struct Prefabs',
+   short:'Seeded prefab street: houses + civic set.',
+   job:'Six seeded procedural buildings on a prefab lot: craftsman, modern, brick rowhouse, town hall with portico, train station with canopy, bus shelter. Shuffle for a new street; tap a building for its spec card.',
+   why:'Prefab towns and naked cities start here — themes × seeds, same street every time.',
+   technical:'struct-prefabs', source:'your_files/struct-prefabs.html', inMoor:false,
+   toolGap:'Roof shingles use merged instancing. Bus shelter is custom-composed (no shelter primitive in STRUCT v1).'},
   {id:'dual-mode-box', tool:'dualbox', toolSrc:'pulse-tools/tool-dualbox.js', cats:['space'], icon:'\u1F4E6', label:'Dual-mode box',
    short:'One box call: render mesh or collision volumes.',
    job:'Shows mesh-builder\u2019s dual-mode box: the same buildScene() call emits visible triangles or invisible AABB collision volumes. Balls bounce off the volumes, proving they match.',
@@ -19189,6 +20053,147 @@ TOOLS.transit = {
       '<b>book({from,to,vehicle,durationSec})</b> → boarding → enroute → arriving → arrived. '+
       'Terminal sample is exactly <b>to</b>; <b>cancel()</b> returns you to origin. '+
       'Future: stations publish grid-coords codes as destinations.</p>';
+  }
+};
+})();
+
+</script>
+<script>
+/* TAGS: struct, engine, walls, rooms, buildings, deterministic, collision, showcase, demo
+ * STRUCT v1 engine — live test bench. Builds buildings from seeds twice and
+ * proves determinism; shows collision parity, materials, and the API surface.
+ * Uses window.Struct (components/struct/struct.js, inlined namespaced). */
+(function(){
+'use strict';
+TOOLS.struct = {
+  mount: function(host){
+    var S = window.Struct;
+    if(!S){ host.innerHTML = '<div class="empty">STRUCT engine not loaded.</div>'; return; }
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">Deterministic walls→rooms→buildings. Same seed = same building, every time.</span>'+
+        '<a class="btn" href="https://github.com/bassseamoor/render-queue" target="_blank" rel="noopener">spec: components/struct/SPEC.md</a>'+
+      '</div>'+
+      '<div class="t-row" style="gap:10px;margin-bottom:12px;">'+
+        '<label class="meta">seed <input id="st-seed" value="proof-seed" style="width:130px"></label>'+
+        '<label class="meta">theme <select id="st-theme"><option>craftsman</option><option>modern</option><option>brick-row</option><option>civic</option></select></label>'+
+        '<button class="btn primary" id="st-run">run proof</button>'+
+      '</div>'+
+      '<div id="st-out" class="meta" style="margin-bottom:14px;line-height:1.9;"></div>'+
+      '<div class="eyebrow">Materials pool v1</div><div id="st-mats" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;"></div>'+
+      '<div class="eyebrow">API</div>'+
+      '<p class="meta" style="font-family:ui-monospace,monospace;font-size:12px;line-height:1.9;">'+
+      'Struct.makeBuilding(seed, theme, {w,d}, stories) → Building<br>'+
+      'Struct.emit(mesh, building) &nbsp;// triangles into CityMesh<br>'+
+      'Struct.emitCollision(building) → AABB[] &nbsp;// dual-mode: same boxes<br>'+
+      'Struct.roomsFromWalls(walls) → Room[]<br>'+
+      'Struct.resolveJunctions(walls) · Struct.validate(building) → [errors]</p>';
+
+    // materials swatches
+    var mh = '';
+    S.MATERIALS.forEach(function(m){
+      mh += '<span title="'+m.id+' · '+m.kind+'" style="display:inline-flex;align-items:center;gap:5px;'+
+            'background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;'+
+            'padding:4px 9px;font-size:11px;color:#cfd4e0;">'+
+            '<span style="width:12px;height:12px;border-radius:3px;background:'+m.color+';display:inline-block;"></span>'+
+            m.id+'</span>';
+    });
+    host.querySelector('#st-mats').innerHTML = mh;
+
+    function hex(h){ var n=0; for(var i=0;i<h.length;i++){ n=(Math.imul(n,31)+h.charCodeAt(i))>>>0; } return n.toString(16); }
+    host.querySelector('#st-run').onclick = function(){
+      var seed = host.querySelector('#st-seed').value || 'proof-seed';
+      var theme = host.querySelector('#st-theme').value;
+      var t0 = performance.now();
+      var b1 = S.makeBuilding(seed, theme, {w:10,d:8}, 2);
+      var b2 = S.makeBuilding(seed, theme, {w:10,d:8}, 2);
+      var j1 = JSON.stringify(b1), j2 = JSON.stringify(b2);
+      var errs = S.validate(b1);
+      var solids = S.emitCollision(b1);
+      var MeshCtor = S.CityMesh();
+      var mesh = new MeshCtor();
+      S.emit(mesh, b1);
+      var ms = Math.round(performance.now()-t0);
+      host.querySelector('#st-out').innerHTML =
+        'deterministic: <b style="color:#7ee2a0">'+(j1===j2)+'</b> (hash '+hex(j1).slice(0,8)+')<br>'+
+        'walls: <b>'+b1.walls.length+'</b> · rooms: <b>'+b1.rooms.length+'</b> · stories: <b>'+b1.stories+'</b><br>'+
+        'collision AABBs: <b>'+solids.length+'</b> · mesh verts: <b>'+(mesh.data.length/23|0)+'</b><br>'+
+        'validate errors: <b>'+errs.length+'</b> · built in '+ms+'ms';
+    };
+    host.querySelector('#st-run').onclick();
+  }
+};
+})();
+
+</script>
+<script>
+/* TAGS: struct, builder, walls, rooms, interactive, 3d, showcase, demo
+ * Struct Builder — interactive 3D wall/room builder on the STRUCT engine.
+ * Embeds the live demo. */
+(function(){
+'use strict';
+TOOLS.structbuilder = {
+  mount: function(host){
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">Draw walls on the grid, pick materials, cut sockets, cap a roof. Super easy.</span>'+
+        '<a class="btn primary" href="https://bassseamoor.github.io/render-queue/struct-builder.html" target="_blank" rel="noopener">Open full screen</a>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;height:560px;border-radius:12px;overflow:hidden;background:#0b0d12;">'+
+        '<iframe src="https://bassseamoor.github.io/render-queue/struct-builder.html" '+
+        'style="width:100%;height:100%;border:0;" allow="autoplay; fullscreen"></iframe>'+
+      '</div>'+
+      '<p class="meta" style="margin-top:10px;">Playground · demo of <b>STRUCT</b>. '+
+      'Every wall is a real STRUCT Wall (frame + inner/outer skins); sockets cut true openings; '+
+      'collision view shows the dual-mode AABBs.</p>';
+  }
+};
+})();
+
+</script>
+<script>
+/* TAGS: struct, xray, dev-tool, laser, glass, layers, collision, rooms
+ * Struct X-Ray — hidden DEV tool: see through buildings to their structure.
+ * Embeds the live demo. Glass-map laser aesthetic, layer toggles, story peel. */
+(function(){
+'use strict';
+TOOLS.structxray = {
+  mount: function(host){
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">DEV — laser x-ray of any STRUCT building. Peel stories, toggle layers.</span>'+
+        '<a class="btn primary" href="https://bassseamoor.github.io/render-queue/struct-xray.html" target="_blank" rel="noopener">Open full screen</a>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;height:560px;border-radius:12px;overflow:hidden;background:#05070c;">'+
+        '<iframe src="https://bassseamoor.github.io/render-queue/struct-xray.html" '+
+        'style="width:100%;height:100%;border:0;" allow="autoplay; fullscreen"></iframe>'+
+      '</div>'+
+      '<p class="meta" style="margin-top:10px;">Layers: frame / inner / outer / rooms / collision. '+
+      'Rewardable later — for now it lives in the Workshop.</p>';
+  }
+};
+})();
+
+</script>
+<script>
+/* TAGS: struct, prefabs, procedural, themes, civic, town-hall, station, instancing, showcase, demo
+ * Struct Prefabs — seeded procedural buildings: 3 house themes + town hall,
+ * train station, bus station. Embeds the live demo. */
+(function(){
+'use strict';
+TOOLS.structprefab = {
+  mount: function(host){
+    host.innerHTML =
+      '<div class="t-controls">'+
+        '<span class="meta">Same seed = same street. Shuffle for a new prefab town.</span>'+
+        '<a class="btn primary" href="https://bassseamoor.github.io/render-queue/struct-prefabs.html" target="_blank" rel="noopener">Open full screen</a>'+
+      '</div>'+
+      '<div style="position:relative;width:100%;height:560px;border-radius:12px;overflow:hidden;background:#0b0d12;">'+
+        '<iframe src="https://bassseamoor.github.io/render-queue/struct-prefabs.html" '+
+        'style="width:100%;height:100%;border:0;" allow="autoplay; fullscreen"></iframe>'+
+      '</div>'+
+      '<p class="meta" style="margin-top:10px;">Playground · demo of <b>STRUCT</b>. '+
+      'Roof shingles use merged instancing. Civic set: town hall, train station, bus shelter.</p>';
   }
 };
 })();
