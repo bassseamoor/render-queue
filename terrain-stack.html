@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>terrain stack — pipeline × terrain-core</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { background:#0b0d12; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+  body { padding:calc(env(safe-area-inset-top,0px) + 14px) 16px calc(env(safe-area-inset-bottom,0px) + 20px);
+    max-width:560px; margin:0 auto; }
+  h1 { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  h1 .terra { color:#9fd88f; }
+  .sub { font-size:13px; color:#9aa0ae; margin:6px 0 16px; line-height:1.5; }
+  .sub b { color:#cfd4e0; }
+  .lbl { font-size:11px; font-weight:700; letter-spacing:.1em; color:#6b7180; margin:14px 0 8px; }
+  #main { width:100%; aspect-ratio:1; border-radius:16px; display:block; background:#0a0c10; }
+  #controls { display:flex; gap:10px; margin:14px 0; }
+  .big { flex:1; border:0; border-radius:999px; padding:14px; font-size:15px; font-weight:700; cursor:pointer; }
+  #seedBtn { background:#9fd88f; color:#0c140a; }
+  #baseBtn { background:rgba(255,255,255,.08); color:#cfd4e0; border:1px solid rgba(255,255,255,.14); }
+  .big:active { transform:scale(.97); }
+  .seedline { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#6b7180; margin:0 2px 6px; }
+  .stack { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .layer { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);
+    border-radius:14px; padding:10px; cursor:pointer; min-height:44px; }
+  .layer.on { border-color:rgba(159,216,143,.55); background:rgba(159,216,143,.07); }
+  .layer .nm { font-size:12px; font-weight:700; display:flex; justify-content:space-between; align-items:center; }
+  .layer .eq { font-family:ui-monospace,Menlo,monospace; font-size:10px; color:#8a90a0; margin:4px 0 8px; }
+  .layer canvas { width:100%; aspect-ratio:1; border-radius:8px; display:block; background:#0a0c10; }
+  .pill { font-size:10px; font-weight:700; padding:3px 9px; border-radius:999px; background:rgba(255,255,255,.08); color:#9aa0ae; }
+  .layer.on .pill { background:rgba(159,216,143,.2); color:#9fd88f; }
+  .stats { font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#6b7180; margin:10px 2px 0; line-height:1.7; }
+  .prov { margin-top:18px; font-size:11px; color:#565c68; line-height:1.6; }
+  #toast { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 30px); left:50%;
+    transform:translateX(-50%) translateY(20px); background:#1a1d26; color:#9fd88f;
+    font-size:13px; font-weight:600; padding:10px 20px; border-radius:999px; opacity:0;
+    transition:all .25s; pointer-events:none; border:1px solid rgba(159,216,143,.35); z-index:50; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<h1>terrain <span class="terra">stack</span></h1>
+<p class="sub">The <b>real terrain-core generate()</b>, then a stack of toggleable math layers
+applied in order on top — exactly the layer-stack concept from tool-pipeline.
+Each layer shows its <b>isolated delta</b>. Toggle off returns the base bit-exact.</p>
+
+<canvas id="main"></canvas>
+<div class="seedline" id="seedline"></div>
+
+<div id="controls">
+  <button class="big" id="seedBtn">🎲 shuffle seed</button>
+  <button class="big" id="baseBtn">base only</button>
+</div>
+
+<div class="lbl">LAYER STACK — applied in order</div>
+<div class="stack" id="stack"></div>
+<div class="stats" id="stats"></div>
+
+<p class="prov">Provenance: terrain-core.mjs (generate/brush/pack/unpack) inlined verbatim
+below in a module script; layer math (terrace, ridge-fold) follows LAYER_DEFS in
+pulse-v2/tools/tool-pipeline.js; crater + river-carve are seeded deterministic additions.</p>
+<div id="toast"></div>
+
+<script type="module">
+'use strict';
+/* ============ PROVENANCE ============
+ * The block below is terrain-core.mjs from
+ *   ~/workspace/moor-recovery/components/terrain-core/source/terrain-core.mjs
+ * inlined VERBATIM. Module scope handles the exports. Layers after it are
+ * the tool-pipeline layer-stack concept applied to the real generate() output.
+ */
+export const N=80, SIZE=256, COUNT=(N+1)**2;
+export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+export function generate(seed='silver-coast',preset='island',relief=38){
+  let hash=2166136261;for(const c of seed)hash=Math.imul(hash^c.charCodeAt(0),16777619);
+  const random=(x,z)=>{let h=Math.imul(x,374761393)^Math.imul(z,668265263)^hash;h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;};
+  const noise=(x,z)=>{const i=Math.floor(x),j=Math.floor(z);let u=x-i,v=z-j;u=u*u*(3-2*u);v=v*v*(3-2*v);return (random(i,j)*(1-u)+random(i+1,j)*u)*(1-v)+(random(i,j+1)*(1-u)+random(i+1,j+1)*u)*v;};
+  const heights=new Float32Array(COUNT),biomes=new Uint8Array(COUNT);
+  for(let z=0;z<=N;z++)for(let x=0;x<=N;x++){
+    let f=0,amp=1,sum=0;for(let k=0;k<5;k++){f+=noise(x/N*3*2**k,z/N*3*2**k)*amp;sum+=amp;amp*=.5;}f/=sum;
+    const radius=Math.hypot((x/N-.5)*2,(z/N-.5)*2);
+    let h=(f-.38)*relief*2;
+    if(preset==='island')h+=(.52-radius)*relief;
+    if(preset==='mountains')h=Math.abs(f-.3)*relief*2.5-8;
+    if(preset==='valley')h+=(Math.abs(x/N-.5)*2-.45)*relief;
+    if(preset==='flat')h=6;
+    heights[z*(N+1)+x]=clamp(h,-40,120);
+  }
+  return {format:'moor-world-terrain/1',name:'Silver Coast',seed,preset,relief,resolution:N,size:SIZE,water:0,heights,biomes};
+}
+export function brush(data,x,z,{tool,radius,strength,target=6,biome=1}){
+  const source=tool==='smooth'?data.heights.slice():data.heights;let changed=false;
+  for(let j=Math.max(0,Math.floor((z-radius+SIZE/2)/SIZE*N));j<=Math.min(N,Math.ceil((z+radius+SIZE/2)/SIZE*N));j++)for(let i=Math.max(0,Math.floor((x-radius+SIZE/2)/SIZE*N));i<=Math.min(N,Math.ceil((x+radius+SIZE/2)/SIZE*N));i++){
+    const dist=Math.hypot(i/N*SIZE-SIZE/2-x,j/N*SIZE-SIZE/2-z);if(dist>=radius)continue;
+    const q=j*(N+1)+i,w=(1-dist/radius)**2,old=data.heights[q];let next=old;
+    if(tool==='raise'||tool==='lower')next+=strength*w*(tool==='raise'?1:-1);
+    if(tool==='flatten')next+=(target-old)*Math.min(1,strength*.12*w);
+    if(tool==='smooth'){let sum=0,n=0;for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const a=i+dx,b=j+dz;if(a>=0&&a<=N&&b>=0&&b<=N){sum+=source[b*(N+1)+a];n++;}}next+=(sum/n-old)*Math.min(1,strength*.2*w);}
+    if(tool==='paint'){changed ||= data.biomes[q]!==biome;data.biomes[q]=biome;}
+    next=clamp(next,-40,120);changed ||= next!==old;data.heights[q]=next;
+  }return changed;
+}
+export const pack=d=>({...d,heights:Array.from(d.heights),biomes:Array.from(d.biomes)});
+export function unpack(d){
+  if(!d||d.format!=='moor-world-terrain/1'||d.resolution!==N||d.size!==SIZE||!Array.isArray(d.heights)||d.heights.length!==COUNT||!d.heights.every(v=>Number.isFinite(v)&&v>=-40&&v<=120)||!Array.isArray(d.biomes)||d.biomes.length!==COUNT||!d.biomes.every(v=>Number.isInteger(v)&&v>=0&&v<=4)||!Number.isFinite(d.water)||d.water< -20||d.water>40||!['island','mountains','valley','flat'].includes(d.preset)||!Number.isFinite(d.relief)||d.relief<10||d.relief>70)throw Error('Choose a valid MOOR terrain JSON exported by this editor.');
+  return {...d,name:String(d.name||'Untitled world').slice(0,80),seed:String(d.seed||'silver-coast').slice(0,80),heights:Float32Array.from(d.heights),biomes:Uint8Array.from(d.biomes)};
+}
+/* ============ end verbatim terrain-core ============ */
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s){
+  var h = 2166136261;
+  for (var i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/* ---- layer stack: pure deterministic fns over the heightfield ----
+ * RIDGE REMIX + TERRACE follow LAYER_DEFS in tool-pipeline.js verbatim;
+ * CRATER and RIVER CARVE are seeded additions in the same spirit. */
+var LAYERS = [
+  { id:'ridge', name:'Ridge remix', eq:'h = 20 − |h − 20|',
+    fn:function(h){ return 20 - Math.abs(h-20); } },
+  { id:'terrace', name:'Terrace', eq:'h = ⌊h/s⌋·s + s/2,  s=160/6',
+    fn:function(h){ var s=160/6; return Math.floor(h/s)*s + s/2; } },
+  { id:'crater', name:'Crater', eq:'h −= 22·(1−(d/14)²)², seeded',
+    fn:function(h,x,z,seedStr){
+      var rng = mulberry32(hashStr(seedStr+':crater'));
+      var cx = 18+rng()*44, cz = 18+rng()*44, rr = 12+rng()*6;
+      var d = Math.hypot(x-cx, z-cz);
+      if (d >= rr) return h;
+      var t = 1-(d/rr)*(d/rr);
+      return h - 22*t*t + 4*t*t*t*(d/rr)*2;   /* bowl + slight rim */
+    } },
+  { id:'river', name:'River carve', eq:'h −= 10·falloff(meander), seeded',
+    fn:function(h,x,z,seedStr){
+      var rng = mulberry32(hashStr(seedStr+':river'));
+      var a1 = 4+rng()*8, f1 = 0.06+rng()*0.05, p1 = rng()*6.28;
+      var a2 = 2+rng()*5, f2 = 0.15+rng()*0.1, p2 = rng()*6.28;
+      var zm = 40 + a1*Math.sin(x*f1+p1) + a2*Math.sin(x*f2+p2);
+      var d = Math.abs(z-zm);
+      if (d >= 7) return h;
+      var t = 1-d/7;
+      return h - 10*t*t;
+    } },
+];
+var active = { ridge:false, terrace:false, crater:false, river:false };
+
+var seed = 'silver-coast', baseHeights = null, curHeights = null;
+
+function rebuild(){
+  var data = generate(seed, 'island', 38);
+  baseHeights = data.heights.slice();
+  applyStack();
+}
+function applyStack(){
+  /* always re-applied from the base copy → toggling off is bit-exact */
+  var h = baseHeights.slice();
+  for (var li=0;li<LAYERS.length;li++){
+    var L = LAYERS[li];
+    if (!active[L.id]) continue;
+    for (var z=0;z<=N;z++) for (var x=0;x<=N;x++){
+      var q = z*(N+1)+x;
+      h[q] = clamp(L.fn(h[q], x, z, seed), -40, 120);
+    }
+  }
+  curHeights = h;
+  paint(); paintDeltas(); updateStats();
+}
+
+/* ---- hypsometric tint + hillshade render ---- */
+var cv = document.getElementById('main'), ctx = cv.getContext('2d');
+var off = document.createElement('canvas'); off.width = off.height = N+1;
+var octx = off.getContext('2d'), img = octx.createImageData(N+1, N+1);
+function tint(h){
+  var r,g,b;
+  if (h < 0){ var t=Math.min(1,-h/40); r=10+20*t; g=40+60*t; b=110+80*t; }
+  else if (h < 14){ var t2=h/14; r=194-40*t2; g=178-20*t2; b=120-40*t2; }
+  else if (h < 45){ var t3=(h-14)/31; r=110-30*t3; g=150-60*t3; b=80-30*t3; }
+  else { var t4=Math.min(1,(h-45)/55); r=120+120*t4; g=100+130*t4; b=70+160*t4; }
+  return [r|0,g|0,b|0];
+}
+function paint(){
+  var r = cv.getBoundingClientRect();
+  cv.width = Math.max(320, r.width|0); cv.height = cv.width;
+  var d = img.data, hh = curHeights;
+  for (var z=0;z<=N;z++) for (var x=0;x<=N;x++){
+    var q = z*(N+1)+x, h = hh[q], c = tint(h), o = q*4;
+    /* hillshade from the east */
+    var hx = hh[z*(N+1)+Math.min(N,x+1)] - hh[z*(N+1)+Math.max(0,x-1)];
+    var sh = 1 - Math.max(-0.35, Math.min(0.35, hx*0.045));
+    d[o]=Math.min(255,c[0]*sh); d[o+1]=Math.min(255,c[1]*sh);
+    d[o+2]=Math.min(255,c[2]*sh); d[o+3]=255;
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, cv.width, cv.height);
+}
+function paintDeltas(){
+  /* per-layer mini preview: isolated delta (layer alone − base) */
+  var nodes = document.querySelectorAll('.layer canvas');
+  LAYERS.forEach(function(L, li){
+    var c = nodes[li], c2 = c.getContext('2d');
+    var sz = 96;
+    if (c.width !== sz){ c.width = sz; c.height = sz; }
+    var o2 = document.createElement('canvas'); o2.width = o2.height = N+1;
+    var x2 = o2.getContext('2d'), im = x2.createImageData(N+1, N+1), dd = im.data;
+    for (var z=0;z<=N;z++) for (var x=0;x<=N;x++){
+      var q = z*(N+1)+x;
+      var dlt = clamp(L.fn(baseHeights[q], x, z, seed), -40, 120) - baseHeights[q];
+      var o = q*4, m = Math.min(1, Math.abs(dlt)/14);
+      if (dlt >= 0){ dd[o]=200*m+20; dd[o+1]=80*m+10; dd[o+2]=40*m+10; }
+      else         { dd[o]=20; dd[o+1]=90*m+10; dd[o+2]=200*m+30; }
+      dd[o+3]=255;
+    }
+    x2.putImageData(im, 0, 0);
+    c2.imageSmoothingEnabled = false;
+    c2.drawImage(o2, 0, 0, sz, sz);
+  });
+}
+function checksum(h){
+  var s = 0;
+  for (var i=0;i<h.length;i++) s += h[i];
+  return s;
+}
+function updateStats(){
+  var mn=1e9, mx=-1e9;
+  for (var i=0;i<curHeights.length;i++){
+    var h=curHeights[i]; if (h<mn)mn=h; if (h>mx)mx=h;
+  }
+  var on = LAYERS.filter(function(L){ return active[L.id]; }).map(function(L){ return L.name; });
+  document.getElementById('stats').innerHTML =
+    'height '+mn.toFixed(0)+'…'+mx.toFixed(0)+' m · checksum '+
+    checksum(curHeights).toFixed(3)+'<br>stack: '+(on.length?on.join(' → '):'base only')+
+    ' · base checksum '+(baseHeights?checksum(baseHeights).toFixed(3):'—');
+  document.getElementById('seedline').textContent = 'seed “'+seed+'” · island · relief 38';
+}
+
+function toast(m){
+  var t = document.getElementById('toast');
+  t.textContent = m; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove('show'); }, 1600);
+}
+
+/* ---- UI ---- */
+var stackHost = document.getElementById('stack');
+LAYERS.forEach(function(L){
+  var d = document.createElement('div'); d.className='layer'; d.dataset.id = L.id;
+  d.innerHTML = '<div class="nm"><span>'+L.name+'</span><span class="pill">OFF</span></div>'+
+                '<div class="eq">'+L.eq+'</div><canvas></canvas>';
+  d.onclick = function(){
+    active[L.id] = !active[L.id];
+    d.classList.toggle('on', active[L.id]);
+    d.querySelector('.pill').textContent = active[L.id] ? 'ON' : 'OFF';
+    applyStack();
+    toast(L.name + (active[L.id] ? ' applied' : ' removed'));
+  };
+  stackHost.appendChild(d);
+});
+
+var WORDS = ['silver-coast','ember-ridge','glass-dune','moss-hollow','pale-fjord','ashen-plain',
+             'violet-mesa','copper-basin','silent-steppe','hollow-crown','amber-falls','night-terrace'];
+var shuffleRng = mulberry32(hashStr('terrain-stack-shuffle'));
+document.getElementById('seedBtn').onclick = function(){
+  seed = WORDS[(shuffleRng()*WORDS.length)|0] + '-' + ((shuffleRng()*900+100)|0);
+  rebuild();
+  toast('seed: '+seed);
+};
+document.getElementById('baseBtn').onclick = function(){
+  Object.keys(active).forEach(function(kk){ active[kk]=false; });
+  stackHost.querySelectorAll('.layer').forEach(function(el){
+    el.classList.remove('on'); el.querySelector('.pill').textContent='OFF';
+  });
+  applyStack(); toast('back to base');
+};
+
+/* headless test hook */
+window.__stackTest = {
+  checksum: function(){ return checksum(curHeights).toFixed(6); },
+  baseChecksum: function(){ return checksum(baseHeights).toFixed(6); },
+  toggle: function(id){ stackHost.querySelector('.layer[data-id="'+id+'"]').click(); },
+  activeLayers: function(){ return Object.keys(active).filter(function(kk){ return active[kk]; }); }
+};
+
+rebuild();
+</script>
+</body>
+</html>
