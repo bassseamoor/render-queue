@@ -551,6 +551,34 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
   box-shadow:0 10px 28px rgba(232,182,76,0.28), inset 0 1px 0 rgba(255,255,255,0.6) !important;
 }
 
+/* ============ TEXT-BUBBLE FOLDERS: shelves glide in from off-screen, like messages arriving ============ */
+/* open component pages emerge from off the left edge when they arrive */
+.window{ position:relative; animation:window-in 1.05s cubic-bezier(0.22,1,0.36,1) backwards; }
+@keyframes window-in{
+  from{ opacity:0; transform:translateX(-78vw); }
+}
+/* inventory shelves emerge on category change (JS adds .emerge) */
+.inventory.emerge{ animation:inventory-in .95s cubic-bezier(0.22,1,0.36,1) backwards; }
+.inventory.available.emerge{ animation-delay:.13s; }
+@keyframes inventory-in{
+  from{ opacity:0; transform:translateX(-82vw); }
+}
+/* folder tabs: every bubble is a folder too */
+.window::before{
+  content:""; position:absolute; top:-11px; left:26px; width:96px; height:22px;
+  background:linear-gradient(165deg, rgba(66,46,112,0.95), rgba(26,15,52,0.95));
+  border:1px solid rgba(150,210,255,0.30); border-bottom:none;
+  border-radius:10px 14px 0 0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.22);
+}
+.explanation{ position:relative; }
+.explanation::before{
+  content:""; position:absolute; top:-9px; left:20px; width:64px; height:16px;
+  background:linear-gradient(165deg, rgba(60,42,104,0.9), rgba(24,14,48,0.9));
+  border:1px solid rgba(150,210,255,0.24); border-bottom:none;
+  border-radius:8px 10px 0 0;
+}
+
 </style>
 </head>
 <body>
@@ -2072,6 +2100,7 @@ var CATS = [
   {id:'space', name:'3D space', icon:'\u25C7', description:'The parts used to create, display, and manage a world you can move around in.'},
   {id:'interface', name:'Interface', icon:'\u25A3', description:'The visible workspace and controls you use to open, understand, and organize your work.'},
   {id:'creation', name:'Create apps', icon:'\u2727', description:'The software that turns requests into applications and checks what it produces.'},
+  {id:'compdata', name:'Component Data', icon:'\u25A3', description:'Where the nitty-gritty lives: the logic, stored and organized and categorized.'},
   {id:'experiences', name:'Apps & worlds', icon:'\u25C8', description:'The experiences you can use, and existing projects that can become part of the environment.'},
   {id:'shared', name:'Shared tools', icon:'\u2318', description:'The common services that multiple apps can use instead of rebuilding them.'},
   {id:'generators', name:'Generators', icon:'\u2301', description:'Tools that create terrain, images, and other content from settings or a seed.'}
@@ -2142,13 +2171,13 @@ var COMPS = [
    why:'Understand what a generator does, then shape it without touching code.',
    technical:'terrain-pipeline', source:'components/terrain-core (pipeline) + panel layers', inMoor:false,
    toolGap:'The base pipeline is the untouched component. Added layers are panel composition — real seeded math, but not part of the component.'},
-  {id:'more-canvas', tool:null, cats:['creation'], icon:'\u25A3', label:'More Canvas', page:'more-canvas.html',
+  {id:'more-canvas', tool:null, cats:['creation','compdata'], icon:'\u25A3', label:'More Canvas', page:'more-canvas.html',
    short:'The mixing bench: pick two parts, say what they should become, mix them into something new.',
    job:'Choose component A and component B from the live catalog, describe what the mix should become (type or speak), and press Mix parts. A live preview renders the composition; saving stores it in My parts with versions. Recipes persist on this device.',
    why:'This is where new software gets imagined from existing parts instead of built from scratch — combine, describe, preview, keep the ones that work.',
    technical:'more-canvas', source:'more-canvas.html (standalone; catalog refreshes from pulse-manifest.json)', inMoor:false,
    toolGap:'The preview is a procedural composition sketch, not the truly fused tool. A mix becomes a saved recipe + build brief — a builder still implements the real thing.'},
-  {id:'stream', tool:'stream', toolSrc:'pulse-tools/tool-stream.js', cats:['space','generators','creation'], icon:'\u224B', label:'Moor Ultra OS',
+  {id:'stream', tool:'stream', toolSrc:'pulse-tools/tool-stream.js', cats:['space','generators','creation','compdata'], icon:'\u224B', label:'Moor Ultra OS',
    short:'The build-anything stream: say what you want, scenes land.',
    job:'One-way water: never a blank page, no questions asked. You state what you want (talk or type), the stream infers intent and lands N scenes below — 3 by default, any number on request. Tap a scene for ingredients (real components + seeds, all the way down). Dev gets the kitchen: spec JSON, rewire, player-visible flags.',
    why:'Building without the builder-ui: ordering, not engineering. Players customize everything, control nothing structural.',
@@ -2174,7 +2203,7 @@ var COMPS = [
    short:'The production way MOOR builds apps.',
    job:'MOOR\u2019s working \u201cmake me X\u201d path: ask bar \u2192 harness router \u2192 generation rounds \u2192 a kept app in the Apps drawer.',
    why:'This is the pipeline that ships. Per standing decision, no replacement compiler gets built.', technical:'js-create-pipeline', source:'moor-v1 pipeline', inMoor:true},
-  {id:'rust-intent-compiler', tool:'intent', toolSrc:'pulse-tools/tool-intent.js', cats:['creation'], icon:'\u2692', label:'Intent compiler (reference)',
+  {id:'rust-intent-compiler', tool:'intent', toolSrc:'pulse-tools/tool-intent.js', cats:['creation','compdata'], icon:'\u2692', label:'Intent compiler (reference)',
    short:'Verified reference software, not production.',
    job:'Deterministic rule-based compiler: plain request \u2192 application definition. Type a request, see what it heard, vote on whether it got your intent right.',
    why:'Kept available as verified reference software. Production routing stays on the JS pipeline unless separately authorized.', technical:'rust-intent-compiler', source:'moor-core-v0 (Rust, via WASM)', inMoor:false,
@@ -2193,7 +2222,7 @@ var COMPS = [
    why:'The first proof that recovered city components work as reusable seeds: the buggy physics, model pipeline, and spawn logic, twisted into a beautiful forest.',
    technical:'redwood-drive', source:'your_files/redwood-drive.html', inMoor:false,
    toolGap:'Standalone experience embedding the live build. The component library (vehicle physics, model kit, maze, spawn) is documented for reuse; this is the showcase, not the library itself.'},
-  {id:'render-studio', tool:'rstudio', toolSrc:'pulse-tools/tool-rstudio.js', cats:['creation','space'], icon:'\u2699', label:'Render Studio',
+  {id:'render-studio', tool:'rstudio', toolSrc:'pulse-tools/tool-rstudio.js', cats:['creation','space','compdata'], icon:'\u2699', label:'Render Studio',
    short:'The 8-studio unified pipeline.',
    job:'The MOOR City creative studio hub: 8 studios (particles, textures, sprites, skyboxes, trims, models, importer, crates) sharing one asset library. Build in any studio, save once, use everywhere.',
    why:'This is the pipeline that turns components into a catalog people pull from.',
@@ -2452,6 +2481,10 @@ function closeComponent(id){
 function selectCategory(id){
   UI.category = id;
   renderNav(); renderCategory(); persist();
+  ['integrated','available'].forEach(function(sid){
+    var sec = $(sid).closest('.inventory');
+    if (sec){ sec.classList.remove('emerge'); void sec.offsetWidth; sec.classList.add('emerge'); }
+  });
   $('app').classList.remove('nav-open');
   $('menu').setAttribute('aria-expanded','false');
 }
@@ -8832,6 +8865,20 @@ init();
   setInterval(collectCurve, 2500);
   window.addEventListener('resize', curvePanels);
   setTimeout(curvePanels, 600);
+  /* shelves arrive like messages on first load, too */
+  setTimeout(function(){
+    ['integrated','available'].forEach(function(sid){
+      var el = document.getElementById(sid);
+      var sec = el && el.closest('.inventory');
+      if (sec) sec.classList.add('emerge');
+    });
+  }, 350);
+  /* let .emerge re-trigger on every category change */
+  document.addEventListener('animationend', function(e){
+    if (e.target.classList && e.target.classList.contains('emerge')){
+      e.target.classList.remove('emerge');
+    }
+  });
 
   /* ---- magnetic hinge keys: hinged on the left edge, spring-damped, and they sing ----
    * Press the right side: the key rotates down around its left hinge with a fast
