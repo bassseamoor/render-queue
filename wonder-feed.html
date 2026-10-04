@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script src="wonder-logic.js?v=1"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#05070d">
@@ -2831,6 +2832,7 @@ function sanitizeGenome(g){
   Object.keys(fresh).forEach(function(k){
     p[k] = (typeof g.p[k]==='number' && isFinite(g.p[k])) ? g.p[k] : fresh[k];
   });
+  if(g.type==='idea' && g.p.logicVersion===undefined) p.logicVersion=0;
   return {type:g.type, seed:g.seed>>>0, p:p};
 }
 function genomeKey(g){
@@ -6635,12 +6637,25 @@ function ideaText(a, b, tmpl){
   return T[tmpl%T.length];
 }
 TYPES.push({kind:'idea', icon:'💡', label:'Idea', noFeed:true,
- params: function(r){ var n=Math.max(1,caps().length); return {capA:(r()*n)|0, capB:(r()*n)|0, tmpl:(r()*6)|0}; },
+ params: function(r){ var n=Math.max(1,caps().length); return {capA:(r()*n)|0,capB:(r()*n)|0,tmpl:(r()*6)|0,logicVersion:1,kit:(r()*8)|0,op:(r()*4)|0,scene:(r()*8)|0,density:(r()*5)|0}; },
  make: function(genome){
   var P=genome.p, seed=genome.seed;
   var C=caps();
   var el=cardShell(genome,'Idea '+((seed%900)+100),'concept — from the distiller');
   var vis=el.querySelector('.wd-visual');
+  if(P.logicVersion===1 && window.WonderLogic){
+   var L=window.WonderLogic.plan(genome), cv=document.createElement('canvas');cv.width=840;cv.height=260;cv._glNoFit=true;
+   cv.style.cssText='display:block;width:100%;height:150px;object-fit:cover;border-radius:10px;margin:0 0 16px';
+   vis.innerHTML='<div class="wd-idea"><div class="wd-logic-preview"></div><div class="wd-ideaT">'+esc(L.title)+'</div><div class="wd-ideaB">'+esc(L.behavior)+'<br><code style="color:#aee9d4;font-size:12px">'+esc(L.rule)+'</code></div><div class="wd-ideaS">'+L.parts.map(function(s){return '<span>'+esc(s)+'</span>';}).join('')+'</div><div style="margin-top:13px;color:#a5adc4;font-size:12px;line-height:1.5">'+esc(L.step)+'</div><button class="wd-hbtn wd-copy-build" style="margin-top:14px">copy build task ↗</button></div>';
+   vis.querySelector('.wd-logic-preview').appendChild(cv);
+   el.querySelector('.wd-cap b').textContent=L.title;
+   vis.querySelector('.wd-copy-build').onclick=function(e){e.stopPropagation();copyText(L.brief,function(ok){toast(ok?'build task copied':'copy unavailable');});};
+   var raf=0,tick=0,reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+   function frame(){window.WonderLogic.draw(cv,L,tick);tick+=.033;if(!reduce)raf=requestAnimationFrame(frame);}
+   window.WonderLogic.draw(cv,L,0);
+   return {el:el,title:L.title,sub:'idea recipe v1 / '+L.parts.join(' + '),start:function(){if(!raf&&!reduce)frame();},stop:function(){if(raf)cancelAnimationFrame(raf);raf=0;}};
+  }
+
   if(!C.length){
    vis.innerHTML='<div class="wd-idea"><div class="wd-ideaB">The distiller hasn\'t fed this feed yet.</div></div>';
    return {el:el,title:'Idea',sub:'',start:function(){},stop:function(){}};
@@ -6906,7 +6921,8 @@ function mountFeed(host, opts){
 
   var scroller = host.querySelector('#wd-feed');
   var body = host.querySelector('#wd-body');
-  var sessionSeed = (Date.now() % 1000000) | 0;
+  var feedParams=new URLSearchParams(location.search),givenSeed=feedParams.get('seed');
+  var sessionSeed = givenSeed!==null?hashStr(givenSeed):(Date.now() % 1000000) | 0;
   host.querySelector('#wd-seedlbl').textContent = 'session '+sessionSeed;
   var drawer = null, intoEl = null;
 
@@ -7062,6 +7078,7 @@ function mountFeed(host, opts){
       var g;
       if (onlyKind){
         g = {type:'idea', seed:(rng()*1000000000)|0, p:ideaT.params(rng)};
+        g.p.kit=(sessionSeed+cardCount-1)%8;
         return sanitizeGenome(g);
       }
       if (isSurprise){
@@ -7096,10 +7113,11 @@ function mountFeed(host, opts){
         if (spotlight){
           var ct = typeByKind('component');
           g = sanitizeGenome({type:'component', seed:(rng()*1000000000)|0, p:ct.params(rng)});
-        } else g = pickGenome(surprise);
+        } else if(!onlyKind&&!surprise&&cardCount%3===0){g=sanitizeGenome({type:'idea',seed:(rng()*1000000000)|0,p:ideaT.params(rng)});}
+        else g = pickGenome(surprise);
         tries++;
       }
-      while (tries<6 && Attention.isSuppressed(genomeKey(g)));
+      while (!onlyKind && tries<6 && Attention.isSuppressed(genomeKey(g)));
       noteKind(g.type);
       return g;
     }
@@ -7467,7 +7485,7 @@ function mountFeed(host, opts){
     Taste2.reset(); Steer.clear(); refreshChrome(); toast('taste reset — wide open again');
   };
   refreshChrome();
-  showFeed('wonders');
+  showFeed(hashGenome()?'wonders':feedParams.get('feed')==='ideas'?'ideas':'wonders');
 
   /* refit visible card canvases on viewport change (rotation, toolbar show/hide) */
   var rsT = 0;
