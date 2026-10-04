@@ -410,6 +410,7 @@ TOOLS.stream = { mount: function(host){
       '<button class="stm-voice" id="stm-voice">🔊 voice off</button>'+
       '<button class="stm-dev" id="stm-boop" style="color:#7fd4ff;border-color:#7fd4ff;">boop → screen</button>'+
       '<button class="stm-dev" id="stm-worlds-btn">worlds</button>'+
+      '<button class="stm-dev" id="stm-buster-btn" style="color:#ffd479;border-color:#ffd479;">buster</button>'+
       '<span id="stm-tune-note" style="font-size:11px;color:#7fe0a8;opacity:0;transition:opacity .4s;"></span>'+
       '<button class="stm-dev" id="stm-dev">dev</button></div>'+
       '<canvas id="stm-gl" width="860" height="440"></canvas>'+
@@ -423,6 +424,7 @@ TOOLS.stream = { mount: function(host){
       '<div class="stm-ing" id="stm-ingbox"></div>'+
       '<div id="stm-says" style="font-size:12px;color:#7fd4ff;padding:2px 4px;min-height:18px;opacity:0;transition:opacity .4s;"></div>'+
       '<div id="stm-worlds" style="display:none;overflow-x:auto;white-space:nowrap;padding:6px 4px;"></div>'+
+      '<div id="stm-buster" style="display:none;border:1px solid #2a3a4d;border-radius:10px;padding:10px;margin:6px 0;"></div>'+
       '<div class="stm-ing" id="stm-tunebox" style="display:none;"></div>'+
     '</div>'+
     '<div class="stm-bar"><div class="stm-row">'+
@@ -557,6 +559,7 @@ TOOLS.stream = { mount: function(host){
     });
     strip.style.display='block';
   };
+  host.querySelector('#stm-buster-btn').onclick=function(){ openBuster(''); };
   host.querySelector('#stm-boop').onclick=function(){
     var glc=host.querySelector('#stm-gl'), sc=host.querySelector('#stm-screen');
     var btn=host.querySelector('#stm-boop');
@@ -772,7 +775,44 @@ TOOLS.stream = { mount: function(host){
     say('built your UI \u2014 controls for this world, live.');
     tb.scrollIntoView({behavior:'smooth',block:'nearest'});
   }
+  /* Buster: the builder seat. For anything the Stream can't tune live,
+   * Buster writes the brief — copy it to your Muse and it gets built. */
+  function busterBrief(request){
+    return ['BUILD BRIEF \u2014 More Ultra (from the in-app Buster panel)','',
+      'Request: '+request,'',
+      'Context:',
+      '- Tool source: pulse-v2/tools/tool-stream.js (TOOLS.stream), one file, raw WebGL, no deps beyond globals.',
+      '- Globals available: streamFrom, makeNoise, hashSeed (seed-rng); MOODS, COMPONENTS, CONFIG.',
+      '- Components: '+Object.keys(COMPONENTS).join(', '),
+      '- Live CONFIG now: '+JSON.stringify(CONFIG),
+      '- Dioramas in space: '+dioramas.length,'',
+      'Rules:',
+      '- Panel code is additive; never modify recovered component sources.',
+      '- Verify before calling done: node --check, headless mount with zero page errors.',
+      '- Deploy: python3 build_pulse_v2.py, then gh_push.py to bassseamoor/render-queue main, MD5-verify live bytes.',
+      '- Report: what changed, verification, commit hashes, honest limits.'
+    ].join('\n');
+  }
+  function openBuster(request){
+    var box=host.querySelector('#stm-buster');
+    var brief=busterBrief(request||'(no request yet \u2014 describe what to build)');
+    box.innerHTML='<div style="color:#ffd479;margin-bottom:6px;">buster \u2014 your builder</div>'+
+      '<div style="font-size:12px;color:#9fb2c8;margin-bottom:6px;">The Stream tunes live. For everything else, Buster writes the brief \u2014 copy it to any Muse and it gets built.</div>'+
+      '<textarea id="stm-brief" style="width:100%;min-height:150px;background:#0a1220;color:#bfe3ff;border:1px solid #2a3a4d;border-radius:8px;font-family:monospace;font-size:11px;padding:8px;">'+esc(brief)+'</textarea>'+
+      '<div style="margin-top:6px;"><button id="stm-brief-copy" style="color:#7fd4ff;background:#12324a;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;">copy brief</button></div>';
+    box.style.display='block';
+    box.querySelector('#stm-brief-copy').onclick=function(){
+      var t=box.querySelector('#stm-brief');
+      t.select();
+      try{ document.execCommand('copy'); }catch(e){}
+      if (navigator.clipboard) navigator.clipboard.writeText(t.value).catch(function(){});
+      say('brief copied \u2014 paste it to your Buster.');
+    };
+    box.scrollIntoView({behavior:'smooth',block:'nearest'});
+    say('Buster wrote the brief \u2014 copy it to your builder.');
+  }
   function flow(text){
+    if (/^\s*buster\b/i.test(text)){ openBuster(text.replace(/^\s*buster\b[:,]?\s*/i,'')); return; }
     if (respond(text)) return;
     var se=parseSelfEdit(text);
     if (se && !looksLikeScene(text)){ applySelfEdit(se,text); return; }
