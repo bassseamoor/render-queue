@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>glass map</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overflow:hidden; background:#04060a; color:#e8f4ff;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif; }
+  /* ---------- world view (behind) ---------- */
+  #world { position:fixed; inset:0; z-index:1; }
+  #worldCv { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #world .vig { position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 42%, transparent 30%, rgba(2,4,8,.55) 75%, rgba(1,2,5,.9) 100%); }
+  #hint { position:absolute; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 110px);
+    transform:translateX(-50%); background:rgba(8,14,24,.72); border:1px solid rgba(120,200,255,.22);
+    color:#9fc6e8; font-size:13px; font-weight:600; letter-spacing:.04em;
+    padding:11px 22px; border-radius:999px; backdrop-filter:blur(8px);
+    animation:pulse 2.6s ease-in-out infinite; white-space:nowrap; }
+  #hint b { color:#dff2ff; border:1px solid rgba(160,220,255,.45); border-radius:6px;
+    padding:1px 9px; margin:0 2px; font-weight:800; background:rgba(80,160,220,.12); }
+  @keyframes pulse { 0%,100% { opacity:.75; } 50% { opacity:1; } }
+  #mapBtn { position:absolute; right:18px; bottom:calc(env(safe-area-inset-bottom,0px) + 30px);
+    width:60px; height:60px; border-radius:50%; border:1px solid rgba(120,200,255,.4);
+    background:rgba(20,40,70,.55); font-size:26px; cursor:pointer; backdrop-filter:blur(8px);
+    box-shadow:0 4px 24px rgba(60,160,255,.25); }
+  #mapBtn:active { transform:scale(.93); }
+  #worldTag { position:absolute; top:calc(env(safe-area-inset-top,0px) + 16px); left:18px;
+    font-size:11px; font-weight:700; letter-spacing:.22em; color:#5a7a99; }
+  /* ---------- glass map overlay ---------- */
+  #overlay { position:fixed; inset:0; z-index:10; opacity:0; transform:scale(.94);
+    pointer-events:none; transition:opacity .38s ease, transform .38s cubic-bezier(.2,.9,.25,1.05);
+    background:#04060a; }
+  #overlay.open { opacity:1; transform:scale(1); pointer-events:auto; }
+  #mapCv { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  #overlay .vig { position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(1,3,6,.6) 100%); }
+  #mapTop { position:absolute; top:0; left:0; right:0; display:flex; align-items:center;
+    justify-content:space-between; padding:calc(env(safe-area-inset-top,0px) + 14px) 18px 0;
+    pointer-events:none; }
+  #mapTop .t { font-size:12px; font-weight:800; letter-spacing:.3em; color:#bfe6ff;
+    text-shadow:0 0 18px rgba(90,200,255,.6); }
+  #closeBtn { pointer-events:auto; width:40px; height:40px; border-radius:50%;
+    border:1px solid rgba(140,210,255,.35); background:rgba(10,20,34,.6); color:#cfeaff;
+    font-size:17px; cursor:pointer; backdrop-filter:blur(6px); }
+  #closeBtn:active { transform:scale(.9); }
+  #readout { position:absolute; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 78px);
+    transform:translateX(-50%) translateY(10px); opacity:0; transition:all .28s;
+    background:rgba(6,14,24,.82); border:1px solid rgba(90,200,255,.45); color:#cdeeff;
+    font-size:13px; font-weight:700; letter-spacing:.06em; padding:10px 20px; border-radius:999px;
+    font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap;
+    box-shadow:0 0 24px rgba(60,180,255,.25); }
+  #readout.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  #mapHint { position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom,0px) + 22px);
+    text-align:center; font-size:11.5px; color:#5f7f9d; letter-spacing:.05em; pointer-events:none; }
+  #nogl { position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    color:#9fc6e8; font-size:14px; padding:40px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="world">
+  <canvas id="worldCv"></canvas>
+  <div class="vig"></div>
+  <div id="worldTag">MOOR&nbsp;·&nbsp;SECTOR&nbsp;7</div>
+  <div id="hint">press <b>M</b> for glass map</div>
+  <button id="mapBtn" aria-label="open map">🗺</button>
+</div>
+<div id="overlay">
+  <canvas id="mapCv"></canvas>
+  <div class="vig"></div>
+  <div id="mapTop"><span class="t">GLASS&nbsp;MAP</span><button id="closeBtn" aria-label="close">✕</button></div>
+  <div id="readout"></div>
+  <div id="mapHint">drag to orbit &nbsp;·&nbsp; pinch to zoom &nbsp;·&nbsp; tap for coords</div>
+  <div id="nogl">WebGL unavailable on this device.</div>
+</div>
+<script>
+'use strict';
+/* ================= glass-map — holographic laser-etched terrain map =================
+ * Height field: verbatim hash/vnoise/fbm4/microH logic from
+ *   moor-recovery/components/terrain-field/field.glsl
+ * (uniform renamed seedOff -> uSeed; mapH() rescales for hologram display.) */
+
+/* ---------- JS port of the noise (picking + building placement only) ---------- */
+const SEED = [4.2, 7.7, 1.3];
+const _f = v => v - Math.floor(v);
+function hash3(x, y, z){
+  let px = _f(x*0.3183099 + SEED[0]), py = _f(y*0.3183099 + SEED[1]), pz = _f(z*0.3183099 + SEED[2]);
+  px *= 17; py *= 17; pz *= 17;
+  return _f(px*py*pz*(px+py+pz));
+}
+function vnoise3(x, y, z){
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  let fx = x-ix, fy = y-iy, fz = z-iz;
+  const ux = fx*fx*(3-2*fx), uy = fy*fy*(3-2*fy), uz = fz*fz*(3-2*fz);
+  const L = (a,b,t) => a+(b-a)*t;
+  return L(
+    L(L(hash3(ix,iy,iz),   hash3(ix+1,iy,iz),   ux),
+      L(hash3(ix,iy+1,iz), hash3(ix+1,iy+1,iz), ux), uy),
+    L(L(hash3(ix,iy,iz+1),   hash3(ix+1,iy,iz+1),   ux),
+      L(hash3(ix,iy+1,iz+1), hash3(ix+1,iy+1,iz+1), ux), uy), uz);
+}
+function fbm4(x, y, z){
+  let v = 0, a = 0.5, px = x, py = y, pz = z;
+  for(let i=0;i<4;i++){ v += a*vnoise3(px,py,pz); px = px*2.03+1.7; py = py*2.03+1.7; pz = pz*2.03+1.7; a *= 0.5; }
+  return v;
+}
+function fbm2(x, y, z){
+  let v = 0, a = 0.5, px = x, py = y, pz = z;
+  for(let i=0;i<2;i++){ v += a*vnoise3(px,py,pz); px = px*2.11+3.1; py = py*2.11+3.1; pz = pz*2.11+3.1; a *= 0.5; }
+  return v;
+}
+function microHjs(mx, mz){ /* uMicroK = 1 */
+  let h = (fbm4(mx*0.025, 3.7, mz*0.025) - 0.5) * 36.0;
+  h += (fbm2(mx*0.11, 9.1, mz*0.11) - 0.5) * 9.0;
+  h += (vnoise3(mx*0.45, 4.2, mz*0.45) - 0.5) * 2.4;
+  let r = 0, a = 0.5, rx = mx*0.04, rz = mz*0.04;
+  for(let i=0;i<3;i++){
+    let n = vnoise3(rx, 7.7, rz); n = 1 - Math.abs(n*2 - 1);
+    r += a*n*n; const nx = rx*2.17+3.1, nz = rz*2.17+7.7; rx = nx; rz = nz; a *= 0.5;
+  }
+  h += (r - 0.29) * 34.0;
+  return h;
+}
+function mapHjs(mx, mz){
+  return (fbm4(mx*0.004, 1.3, mz*0.004) - 0.5) * 70.0 + microHjs(mx, mz) * 0.6;
+}
+
+/* ---------- world view: dim 2D terrain backdrop ---------- */
+(function paintWorld(){
+  const cv = document.getElementById('worldCv');
+  const w = cv.width = Math.floor(innerWidth), h = cv.height = Math.floor(innerHeight);
+  const S = 112, off = document.createElement('canvas');
+  off.width = off.height = S;
+  const octx = off.getContext('2d'), img = octx.createImageData(S, S), d = img.data;
+  const hs = new Float32Array(S*S);
+  let mn = 1e9, mx = -1e9;
+  for(let j=0;j<S;j++) for(let i=0;i<S;i++){
+    const hh = mapHjs((i/S-0.5)*900, (j/S-0.5)*900);
+    hs[j*S+i] = hh; if(hh<mn) mn = hh; if(hh>mx) mx = hh;
+  }
+  for(let k=0;k<S*S;k++){
+    const t = (hs[k]-mn)/(mx-mn), o = k*4;
+    d[o]   = 8  + t*38;   // deep navy -> slate
+    d[o+1] = 14 + t*52;
+    d[o+2] = 26 + t*66;
+    d[o+3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(off, 0, 0, w, h);
+})();
+
+/* ================= glass map (WebGL) ================= */
+const overlay = document.getElementById('overlay');
+const mcv = document.getElementById('mapCv');
+const gl = mcv.getContext('webgl', {antialias:true, alpha:false}) ||
+           mcv.getContext('experimental-webgl');
+if(!gl){
+  document.getElementById('nogl').style.display = 'flex';
+} else {
+
+const NOISE_GLSL = `
+uniform vec3 uSeed;
+uniform float uMicroK;
+float hash(vec3 p){ p=fract(p*0.3183099+uSeed); p*=17.0;
+  return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float vnoise(vec3 p){
+  vec3 i=floor(p),f=fract(p); vec3 u=f*f*(3.0-2.0*f);
+  return mix(mix(mix(hash(i),hash(i+vec3(1.,0.,0.)),u.x),
+                 mix(hash(i+vec3(0.,1.,0.)),hash(i+vec3(1.,1.,0.)),u.x),u.y),
+             mix(mix(hash(i+vec3(0.,0.,1.)),hash(i+vec3(1.,0.,1.)),u.x),
+                 mix(hash(i+vec3(0.,1.,1.)),hash(i+vec3(1.,1.,1.)),u.x),u.y),u.z);
+}
+float fbm4(vec3 p){ float v=0.0,a=0.5;
+  for(int i=0;i<4;i++){ v+=a*vnoise(p); p=p*2.03+vec3(1.7); a*=0.5; } return v; }
+float fbm2(vec3 p){ float v=0.0,a=0.5;
+  for(int i=0;i<2;i++){ v+=a*vnoise(p); p=p*2.11+vec3(3.1); a*=0.5; } return v; }
+float microH(vec2 mp){
+  float h=(fbm4(vec3(mp*0.025,3.7))-0.5)*36.0;
+  h+=(fbm2(vec3(mp*0.11,9.1))-0.5)*9.0;
+  h+=(vnoise(vec3(mp*0.45,4.2))-0.5)*2.4;
+  float r=0.0,a=0.5; vec2 rp=mp*0.04;
+  for(int i=0;i<3;i++){ float n=vnoise(vec3(rp,7.7)); n=1.0-abs(n*2.0-1.0);
+    r+=a*n*n; rp=rp*2.17+vec2(3.1,7.7); a*=0.5; }
+  h+=(r-0.29)*34.0;
+  return h*uMicroK;
+}
+float mapH(vec2 mp){
+  float h=(fbm4(vec3(mp*0.004,1.3))-0.5)*70.0;
+  h+=microH(mp)*0.6;
+  return h;
+}`;
+
+function sh(t, src){
+  const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+gl.getExtension('OES_standard_derivatives');
+
+/* ----- terrain (glass) ----- */
+const VS_GLASS = `
+attribute vec3 p;
+uniform mat4 uMVP;
+varying vec3 vN; varying float vH; varying vec3 vWp;
+${NOISE_GLSL}
+void main(){
+  float e=0.9;
+  float hC=mapH(p.xz);
+  float hX=mapH(p.xz+vec2(e,0.));
+  float hZ=mapH(p.xz+vec2(0.,e));
+  vN=normalize(vec3(hC-hX, e, hC-hZ));
+  vH=hC;
+  vec4 wp=vec4(p.x,hC,p.z,1.0);
+  vWp=wp.xyz;
+  gl_Position=uMVP*wp;
+}`;
+const FS_GLASS = `
+#ifdef GL_OES_standard_derivatives
+#extension GL_OES_standard_derivatives : enable
+#endif
+precision mediump float;
+varying vec3 vN; varying float vH; varying vec3 vWp;
+uniform vec3 uCam;
+float cline(float h, float iv, float ws){
+  float g=h/iv;
+  float d=abs(fract(g+0.5)-0.5)*iv;
+#ifdef GL_OES_standard_derivatives
+  float w=fwidth(h)*1.5*ws+0.12;
+#else
+  float w=0.4*ws+0.12;
+#endif
+  return 1.0-smoothstep(0.0,w,d);
+}
+void main(){
+  vec3 N=normalize(vN);
+  vec3 V=normalize(uCam-vWp);
+  float fres=pow(1.0-abs(dot(N,V)),3.0);
+  float minor=cline(vH,10.0,1.0);
+  float major=cline(vH,50.0,1.7);
+  vec3 col=vec3(0.05,0.22,0.38)*0.55;
+  col+=vec3(0.0,0.18,0.32)*(1.0-fres)*0.6;
+  col+=vec3(0.65,0.95,1.0)*fres*1.5;
+  col+=vec3(0.35,0.85,1.0)*minor*0.6;
+  col+=vec3(0.8,1.0,1.0)*major*1.2;
+  col+=vec3(0.0,0.3,0.5)*smoothstep(-30.0,60.0,vH)*0.3;
+  float alpha=clamp(0.58+fres*0.35+minor*0.15+major*0.2,0.0,0.97);
+  gl_FragColor=vec4(col,alpha);
+}`;
+
+/* ----- grid plane ----- */
+const VS_GRID = `
+attribute vec3 p;
+uniform mat4 uMVP;
+varying vec2 vP; varying float vD;
+void main(){ vP=p.xz; vD=length(p.xz); gl_Position=uMVP*vec4(p,1.0); }`;
+const FS_GRID = `
+#ifdef GL_OES_standard_derivatives
+#extension GL_OES_standard_derivatives : enable
+#endif
+precision mediump float;
+varying vec2 vP; varying float vD;
+float gridL(vec2 p, float iv){
+  vec2 q=abs(fract(p/iv+0.5)-0.5)*iv;
+#ifdef GL_OES_standard_derivatives
+  float w=fwidth(p.x)*1.6+0.4;
+#else
+  float w=1.2;
+#endif
+  return 1.0-smoothstep(0.0,w,min(q.x,q.y));
+}
+void main(){
+  vec3 col=vec3(0.012,0.02,0.035);
+  col+=vec3(0.10,0.45,0.65)*gridL(vP,25.0)*0.32;
+  col+=vec3(0.40,0.85,1.0)*gridL(vP,100.0)*0.7;
+  float ax=(1.0-smoothstep(0.0,1.4,abs(vP.x)))+(1.0-smoothstep(0.0,1.4,abs(vP.y)));
+  col+=vec3(0.5,0.9,1.0)*clamp(ax,0.0,1.0)*0.35;
+  col*=0.25+0.75*(1.0-smoothstep(180.0,440.0,vD));
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+/* ----- skirt (slab sides) ----- */
+const VS_SKIRT = `
+attribute vec3 p; attribute float v;
+uniform mat4 uMVP;
+varying float vV;
+void main(){ vV=v; gl_Position=uMVP*vec4(p,1.0); }`;
+const FS_SKIRT = `
+precision mediump float;
+varying float vV;
+void main(){
+  vec3 col=mix(vec3(0.15,0.5,0.75), vec3(0.03,0.10,0.20), vV);
+  gl_FragColor=vec4(col, mix(0.55,0.12,vV));
+}`;
+
+/* ----- lines (buildings, marker) ----- */
+const VS_LINE = `
+attribute vec3 p; attribute vec3 c; attribute float a;
+uniform mat4 uMVP;
+varying vec3 vC; varying float vA;
+void main(){ vC=c; vA=a; gl_Position=uMVP*vec4(p,1.0); }`;
+const FS_LINE = `
+precision mediump float;
+varying vec3 vC; varying float vA;
+void main(){ gl_FragColor=vec4(vC,vA); }`;
+
+/* ----- points (beacons) ----- */
+const VS_PT = `
+attribute vec3 p; attribute float ph;
+uniform mat4 uMVP; uniform float uTime; uniform vec3 uCam; uniform float uPx;
+varying float vB;
+void main(){
+  gl_Position=uMVP*vec4(p,1.0);
+  float dist=distance(p,uCam);
+  gl_PointSize=clamp(uPx*(240.0/max(dist,1.0)),2.0,16.0);
+  vB=0.3+0.7*pow(0.5+0.5*sin(uTime*2.6+ph),2.0);
+}`;
+const FS_PT = `
+precision mediump float;
+varying float vB;
+void main(){
+  float d=length(gl_PointCoord-0.5);
+  float m=1.0-smoothstep(0.08,0.5,d);
+  vec3 col=vec3(1.0,0.85,0.55)*(0.6+1.6*vB);
+  gl_FragColor=vec4(col,m*vB);
+}`;
+
+const pGlass = prog(VS_GLASS, FS_GLASS);
+const pGrid  = prog(VS_GRID,  FS_GRID);
+const pSkirt = prog(VS_SKIRT, FS_SKIRT);
+const pLine  = prog(VS_LINE,  FS_LINE);
+const pPt    = prog(VS_PT,    FS_PT);
+
+const U = {};
+function grab(p, names){ const o = {}; names.forEach(n => o[n] = gl.getUniformLocation(p, n)); return o; }
+U.glass = grab(pGlass, ['uMVP','uCam','uSeed','uMicroK']);
+U.grid  = grab(pGrid,  ['uMVP']);
+U.skirt = grab(pSkirt, ['uMVP']);
+U.line  = grab(pLine,  ['uMVP']);
+U.pt    = grab(pPt,    ['uMVP','uTime','uCam','uPx']);
+
+/* ----- geometry ----- */
+const SLAB = 420, SEG = 150, GRIDY = -70;
+function buildTerrain(){
+  const n = SEG+1, pos = new Float32Array(n*n*3);
+  let k = 0;
+  for(let j=0;j<n;j++) for(let i=0;i<n;i++){
+    pos[k++] = -SLAB/2 + SLAB*i/SEG; pos[k++] = 0; pos[k++] = -SLAB/2 + SLAB*j/SEG;
+  }
+  const idx = new Uint32Array(SEG*SEG*6); let q = 0;
+  for(let j=0;j<SEG;j++) for(let i=0;i<SEG;i++){
+    const a=j*n+i, b=a+1, c=a+n, d=c+1;
+    idx[q++]=a; idx[q++]=c; idx[q++]=b; idx[q++]=b; idx[q++]=c; idx[q++]=d;
+  }
+  return {pos, idx, tri: idx.length/3};
+}
+function buildGridPlane(){
+  const E = 460;
+  return { pos: new Float32Array([-E,GRIDY,-E,  E,GRIDY,-E,  E,GRIDY,E,  -E,GRIDY,E]),
+           idx: new Uint16Array([0,1,2, 0,2,3]) };
+}
+function buildSkirt(){
+  const n = SEG+1, per = [];
+  for(let i=0;i<n;i++) per.push([-SLAB/2+SLAB*i/SEG, -SLAB/2]);
+  for(let j=1;j<n;j++) per.push([SLAB/2, -SLAB/2+SLAB*j/SEG]);
+  for(let i=n-2;i>=0;i--) per.push([-SLAB/2+SLAB*i/SEG, SLAB/2]);
+  for(let j=n-2;j>=1;j--) per.push([-SLAB/2, -SLAB/2+SLAB*j/SEG]);
+  const m = per.length, pos = new Float32Array(m*2*3), vv = new Float32Array(m*2);
+  const idx = [];
+  for(let s=0;s<m;s++){
+    const [x,z] = per[s], h = mapHjs(x,z)-0.5, hb = h-18;
+    pos.set([x,h,z], s*6); vv[s*2] = 0;
+    pos.set([x,hb,z], s*6+3); vv[s*2+1] = 1;
+    const s2 = (s+1)%m;
+    idx.push(s*2, s2*2, s*2+1, s*2+1, s2*2, s2*2+1);
+  }
+  return {pos, vv, idx: new Uint32Array(idx)};
+}
+const AMBER = [1.0,0.62,0.22], CYANB = [0.35,0.85,1.0];
+const BUILDINGS = [
+  {x:-120,z:-80, w:22,d:18,h:55,c:AMBER},
+  {x:-60, z:-140,w:16,d:16,h:78,c:CYANB, beacon:true},
+  {x:40,  z:-110,w:26,d:20,h:42,c:AMBER},
+  {x:130, z:-60, w:18,d:18,h:66,c:AMBER},
+  {x:-140,z:40,  w:20,d:24,h:48,c:CYANB},
+  {x:-40, z:60,  w:24,d:18,h:72,c:AMBER, beacon:true},
+  {x:80,  z:90,  w:16,d:16,h:38,c:CYANB},
+  {x:150, z:60,  w:22,d:22,h:58,c:AMBER, beacon:true},
+];
+function buildLines(){
+  const P=[], C=[], A=[];
+  const EDGES=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  BUILDINGS.forEach(b=>{
+    const y0 = mapHjs(b.x,b.z)-1, y1 = y0+b.h;
+    const x0=b.x-b.w/2, x1=b.x+b.w/2, z0=b.z-b.d/2, z1=b.z+b.d/2;
+    const cn=[[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],
+              [x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]];
+    EDGES.forEach(([a,e])=>{
+      P.push(...cn[a], ...cn[e]);
+      C.push(...b.c, ...b.c);
+      A.push(0.85, 0.85);
+    });
+    b._top = [b.x, y1, b.z];
+  });
+  return {pos:new Float32Array(P), col:new Float32Array(C), al:new Float32Array(A)};
+}
+function buildBeacons(){
+  const P=[], PH=[];
+  BUILDINGS.forEach((b,i)=>{ if(b.beacon){ P.push(...b._top); PH.push(i*2.1); } });
+  return {pos:new Float32Array(P), ph:new Float32Array(PH), n:PH.length};
+}
+function mkBuf(data, target){
+  const b = gl.createBuffer();
+  gl.bindBuffer(target||gl.ARRAY_BUFFER, b);
+  gl.bufferData(target||gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  return b;
+}
+const tGeo = buildTerrain();
+const tPosB = mkBuf(tGeo.pos), tIdxB = mkBuf(tGeo.idx, gl.ELEMENT_ARRAY_BUFFER);
+gl.getExtension('OES_element_index_uint');
+const gGeo = buildGridPlane();
+const gPosB = mkBuf(gGeo.pos), gIdxB = mkBuf(gGeo.idx, gl.ELEMENT_ARRAY_BUFFER);
+const sGeo = buildSkirt();
+const sPosB = mkBuf(sGeo.pos), sVvB = mkBuf(sGeo.vv), sIdxB = mkBuf(sGeo.idx, gl.ELEMENT_ARRAY_BUFFER);
+const lGeo = buildLines();
+const lPosB = mkBuf(lGeo.pos), lColB = mkBuf(lGeo.col), lAlB = mkBuf(lGeo.al);
+const bGeo = buildBeacons();
+const bPosB = mkBuf(bGeo.pos), bPhB = mkBuf(bGeo.ph);
+// tap marker (dynamic)
+const mPosB = gl.createBuffer(), mColB = gl.createBuffer(), mAlB = gl.createBuffer();
+let marker = null; // {x,y,z,t0}
+
+/* ----- matrices ----- */
+function mPersp(fov, asp, n, f){
+  const t=1/Math.tan(fov/2), o=new Float32Array(16);
+  o[0]=t/asp; o[5]=t; o[10]=(f+n)/(n-f); o[11]=-1; o[14]=2*f*n/(n-f); return o;
+}
+function mLook(e, c){
+  const zx=e[0]-c[0], zy=e[1]-c[1], zz=e[2]-c[2];
+  const zl=Math.hypot(zx,zy,zz), z=[zx/zl,zy/zl,zz/zl];
+  let xx=z[2], xy=0, xz=-z[0]; const xl=Math.hypot(xx,xy,xz)||1; xx/=xl; xy/=xl; xz/=xl;
+  const yx=z[1]*xz-z[2]*xy, yy=z[2]*xx-z[0]*xz, yz=z[0]*xy-z[1]*xx;
+  const o=new Float32Array(16);
+  o[0]=xx; o[1]=yx; o[2]=z[0];
+  o[4]=xy; o[5]=yy; o[6]=z[1];
+  o[8]=xz; o[9]=yz; o[10]=z[2];
+  o[12]=-(xx*e[0]+xy*e[1]+xz*e[2]);
+  o[13]=-(yx*e[0]+yy*e[1]+yz*e[2]);
+  o[14]=-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]);
+  o[15]=1; return o;
+}
+function mMul(a,b){
+  const o=new Float32Array(16);
+  for(let c=0;c<4;c++) for(let r=0;r<4;r++)
+    o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
+  return o;
+}
+
+/* ----- camera state ----- */
+let yaw=0.7, pitch=0.85, radius=445;
+const target=[0,-8,0];
+const FOV=0.85;
+function eyePos(){
+  return [target[0]+radius*Math.cos(pitch)*Math.sin(yaw),
+          target[1]+radius*Math.sin(pitch),
+          target[2]+radius*Math.cos(pitch)*Math.cos(yaw)];
+}
+function viewProj(){
+  const e=eyePos();
+  return {vp:mMul(mPersp(FOV, mcv.width/mcv.height, 1, 3000), mLook(e,target)), eye:e};
+}
+
+/* ----- picking ----- */
+function pick(nx, ny){
+  const e=eyePos();
+  const f=[target[0]-e[0],target[1]-e[1],target[2]-e[2]];
+  const fl=Math.hypot(f[0],f[1],f[2]); f[0]/=fl; f[1]/=fl; f[2]/=fl;
+  let rx=-f[2], ry=0, rz=f[0]; const rl=Math.hypot(rx,ry,rz)||1; rx/=rl; ry/=rl; rz/=rl;
+  const ux=ry*rz-rz*ry, uy=rz*rx-rx*rz, uz=rx*ry-ry*rx;
+  // up2 = cross(r, f)
+  const u2x=ry*f[2]-rz*f[1], u2y=rz*f[0]-rx*f[2], u2z=rx*f[1]-ry*f[0];
+  const tV=Math.tan(FOV/2), tH=tV*(mcv.width/mcv.height);
+  let dx=f[0]+nx*tH*rx+ny*tV*u2x,
+      dy=f[1]+nx*tH*ry+ny*tV*u2y,
+      dz=f[2]+nx*tH*rz+ny*tV*u2z;
+  const dl=Math.hypot(dx,dy,dz); dx/=dl; dy/=dl; dz/=dl;
+  let t=0, hit=-1;
+  for(let i=0;i<160;i++){
+    t+=8;
+    const px=e[0]+dx*t, py=e[1]+dy*t, pz=e[2]+dz*t;
+    if(Math.abs(px)>SLAB/2||Math.abs(pz)>SLAB/2||py<-120) { if(py<-120) break; continue; }
+    if(py < mapHjs(px,pz)){ hit=t; break; }
+  }
+  if(hit<0) return null;
+  let lo=hit-8, hi=hit;
+  for(let i=0;i<24;i++){
+    const mid=(lo+hi)/2, px=e[0]+dx*mid, pz=e[2]+dz*mid, py=e[1]+dy*mid;
+    if(py < mapHjs(px,pz)) hi=mid; else lo=mid;
+  }
+  const t2=(lo+hi)/2;
+  return {x:e[0]+dx*t2, y:e[1]+dy*t2, z:e[2]+dz*t2};
+}
+
+/* ----- interaction ----- */
+const pointers=new Map();
+let dragMoved=0, downT=0, pinchD=0, autoRot=true;
+mcv.addEventListener('pointerdown', e=>{
+  pointers.set(e.pointerId,[e.clientX,e.clientY]);
+  dragMoved=0; downT=performance.now(); autoRot=false;
+  if(pointers.size===2){
+    const p=[...pointers.values()];
+    pinchD=Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1]);
+  }
+  mcv.setPointerCapture(e.pointerId);
+});
+mcv.addEventListener('pointermove', e=>{
+  if(!pointers.has(e.pointerId)) return;
+  const prev=pointers.get(e.pointerId);
+  const dx=e.clientX-prev[0], dy=e.clientY-prev[1];
+  dragMoved+=Math.abs(dx)+Math.abs(dy);
+  pointers.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pointers.size===1){
+    yaw-=dx*0.0075;
+    pitch=Math.min(1.35,Math.max(0.5,pitch+dy*0.0075));
+  }else if(pointers.size===2){
+    const p=[...pointers.values()];
+    const d=Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1]);
+    if(pinchD>0) radius=Math.min(720,Math.max(220,radius*pinchD/Math.max(d,1)));
+    pinchD=d;
+  }
+});
+function endPointer(e){
+  const wasTap = pointers.size===1 && dragMoved<10 && (performance.now()-downT)<450;
+  const upX=e.clientX, upY=e.clientY;
+  pointers.delete(e.pointerId);
+  if(pointers.size<2) pinchD=0;
+  if(pointers.size===0) setTimeout(()=>{ if(pointers.size===0) autoRot=true; },2500);
+  if(wasTap){
+    const r=mcv.getBoundingClientRect();
+    const nx=((upX-r.left)/r.width)*2-1, ny=-(((upY-r.top)/r.height)*2-1);
+    const hit=pick(nx,ny);
+    const ro=document.getElementById('readout');
+    if(hit){
+      marker={x:hit.x,y:hit.y+1.5,z:hit.z,t0:performance.now()};
+      ro.textContent='X '+Math.round(hit.x)+'  ·  Y '+Math.round(hit.z)+' m';
+      ro.classList.add('show');
+      clearTimeout(ro._t); ro._t=setTimeout(()=>ro.classList.remove('show'),2600);
+    }else ro.classList.remove('show');
+  }
+}
+mcv.addEventListener('pointerup', endPointer);
+mcv.addEventListener('pointercancel', e=>{ pointers.delete(e.pointerId); });
+mcv.addEventListener('wheel', e=>{
+  radius=Math.min(720,Math.max(220,radius*(1+Math.sign(e.deltaY)*0.09)));
+  autoRot=false; setTimeout(()=>autoRot=true,2500);
+},{passive:true});
+
+/* ----- draw ----- */
+function resizeMap(){
+  const dpr=Math.min(devicePixelRatio||1,2);
+  const w=Math.floor(mcv.clientWidth*dpr), h=Math.floor(mcv.clientHeight*dpr);
+  if(mcv.width!==w||mcv.height!==h){ mcv.width=w; mcv.height=h; gl.viewport(0,0,w,h); }
+}
+function attrs(prog, list){
+  // list: [[attribName, buffer, size], ...] — locations queried, never assumed
+  for(const [name, buf, size] of list){
+    const loc = gl.getAttribLocation(prog, name);
+    if(loc < 0) continue;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  }
+}
+let rafId=0, lastT=0;
+function frame(t){
+  rafId=requestAnimationFrame(frame);
+  const dt=Math.min(0.05,(t-lastT)/1000||0.016); lastT=t;
+  if(autoRot && pointers.size===0) yaw+=dt*0.07;
+  resizeMap();
+  const {vp, eye}=viewProj();
+  const now=performance.now();
+  gl.clearColor(0.016,0.024,0.039,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+
+  // 1. grid (opaque)
+  gl.useProgram(pGrid);
+  gl.depthMask(true); gl.disable(gl.BLEND);
+  attrs(pGrid, [['p', gPosB, 3]]); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gIdxB);
+  gl.uniformMatrix4fv(U.grid.uMVP,false,vp);
+  gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+
+  // 2. skirt (translucent)
+  gl.useProgram(pSkirt);
+  gl.depthMask(false); gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  attrs(pSkirt, [['p', sPosB, 3], ['v', sVvB, 1]]);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sIdxB);
+  gl.uniformMatrix4fv(U.skirt.uMVP,false,vp);
+  gl.drawElements(gl.TRIANGLES, sGeo.idx.length, gl.UNSIGNED_INT, 0);
+
+  // 3. buildings (additive laser)
+  gl.useProgram(pLine);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  attrs(pLine, [['p', lPosB, 3], ['c', lColB, 3], ['a', lAlB, 1]]);
+  gl.uniformMatrix4fv(U.line.uMVP,false,vp);
+  gl.drawArrays(gl.LINES, 0, lGeo.pos.length/3);
+
+  // 3b. tap marker (fading cross)
+  if(marker){
+    const age=(now-marker.t0)/1000, life=2.2;
+    if(age>life) marker=null;
+    else{
+      const a=1-age/life, s=7+age*10;
+      const P=new Float32Array([
+        marker.x-s,marker.y,marker.z, marker.x+s,marker.y,marker.z,
+        marker.x,marker.y,marker.z-s, marker.x,marker.y,marker.z+s]);
+      const C=new Float32Array([0.5,0.95,1, 0.5,0.95,1, 0.5,0.95,1, 0.5,0.95,1]);
+      const A=new Float32Array([a,a,a,a]);
+      gl.bindBuffer(gl.ARRAY_BUFFER,mPosB); gl.bufferData(gl.ARRAY_BUFFER,P,gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER,mColB); gl.bufferData(gl.ARRAY_BUFFER,C,gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER,mAlB); gl.bufferData(gl.ARRAY_BUFFER,A,gl.DYNAMIC_DRAW);
+      attrs(pLine, [['p', mPosB, 3], ['c', mColB, 3], ['a', mAlB, 1]]);
+      gl.drawArrays(gl.LINES,0,4);
+    }
+  }
+
+  // 4. terrain glass (normal blending, no depth write)
+  gl.useProgram(pGlass);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  attrs(pGlass, [['p', tPosB, 3]]);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, tIdxB);
+  gl.uniformMatrix4fv(U.glass.uMVP,false,vp);
+  gl.uniform3fv(U.glass.uCam,eye);
+  gl.uniform3f(U.glass.uSeed,SEED[0],SEED[1],SEED[2]);
+  gl.uniform1f(U.glass.uMicroK,1.0);
+  gl.drawElements(gl.TRIANGLES,tGeo.tri,gl.UNSIGNED_INT,0);
+
+  // 5. beacons (additive points)
+  if(bGeo.n>0){
+    gl.useProgram(pPt);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    attrs(pPt, [['p', bPosB, 3], ['ph', bPhB, 1]]);
+    gl.uniformMatrix4fv(U.pt.uMVP,false,vp);
+    gl.uniform1f(U.pt.uTime,now/1000);
+    gl.uniform3fv(U.pt.uCam,eye);
+    gl.uniform1f(U.pt.uPx,Math.min(devicePixelRatio||1,2));
+    gl.drawArrays(gl.POINTS,0,bGeo.n);
+  }
+  gl.depthMask(true); gl.disable(gl.BLEND);
+}
+
+/* ----- open / close ----- */
+function openMap(){
+  if(overlay.classList.contains('open')) return;
+  overlay.classList.add('open');
+  resizeMap(); lastT=performance.now();
+  cancelAnimationFrame(rafId);
+  rafId=requestAnimationFrame(frame);
+}
+function closeMap(){
+  if(!overlay.classList.contains('open')) return;
+  overlay.classList.remove('open');
+  cancelAnimationFrame(rafId); rafId=0;
+}
+addEventListener('keydown', e=>{
+  if(e.key==='m'||e.key==='M'){
+    overlay.classList.contains('open')?closeMap():openMap();
+  }else if(e.key==='Escape') closeMap();
+});
+document.getElementById('mapBtn').addEventListener('click', openMap);
+document.getElementById('closeBtn').addEventListener('click', closeMap);
+addEventListener('resize', ()=>{ if(overlay.classList.contains('open')) resizeMap(); });
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ cancelAnimationFrame(rafId); rafId=0; }
+  else if(overlay.classList.contains('open')){ lastT=performance.now(); rafId=requestAnimationFrame(frame); }
+});
+// expose for headless verification
+window.__glassmap = {openMap, closeMap, isOpen:()=>overlay.classList.contains('open'), pick};
+window.__dbg = {eyePos, viewProj, target, getYaw:()=>yaw, getPitch:()=>pitch, getRadius:()=>radius,
+  proj:(x,y,z)=>{ const {vp}=viewProj();
+    const w=vp[3]*x+vp[7]*y+vp[11]*z+vp[15];
+    return [(vp[0]*x+vp[4]*y+vp[8]*z+vp[12])/w, (vp[1]*x+vp[5]*y+vp[9]*z+vp[13])/w,
+            (vp[2]*x+vp[6]*y+vp[10]*z+vp[14])/w]; }};
+
+} /* end WebGL guard */
+</script>
+</body>
+</html>
