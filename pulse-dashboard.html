@@ -694,6 +694,15 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 
 /* shared bits */
 .empty{color:var(--muted);padding:26px 8px;text-align:center;font-size:.88rem}
+/* versions + variants */
+.vpill{display:inline-block;font-size:.66rem;font-weight:600;color:var(--muted);
+  border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-left:6px;
+  vertical-align:2px;letter-spacing:.03em}
+.vpill.hot{color:var(--cyan);border-color:rgba(91,216,255,.45)}
+.variants{margin:4px 0 14px}
+.variants .eyebrow{margin-bottom:8px}
+.trow.variant{margin-bottom:6px}
+.trow.variant.rec{border-color:rgba(91,216,255,.35)}
 
 </style>
 </head>
@@ -5597,7 +5606,6 @@ var CATS = [
  * inMoor: connected to the MOOR environment (from Pulse records, role=active).
  * Gaps listed in toolGap are reported in the UI, never silently worked around. */
 var COMPS = [
-{"id":"living-garden","tool":"livingGarden","toolSrc":"moor-living-garden.html","cats":["generators","space"],"icon":"❧","label":"Living Garden Lab","short":"Grow eight plant families. Compare versions. Export real meshes.","job":"Build seeded trees, shrubs, ferns, flowers, and grass; tune form and environment; inspect a garden and save its recipe.","why":"Replace primitive foliage with an independently testable vegetation component. Pin A, change B, choose what to keep.","technical":"Living Garden Lab v1.0.0","source":"moor-living-garden.html","inMoor":false,"toolGap":"Art-directed procedural meshes, not biological growth simulation. Water changes morphology and garden mix. No production planet integration, leaf textures, or automatic LOD. Wind is visual; OBJ exports rest geometry."},
   /* --- 3D space: real interactive tools --- */
   {id:'terrain-core', tool:'terrain', toolSrc:'pulse-tools/tool-terrain.js', cats:['space','generators'], icon:'\u25B3', label:'Terrain sculpting',
    short:'Generate land, shape it, and save it.',
@@ -5695,7 +5703,7 @@ var COMPS = [
    why:'Makes the warp transform visible and reusable — the same math that bends the spawn courtyard.',
    technical:'spawn-warp', source:'your_files/spawn-warp.html', inMoor:false,
    toolGap:'Showcase embedding the live demo. stationPose/curveSpawnWing/uncurveSpawnWing are verbatim spawn-layout.mjs; the morph UI is panel demo code.'},
-  {id:'creature-lab', demoOf:'softbody-creatures', tool:'creaturelab', toolSrc:'pulse-tools/tool-creaturelab.js', cats:["generators"], icon:'\u1F9EC', label:'Creature Lab',
+  {id:'creature-lab', variantOf:'creature', version:'2.0', scope:'Breed softbody creatures from genomes', demoOf:'softbody-creatures', tool:'creaturelab', toolSrc:'pulse-tools/tool-creaturelab.js', cats:["generators"], icon:'\u1F9EC', label:'Creature Lab',
    short:'Breed softbody creatures from genomes.',
    job:'Genome traits (verbatim ranges from tool-creatures.js) drive the spring-ring creature renderer: trait sliders with locks, breed button jittering unlocked traits +/-14%, litter of 4, tap to promote.',
    why:'The breeding operator applied to creature genomes — a sibling of seed breeding for a different system.',
@@ -5773,7 +5781,7 @@ var COMPS = [
    why:'Understand what a generator does, then shape it without touching code.',
    technical:'terrain-pipeline', source:'components/terrain-core (pipeline) + panel layers', inMoor:false,
    toolGap:'The base pipeline is the untouched component. Added layers are panel composition — real seeded math, but not part of the component.'},
-  {id:'more-canvas', tool:null, cats:['creation','compdata'], icon:'\u25A3', label:'Moor Canvas', page:'more-canvas.html',
+  {id:'more-canvas', variantOf:'canvas', version:'1.0', recommended:true, scope:'The canvas mixer app', tool:null, cats:['creation','compdata'], icon:'\u25A3', label:'Moor Canvas', page:'more-canvas.html',
    short:'The mixing bench: pick two parts, say what they should become, mix them into something new.',
    job:'Choose component A and component B from the live catalog, describe what the mix should become (type or speak), and press Mix parts. A live preview renders the composition; saving stores it in My parts with versions. Recipes persist on this device.',
    why:'This is where new software gets imagined from existing parts instead of built from scratch — combine, describe, preview, keep the ones that work.',
@@ -5785,7 +5793,7 @@ var COMPS = [
    why:'Building without the builder-ui: ordering, not engineering. Players customize everything, control nothing structural.',
    technical:'stream', source:'new: Stream v1', inMoor:false, page:'moor-ultra.html',
    toolGap:'V1: scene previews are seeded 2D procedural renders naming real components — not the full 3D tools. Ingredients deep-link to component tools; dev spec editing is live.'},
-  {id:'softbody-creatures', tool:'creatures', toolSrc:'pulse-tools/tool-creatures.js', cats:['space','generators'], icon:'\u25CF', label:'Creature Lab',
+  {id:'softbody-creatures', variantOf:'creature', version:'1.0', recommended:true, scope:'End-to-end procedural walkers', tool:'creatures', toolSrc:'pulse-tools/tool-creatures.js', cats:['space','generators'], icon:'\u25CF', label:'Creature Lab',
    short:'Stage A: end-to-end procedural walker.',
    job:'Deterministic creature compiler, first stage: seeded genome \u2192 canonical anatomy \u2192 validation + repair \u2192 compiled mesh, IK rig, and soft belly \u2192 procedural walking over fixture terrain. Generate, remix, inspect, export, import.',
    why:'The creature system per the build handoff \u2014 one canonical anatomy, multiple compiled representations. No hand-modeling, no hand-animation.',
@@ -5793,7 +5801,7 @@ var COMPS = [
    toolGap:'Stage A only: bilateral walkers (4/6 legs) on fixture terrain. Swimming, flight, climbing, burrowing, breeding, damage, ecosystems are planned (Stages B\u2013G), explicitly not present.'},
 
   /* --- the rest of the inventory: explanation pages (no fake tools) --- */
-  {id:'canvas-shell', tool:null, cats:['interface'], icon:'\u25A3', label:'MOOR canvas',
+  {id:'canvas-shell', variantOf:'canvas', version:'1.0', scope:'The canvas shell spec', tool:null, cats:['interface'], icon:'\u25A3', label:'MOOR canvas',
    short:'The MOOR workspace itself.',
    job:'What More OS looks like from the outside: the dark canvas, the rail, the windows, the Apps drawer. Every app plugs into this.',
    why:'The surface everything else lives on.', technical:'canvas-shell', source:'moor-v1 shell', inMoor:true},
@@ -5975,6 +5983,46 @@ function demoSourceLabel(c){
   var s=find(c.demoOf);
   return s?s.label:null;
 }
+/* ---------------- variants & versions ----------------
+ * variantOf groups overlapping components into a family. One variant is
+ * "recommended" — the one that best matches the scope (his rule). The Bin
+ * shows one row per family (the winner); the rest are one tap away in About.
+ * Versions: everything has one (default 1.0); settling a family bumps the winner. */
+var LS_SETTLE='pulse-variant-settle';
+function variantFamily(c){
+  if(!c.variantOf) return [c];
+  return COMPS.filter(function(x){ return x.variantOf===c.variantOf; });
+}
+function familyWinnerId(famId){
+  try{
+    var o=JSON.parse(localStorage.getItem(LS_SETTLE)||'{}');
+    if(o[famId]&&o[famId].id&&find(o[famId].id)) return o[famId].id;
+  }catch(e){}
+  var fam=COMPS.filter(function(x){ return x.variantOf===famId; });
+  for(var i=0;i<fam.length;i++) if(fam[i].recommended) return fam[i].id;
+  return fam.length?fam[0].id:null;
+}
+function shownComp(c){
+  if(!c.variantOf) return true;
+  return familyWinnerId(c.variantOf)===c.id;
+}
+function compVersion(c){
+  try{
+    var o=JSON.parse(localStorage.getItem(LS_SETTLE)||'{}');
+    if(c.variantOf&&o[c.variantOf]&&o[c.variantOf].id===c.id&&o[c.variantOf].version) return o[c.variantOf].version;
+  }catch(e){}
+  return c.version||'1.0';
+}
+function compScope(c){ return c.scope||c.short; }
+function familyText(c){
+  var t=(c.label+' '+c.short+' '+compScope(c)).toLowerCase();
+  if(c.variantOf){
+    variantFamily(c).forEach(function(x){
+      if(x.id!==c.id) t+=' '+(x.label+' '+x.short+' '+compScope(x)).toLowerCase();
+    });
+  }
+  return t;
+}
 
 /* ---------------- state ---------------- */
 var UI = {tab:'bin', open:[], focus:null, fromTab:'bin', query:''};
@@ -6042,9 +6090,12 @@ function rowHTML(c){
   var sub = c.short;
   var src = demoSourceLabel(c);
   if(src) sub = 'Playground \u00B7 demo of '+src;
+  var fam = c.variantOf?variantFamily(c):null;
+  if(fam&&fam.length>1) sub = compScope(c)+' \u00B7 '+fam.length+' variants';
   return '<button class="trow" data-open="'+c.id+'">'+
     '<span class="trow-ic" aria-hidden="true">'+esc(c.icon)+'</span>'+
-    '<span class="trow-tx"><strong>'+esc(c.label)+'</strong><span>'+esc(sub)+'</span></span>'+
+    '<span class="trow-tx"><strong>'+esc(c.label)+
+    ' <span class="vpill">v'+esc(compVersion(c))+'</span></strong><span>'+esc(sub)+'</span></span>'+
     '<span class="trow-go" aria-hidden="true">\u203A</span></button>';
 }
 function heroHTML(c, big){
@@ -6057,8 +6108,8 @@ function binResults(q){
   var out='';
   BIN_SECTIONS.forEach(function(sec){
     var items=COMPS.filter(function(c){
-      return compTab(c)==='bin'&&binSection(c)===sec.id&&
-        (!q||(c.label+' '+c.short+' '+c.why).toLowerCase().indexOf(q)>=0);
+      return compTab(c)==='bin'&&binSection(c)===sec.id&&shownComp(c)&&
+        (!q||familyText(c).indexOf(q)>=0);
     });
     if(!items.length) return;
     out+='<section class="bin-sec"><h3>'+sec.name+'</h3><p>'+sec.desc+'</p><div class="trows">'+
@@ -6146,6 +6197,22 @@ function aboutHTML(c){
       '<p>These plain-language labels do not rename the existing source. Opening this page does not integrate it into MOOR.</p>'+
     '</div></details>';
 }
+function variantsHTML(c){
+  var fam=variantFamily(c);
+  if(!c.variantOf||fam.length<2) return '';
+  var win=familyWinnerId(c.variantOf);
+  var h='<div class="variants"><div class="eyebrow">Variants \u00B7 which matches the scope better</div>';
+  fam.forEach(function(v){
+    var rec=v.id===win;
+    h+='<button class="trow variant'+(rec?' rec':'')+'" data-open="'+v.id+'">'+
+      '<span class="trow-tx"><strong>'+esc(v.label)+
+      ' <span class="vpill">v'+esc(compVersion(v))+'</span>'+
+      (rec?' <span class="vpill hot">recommended</span>':'')+
+      '</strong><span>'+esc(compScope(v))+'</span></span>'+
+      '<span class="trow-go" aria-hidden="true">\u203A</span></button>';
+  });
+  return h+'</div>';
+}
 function renderFocus(host, c){
   var back='<div class="focus-nav"><button class="back-link" data-back>'+
     '\u2039 '+esc(tabName(UI.fromTab))+'</button></div>';
@@ -6153,6 +6220,7 @@ function renderFocus(host, c){
     host.innerHTML=back+
       '<div class="tool-host bare" id="toolhost-'+c.id+'"></div>'+
       '<details class="focus-about"><summary>About this part</summary><div class="focus-about-body">'+
+      variantsHTML(c)+
       (c.page?'<p><a class="btn standalone-open" href="'+esc(c.page)+'" target="_blank" rel="noopener">Open '+esc(c.label)+' \u2197</a></p>':'')+
       aboutHTML(c)+'</div></details>';
     var hostEl=$('toolhost-'+c.id);
@@ -6165,7 +6233,7 @@ function renderFocus(host, c){
       (c.page?'<a class="btn standalone-open" href="'+esc(c.page)+'" target="_blank" rel="noopener">Open '+esc(c.label)+' \u2197</a>':'')+
       '</div>'+
       '<details class="focus-about" open><summary>About this part</summary><div class="focus-about-body">'+
-      aboutHTML(c)+'</div></details>';
+      variantsHTML(c)+aboutHTML(c)+'</div></details>';
   }
 }
 /* ---------------- stage: tab browse, or one focused tool ---------------- */
@@ -19251,8 +19319,20 @@ var FUNNELS=[
   {id:'new', icon:'\u2726', name:'New idea',
    desc:'One sentence about what it should do. We scope it against the bin.'},
   {id:'fit', icon:'\u25C9', name:'Fit check',
-   desc:'Too much? Too little? Find out what to cut, keep, or add.'}
+   desc:'Too much? Too little? Find out what to cut, keep, or add.'},
+  {id:'settle', icon:'\u2696', name:'Settle a duplicate',
+   desc:'Two things with the same name? Pick which one matches the scope better.'}
 ];
+function families(){
+  var cs=comps(), map={}, out=[];
+  cs.forEach(function(c){ if(c.variantOf){ (map[c.variantOf]=map[c.variantOf]||[]).push(c); } });
+  Object.keys(map).forEach(function(k){ if(map[k].length>1) out.push({id:k, members:map[k]}); });
+  return out;
+}
+function bumpMajor(v){
+  var m=parseInt(String(v||'1.0').split('.')[0],10);
+  return ((isNaN(m)?1:m)+1)+'.0';
+}
 
 /* ---------------- master doc + scoring ---------------- */
 function scoreDoc(a){
@@ -19384,6 +19464,10 @@ TOOLS.quiz={
         {id:'who', q:'Who is it for?', type:'radio', opts:['Me','Other builders','Players inside a world']},
         {id:'accept', q:'How will you know it works? (pick all that apply)', type:'checks',
          opts:['It renders something visible','It responds to touch and keys','Same seed gives the same result','It saves or exports its work']}
+      ];
+      if(f==='settle') return [
+        {id:'family', q:'Which family are we settling?', type:'family'},
+        {id:'winner', q:'Which one matches the scope better?', type:'winner'}
       ];
       return [ /* fit */
         {id:'target', q:'Which component are we checking?', type:'target'},
@@ -19542,6 +19626,31 @@ TOOLS.quiz={
         var custom=el('<textarea placeholder="Or describe it here if it\u2019s new\u2026">'+esc(a.custom||'')+'</textarea>');
         custom.oninput=function(){ a.custom=custom.value; if(custom.value.trim()){a.target=null;} };
         body.appendChild(custom);
+      } else if(q.type==='family'){
+        var fams=families();
+        if(!fams.length) body.appendChild(el('<p class="note">No duplicate families right now. The bin is clean.</p>'));
+        fams.forEach(function(fm){
+          var names=fm.members.map(function(m){ return m.label; }).join(' / ');
+          var b=el('<button class="radio'+(a.family===fm.id?' on':'')+'">'+esc(names)+
+            '<span class="pill">'+fm.members.length+' variants</span></button>');
+          b.onclick=function(){ a.family=fm.id; a.winner=null;
+            Array.prototype.forEach.call(body.querySelectorAll('.radio'),function(x){x.classList.remove('on');});
+            b.classList.add('on'); };
+          body.appendChild(b);
+        });
+      } else if(q.type==='winner'){
+        var fm2=null;
+        families().forEach(function(fm){ if(fm.id===a.family) fm2=fm; });
+        if(!fm2) body.appendChild(el('<p class="note">Pick a family first \u2014 go back a step.</p>'));
+        else fm2.members.forEach(function(m){
+          var b=el('<button class="radio'+(a.winner===m.id?' on':'')+'"><b>'+esc(m.label)+
+            '</b> <span class="pill">v'+esc(m.version||'1.0')+'</span><br>'+
+            '<span style="color:#8b94a3;font-size:.82rem">'+esc(m.scope||m.short)+'</span></button>');
+          b.onclick=function(){ a.winner=m.id;
+            Array.prototype.forEach.call(body.querySelectorAll('.radio'),function(x){x.classList.remove('on');});
+            b.classList.add('on'); };
+          body.appendChild(b);
+        });
       }
 
       d.querySelector('#qb').onclick=function(){
@@ -19550,6 +19659,8 @@ TOOLS.quiz={
       d.querySelector('#qn').onclick=function(){
         if(q.type==='parts'&&(a.parts||[]).length===0&&S.funnel==='combine'){ toast('Pick at least one part to fuse.'); return; }
         if(q.type==='text'&&!q.optional&&!(a[q.id]||'').trim()){ toast('Give it one sentence.'); return; }
+        if(q.type==='family'&&!a.family){ toast('Pick a family.'); return; }
+        if(q.type==='winner'&&!a.winner){ toast('Pick the winner \u2014 which matches the scope better?'); return; }
         if(S.step<qs.length-1){ S.step++; render(); }
         else finish();
       };
@@ -19564,7 +19675,24 @@ TOOLS.quiz={
 
     function finish(){
       var a=S.a;
-      if(S.funnel==='fit'){
+      if(S.funnel==='settle'){
+        var fm=null, win=null;
+        families().forEach(function(f){ if(f.id===a.family) fm=f; });
+        if(fm) fm.members.forEach(function(m){ if(m.id===a.winner) win=m; });
+        var nv=bumpMajor(win?(win.version||'1.0'):'1.0');
+        var o={}; try{ o=JSON.parse(localStorage.getItem('pulse-variant-settle')||'{}'); }catch(e){}
+        o[a.family]={id:a.winner, version:nv};
+        try{ localStorage.setItem('pulse-variant-settle', JSON.stringify(o)); }catch(e2){}
+        a.title='Settled: '+(win?win.label:a.family);
+        a.score=7; a.verdictT=(win?win.label:'\u2014')+' v'+nv+' it is';
+        a.verdictD='Now the recommended variant \u2014 the one that best matches the scope. The bin shows it; the rest live under Variants in About.';
+        a.doc='# '+a.title+'\n\nWinner: **'+(win?win.label:'?')+'** v'+nv+'\n'+
+          'Scope: '+((win&&(win.scope||win.short))||'')+'\n\n'+
+          'The bin now shows this variant. The others remain under Variants in About.\n';
+        a.brief='Decision recorded on this device: '+a.family+' -> '+a.winner+' v'+nv+'. '+
+          'To make it permanent everywhere, tell your builder to set recommended:true on '+a.winner+'.';
+      }
+      else if(S.funnel==='fit'){
         var v=fitVerdict(a);
         a.title=(a.targetLabel||(a.custom||'Untitled').slice(0,42)||'Fit check');
         a.score=a.jobs==='no'&&a.simple==='yes'&&a.dup==='no'?6:(a.dup==='yes'?2:4);
@@ -19595,7 +19723,7 @@ TOOLS.quiz={
         '<input type="text" id="qtitle" value="'+esc(a.title||'')+'" aria-label="Doc title">'+
         '<pre class="doc" id="qdoc"></pre>'+
         '<div class="frow"><button class="btn" id="qcopy">Copy doc</button>'+
-        '<button class="btn primary" id="qbrief">Copy build brief</button></div>'+
+        '<button class="btn primary" id="qbrief">'+(S.funnel==='settle'?'Copy decision':'Copy build brief')+'</button></div>'+
         '<div class="frow"><button class="btn ghost" id="qagain">New quiz</button>'+
         '<button class="btn ghost" id="qhome">All docs</button></div>'+
         '<p class="note">The build brief is the work order — paste it to your builder and the component gets built, then reviewed for fit.</p></div>');
@@ -20253,11 +20381,6 @@ init();
   }
 })();
 
-</script>
-<script>
-/* Living Garden Lab: independent iframe avoids shared globals. Preserve on Pulse rebuild. */
-TOOLS.livingGarden={mount:function(host){host.innerHTML='<div class="t-controls"><span class="meta">Review component · eight plant families · deterministic geometry</span><a class="btn primary" href="moor-living-garden.html" target="_blank" rel="noopener">Open full screen</a></div><iframe title="Living Garden Lab" src="moor-living-garden.html" style="width:100%;height:78dvh;min-height:440px;border:0;border-radius:12px;background:#162423" allow="fullscreen"></iframe>';},unmount:function(){}};
-(function(){if(new URLSearchParams(location.search).get('component')==='living-garden')openComponent('living-garden');})();
 </script>
 </body>
 </html>
