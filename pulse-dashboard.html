@@ -152,7 +152,7 @@ body{
   position:relative;
   background:
     linear-gradient(115deg, rgba(255,255,255,0.13), rgba(255,255,255,0.025) 38%, rgba(255,255,255,0) 62%),
-    linear-gradient(165deg, rgba(56,40,100,0.60), rgba(16,10,30,0.68)) !important;
+    linear-gradient(165deg, rgba(56,40,100,0.38), rgba(16,10,30,0.45)) !important;
   -webkit-backdrop-filter:blur(30px) saturate(1.55);
   backdrop-filter:blur(30px) saturate(1.55);
   border:1px solid rgba(150,210,255,0.22) !important;
@@ -481,11 +481,18 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 #glitter{ position:fixed; inset:0; z-index:0; pointer-events:none; }
 #glitter i{ display:block; }
 @keyframes twinkle{
-  0%,100%{ opacity:.12; transform:scale(.65); }
-  50%{ opacity:.95; transform:scale(1.3); }
+  0%,100%{ opacity:.07; transform:scale(.6); }
+  50%{ opacity:1; transform:scale(1.5); }
+}
+#glitter-front{ position:fixed; inset:0; z-index:90; pointer-events:none; }
+#glitter-front i{ display:block; }
+@keyframes twinkleFront{
+  0%,100%{ opacity:.05; transform:scale(.6); }
+  50%{ opacity:.55; transform:scale(1.35); }
 }
 @media(prefers-reduced-motion:reduce){
   #glitter{ display:none; }
+  #glitter-front{ display:none; }
 }
 
 /* ============ CHAT INSTRUMENT: messages from the left, keys press, sent to the right ============ */
@@ -7162,24 +7169,57 @@ init();
   pull.setAttribute('aria-label','Show navigation');
   document.body.appendChild(pull);
 
-  /* glitter: fine speckles twinkling in the dark acrylic — pink, purple,
-   * orange, white. Each grain pulses on its own slow rhythm. */
+  /* glitter: a dense field of speckles twinkling in the dark acrylic —
+   * pink, purple, orange, gold, white. Fine grains plus larger soft sparkles,
+   * each on its own rhythm. This is the 8-ball's soul — make it unmissable. */
   try{
     var glitter = document.createElement('div');
     glitter.id = 'glitter';
     glitter.setAttribute('aria-hidden','true');
-    var gcolors = ['#ff9ecf','#c9a7ff','#ffc98a','#ffffff','#ff7eb8','#e8b4ff'];
-    for (var gi=0; gi<70; gi++){
-      var sp = document.createElement('i');
-      var gz = (Math.random()*1.8+0.8).toFixed(1);
-      var gc = gcolors[gi % gcolors.length];
+    var gcolors = ['#ff9ecf','#c9a7ff','#ffc98a','#ffffff','#ff7eb8','#e8b4ff','#ffd166','#ff9a5c'];
+    var gi, sp, gz, gc, big;
+    for (gi=0; gi<240; gi++){
+      sp = document.createElement('i');
+      big = Math.random() < 0.12;
+      gz = big ? (Math.random()*2.6+2.8).toFixed(1) : (Math.random()*2.2+0.8).toFixed(1);
+      gc = gcolors[gi % gcolors.length];
       sp.style.cssText = 'position:absolute;left:'+(Math.random()*100).toFixed(2)+'%;top:'+(Math.random()*100).toFixed(2)+
         '%;width:'+gz+'px;height:'+gz+'px;border-radius:50%;background:'+gc+
-        ';box-shadow:0 0 '+(Math.random()*6+3).toFixed(0)+'px '+gc+
-        ';animation:twinkle '+(Math.random()*4+2.5).toFixed(2)+'s ease-in-out '+(Math.random()*6).toFixed(2)+'s infinite;';
+        ';box-shadow:0 0 '+(big ? (Math.random()*14+10).toFixed(0) : (Math.random()*8+4).toFixed(0))+'px '+gc+
+        ';animation:twinkle '+(Math.random()*4+2.2).toFixed(2)+'s ease-in-out '+(Math.random()*6).toFixed(2)+'s infinite;';
+      glitter.appendChild(sp);
+    }
+    /* large soft sparkle glows drifting through the deep */
+    for (gi=0; gi<26; gi++){
+      sp = document.createElement('i');
+      gz = (Math.random()*24+10).toFixed(0);
+      gc = gcolors[(gi*3) % gcolors.length];
+      sp.style.cssText = 'position:absolute;left:'+(Math.random()*100).toFixed(2)+'%;top:'+(Math.random()*100).toFixed(2)+
+        '%;width:'+gz+'px;height:'+gz+'px;border-radius:50%;'+
+        'background:radial-gradient(circle, '+gc+' 0%, transparent 70%);'+
+        'animation:twinkle '+(Math.random()*5+3.5).toFixed(2)+'s ease-in-out '+(Math.random()*7).toFixed(2)+'s infinite;';
       glitter.appendChild(sp);
     }
     orbs.after(glitter);
+    /* foreground dust: a sparse layer of sparkles floating IN FRONT of the
+     * glass, like glitter in the air between you and the instrument. Small
+     * and dim enough to never fight the text. */
+    var front = document.createElement('div');
+    front.id = 'glitter-front';
+    front.setAttribute('aria-hidden','true');
+    for (var fi=0; fi<36; fi++){
+      (function(){
+        var s2 = document.createElement('i');
+        var fz = (Math.random()*1.4+0.8).toFixed(1);
+        var fc = gcolors[(fi*5) % gcolors.length];
+        s2.style.cssText = 'position:absolute;left:'+(Math.random()*100).toFixed(2)+'%;top:'+(Math.random()*100).toFixed(2)+
+          '%;width:'+fz+'px;height:'+fz+'px;border-radius:50%;background:'+fc+
+          ';box-shadow:0 0 '+(Math.random()*5+3).toFixed(0)+'px '+fc+
+          ';animation:twinkleFront '+(Math.random()*4+2.5).toFixed(2)+'s ease-in-out '+(Math.random()*6).toFixed(2)+'s infinite;';
+        front.appendChild(s2);
+      })();
+    }
+    document.body.appendChild(front);
   }catch(e){}
 
   /* mobile: the activity panel is a full-screen overlay — default it closed
