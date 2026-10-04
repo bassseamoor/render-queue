@@ -13254,7 +13254,7 @@ TOOLS.stream = { mount: function(host){
     '.stm-row{display:flex;gap:8px;align-items:center;max-width:860px;margin:0 auto;}'+
     '.stm-in{flex:1;min-width:0;background:rgba(10,20,34,0.65);border:1px solid rgba(140,205,255,0.22);color:#f2f7ff;border-radius:24px;padding:12px 18px;font-size:14px;outline:none;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.06);}'+
     '.stm-nudge{font-size:10px;color:#5f7a92;text-align:center;padding:4px 0 0;max-width:860px;margin:0 auto;}'+
-'@media(max-width:560px){.stm-head{flex-wrap:wrap;row-gap:8px;}.stm-head>div:first-child{flex:1 1 100%;}.stm-dev,.stm-voice{margin-left:0!important;flex-shrink:0;}.stm-focus{flex-wrap:wrap;row-gap:6px;}#stm-gl{height:320px!important;}}'+
+'@media(max-width:560px){.stm-head{flex-wrap:wrap;row-gap:8px;}.stm-head>div:first-child{flex:1 1 100%;}.stm-dev,.stm-voice{margin-left:0!important;flex-shrink:0;}.stm-focus{flex-wrap:wrap;row-gap:6px;}#stm-gl{height:320px!important;}}@media(max-width:400px){.stm{padding:0 0 40px;}.stm-head{padding:10px 12px 8px;}.stm-title{font-size:16px;}.stm-focus .nav{font-size:12px;padding:6px 8px;}.stm-row{flex-direction:column;}.stm-in{width:100%;box-sizing:border-box;}}'+
     '</style>'+
     '<div class="stm">'+
       '<div class="stm-head"><div><div class="stm-title">Moor Ultra OS</div>'+
@@ -13666,6 +13666,7 @@ TOOLS.stream = { mount: function(host){
   function flow(text){
     if (/^\s*buster\b/i.test(text)){ openBuster(text.replace(/^\s*buster\b[:,]?\s*/i,'')); return; }
     if (respond(text)) return;
+    if(window.TOOLS&&TOOLS.panels&&TOOLS.panels.isPanelRequest(text)){ TOOLS.panels.buildFromText(text); return; }
     var se=parseSelfEdit(text);
     if (se && !looksLikeScene(text)){ applySelfEdit(se,text); return; }
     var parsed=parseInput(text);
@@ -13854,6 +13855,296 @@ TOOLS.stream = { mount: function(host){
 
 })();
 
+</script>
+<script>
+/* MOOR Ultra — Panel Forge. The OS builds UI panels from the stream.
+ * Self-contained: TOOLS.panels. No dependencies beyond the page.
+ * A panel request ("make a panel with X, Y, Z") → live working panel.
+ * Panels persist to localStorage as recipes. Out-of-kit → Buster brief. */
+(function(){
+'use strict';
+
+var LS_KEY='moor-ultra-panels-v1';
+var panels=[]; // {id,title,items:[{kind,label,...}],ts}
+
+/* ---------- persistence ---------- */
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(panels)); }catch(e){} }
+function load(){ try{ var s=localStorage.getItem(LS_KEY); if(s) panels=JSON.parse(s)||[]; }catch(e){ panels=[]; } }
+
+/* ---------- request detection ---------- */
+var PANEL_WORDS=['panel','dashboard','control panel','control board'];
+function isPanelRequest(text){
+  var t=' '+text.toLowerCase()+' ';
+  for(var i=0;i<PANEL_WORDS.length;i++) if(t.indexOf(PANEL_WORDS[i])>=0) return true;
+  // "make me a ... with a slider/toggle/readout" without saying panel
+  if(/\b(make|build|create|give me)\b/.test(t) &&
+     /\b(slider|toggle|readout|gauge|knob|switch)\b/.test(t)) return true;
+  return false;
+}
+
+/* ---------- primitive extraction ---------- */
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+var PRIM_PATTERNS=[
+  {kind:'readout', rx:/\b(\w[\w ]*?)\s*(readout|display|meter|gauge)\b/},
+  {kind:'readout', rx:/\b(temperature|temp|humidity|pressure)\b/},
+  {kind:'slider',  rx:/\b(\w[\w ]*?)\s*slider\b/},
+  {kind:'slider',  rx:/\bslider\s*(?:for\s+)?(\w[\w ]*?)(?:\s|$|,)/},
+  {kind:'toggle',  rx:/\b(\w[\w ]*?)\s*(toggle|switch)\b/},
+  {kind:'toggle',  rx:/\b(fan|light|lights|power|mute|wifi|bluetooth)\b/},
+  {kind:'button',  rx:/\b(\w[\w ]*?)\s*button\b/},
+  {kind:'chart',   rx:/\b(\w[\w ]*?)\s*(chart|graph|history|plot)\b/},
+  {kind:'list',    rx:/\b(\w[\w ]*?)\s*(list|log)\b/},
+  {kind:'input',   rx:/\b(\w[\w ]*?)\s*(input|field|entry)\b/},
+  {kind:'input',   rx:/\benter\s+(?:your\s+)?(\w+)/},
+  {kind:'color',   rx:/\b(\w[\w ]*?)\s*colou?r\b/},
+  {kind:'color',   rx:/\bcolou?r\s*(?:for\s+|picker\s*)?(\w[\w ]*?)(?:\s|$|,)/},
+  {kind:'progress',rx:/\b(\w[\w ]*?)\s*progress\b/},
+  {kind:'progress',rx:/\b(battery|charge|level)\b/},
+  {kind:'clock',   rx:/\b(clock|time|timer)\b/}
+];
+
+function extractRange(text){
+  var m=text.match(/(\d+)\s*(?:-|to)\s*(\d+)/);
+  if(m) return {min:parseInt(m[1],10), max:parseInt(m[2],10)};
+  return null;
+}
+function extractUnit(text){
+  var t=text.toLowerCase();
+  if(/fahrenheit|°f\b/.test(t)) return '°F';
+  if(/celsius|°c\b/.test(t)) return '°C';
+  if(/percent|%/.test(t)) return '%';
+  if(/dollar|\$|price|cost/.test(t)) return '$';
+  return '';
+}
+
+function parsePanel(text){
+  var t=text.toLowerCase();
+  // title: "panel for X" / "X panel" / "panel: X"
+  var title='Panel';
+  var tm=t.match(/panel\s+(?:for|called|named)\s+([\w ]+)/) ||
+         t.match(/panel:\s*([\w ]+)/);
+  if(tm) title=cap(tm[1].trim());
+  // "X panel" but not "make a panel" / "a panel"
+  if(title==='Panel'){
+    var tm2=t.match(/\b([a-z][\w ]+?)\s+panel\b/);
+    if(tm2){ var cand=tm2[1].replace(/^(make|build|create|give me|a|an|the)\s+/,'').trim();
+      if(cand&&cand!=='a'&&cand!=='panel') title=cap(cand); }
+  }
+  if(title.toLowerCase()==='panel'||title==='') title='Control Panel';
+
+  // split into chunks
+  var chunks=text.split(/,|\band\b|\bwith\b|\bplus\b/).map(function(s){return s.trim();}).filter(Boolean);
+  var items=[], seen={};
+  chunks.forEach(function(ch){
+    var range=extractRange(ch), unit=extractUnit(ch);
+    for(var i=0;i<PRIM_PATTERNS.length;i++){
+      var p=PRIM_PATTERNS[i], m=ch.match(p.rx);
+      if(m){
+        var raw=(m[1]||p.kind).replace(/^(a|an|the)\s+/i,'').trim();
+        var label=cap(raw);
+        if(label===''||/^(a|an|the)$/i.test(label)) label=cap(p.kind);
+        var key=p.kind+':'+label.toLowerCase();
+        if(seen[key]) break;
+        seen[key]=1;
+        var item={kind:p.kind, label:label};
+        if(p.kind==='slider'){
+          item.min=range?range.min:0; item.max=range?range.max:100;
+          item.value=Math.round((item.min+item.max)/2);
+        }
+        if(p.kind==='readout'){ item.unit=unit; item.value=range?range.min:72; }
+        if(p.kind==='toggle'){ item.value=false; }
+        if(p.kind==='progress'){ item.value=0.6; }
+        if(p.kind==='chart'){ item.points=[]; for(var k=0;k<24;k++) item.points.push(0.3+Math.random()*0.5); }
+        if(p.kind==='list'){ item.items=['—']; }
+        if(p.kind==='input'){ item.value=''; }
+        if(p.kind==='color'){ item.value='#7fd4ff'; }
+        if(p.kind==='clock'){ item.value=''; }
+        items.push(item);
+        break;
+      }
+    }
+  });
+  return {title:title, items:items};
+}
+
+/* ---------- primitive renderers ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+function renderPrim(item, pid, idx){
+  var id='pf-'+pid+'-'+idx, L=esc(item.label), html='';
+  var wrap='<div class="pf-prim" data-pid="'+pid+'" data-idx="'+idx+'"><div class="pf-label">'+L+'</div>';
+  if(item.kind==='readout'){
+    html=wrap+'<div class="pf-readout" id="'+id+'">'+esc(item.value)+(item.unit?' <span>'+esc(item.unit)+'</span>':'')+'</div></div>';
+  }else if(item.kind==='slider'){
+    html=wrap+'<input type="range" class="pf-slider" id="'+id+'" min="'+item.min+'" max="'+item.max+'" value="'+item.value+'">'+
+      '<div class="pf-val" id="'+id+'-v">'+item.value+'</div></div>';
+  }else if(item.kind==='toggle'){
+    html=wrap+'<button class="pf-toggle'+(item.value?' on':'')+'" id="'+id+'">'+(item.value?'ON':'OFF')+'</button></div>';
+  }else if(item.kind==='button'){
+    html=wrap+'<button class="pf-btn" id="'+id+'">'+L+'</button></div>';
+  }else if(item.kind==='chart'){
+    html=wrap+'<canvas class="pf-chart" id="'+id+'" width="220" height="70"></canvas></div>';
+  }else if(item.kind==='list'){
+    html=wrap+'<div class="pf-list" id="'+id+'">'+item.items.map(function(x){return '<div>'+esc(x)+'</div>';}).join('')+'</div></div>';
+  }else if(item.kind==='input'){
+    html=wrap+'<input type="text" class="pf-input" id="'+id+'" value="'+esc(item.value)+'" placeholder="'+L+'"></div>';
+  }else if(item.kind==='color'){
+    html=wrap+'<input type="color" class="pf-color" id="'+id+'" value="'+esc(item.value)+'"></div>';
+  }else if(item.kind==='progress'){
+    html=wrap+'<div class="pf-prog"><div class="pf-progfill" id="'+id+'" style="width:'+Math.round(item.value*100)+'%"></div></div></div>';
+  }else if(item.kind==='clock'){
+    html=wrap+'<div class="pf-clock" id="'+id+'">--:--</div></div>';
+  }
+  return html;
+}
+
+function wirePrim(item, pid, idx){
+  var id='pf-'+pid+'-'+idx, el=document.getElementById(id);
+  if(!el) return;
+  if(item.kind==='slider'){
+    el.addEventListener('input',function(){
+      item.value=parseInt(el.value,10);
+      var v=document.getElementById(id+'-v'); if(v) v.textContent=item.value;
+      save();
+    });
+  }else if(item.kind==='toggle'){
+    el.addEventListener('click',function(){
+      item.value=!item.value;
+      el.textContent=item.value?'ON':'OFF';
+      el.classList.toggle('on',item.value);
+      save();
+    });
+  }else if(item.kind==='button'){
+    el.addEventListener('click',function(){
+      el.textContent='✓'; setTimeout(function(){el.textContent=item.label;},700);
+    });
+  }else if(item.kind==='input'){
+    el.addEventListener('change',function(){ item.value=el.value; save(); });
+  }else if(item.kind==='color'){
+    el.addEventListener('input',function(){ item.value=el.value; save(); });
+  }else if(item.kind==='chart'){
+    var ctx=el.getContext('2d');
+    ctx.strokeStyle='#7fd4ff'; ctx.lineWidth=2; ctx.beginPath();
+    item.points.forEach(function(p,i){
+      var x=i/(item.points.length-1)*220, y=70-p*60;
+      if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }else if(item.kind==='clock'){
+    var tick=function(){
+      var d=new Date(), s=d.toTimeString().slice(0,8);
+      if(el.isConnected) el.textContent=s; else clearInterval(iv);
+    };
+    tick(); var iv=setInterval(tick,1000);
+  }else if(item.kind==='readout'){
+    el.addEventListener('click',function(){
+      var v=prompt(item.label+(item.unit?' ('+item.unit+')':''), item.value);
+      if(v!==null&&v!==''){ item.value=isNaN(+v)?v:+v; 
+        el.innerHTML=esc(item.value)+(item.unit?' <span>'+esc(item.unit)+'</span>':''); save(); }
+    });
+  }
+}
+
+/* ---------- panel canvas ---------- */
+var canvasEl=null;
+function ensureCanvas(){
+  if(canvasEl) return canvasEl;
+  canvasEl=document.createElement('div');
+  canvasEl.id='pf-canvas';
+  canvasEl.innerHTML=
+    '<style>'+
+    '#pf-canvas{position:fixed;inset:0;z-index:200;display:none;background:rgba(6,3,12,0.72);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);}'+
+    '#pf-canvas.open{display:block;}'+
+    '.pf-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid rgba(150,210,255,0.16);}'+
+    '.pf-title{font-size:18px;font-weight:700;letter-spacing:.08em;background:linear-gradient(90deg,#c9a7ff,#7fd4ff);-webkit-background-clip:text;background-clip:text;color:transparent;}'+
+    '.pf-close{margin-left:auto;background:none;border:1px solid rgba(150,210,255,0.3);color:#c9a7ff;border-radius:10px;padding:8px 14px;font-size:14px;cursor:pointer;}'+
+    '.pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;padding:20px;max-height:calc(100vh - 70px);overflow-y:auto;}'+
+    '.pf-panel{background:linear-gradient(165deg,rgba(36,60,92,0.6),rgba(10,20,34,0.7));border:1px solid rgba(150,210,255,0.22);border-radius:16px;padding:16px;}'+
+    '.pf-panel h3{margin:0 0 12px;font-size:15px;font-weight:700;color:#fff;display:flex;align-items:center;}'+
+    '.pf-del{margin-left:auto;background:none;border:none;color:#8b7fa8;font-size:16px;cursor:pointer;}'+
+    '.pf-prim{margin-bottom:14px;}'+
+    '.pf-label{font-size:12px;color:#9db4cf;letter-spacing:.05em;margin-bottom:6px;}'+
+    '.pf-readout{font-size:32px;font-weight:700;color:#fff;}'+
+    '.pf-readout span{font-size:16px;color:#8b7fa8;}'+
+    '.pf-slider{width:100%;accent-color:#7fd4ff;}'+
+    '.pf-val{font-size:13px;color:#7fd4ff;text-align:right;}'+
+    '.pf-toggle{background:rgba(150,210,255,0.1);border:1px solid rgba(150,210,255,0.3);color:#9db4cf;border-radius:20px;padding:8px 20px;font-size:14px;cursor:pointer;}'+
+    '.pf-toggle.on{background:rgba(127,212,255,0.25);border-color:#7fd4ff;color:#fff;}'+
+    '.pf-btn{background:linear-gradient(90deg,#c9a7ff,#7fd4ff);border:none;color:#0a0614;font-weight:700;border-radius:10px;padding:10px 20px;font-size:14px;cursor:pointer;width:100%;}'+
+    '.pf-chart{width:100%;height:70px;background:rgba(0,0,0,0.3);border-radius:8px;}'+
+    '.pf-list{font-size:13px;color:#c9d9ec;max-height:100px;overflow-y:auto;}'+
+    '.pf-input{width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(150,210,255,0.25);color:#fff;border-radius:8px;padding:8px;font-size:14px;box-sizing:border-box;}'+
+    '.pf-color{width:60px;height:36px;border:none;border-radius:8px;cursor:pointer;background:none;}'+
+    '.pf-prog{height:10px;background:rgba(0,0,0,0.4);border-radius:5px;overflow:hidden;}'+
+    '.pf-progfill{height:100%;background:linear-gradient(90deg,#7fd4ff,#c9a7ff);border-radius:5px;}'+
+    '.pf-clock{font-size:24px;font-weight:600;color:#7fd4ff;font-variant-numeric:tabular-nums;}'+
+    '.pf-empty{color:#8b7fa8;text-align:center;padding:60px 20px;font-size:15px;}'+
+    '</style>'+
+    '<div class="pf-head"><div class="pf-title">PANEL FORGE</div>'+
+    '<button class="pf-close" id="pf-close">✕ close</button></div>'+
+    '<div class="pf-grid" id="pf-grid"></div>';
+  document.body.appendChild(canvasEl);
+  document.getElementById('pf-close').addEventListener('click',hide);
+  return canvasEl;
+}
+function show(){ ensureCanvas(); canvasEl.classList.add('open'); render(); }
+function hide(){ if(canvasEl) canvasEl.classList.remove('open'); }
+function toggle(){ ensureCanvas(); canvasEl.classList.contains('open')?hide():show(); }
+
+function render(){
+  ensureCanvas();
+  var g=document.getElementById('pf-grid');
+  if(!panels.length){
+    g.innerHTML='<div class="pf-empty">No panels yet.<br><br>Stream something like:<br><i>"make a panel with a temperature readout,<br>a target slider 60 to 90, and a fan toggle"</i></div>';
+    return;
+  }
+  g.innerHTML=panels.map(function(pn){
+    return '<div class="pf-panel" data-pid="'+pn.id+'"><h3>'+esc(pn.title)+
+      '<button class="pf-del" data-del="'+pn.id+'">🗑</button></h3>'+
+      pn.items.map(function(it,i){return renderPrim(it,pn.id,i);}).join('')+'</div>';
+  }).join('');
+  // wire deletes
+  g.querySelectorAll('[data-del]').forEach(function(b){
+    b.addEventListener('click',function(){
+      panels=panels.filter(function(pn){return pn.id!==b.getAttribute('data-del');});
+      save(); render();
+    });
+  });
+  // wire primitives
+  panels.forEach(function(pn){
+    pn.items.forEach(function(it,i){ wirePrim(it,pn.id,i); });
+  });
+}
+
+/* ---------- build from stream ---------- */
+function buildFromText(text){
+  var spec=parsePanel(text);
+  if(!spec.items.length){
+    // out of kit → Buster brief fallback
+    if(window.TOOLS&&TOOLS.stream&&TOOLS.stream.busterBrief){
+      TOOLS.stream.busterBrief('panel: '+text);
+    }else{
+      alert('Panel Forge: I heard a panel request but couldn\'t find any components I know.\n\nTry: readout, slider, toggle, button, chart, list, input, color, progress, clock.');
+    }
+    return false;
+  }
+  var pn={id:'p'+Date.now().toString(36), title:spec.title, items:spec.items, ts:Date.now()};
+  panels.unshift(pn); save(); show();
+  return true;
+}
+
+load();
+
+window.TOOLS=window.TOOLS||{};
+TOOLS.panels={
+  isPanelRequest:isPanelRequest,
+  parsePanel:parsePanel,
+  buildFromText:buildFromText,
+  show:show, hide:hide, toggle:toggle,
+  list:function(){return panels;}
+};
+})();
 </script>
 <script>
 /* Redwood Drive — drivable buggy showcase built from MOOR City components.
