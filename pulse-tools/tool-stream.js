@@ -380,10 +380,10 @@ TOOLS.stream = { mount: function(host){
 
   host.innerHTML =
     '<style>'+
-    '.stm{font-family:system-ui,sans-serif;color:#dfe8f2;max-width:860px;margin:0 auto;padding:0 0 96px;}'+
-    '.stm-head{display:flex;align-items:center;gap:10px;padding:14px 14px 6px;}'+
-    '.stm-title{font-size:17px;font-weight:600;}'+
-    '.stm-sub{font-size:12px;color:#8fa3b8;}'+
+    '.stm{font-family:system-ui,sans-serif;color:#f2f7ff;max-width:860px;margin:0 auto;padding:0 0 96px;}'+
+    '.stm-head{display:flex;align-items:center;gap:10px;padding:16px 18px 10px;background:linear-gradient(165deg,rgba(30,52,80,0.45),rgba(11,21,36,0.45));-webkit-backdrop-filter:blur(20px) saturate(1.35);backdrop-filter:blur(20px) saturate(1.35);border:1px solid rgba(140,205,255,0.16);border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.10),0 18px 50px rgba(0,0,0,0.45);margin-bottom:12px;}'+
+    '.stm-title{font-size:20px;font-weight:700;letter-spacing:.01em;background:linear-gradient(120deg,#ffffff,#7fd4ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}'+
+    '.stm-sub{font-size:12px;color:#9db4cf;letter-spacing:.04em;}'+
     '.stm-dev{margin-left:auto;font-size:11px;color:#8fa3b8;background:none;border:1px solid #2a3a4d;border-radius:20px;padding:4px 10px;cursor:pointer;}'+
     '.stm-dev.on{color:#ffd479;border-color:#ffd479;}'+
     '.stm-voice{font-size:11px;color:#8fa3b8;background:none;border:1px solid #2a3a4d;border-radius:20px;padding:4px 10px;cursor:pointer;}'+
@@ -395,18 +395,18 @@ TOOLS.stream = { mount: function(host){
     '.stm-focus .nav{background:#12202f;border:1px solid #2a3a4d;color:#9fc2e0;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:14px;}'+
     '.stm-focus .acts{margin-left:auto;display:flex;gap:4px;}'+
     '.stm-focus .acts button{background:none;border:none;color:#7fd4ff;font-size:12px;cursor:pointer;padding:4px 6px;}'+
-    '.stm-ing{font-size:12px;color:#9fb2c8;padding:8px 4px;border-left:2px solid #2a3a4d;margin:6px 0 6px 4px;padding-left:10px;display:none;}'+
+    '.stm-ing{font-size:12px;color:#a9c2da;padding:10px 12px;border:1px solid rgba(140,205,255,0.14);border-radius:14px;margin:8px 0;background:rgba(16,30,48,0.42);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);display:none;}'+
     '.stm-ing .comp{display:flex;gap:8px;padding:3px 0;}'+
     '.stm-ing .seed{font-family:monospace;color:#5f7a92;}'+
     '.stm-spec{width:100%;min-height:80px;background:#0a1220;color:#bfe3ff;border:1px solid #2a3a4d;border-radius:8px;font-family:monospace;font-size:11px;padding:8px;margin-top:6px;}'+
-    '.stm-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(8,15,25,0.96);border-top:1px solid #1c2a3d;padding:10px 14px;z-index:50;}'+
+    '.stm-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(8,14,24,0.72);-webkit-backdrop-filter:blur(22px) saturate(1.4);backdrop-filter:blur(22px) saturate(1.4);border-top:1px solid rgba(140,205,255,0.18);padding:12px 14px;z-index:50;box-shadow:0 -12px 40px rgba(0,0,0,0.4);}'+
     '.stm-row{display:flex;gap:8px;align-items:center;max-width:860px;margin:0 auto;}'+
-    '.stm-in{flex:1;background:#0e1826;border:1px solid #2a3a4d;color:#e8f1fa;border-radius:24px;padding:10px 16px;font-size:14px;outline:none;}'+
+    '.stm-in{flex:1;background:rgba(10,20,34,0.65);border:1px solid rgba(140,205,255,0.22);color:#f2f7ff;border-radius:24px;padding:12px 18px;font-size:14px;outline:none;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.06);}'+
     '.stm-nudge{font-size:10px;color:#5f7a92;text-align:center;padding:4px 0 0;max-width:860px;margin:0 auto;}'+
     '</style>'+
     '<div class="stm">'+
-      '<div class="stm-head"><div><div class="stm-title">Moor Ultra</div>'+
-      '<div class="stm-sub" id="stm-sub">the second project — say what you want, worlds land in the space</div></div>'+
+      '<div class="stm-head"><div><div class="stm-title">Moor Ultra OS</div>'+
+      '<div class="stm-sub" id="stm-sub">the next OS — say what you want, worlds land in the space</div></div>'+
       '<button class="stm-voice" id="stm-voice">🔊 voice off</button>'+
       '<button class="stm-dev" id="stm-boop" style="color:#7fd4ff;border-color:#7fd4ff;">boop → screen</button>'+
       '<button class="stm-dev" id="stm-worlds-btn">worlds</button>'+
