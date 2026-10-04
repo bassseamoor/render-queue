@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Maze Runner — wasteland maze × buggy physics</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;background:#0b0e12;color:#e8eef4;font-family:-apple-system,system-ui,sans-serif;}
+#game{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;}
+#hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 0;pointer-events:none;z-index:5;}
+.hudbox{background:rgba(10,14,20,.72);border:1px solid rgba(255,255,255,.12);border-radius:12px;
+  padding:8px 12px;font-size:13px;line-height:1.35;backdrop-filter:blur(6px);}
+.hudbox b{font-size:20px;font-variant-numeric:tabular-nums;}
+#hint{position:fixed;top:calc(206px + env(safe-area-inset-top));left:0;right:0;text-align:center;z-index:5;
+  pointer-events:none;font-size:12px;color:#9fb2c8;text-shadow:0 1px 4px #000;}
+#pad{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end;
+  padding:0 18px calc(20px + env(safe-area-inset-bottom));z-index:6;}
+.steer{display:flex;gap:14px;}
+.pedals{display:flex;gap:14px;align-items:flex-end;}
+button{touch-action:none;user-select:none;-webkit-user-select:none;border:1px solid rgba(255,255,255,.18);
+  background:rgba(20,28,38,.78);color:#e8eef4;border-radius:18px;font-size:26px;cursor:pointer;backdrop-filter:blur(6px);}
+button:active{background:rgba(60,90,120,.85);}
+.steer button{width:84px;height:84px;}
+#gas{width:104px;height:104px;border-radius:50%;font-size:20px;font-weight:700;color:#0b0e12;
+  background:radial-gradient(circle at 35% 30%,#9fe870,#3fae4a);border:none;}
+#gas:active{background:radial-gradient(circle at 35% 30%,#c4f5a0,#4fc45e);}
+#brk{width:64px;height:64px;font-size:15px;font-weight:700;color:#ffd7d7;background:rgba(80,20,24,.8);}
+#banner{position:fixed;inset:0;display:flex;flex-direction:column;gap:18px;align-items:center;justify-content:center;
+  background:rgba(5,8,12,.78);z-index:20;backdrop-filter:blur(8px);}
+#banner[hidden]{display:none;}
+#banner h1{font-size:44px;letter-spacing:2px;color:#9fe870;text-shadow:0 0 30px rgba(159,232,112,.5);}
+#banner p{color:#9fb2c8;font-size:15px;}
+#banner button{padding:16px 44px;font-size:18px;font-weight:700;color:#0b0e12;background:#9fe870;border:none;border-radius:14px;}
+.keys{position:fixed;bottom:calc(140px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;
+  font-size:11px;color:#5a6b7f;pointer-events:none;z-index:5;}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div class="hudbox">SPEED<br><b id="speed">0</b> km/h</div>
+  <div class="hudbox" style="text-align:right">RINGS<br><b id="rings">0 / 5</b></div>
+</div>
+<div id="hint">Drive the bridge into the maze · collect all 5 gold rings</div>
+<div class="keys">keyboard: ↑ gas · ↓ brake · ← → steer · R restart</div>
+<div id="pad">
+  <div class="steer">
+    <button id="left" aria-label="steer left">◀</button>
+    <button id="right" aria-label="steer right">▶</button>
+  </div>
+  <div class="pedals">
+    <button id="brk" aria-label="brake">BRK</button>
+    <button id="gas" aria-label="gas">GAS</button>
+  </div>
+</div>
+<div id="banner" hidden>
+  <h1>YOU ESCAPED</h1>
+  <p id="stat">5 / 5 rings · maze cleared</p>
+  <button id="restart">DRIVE AGAIN</button>
+</div>
+
+<script type="module">
+// =====================================================================
+// PROVENANCE: the maze + vehicle code below is copied VERBATIM from the
+// MOOR sky-islands components (never reimplemented or weakened):
+//   - ~/workspace/moor-pc-mirror/moor-city/sky-islands/wasteland-maze-layout.mjs
+//     (MAZE, mazeWalls, mazeBlocked, mazeCovered, mazeBridge, endless maze)
+//   - ~/workspace/moor-pc-mirror/moor-city/sky-islands/buggy-motion.mjs
+//     (createVehicle, stepVehicle — the exact physics that drives Redwood Drive)
+// The demo harness (rendering, touch controls, checkpoints) is new.
+// =====================================================================
+
+// ---- verbatim: wasteland-maze-layout.mjs ----
+export const MAZE=Object.freeze({inner:250,outer:1018,height:121.92,floor:121.92*.9,sectors:365,rings:24,step:32,thickness:.75,gate:3.4});
+const N=MAZE.sectors, R=MAZE.rings, da=2*Math.PI/N;
+const passages=new Set(), seen=new Set([0]), stack=[0];let seed=912731;
+const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+const edge=(a,b)=>a<b?a+':'+b:b+':'+a;
+while(stack.length){const a=stack[stack.length-1],r=Math.floor(a/N),s=a%N;
+ const choices=r===0?[]:[r*N+(s+1)%N,r*N+(s+N-1)%N];if(r)choices.push(a-N);if(r<R-1)choices.push(a+N);
+ const next=choices.filter(b=>!seen.has(b));if(!next.length){stack.pop();continue;}
+ const b=next[Math.floor(random()*next.length)];passages.add(edge(a,b));seen.add(b);stack.push(b);
+}
+export const mazeWalls=[];const buckets=new Map();
+function wall(ax,az,bx,bz){const dx=bx-ax,dz=bz-az,length=Math.hypot(dx,dz),w={x:(ax+bx)/2,z:(az+bz)/2,ux:dx/length,uz:dz/length,length};mazeWalls.push(w);
+ for(let x=Math.floor((Math.min(ax,bx)-2)/32);x<=Math.floor((Math.max(ax,bx)+2)/32);x++)for(let z=Math.floor((Math.min(az,bz)-2)/32);z<=Math.floor((Math.max(az,bz)+2)/32);z++){const k=x+','+z;if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(w);}
+}
+function arc(radius,a,b){wall(Math.cos(a)*radius,Math.sin(a)*radius,Math.cos(b)*radius,Math.sin(b)*radius);}
+for(let s=0;s<N;s++){const a=(s-.5)*da,b=(s+.5)*da,mid=(a+b)/2,g=MAZE.gate/MAZE.inner/2;
+ arc(MAZE.inner,a,mid-g);arc(MAZE.inner,mid+g,b);
+ for(let r=0;r<R;r++){const cell=r*N+s,rad=MAZE.inner+r*MAZE.step;
+  if(!passages.has(edge(cell,r*N+(s+1)%N)))wall(Math.cos(b)*rad,Math.sin(b)*rad,Math.cos(b)*(rad+MAZE.step),Math.sin(b)*(rad+MAZE.step));
+  if(r<R-1&&!passages.has(edge(cell,cell+N)))arc(rad+MAZE.step,a,b);
+ }
+}
+export function mazeBlocked(x,z,radius=.62){return endlessMazeBlocked(x,z,radius)||(buckets.get(Math.floor(x/32)+','+Math.floor(z/32))||[]).some(w=>{const dx=x-w.x,dz=z-w.z;return Math.abs(dx*w.ux+dz*w.uz)<w.length/2+radius&&Math.abs(-dx*w.uz+dz*w.ux)<MAZE.thickness/2+radius;});}
+export function mazeCovered(x,z){const r=Math.hypot(x,z);return r>=MAZE.inner-1;}
+export function mazeBridge(x,z){return Math.abs(x)<=5&&((z>=21&&z<=MAZE.inner+2)||(z>=-MAZE.inner-2&&z<=-85));}
+export const ENDLESS_CHUNK=256;
+const endlessCache=new Map();
+export function endlessExit(x,z){let h=Math.imul(x,374761393)^Math.imul(z,668265263)^912731;h=Math.imul(h^(h>>>13),1274126177);return (h^(h>>>16))&1;}
+export function endlessChunkWalls(cx,cz){
+ const key=cx+','+cz;if(endlessCache.has(key))return endlessCache.get(key);
+ const result=[];
+ function segment(ax,az,bx,bz){
+  const horizontal=az===bz,fixed=horizontal?az:ax;
+  const lo=horizontal?ax:az,hi=horizontal?bx:bz;
+  const cut=Math.sqrt(Math.max(0,MAZE.outer**2-fixed**2));
+  const spans=Math.abs(fixed)>=MAZE.outer?[[lo,hi]]:[[lo,Math.min(hi,-cut)],[Math.max(lo,cut),hi]];
+  for(const [a,b] of spans)if(b-a>.01)result.push({x:horizontal?(a+b)/2:fixed,z:horizontal?fixed:(a+b)/2,ux:horizontal?1:0,uz:horizontal?0:1,length:b-a});
+ }
+ for(let z=cz*8;z<cz*8+8;z++)for(let x=cx*8;x<cx*8+8;x++){
+  if(endlessExit(x,z)===0)segment((x+1)*32,z*32,(x+1)*32,(z+1)*32);
+  else segment(x*32,(z+1)*32,(x+1)*32,(z+1)*32);
+ }
+ endlessCache.set(key,result);if(endlessCache.size>160)endlessCache.delete(endlessCache.keys().next().value);return result;
+}
+function endlessMazeBlocked(x,z,radius){
+ if(Math.hypot(x,z)<MAZE.outer-radius-1)return false;
+ for(let cz=Math.floor((z-radius-1)/ENDLESS_CHUNK);cz<=Math.floor((z+radius+1)/ENDLESS_CHUNK);cz++)for(let cx=Math.floor((x-radius-1)/ENDLESS_CHUNK);cx<=Math.floor((x+radius+1)/ENDLESS_CHUNK);cx++)
+ for(const w of endlessChunkWalls(cx,cz)){const dx=x-w.x,dz=z-w.z;if(Math.abs(dx*w.ux+dz*w.uz)<w.length/2+radius&&Math.abs(-dx*w.uz+dz*w.ux)<MAZE.thickness/2+radius)return true;}
+ return false;
+}
+
+// ---- verbatim: buggy-motion.mjs ----
+export function createVehicle(x=210,z=0,yaw=Math.PI/2){return {x,z,yaw,vx:0,vz:0,steer:0,speed:0,hit:false};}
+export function stepVehicle(s,input,dt,tune,blocked=()=>false){
+ const power=tune.power||1;
+ const forward={x:Math.sin(s.yaw),z:Math.cos(s.yaw)},right={x:Math.cos(s.yaw),z:-Math.sin(s.yaw)};
+ let v=s.vx*forward.x+s.vz*forward.z,lateral=s.vx*right.x+s.vz*right.z;
+ const target=input.turn*tune.steering/(1+Math.abs(v)*.035);
+ s.steer+=(target-s.steer)*(1-Math.exp(-9*dt));
+ let acceleration=0;
+ if(input.throttle>0)acceleration=(v<-.3?16:8.5)*power;
+ if(input.throttle<0)acceleration=(v>.3?-18:-4.5)*power;
+ v+=acceleration*dt;
+ const drag=(input.handbrake?9:.45)*power+.006*v*v/power;
+ v=Math.sign(v)*Math.max(0,Math.abs(v)-drag*dt);
+ v=Math.max(-7*power,Math.min(tune.maxSpeed,v));
+ lateral*=Math.exp(-(input.handbrake?1.25:tune.grip)*dt);
+ const yawDelta=v/(tune.wheelbase||2.52)*Math.tan(s.steer)*dt;
+ const yaw=s.yaw+yawDelta;
+ lateral-=v*Math.sin(yawDelta);
+ const vx=Math.sin(yaw)*v+Math.cos(yaw)*lateral,vz=Math.cos(yaw)*v-Math.sin(yaw)*lateral;
+ const x=s.x+vx*dt,z=s.z+vz*dt;
+ s.hit=blocked(x,z,yaw);
+ if(!s.hit){s.x=x;s.z=z;s.yaw=yaw;s.vx=vx;s.vz=vz;}
+ else {s.vx*=.15;s.vz*=.15;}
+ s.speed=s.vx*Math.sin(s.yaw)+s.vz*Math.cos(s.yaw);
+ return s;
+}
+// ---- end verbatim component code ----
+
+// ================= demo harness =================
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const DPR=Math.min(2,window.devicePixelRatio||1);
+let W=0,H=0;
+function resize(){W=window.innerWidth;H=window.innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+const tune={power:1,steering:0.62,maxSpeed:24,grip:7,wheelbase:2.52};
+const input={throttle:0,turn:0,handbrake:0};
+const BLOCK_R=0.85;
+const blockedFn=(x,z)=>mazeBlocked(x,z,BLOCK_R);
+
+// 5 checkpoint rings: ring-0 cell centers of 5 spread sectors (each one gate away)
+const CP_SECTORS=[0,73,146,219,292];
+let buggy,checkpoints,startTime,won;
+function reset(){
+  buggy=createVehicle(0,200,0); // on the bridge approach, facing the maze
+  checkpoints=CP_SECTORS.map(s=>{const a=s*da;return {x:266*Math.cos(a),z:266*Math.sin(a),got:false};});
+  startTime=performance.now();won=false;
+  document.getElementById('banner').hidden=true;
+}
+reset();
+
+// precompute wall draw data
+const drawWalls=mazeWalls.map(w=>({cx:w.x,cz:w.z,half:w.length/2,ux:w.ux,uz:w.uz}));
+// minimap: whole maze baked once to an offscreen canvas
+const MM=110, mmc=document.createElement('canvas');mmc.width=mmc.height=MM;
+{const g=mmc.getContext('2d'),s=MM/2120;
+ g.strokeStyle='rgba(140,160,185,.55)';g.lineWidth=1;g.beginPath();
+ for(const w of drawWalls){
+  g.moveTo((w.cx-w.ux*w.half+1060)*s,(w.cz-w.uz*w.half+1060)*s);
+  g.lineTo((w.cx+w.ux*w.half+1060)*s,(w.cz+w.uz*w.half+1060)*s);
+ }
+ g.stroke();}
+
+// ---- controls ----
+function bindHold(el,on,off){
+  const start=e=>{e.preventDefault();on();try{el.setPointerCapture(e.pointerId);}catch(_){}} ;
+  const end=e=>{e.preventDefault();off();};
+  el.addEventListener('pointerdown',start);
+  el.addEventListener('pointerup',end);el.addEventListener('pointercancel',end);el.addEventListener('lostpointercapture',end);
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+}
+const L={v:false},Rt={v:false},G={v:false},B={v:false};
+bindHold(document.getElementById('left'),()=>L.v=true,()=>L.v=false);
+bindHold(document.getElementById('right'),()=>Rt.v=true,()=>Rt.v=false);
+bindHold(document.getElementById('gas'),()=>G.v=true,()=>G.v=false);
+bindHold(document.getElementById('brk'),()=>B.v=true,()=>B.v=false);
+window.addEventListener('keydown',e=>{
+  if(e.code==='ArrowUp')G.v=true;if(e.code==='ArrowDown')B.v=true;
+  if(e.code==='ArrowLeft')L.v=true;if(e.code==='ArrowRight')Rt.v=true;
+  if(e.code==='KeyR')reset();
+});
+window.addEventListener('keyup',e=>{
+  if(e.code==='ArrowUp')G.v=false;if(e.code==='ArrowDown')B.v=false;
+  if(e.code==='ArrowLeft')L.v=false;if(e.code==='ArrowRight')Rt.v=false;
+});
+document.getElementById('restart').addEventListener('click',reset);
+
+// ---- sim ----
+const DT=1/60;let acc=0,last=performance.now();
+function step(){
+  input.turn=(Rt.v?1:0)-(L.v?1:0);
+  input.throttle=(G.v?1:0)-(B.v?1:0);
+  input.handbrake=0;
+  stepVehicle(buggy,input,DT,tune,blockedFn);
+  for(const c of checkpoints){
+    if(!c.got&&Math.hypot(buggy.x-c.x,buggy.z-c.z)<8){c.got=true;}
+  }
+  if(!won&&checkpoints.every(c=>c.got)){
+    won=true;
+    const secs=((performance.now()-startTime)/1000).toFixed(1);
+    document.getElementById('stat').textContent=`5 / 5 rings · escaped in ${secs}s`;
+    document.getElementById('banner').hidden=false;
+  }
+}
+
+// ---- render ----
+const SCALE=2.6;
+function w2s(x,z,cx,cz){return [(x-cx)*SCALE+W/2,(z-cz)*SCALE+H/2];}
+function render(){
+  ctx.fillStyle='#0b0e12';ctx.fillRect(0,0,W,H);
+  const cx=buggy.x,cz=buggy.z;
+  const vx0=cx-W/2/SCALE,vx1=cx+W/2/SCALE,vz0=cz-H/2/SCALE,vz1=cz+H/2/SCALE;
+  // faint maze boundary rings (centered on the maze, not the screen)
+  ctx.strokeStyle='rgba(120,150,180,.14)';ctx.lineWidth=1.5;
+  {const [mx,my]=w2s(0,0,cx,cz);
+   for(const r of [MAZE.inner,MAZE.outer]){
+    ctx.beginPath();ctx.arc(mx,my,r*SCALE,0,Math.PI*2);ctx.stroke();
+   }}
+  // walls (culled)
+  ctx.strokeStyle='#7d8ea3';ctx.lineWidth=Math.max(1.5,MAZE.thickness*SCALE);
+  ctx.lineCap='round';ctx.beginPath();
+  let drawn=0;
+  for(const w of drawWalls){
+    const m=w.half+1;
+    if(w.cx<vx0-m||w.cx>vx1+m||w.cz<vz0-m||w.cz<vz1+m)continue;
+    const ax=w.cx-w.ux*w.half,az=w.cz-w.uz*w.half,bx=w.cx+w.ux*w.half,bz=w.cz+w.uz*w.half;
+    const [sx1,sy1]=w2s(ax,az,cx,cz),[sx2,sy2]=w2s(bx,bz,cx,cz);
+    ctx.moveTo(sx1,sy1);ctx.lineTo(sx2,sy2);drawn++;
+  }
+  ctx.stroke();
+  // checkpoints
+  for(const c of checkpoints){
+    const [sx,sy]=w2s(c.x,c.z,cx,cz);
+    if(sx<-30||sx>W+30||sy<-30||sy>H+30)continue;
+    const t=performance.now()/600;
+    ctx.strokeStyle=c.got?'rgba(159,232,112,.5)':'#ffcf4d';ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(sx,sy,6*SCALE,0,Math.PI*2);ctx.stroke();
+    if(!c.got){ctx.strokeStyle='rgba(255,207,77,.35)';
+      ctx.beginPath();ctx.arc(sx,sy,6*SCALE+((t%1)*10),0,Math.PI*2);ctx.stroke();}
+  }
+  // buggy
+  const [bx,by]=w2s(buggy.x,buggy.z,cx,cz);
+  const fx=Math.sin(buggy.yaw),fz=Math.cos(buggy.yaw);
+  ctx.save();ctx.translate(bx,by);ctx.rotate(Math.atan2(fz,fx));
+  ctx.fillStyle=buggy.hit?'#ff6b6b':'#4dc3ff';
+  const L2=4.4*SCALE/2,Wd=2.0*SCALE/2;
+  ctx.beginPath();ctx.roundRect(-L2,-Wd,L2*2,Wd*2,4);ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.45)';ctx.fillRect(L2*0.25,-Wd,L2*0.55,Wd*2); // nose
+  ctx.restore();
+  // nav arrow to nearest uncollected ring
+  {let best=null,bd=1e18;
+   for(const c of checkpoints){if(c.got)continue;const d=Math.hypot(buggy.x-c.x,buggy.z-c.z);if(d<bd){bd=d;best=c;}}
+   if(best&&bd>25){const ang=Math.atan2(best.x-buggy.x,-(best.z-buggy.z));
+    ctx.save();ctx.translate(bx,by-34);ctx.rotate(ang);
+    ctx.fillStyle='#ffcf4d';ctx.beginPath();
+    ctx.moveTo(0,-12);ctx.lineTo(8,6);ctx.lineTo(-8,6);ctx.closePath();ctx.fill();ctx.restore();}}
+  // minimap (top-center, below hint)
+  {const mx0=W/2-MM/2,my0=88,s=MM/2120;
+   ctx.fillStyle='rgba(8,12,18,.78)';ctx.strokeStyle='rgba(255,255,255,.15)';ctx.lineWidth=1;
+   ctx.beginPath();ctx.roundRect(mx0,my0,MM,MM,10);ctx.fill();ctx.stroke();
+   ctx.save();ctx.beginPath();ctx.roundRect(mx0,my0,MM,MM,10);ctx.clip();
+   ctx.drawImage(mmc,mx0,my0);
+   for(const c of checkpoints){ctx.fillStyle=c.got?'#9fe870':'#ffcf4d';
+    ctx.beginPath();ctx.arc(mx0+(c.x+1060)*s,my0+(c.z+1060)*s,3,0,Math.PI*2);ctx.fill();}
+   ctx.fillStyle='#4dc3ff';
+   ctx.beginPath();ctx.arc(mx0+(buggy.x+1060)*s,my0+(buggy.z+1060)*s,3.5,0,Math.PI*2);ctx.fill();
+   ctx.restore();}
+  // HUD
+  document.getElementById('speed').textContent=Math.round(Math.abs(buggy.speed)*3.6);
+  document.getElementById('rings').textContent=checkpoints.filter(c=>c.got).length+' / 5';
+}
+
+function frame(now){
+  acc+=(now-last)/1000;last=now;
+  let n=0;while(acc>DT&&n<4){step();acc-=DT;n++;}
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- headless verification hooks ----
+window.__maze={createVehicle,stepVehicle,mazeBlocked,MAZE,mazeWalls,checkpoints:()=>checkpoints,buggy:()=>buggy,reset};
+</script>
+</body>
+</html>
