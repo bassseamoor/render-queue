@@ -573,31 +573,46 @@ function homeSplit(){
     {name:'Shared parts',ids:['seed-rng','seed-codec','seed-console','save-shape','release-gate','registry-triple','replace-file','idempotent-upload']},
     {name:'Reference',ids:['rust-intent-compiler']}
   ];
+  var notInCount=groups.reduce(function(a,g){return a+g.ids.length},0);
   function row(c){
     return '<div class="trow" tabindex="0" role="button" aria-label="'+esc(c.name)+'" onclick="openNode(\'component\',\''+c.id+'\')" onkeydown="tileKey(event,\'component\',\''+c.id+'\')">'
       +'<span class="tname">'+esc(c.name)+'</span>'
       +'<span class="badge b-'+c.role+'">'+esc(c.role)+'</span>'
       +'<span class="tstat">'+esc(c.st)+'</span></div>';
   }
+  var mvp=(S.objectives||{})['more-os-mvp']||{};
   var evs=S.activity||[];
+  var verified=evs.filter(function(e){return /^(task_completed|check_passed|component_registered|decision_recorded)$/.test(e.type)&&e.origin==='confirmed'});
+  var latest=verified.length?verified[verified.length-1]:null;
+  var maxTs=evs.length?Math.max.apply(null,evs.map(function(e){return e.ts})):0;
+  var agents=(S.health&&S.health.agents)||{},names=Object.keys(agents);
   var tasks=Object.values(S.tasks||{});
   var ip=tasks.filter(function(t){return t.status==='in_progress'});
+  var next=ip.length
+    ? '<b>'+esc(ip[0].id)+'</b> \u2014 last recorded action: '+esc(ip[0].current_action||'\u2014')+' <span class="meta">('+ago(ip[0].updated||ip[0].created)+')</span>'
+    : '<span class="sub">No next action recorded.</span>';
   var open=evs.filter(function(e){return e.type==='question'&&!answersFor(e.id).length}).length;
-  return '<div class="chead"><h2>More OS</h2><div><span class="badge b-active">active project</span></div></div>'
-    +'<div class="facts">'
-    +'<div class="fact"><div class="lab">Next recorded action</div><div class="val">'+(ip.length?'<b>'+esc(ip[0].id)+'</b> \u2014 '+esc(ip[0].current_action||'\u2014'):'<span class="sub">none recorded</span>')+'</div></div>'
-    +'<div class="fact"><div class="lab">Open questions</div><div class="val">'+open+'</div></div>'
-    +'</div>'
-    +'<h4 class="sech">In \u2014 in Moor now ('+inKids.length+')</h4>'
+  var h=chead('More OS',[['b-active','active project']])
+    +'<div style="font-size:14px;max-width:70ch;line-height:1.55">'+esc(mvp.detail||'The public product that is going to be shipped.')+'</div>'
+    +'<div style="margin:8px 0"><button class="refresh" onclick="openNode(\'moreos\',\'moreos\')">underlying systems + road to MVP \u2192</button></div>'
+    +facts([
+      ['Latest verified work',latest?esc(latest.summary)+'<div class="meta">'+ago(latest.ts)+'</div>':'<span class="sub">nothing verified yet</span>'],
+      ['Next recorded action',next],
+      ['Information last updated',maxTs?ago(maxTs)+'<div class="meta">'+dt(maxTs)+'</div>':'<span class="sub">no events yet</span>'],
+      ['Reporting',names.length?esc(names.join(', ')):'<span class="sub">none reporting</span>'],
+      ['Open questions',String(open)]
+    ]);
+  h+='<h4 class="sech">In Moor \u2014 in the product now ('+inKids.length+')</h4>'
     +'<div class="split-pane split-in">'+inKids.map(row).join('')+'</div>'
-    +'<h4 class="sech">Not In \u2014 exists, not in Moor</h4>'
+    +'<h4 class="sech">Not in Moor \u2014 reference, already made somewhere ('+notInCount+')</h4>'
     +'<div class="split-pane split-notin">'
     +groups.map(function(g){
         var kids=g.ids.map(C).filter(Boolean);
         return '<div class="meta" style="margin:8px 0 4px">'+esc(g.name)+' ('+kids.length+')</div>'+kids.map(row).join('');
-      }).join('')+'</div>'
-    +'<h4 class="sech">Tasks</h4>'+tasksHTML(tasks)
-    +needsDecisionHTML(null,null);
+      }).join('')+'</div>';
+  h+='<h4 class="sech">Tasks</h4>'+tasksHTML(tasks);
+  h+=needsDecisionHTML(null,null);
+  return h;
 }
 function centerDetail(n){
   var body='';
