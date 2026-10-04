@@ -6610,51 +6610,65 @@ TYPES.push({kind:'motive', icon:'💬', label:'Motive',
    stop:function(){ if(raf){ cancelAnimationFrame(raf); raf=0; } }};
 }});
 
-/* ---------- 42. IDEA — concept cards distilled from capabilities ---------- */
-function ideaText(a, b, tmpl){
-  function short(c){
-   var w=String(c.what||c.verb||c.component||'thing').split(' ');
-   return w.slice(0,5).join(' ');
-  }
-  function knobs(c){ return (c.knobs||[]).slice(0,3).join(', ')||'its knobs'; }
-  var an=short(a), bn=short(b);
-  var T=[
-   {t: an+' × '+bn,
-    b: 'Mashup: '+a.verb+' '+a.what+' with '+b.verb+' '+b.what+'. Steal the knobs: '+knobs(a)+'.'},
-   {t: 'A '+bn+' that '+a.verb+'s',
-    b: 'Take '+a.what+' ('+a.component+') and aim it at '+b.what+'. First dial to turn: '+knobs(a)+'.'},
-   {t: 'Steal the knobs',
-    b: 'Apply '+knobs(a)+' from '+a.component+' to '+b.what+'. If it breaks, it was worth knowing.'},
-   {t: 'Situation: '+an+' meets '+bn,
-    b: 'Stage it like a scene — '+a.verb+' '+a.what+', then '+b.verb+' '+b.what+' hits. What does the camera see?'},
-   {t: 'Build this: '+a.verb+' → '+b.verb,
-    b: a.what+' as the input, '+b.what+' as the output. '+a.component+' feeds '+b.component+'.'},
-   {t: 'Remix the '+a.component,
-    b: 'Same '+a.verb+' engine, new skin: '+b.what+'. Change one knob ('+knobs(a)+') and ship the variant.'}
-  ];
-  return T[tmpl%T.length];
+/* ---------- MOOR BUILDS — ordered, implementable work paths ---------- */
+var MOOR_BUILD_PATHS = [
+ {id:"habitat-loop",status:"NEXT SYSTEM",title:"Close the terrain → plant → creature loop",
+  promise:"One world seed should produce a coherent place to live in — then give creatures the conditions to survive there.",
+  output:"A reusable habitat recipe: terrain + biome + plant families + creature niches + spawn rules.",
+  uses:["Terrain Stack","Living Garden Lab","Creature Lab"],
+  proof:"Same seed reproduces the habitat. Changing water or climate changes viable plants and creatures, not the world identity.",
+  tool:"terrain-stack",toolLabel:"Open Terrain Stack"},
+ {id:"server-harness",status:"IN PULSE · SAMPLE DATA",title:"See where everyone and every world is hosted",
+  promise:"Move through region → system → world server → room or child instance. Open the roster at each level; click a person's name for their profile.",
+  output:"Server Harness is now mounted in Pulse. Its next real connection is the server directory and live presence service.",
+  uses:["World tree","Hosting tree","Roster + profile"],
+  proof:"Every person is counted once at the right host. Moving a host does not change world identity or saved state.",
+  tool:"server-harness",toolLabel:"Try Server Harness in Pulse"},
+ {id:"persistent-place",status:"NEXT VERTICAL SLICE",title:"Make one personal place you can keep and hand off",
+  promise:"Describe a small place, walk inside it, save it as editable data, reopen it, and share the exact version.",
+  output:"A versioned .moor.json place with seed, object list, provenance, and a stable remix link.",
+  uses:["Moor Beta","Creation Pipeline","The Vault"],
+  proof:"Reload preserves the place; changing one object creates a new version; the shared link opens that exact version.",
+  tool:"moor-beta",toolLabel:"Open Moor Beta in Pulse"}
+];
+function ideaText(index){
+ var plan=MOOR_BUILD_PATHS[((index%MOOR_BUILD_PATHS.length)+MOOR_BUILD_PATHS.length)%MOOR_BUILD_PATHS.length];
+ return plan;
 }
-TYPES.push({kind:'idea', icon:'💡', label:'Idea', noFeed:true,
- params: function(r){ var n=Math.max(1,caps().length); return {capA:(r()*n)|0, capB:(r()*n)|0, tmpl:(r()*6)|0}; },
- make: function(genome){
-  var P=genome.p, seed=genome.seed;
-  var C=caps();
-  var el=cardShell(genome,'Idea '+((seed%900)+100),'concept — from the distiller');
-  var vis=el.querySelector('.wd-visual');
-  if(!C.length){
-   vis.innerHTML='<div class="wd-idea"><div class="wd-ideaB">The distiller hasn\'t fed this feed yet.</div></div>';
-   return {el:el,title:'Idea',sub:'',start:function(){},stop:function(){}};
-  }
-  var a=C[P.capA%C.length], b=C[P.capB%C.length];
-  var T=ideaText(a,b,P.tmpl);
-  el.querySelector('.wd-cap b').textContent=T.t;
-  el.querySelector('.wd-cap span').textContent='idea — '+a.component+' × '+b.component;
+TYPES.push({kind:"idea",icon:"✦",label:"Build path",noFeed:true,
+ params:function(r){var n=Math.max(1,MOOR_BUILD_PATHS.length);return{capA:(r()*n)|0,capB:0,tmpl:0};},
+ make:function(genome){
+  var P=genome.p,seed=genome.seed,plan=ideaText(P.capA);
+  var el=cardShell(genome,plan.title,plan.status+" · "+plan.id);
+  var vis=el.querySelector(".wd-visual");
+  var uses=plan.uses.map(function(x){return"<span>"+esc(x)+"</span>";}).join("");
+  var brief={schema:"moor.build-path.v1",id:plan.id,title:plan.title,status:plan.status,
+   objective:plan.promise,deliverable:plan.output,uses:plan.uses,acceptanceTest:plan.proof,
+   firstTool:{id:plan.tool,label:plan.toolLabel},seed:seed};
   vis.innerHTML=
-   '<div class="wd-idea"><div class="wd-ideaT">'+esc(T.t)+'</div>'+
-   '<div class="wd-ideaB">'+esc(T.b)+'</div>'+
-   '<div class="wd-ideaS"><span>'+esc(a.component)+'</span><span>'+esc(b.component)+'</span></div></div>';
-  return {el:el,title:T.t,sub:'idea — '+a.component+' × '+b.component,
-   start:function(){},stop:function(){}};
+   '<article class="wd-idea" style="max-width:840px;border-color:rgba(174,207,194,.28);background:rgba(119,158,143,.08)">'+
+    '<div style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#b2d6c7;margin-bottom:9px">'+esc(plan.status)+' · MOOR BUILD PATH</div>'+
+    '<div class="wd-ideaT">'+esc(plan.title)+'</div>'+
+    '<div class="wd-ideaB">'+esc(plan.promise)+'</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin-top:15px">'+
+     '<div style="border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:11px 12px;background:rgba(255,255,255,.025)"><b style="display:block;font-size:9px;letter-spacing:.12em;color:#99bcae;margin-bottom:5px">SHIPS</b><span style="font-size:12px;line-height:1.5;color:#d6e4dc">'+esc(plan.output)+'</span></div>'+
+     '<div style="border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:11px 12px;background:rgba(255,255,255,.025)"><b style="display:block;font-size:9px;letter-spacing:.12em;color:#99bcae;margin-bottom:5px">PROOF IT WORKS</b><span style="font-size:12px;line-height:1.5;color:#d6e4dc">'+esc(plan.proof)+'</span></div>'+
+    '</div>'+
+    '<div class="wd-ideaS">'+uses+'</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:15px">'+
+     '<a href="pulse-dashboard.html?component='+encodeURIComponent(plan.tool)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;min-height:38px;padding:0 13px;border-radius:9px;background:#c1e2d7;color:#182d2e;text-decoration:none;font-size:12px;font-weight:700">'+esc(plan.toolLabel)+' ↗</a>'+
+     '<button type="button" class="wd-build-copy" style="min-height:38px;padding:0 12px;border-radius:9px;border:1px solid rgba(255,255,255,.17);background:rgba(255,255,255,.06);color:#eaf1ef;font-size:12px;cursor:pointer">Copy build brief</button>'+
+    '</div>'+
+   '</article>';
+  var copy=vis.querySelector(".wd-build-copy");
+  copy.onclick=function(e){
+   if(e&&e.stopPropagation)e.stopPropagation();
+   var text=JSON.stringify(brief,null,2);
+   if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){toast("Build brief copied");}).catch(function(){window.prompt("Copy this build brief",text);});
+   }else window.prompt("Copy this build brief",text);
+  };
+  return{el:el,title:plan.title,sub:"MOOR build path · "+plan.status,start:function(){},stop:function(){}};
 }});
 
 function thumbnail(genome, W2, H2, cb){
@@ -6876,9 +6890,9 @@ function mountFeed(host, opts){
       '<div class="wd-chrome">'+
       '<div class="wd-head">'+
         '<span class="wd-tabs">'+
-          '<button class="wd-hbtn wd-tab on" data-f="wonders">wonders</button>'+
+          '<button class="wd-hbtn wd-tab on" data-f="ideas">builds</button>'+
+          '<button class="wd-hbtn wd-tab" data-f="wonders">wonders</button>'+
           '<button class="wd-hbtn wd-tab" data-f="components">components</button>'+
-          '<button class="wd-hbtn wd-tab" data-f="ideas">ideas</button>'+
         '</span>'+
         '<span class="wd-hright">'+
           '<span class="wd-tastepill" id="wd-taste" hidden>tuned · <button id="wd-reset">reset</button></span>'+
@@ -7048,6 +7062,7 @@ function mountFeed(host, opts){
       return cands[(rng()*cands.length)|0].k;
     }
     var ideaT = typeByKind('idea');
+    var buildCursor = 0;
 
     function visualKinds(){
       var ks=[];
@@ -7062,6 +7077,10 @@ function mountFeed(host, opts){
       var g;
       if (onlyKind){
         g = {type:'idea', seed:(rng()*1000000000)|0, p:ideaT.params(rng)};
+        /* The Ideas tab is a roadmap, not random capability shuffling. Show the next
+           MOOR build paths in a stable sequence; each card remains seed/share safe. */
+        g.p.capA = buildCursor++ % MOOR_BUILD_PATHS.length;
+        g.p.capB = 0; g.p.tmpl = 0;
         return sanitizeGenome(g);
       }
       if (isSurprise){
@@ -7467,7 +7486,7 @@ function mountFeed(host, opts){
     Taste2.reset(); Steer.clear(); refreshChrome(); toast('taste reset — wide open again');
   };
   refreshChrome();
-  showFeed('wonders');
+  showFeed('ideas');
 
   /* refit visible card canvases on viewport change (rotation, toolbar show/hide) */
   var rsT = 0;
