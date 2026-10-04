@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e14">
+<title>Pad Garden — ambience-engine</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; padding:0; height:100%; background:#0b0e14; color:#e8eef7;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overscroll-behavior:none; }
+  body { display:flex; flex-direction:column; align-items:center; padding:12px 12px calc(12px + env(safe-area-inset-bottom)); }
+  header { width:100%; max-width:420px; text-align:center; margin:2px 0 8px; }
+  header h1 { font-size:20px; margin:0; letter-spacing:.5px; }
+  header .sub { font-size:12px; color:#8fa0b8; margin-top:2px; }
+  #seedchip { display:inline-block; font-size:11px; color:#9fd8ff; background:#12202e;
+    border:1px solid #23405c; border-radius:20px; padding:3px 10px; margin-top:6px; }
+  #pads { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; width:100%; max-width:420px; }
+  .pad { min-height:76px; border-radius:16px; border:1px solid #2a3a52; background:#131b28;
+    color:#dfe9f5; font-size:15px; font-weight:600; touch-action:manipulation; cursor:pointer;
+    transition: box-shadow .08s, transform .06s; position:relative; }
+  .pad small { display:block; font-size:10px; font-weight:400; color:#7d8ea6; margin-top:2px; }
+  .pad:active { transform:scale(.96); }
+  .bedrow { display:flex; gap:8px; width:100%; max-width:420px; margin-top:10px; }
+  .bed { flex:1; min-height:52px; border-radius:14px; border:1px solid #2a3a52; background:#101724;
+    color:#dfe9f5; font-size:13px; font-weight:600; touch-action:manipulation; cursor:pointer; }
+  .bed.on { background:#14324a; border-color:#3fa7ff; color:#cfeaff; }
+  #genbox { width:100%; max-width:420px; margin-top:10px; background:#0f1622; border:1px solid #22314a;
+    border-radius:16px; padding:10px 12px 12px; }
+  #genbox .row { display:flex; gap:8px; }
+  #genbox .bed { min-height:48px; }
+  #tl { width:100%; height:54px; display:block; margin-top:8px; border-radius:10px; background:#090d13; }
+  #genlabel { font-size:11px; color:#8fa0b8; margin-top:6px; text-align:center; }
+  #overlay { position:fixed; inset:0; z-index:50; background:rgba(5,8,13,.96);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    touch-action:manipulation; cursor:pointer; }
+  #overlay .big { font-size:56px; }
+  #overlay h2 { margin:0; font-size:22px; }
+  #overlay p { margin:0; color:#8fa0b8; font-size:14px; }
+  #err { font-size:11px; color:#ff9d9d; max-width:420px; text-align:center; min-height:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌱 Pad Garden</h1>
+  <div class="sub">ambience-engine × generative ambience — every sound is rendered by the component</div>
+  <span id="seedchip">seed 7</span>
+</header>
+
+<div id="pads" role="group" aria-label="pentatonic pads"></div>
+
+<div class="bedrow">
+  <button class="bed" id="b-chord">🎹 CHORD</button>
+  <button class="bed" id="b-wash">🌊 WASH</button>
+  <button class="bed" id="b-drone">🕳️ DRONE</button>
+</div>
+
+<div id="genbox">
+  <div class="row">
+    <button class="bed" id="b-gen">✨ GENERATIVE</button>
+    <button class="bed" id="b-reseed">🎲 new seed</button>
+  </div>
+  <canvas id="tl" width="760" height="108"></canvas>
+  <div id="genlabel">tap GENERATIVE — a seeded arrangement renders and loops</div>
+</div>
+<div id="err"></div>
+
+<div id="overlay">
+  <div class="big">🎹</div>
+  <h2>Pad Garden</h2>
+  <p>tap anywhere to start audio</p>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+ * PROVENANCE — inlined VERBATIM, logic untouched:
+ *   mulberry32, hashSeed  <- moor-recovery/components/seed-rng/rng.js
+ *   ambContext, ambTone, ambPad, ambWash, ambDrop, ambDrone, ambBuild,
+ *   ambBiquadCoefs        <- moor-recovery/components/ambience-engine/ambience.js
+ *     (extracted from parallax-engine.html:1690-1883; node require block
+ *      and module.exports guard kept verbatim — inert in the browser)
+ * The demo schedules REAL primitives into real ambience buffers and plays
+ * them through the Web Audio graph. window.__scheduled counts every
+ * primitive scheduled (headless-auditable).
+ * ===================================================================== */
+
+/* ---- seed-rng (verbatim) ---- */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashSeed(s) {
+  var h = 2166136261 >>> 0;
+  s = String(s);
+  for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/* ---- ambience-engine (verbatim) ---- */
+if (typeof module !== 'undefined' && module.exports) {
+  try {
+    var __seedRng = require('../seed-rng/rng.js');
+    if (typeof mulberry32 === 'undefined') mulberry32 = __seedRng.mulberry32;
+    if (typeof hashSeed === 'undefined') hashSeed = __seedRng.hashSeed;
+  } catch (e) { /* browser: expect rng.js loaded via <script> first */ }
+}
+
+function ambBiquadCoefs(type, freq, q, sr) {
+  /* RBJ Audio EQ Cookbook, normalized. */
+  var w0 = 2 * Math.PI * freq / sr, cw = Math.cos(w0), sw = Math.sin(w0);
+  var alpha = sw / (2 * q), b0, b1, b2;
+  if (type === 'highpass') { b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = (1 + cw) / 2; }
+  else if (type === 'bandpass') { b0 = alpha; b1 = 0; b2 = -alpha; }
+  else { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = (1 - cw) / 2; }
+  var a0 = 1 + alpha;
+  return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: -2 * cw / a0, a2: (1 - alpha) / a0 };
+}
+function ambContext(sr, L, seedStr, kind) {
+  var len = Math.ceil(sr * L), i;
+  var rng = mulberry32(hashSeed(seedStr + '|' + kind));
+  var noise = new Float32Array(len);
+  for (i = 0; i < len; i++) noise[i] = rng() * 2 - 1;
+  return { sr: sr, L: L, len: len, rng: rng, noise: noise,
+           mixL: new Float32Array(len), mixR: new Float32Array(len) };
+}
+/* Looped filtered noise. The LFO rate is k/L so it stays periodic
+   across the loop seam — no clicks, ever. */
+function ambWash(g, o) {
+  var co = ambBiquadCoefs(o.type || 'lowpass', o.freq, o.q || 0.6, g.sr);
+  var x1 = 0, x2 = 0, y1 = 0, y2 = 0, n;
+  var lfoK = o.lfoK || 0;
+  var lfoDepth = (o.lfoDepth != null ? o.lfoDepth : o.gain * 0.4);
+  var ph = 0, lfoInc = lfoK / g.L / g.sr, TAU = 2 * Math.PI;
+  for (n = 0; n < g.len; n++) {
+    var x = g.noise[n];
+    var y = co.b0 * x + co.b1 * x1 + co.b2 * x2 - co.a1 * y1 - co.a2 * y2;
+    x2 = x1; x1 = x; y2 = y1; y1 = y;
+    var gg = o.gain;
+    if (lfoK) { ph += lfoInc; if (ph >= 1) ph -= 1; gg += lfoDepth * Math.sin(TAU * ph); }
+    g.mixL[n] += y * gg; g.mixR[n] += y * gg;
+  }
+}
+/* Short enveloped tone (chirp, ping, drip, horn). Full decay before
+   the loop seam, so it never clicks. */
+function ambTone(g, t, f0, f1, dur, gain, type) {
+  f0 = Math.max(f0, 1);
+  var fEnd = (f1 && f1 !== f0) ? Math.max(f1, 1) : f0;
+  var startN = Math.floor(t * g.sr);
+  var nDur = Math.max(1, Math.ceil(dur * g.sr));
+  var atk = Math.max(1, Math.ceil(Math.min(0.02, dur * 0.2) * g.sr));
+  var sq = (type === 'square');
+  var g0 = 0.0001, g1 = Math.max(gain, 0.0002), TAU = 2 * Math.PI;
+  var pan = g.rng() * 1.2 - 0.6, pa = (pan + 1) * Math.PI / 4;
+  var lg = Math.cos(pa), rg = Math.sin(pa);
+  var ph = 0, n;
+  for (n = 0; n < nDur; n++) {
+    var idx = startN + n;
+    if (idx >= g.len) break;
+    var env = (n < atk) ? g0 * Math.pow(g1 / g0, n / atk)
+                        : g1 * Math.pow(g0 / g1, (n - atk) / (nDur - atk));
+    var f = f0 * Math.pow(fEnd / f0, n / nDur);
+    ph += f / g.sr; if (ph >= 1) ph -= 1;
+    var w = Math.sin(TAU * ph);
+    var s = (sq ? (w < 0 ? -1 : 1) : w) * env;
+    g.mixL[idx] += s * lg; g.mixR[idx] += s * rg;
+  }
+}
+/* Short filtered-noise tick (crackle, droplet hit, lap). */
+function ambDrop(g, t, dur, gain, freq) {
+  var rate = 0.7 + g.rng() * 0.6;
+  var maxOff = Math.max(0.1, g.noise.length / g.sr - dur - 0.1);
+  var off = Math.floor(g.rng() * maxOff * g.sr);
+  var startN = Math.floor(t * g.sr);
+  var nlen = Math.ceil(dur * g.sr);
+  var co = ambBiquadCoefs('bandpass', freq, 1.2, g.sr);
+  var x1 = 0, x2 = 0, y1 = 0, y2 = 0, n;
+  var atkN = Math.max(1, Math.ceil(0.008 * g.sr));
+  var g1 = Math.max(gain, 0.0002), g0 = 0.0001;
+  var nlast = g.noise.length - 1;
+  for (n = 0; n < nlen; n++) {
+    var idx = startN + n;
+    if (idx >= g.len) break;
+    var pos = off + n * rate;
+    var i0 = Math.floor(pos), fr = pos - i0;
+    var x = g.noise[i0] * (1 - fr) + g.noise[i0 + 1 > nlast ? nlast : i0 + 1] * fr;
+    var y = co.b0 * x + co.b1 * x1 + co.b2 * x2 - co.a1 * y1 - co.a2 * y2;
+    x2 = x1; x1 = x; y2 = y1; y1 = y;
+    var env = (n < atkN) ? g0 * Math.pow(g1 / g0, n / atkN)
+                         : g1 * Math.pow(g0 / g1, (n - atkN) / (nlen - atkN));
+    g.mixL[idx] += y * env; g.mixR[idx] += y * env;
+  }
+}
+/* Slow evolving chord. Voice frequencies are quantized to k/L so the
+   whole pad is periodic over the loop — seamless by construction. */
+function ambPad(g, base, ratios, gain) {
+  var nV = ratios.length, freq = [], lfoK = [], v;
+  for (v = 0; v < nV; v++) {
+    var det = g.rng() * 8 - 4;
+    var f = base * ratios[v] * Math.pow(2, det / 1200);
+    freq.push(Math.round(f * g.L) / g.L);
+    lfoK.push(1 + v);
+  }
+  var a = 1 - Math.exp(-2 * Math.PI * 700 / g.sr), TAU = 2 * Math.PI;
+  var ph = [], lph = [], v2;
+  for (v2 = 0; v2 < nV; v2++) { ph.push(0); lph.push(0); }
+  var lp = 0, n;
+  for (n = 0; n < g.len; n++) {
+    var x = 0;
+    for (v2 = 0; v2 < nV; v2++) {
+      ph[v2] += freq[v2] / g.sr; if (ph[v2] >= 1) ph[v2] -= 1;
+      lph[v2] += lfoK[v2] / g.L / g.sr; if (lph[v2] >= 1) lph[v2] -= 1;
+      var tri = 2 * Math.abs(2 * ph[v2] - 1) - 1;
+      x += tri * (1 + 0.35 * Math.sin(TAU * lph[v2]));
+    }
+    lp += a * (x * gain - lp);
+    g.mixL[n] += lp; g.mixR[n] += lp;
+  }
+}
+/* Constant low drone with a slow fade at the loop edges. */
+function ambDrone(g, targetFreq, gain) {
+  var f = Math.round(targetFreq * g.L) / g.L, inc = f / g.sr, ph = 0, n, TAU = 2 * Math.PI;
+  for (n = 0; n < g.len; n++) {
+    ph += inc; if (ph >= 1) ph -= 1;
+    var t = n / g.sr, env;
+    if (t < 2) env = 0.0001 + (gain - 0.0001) * (t / 2);
+    else if (t > g.L - 2) env = 0.0001 + (gain - 0.0001) * ((g.L - t) / 2);
+    else env = gain;
+    var s = Math.sin(TAU * ph) * env;
+    g.mixL[n] += s; g.mixR[n] += s;
+  }
+}
+function ambBuild(kind, g) {
+  var L = g.L, i, rng = g.rng;
+  function ev(n, fn) { for (i = 0; i < n; i++) fn(0.5 + rng() * (L - 1.5)); }
+  switch (kind) {
+    case 'rainforest':
+      ambWash(g, { type: 'bandpass', freq: 4200, q: 0.5, gain: 0.11, lfoK: 2, lfoDepth: 0.025 });
+      ambWash(g, { type: 'lowpass', freq: 240, gain: 0.05, lfoK: 1, lfoDepth: 0.02 });
+      ev(7, function (tt) {
+        var f = 2300 + rng() * 2300, r0 = 2 + ((rng() * 3) | 0);
+        for (var r = 0; r < r0; r++) ambTone(g, tt + r * 0.13, f * (0.92 + rng() * 0.16), f * 1.25, 0.09, 0.030);
+      });
+      ev(9, function (tt) { ambTone(g, tt, 1500, 480, 0.12, 0.028); });
+      break;
+    case 'px-forest':
+      ambWash(g, { type: 'bandpass', freq: 900, q: 0.4, gain: 0.07, lfoK: 1, lfoDepth: 0.03 });
+      ambWash(g, { type: 'lowpass', freq: 140, gain: 0.06 });
+      ev(5, function (tt) { var f = 1800 + rng() * 1600; ambTone(g, tt, f, f * 1.3, 0.12, 0.025); });
+      ev(12, function (tt) { ambTone(g, tt, 1200, 420, 0.14, 0.030); });
+      break;
+    case 'aquarium':
+      ambWash(g, { type: 'lowpass', freq: 750, gain: 0.09, lfoK: 2, lfoDepth: 0.03 });
+      ambWash(g, { type: 'lowpass', freq: 180, gain: 0.05 });
+      ev(10, function (tt) { ambTone(g, tt, 500 + rng() * 300, 1300 + rng() * 500, 0.16, 0.035); });
+      break;
+    case 'molten':
+    case 'px-ember':
+      ambWash(g, { type: 'lowpass', freq: 110, gain: 0.17, lfoK: 1, lfoDepth: 0.06 });
+      ev(14, function (tt) { ambDrop(g, tt, 0.05 + rng() * 0.09, 0.05, 1800 + rng() * 2500); });
+      ev(3, function (tt) { ambTone(g, tt, 48, 38, 1.6, 0.06); });
+      break;
+    case 'rainwindow':
+      ambWash(g, { type: 'bandpass', freq: 5200, q: 0.4, gain: 0.10, lfoK: 3, lfoDepth: 0.02 });
+      ev(12, function (tt) { ambTone(g, tt, 1900, 950, 0.07, 0.030); });
+      ev(2, function (tt) { ambTone(g, tt, 55, 40, 2.2, 0.035); });
+      break;
+    case 'alien':
+    case 'px-orbital':
+      ambPad(g, 110, [1, 1.5, 2.02, 2.98], 0.026);
+      ambWash(g, { type: 'bandpass', freq: 700, q: 0.5, gain: 0.032, lfoK: 1, lfoDepth: 0.014 });
+      ev(6, function (tt) { var f = 840 + rng() * 480; ambTone(g, tt, f, f * 1.015, 1.4, 0.014); });
+      ev(2, function (tt) { ambTone(g, tt, 300 + rng() * 200, 700 + rng() * 300, 2.5, 0.018); });
+      break;
+    case 'px-cloud':
+      ambPad(g, 130, [1, 1.26, 1.5, 2.0], 0.024);
+      ambWash(g, { type: 'bandpass', freq: 500, q: 0.4, gain: 0.05, lfoK: 2, lfoDepth: 0.025 });
+      break;
+    case 'px-mycel':
+      ambPad(g, 55, [1, 1.5, 2.0], 0.035);
+      ambWash(g, { type: 'lowpass', freq: 200, gain: 0.05 });
+      ev(14, function (tt) { ambTone(g, tt, 900 + rng() * 500, 350, 0.18, 0.024); });
+      break;
+    case 'canal':
+    case 'px-canal':
+      ambWash(g, { type: 'lowpass', freq: 480, gain: 0.085, lfoK: 3, lfoDepth: 0.04 });
+      ambDrone(g, 98, 0.016); ambDrone(g, 196, 0.010);
+      ev(3, function (tt) { ambTone(g, tt, 520, 505, 0.5, 0.018, 'square'); });
+      ev(6, function (tt) { ambDrop(g, tt, 0.2, 0.03, 900 + rng() * 400); });
+      break;
+    case 'turtle':
+      ambWash(g, { type: 'lowpass', freq: 380, gain: 0.10, lfoK: 1, lfoDepth: 0.055 });
+      ambWash(g, { type: 'bandpass', freq: 280, q: 0.5, gain: 0.035, lfoK: 2, lfoDepth: 0.015 });
+      break;
+    case 'road':
+      ambWash(g, { type: 'bandpass', freq: 320, q: 0.5, gain: 0.030, lfoK: 1, lfoDepth: 0.015 });
+      ambWash(g, { type: 'bandpass', freq: 140, gain: 0.05, lfoK: 1, lfoDepth: 0.02 });
+      break;
+    default: /* neutral */
+      ambWash(g, { type: 'bandpass', freq: 400, q: 0.5, gain: 0.04, lfoK: 1, lfoDepth: 0.02 });
+  }
+}
+if (typeof module !== 'undefined' && module.exports)
+  module.exports = { ambBiquadCoefs, ambContext, ambWash, ambTone, ambDrop, ambPad, ambDrone, ambBuild };
+
+/* ================= demo code (pad-garden) ================= */
+window.__scheduled = 0;   // headless-auditable: increments on every scheduled primitive
+var AC = null, master = null, analyser = null, analyserData = null;
+var pluckN = 0, chordN = 0, genSeed = 7, GEN_EVENTS = [], GEN_L = 16;
+var chordSrc = null, washSrc = null, droneSrc = null, genSrc = null, genStartT = 0;
+var CHORDS = [
+  { name:'C maj',  base:130.81, ratios:[1, 1.25, 1.5, 2.0] },
+  { name:'A min',  base:110.00, ratios:[1, 1.189, 1.5, 2.0] },
+  { name:'F maj',  base: 87.31, ratios:[1, 1.25, 1.5, 2.0] },
+  { name:'G maj',  base: 98.00, ratios:[1, 1.25, 1.5, 2.0] }
+];
+var PENTA = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+var PNAMES = ['C','D','E','G','A','C′','D′','E′'];
+var padBtns = [], padGlow = new Array(8).fill(0);
+
+function err(msg){ var e = document.getElementById('err'); if (e) e.textContent = msg; }
+
+function initAudio(){
+  if (AC) return;
+  try {
+    var Ctor = window.AudioContext || window.webkitAudioContext;
+    AC = new Ctor();
+    master = AC.createGain(); master.gain.value = 0.8;
+    analyser = AC.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.75;
+    analyserData = new Uint8Array(analyser.frequencyBinCount);
+    master.connect(analyser); analyser.connect(AC.destination);
+    if (AC.resume) AC.resume();
+  } catch (e) { err('audio unavailable in this browser — scheduling still runs'); AC = null; }
+}
+/* Render primitives into a real ambience buffer; count each primitive.
+ * The buffer renders identically with or without an AudioContext. */
+function renderG(L, seedStr, kind, fn){
+  var sr = AC ? AC.sampleRate : 44100;
+  var g = ambContext(sr, L, seedStr, kind);
+  fn(g);
+  return { g:g, sr:sr };
+}
+function toAudioBuffer(r){
+  var b = AC.createBuffer(2, r.g.len, r.sr);
+  b.getChannelData(0).set(r.g.mixL); b.getChannelData(1).set(r.g.mixR);
+  return b;
+}
+function playRendered(r, loop){
+  if (!AC) return null;
+  try {
+    var s = AC.createBufferSource();
+    s.buffer = toAudioBuffer(r); s.loop = !!loop;
+    s.connect(master); s.start();
+    return s;
+  } catch (e) { return null; }
+}
+
+function pluck(i){
+  var f = PENTA[i];
+  var r = renderG(1.0, 'pluck' + i + '-' + (pluckN++), 'pluck', function(g){
+    ambTone(g, 0.03, f, f * 1.003, 0.8, 0.5); window.__scheduled++;
+  });
+  padGlow[i] = 1;
+  playRendered(r, false);
+}
+
+function toggleChord(){
+  var btn = document.getElementById('b-chord');
+  if (chordSrc) { try { chordSrc.stop(); } catch (e) {} chordSrc = null; btn.classList.remove('on'); return; }
+  var c = CHORDS[chordN % CHORDS.length]; chordN++;
+  var r = renderG(8, 'chord-' + c.name + '-' + chordN, 'chord', function(g){
+    ambPad(g, c.base, c.ratios, 0.05); window.__scheduled++;
+  });
+  chordSrc = playRendered(r, true);
+  btn.classList.add('on'); btn.textContent = '🎹 ' + c.name;
+}
+function toggleWash(){
+  var btn = document.getElementById('b-wash');
+  if (washSrc) { try { washSrc.stop(); } catch (e) {} washSrc = null; btn.classList.remove('on'); return; }
+  var r = renderG(6, 'garden-wash', 'wash', function(g){
+    ambWash(g, { type:'bandpass', freq:900, q:0.4, gain:0.08, lfoK:2, lfoDepth:0.03 });
+    window.__scheduled++;
+  });
+  washSrc = playRendered(r, true);
+  btn.classList.add('on');
+}
+function toggleDrone(){
+  var btn = document.getElementById('b-drone');
+  if (droneSrc) { try { droneSrc.stop(); } catch (e) {} droneSrc = null; btn.classList.remove('on'); return; }
+  var r = renderG(6, 'garden-drone', 'drone', function(g){
+    ambDrone(g, 55, 0.07); window.__scheduled++;
+    ambDrone(g, 82.5, 0.035); window.__scheduled++;
+  });
+  droneSrc = playRendered(r, true);
+  btn.classList.add('on');
+}
+/* GENERATIVE: an ambBuild-style arrangement — one ambBuild bed plus a
+ * seeded pentatonic melody laid over it with the same RNG stream. */
+function toggleGen(){
+  var btn = document.getElementById('b-gen');
+  if (genSrc) { try { genSrc.stop(); } catch (e) {} genSrc = null; btn.classList.remove('on');
+    document.getElementById('genlabel').textContent = 'tap GENERATIVE — a seeded arrangement renders and loops';
+    return; }
+  var S = genSeed;
+  var r = renderG(GEN_L, 'gen' + S, 'gen', function(g){
+    ambBuild('px-forest', g);            // bed: wash + wash + 17 tones
+    window.__scheduled += 19;
+    var rng = mulberry32(hashSeed('gen-melody-' + S));
+    GEN_EVENTS = [];
+    for (var k = 0; k < 36; k++) {
+      var t = 0.5 + rng() * (GEN_L - 1.5);
+      var f = PENTA[(rng() * PENTA.length) | 0];
+      ambTone(g, t, f, f * (1 + rng() * 0.01), 0.4 + rng() * 0.6, 0.10);
+      window.__scheduled++;
+      GEN_EVENTS.push({ t:t, f:f });
+    }
+  });
+  genSrc = playRendered(r, true);
+  if (AC) genStartT = AC.currentTime;
+  btn.classList.add('on');
+  document.getElementById('genlabel').textContent = 'seed ' + S + ' · 36 notes · looping ' + GEN_L + 's';
+  document.getElementById('seedchip').textContent = 'seed ' + S;
+}
+function reseed(){
+  genSeed = (genSeed * 9301 + 49297) % 233280;
+  document.getElementById('seedchip').textContent = 'seed ' + genSeed;
+  if (genSrc) { toggleGen(); toggleGen(); }  // rebuild on the new seed
+}
+
+function buildPads(){
+  var host = document.getElementById('pads');
+  for (var i = 0; i < 8; i++) {
+    (function(i){
+      var b = document.createElement('button');
+      b.className = 'pad'; b.id = 'pad-' + i;
+      b.innerHTML = PNAMES[i] + '<small>' + Math.round(PENTA[i]) + ' Hz</small>';
+      b.addEventListener('pointerdown', function(ev){ ev.preventDefault(); pluck(i); });
+      host.appendChild(b); padBtns.push(b);
+    })(i);
+  }
+}
+
+var tl = document.getElementById('tl'), tctx = tl.getContext('2d');
+function draw(){
+  requestAnimationFrame(draw);
+  // analyser -> per-pad glow (analyser-driven)
+  var bass = 0, mid = 0, hi = 0;
+  if (analyser && analyserData) {
+    analyser.getByteFrequencyData(analyserData);
+    var n = analyserData.length;
+    for (var i = 0; i < n; i++) {
+      var v = analyserData[i] / 255;
+      if (i < n * 0.15) bass += v; else if (i < n * 0.5) mid += v; else hi += v;
+    }
+    bass /= n * 0.15; mid /= n * 0.35; hi /= n * 0.5;
+  }
+  for (var p = 0; p < 8; p++) {
+    padGlow[p] = Math.max(padGlow[p] * 0.93, hi * 1.1);
+    var gl = Math.min(1, padGlow[p]);
+    padBtns[p].style.boxShadow = gl > 0.03
+      ? '0 0 ' + (gl * 26) + 'px rgba(120,200,255,' + (gl * 0.9) + '), inset 0 0 12px rgba(120,200,255,' + (gl * 0.35) + ')'
+      : 'none';
+  }
+  var chordB = document.getElementById('b-chord');
+  chordB.style.boxShadow = chordSrc && mid > 0.04 ? '0 0 ' + (mid * 40) + 'px rgba(255,170,90,.7)' : 'none';
+  var washB = document.getElementById('b-wash');
+  washB.style.boxShadow = washSrc && mid > 0.04 ? '0 0 ' + (mid * 40) + 'px rgba(90,220,255,.7)' : 'none';
+  var droneB = document.getElementById('b-drone');
+  droneB.style.boxShadow = droneSrc && bass > 0.04 ? '0 0 ' + (bass * 50) + 'px rgba(190,120,255,.8)' : 'none';
+  // generative timeline
+  var W = tl.width, H = tl.height;
+  tctx.clearRect(0, 0, W, H);
+  tctx.fillStyle = '#090d13'; tctx.fillRect(0, 0, W, H);
+  if (GEN_EVENTS.length) {
+    var now = AC ? (AC.currentTime - genStartT) % GEN_L : 0;
+    var ph = now / GEN_L;
+    var e, x, y;
+    for (e = 0; e < GEN_EVENTS.length; e++) {
+      x = (GEN_EVENTS[e].t / GEN_L) * W;
+      y = H - ((GEN_EVENTS[e].f - 240) / 460) * H;
+      var near = Math.abs((GEN_EVENTS[e].t / GEN_L) - ph);
+      near = Math.min(near, 1 - near);
+      tctx.fillStyle = near < 0.02 ? '#ffe9a8' : 'rgba(120,200,255,.55)';
+      tctx.beginPath(); tctx.arc(x, Math.max(6, Math.min(H - 6, y)), near < 0.02 ? 6 : 3.5, 0, 6.2832); tctx.fill();
+    }
+    tctx.strokeStyle = '#ffd76a'; tctx.lineWidth = 2;
+    tctx.beginPath(); tctx.moveTo(ph * W, 0); tctx.lineTo(ph * W, H); tctx.stroke();
+  } else {
+    tctx.fillStyle = '#3d4c63'; tctx.font = '22px system-ui'; tctx.textAlign = 'center';
+    tctx.fillText('press GENERATIVE to grow a seeded arrangement', W / 2, H / 2 + 8);
+  }
+}
+
+buildPads();
+draw();
+document.getElementById('b-chord').addEventListener('click', toggleChord);
+document.getElementById('b-wash').addEventListener('click', toggleWash);
+document.getElementById('b-drone').addEventListener('click', toggleDrone);
+document.getElementById('b-gen').addEventListener('click', toggleGen);
+document.getElementById('b-reseed').addEventListener('click', reseed);
+var ov = document.getElementById('overlay');
+function start(ev){
+  if (ev) ev.preventDefault();
+  initAudio();
+  ov.style.display = 'none';
+  ov.removeEventListener('pointerdown', start);
+}
+ov.addEventListener('pointerdown', start);
+/* headless/test hook */
+window.__garden = {
+  pluck: pluck, chord: toggleChord, wash: toggleWash, drone: toggleDrone, gen: toggleGen,
+  scheduled: function(){ return window.__scheduled; }
+};
+</script>
+</body>
+</html>
