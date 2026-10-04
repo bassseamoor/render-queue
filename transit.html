@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>transit — transportation contract</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overflow:hidden; background:#0a0d14; color:#e8eaf0;
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+    user-select:none; -webkit-user-select:none; }
+  #cv { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  /* ---------- map view UI ---------- */
+  #mapUI { position:fixed; inset:0; z-index:5; pointer-events:none; }
+  #mapUI .panel { pointer-events:auto; }
+  #top { position:absolute; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 0; }
+  #top h1 { font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  #top h1 .amber { color:#e8a33d; }
+  #top p { font-size:12.5px; color:#9aa0ae; margin-top:4px; }
+  #bottom { position:absolute; left:0; right:0; bottom:0;
+    padding:10px 16px calc(env(safe-area-inset-bottom,0px) + 14px);
+    background:linear-gradient(180deg, transparent, rgba(4,6,10,.88) 45%); }
+  #vehRow { display:flex; gap:8px; margin-bottom:10px; }
+  .veh { flex:1; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05);
+    color:#9aa0ae; border-radius:14px; padding:11px 4px; font-size:13px; font-weight:700;
+    cursor:pointer; text-align:center; }
+  .veh .e { font-size:22px; display:block; margin-bottom:2px; }
+  .veh.on { border-color:rgba(232,163,61,.65); background:rgba(232,163,61,.13); color:#f0c884; }
+  #durRow { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+  #durRow label { font-size:11px; font-weight:700; letter-spacing:.08em; color:#9aa0ae; white-space:nowrap; }
+  #durVal { font-size:13px; color:#e8a33d; font-weight:700; min-width:44px; text-align:right;
+    font-variant-numeric:tabular-nums; }
+  input[type=range] { flex:1; -webkit-appearance:none; appearance:none; height:34px; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:6px; border-radius:3px;
+    background:linear-gradient(90deg,#3a3f4d,#e8a33d); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:28px; height:28px;
+    border-radius:50%; background:#f0c884; border:3px solid #14100a; margin-top:-11px; }
+  input[type=range]::-moz-range-thumb { width:22px; height:22px; border-radius:50%;
+    background:#f0c884; border:3px solid #14100a; }
+  #goBtn { width:100%; border:0; border-radius:16px; padding:16px; font-size:17px; font-weight:800;
+    background:#e8a33d; color:#14100a; cursor:pointer; opacity:.35; }
+  #goBtn.ready { opacity:1; }
+  #goBtn:active { transform:scale(.98); }
+  #routeLbl { text-align:center; font-size:12px; color:#8a90a0; margin-bottom:8px; min-height:16px; }
+  #routeLbl b { color:#f0c884; }
+
+  /* ---------- ride view UI ---------- */
+  #rideUI { position:fixed; inset:0; z-index:5; pointer-events:none; display:none; }
+  #rideTop { position:absolute; top:0; left:0; right:0;
+    padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 0;
+    display:flex; align-items:center; gap:10px; }
+  #progWrap { flex:1; background:rgba(0,0,0,.5); border-radius:999px; height:10px; overflow:hidden;
+    border:1px solid rgba(255,255,255,.12); }
+  #progBar { height:100%; width:0%; background:linear-gradient(90deg,#e8a33d,#f0c884); border-radius:999px; }
+  #eta { font-size:12px; font-weight:700; color:#f0c884; background:rgba(0,0,0,.5);
+    padding:6px 12px; border-radius:999px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #cancelBtn { pointer-events:auto; background:rgba(0,0,0,.55); border:1px solid rgba(255,120,120,.5);
+    color:#ff9a9a; font-size:16px; font-weight:700; width:38px; height:38px; border-radius:50%; cursor:pointer; }
+  #rideLbl { position:absolute; bottom:calc(env(safe-area-inset-bottom,0px) + 16px); left:0; right:0;
+    text-align:center; font-size:12px; color:rgba(255,255,255,.75); text-shadow:0 1px 6px #000; }
+  #rideLbl b { color:#f0c884; }
+
+  /* ---------- overlays ---------- */
+  #board { position:fixed; inset:0; z-index:10; display:none; align-items:center; justify-content:center;
+    background:rgba(4,6,10,.72); backdrop-filter:blur(3px); }
+  #board.show { display:flex; }
+  #boardCard { text-align:center; animation:pop .3s; }
+  #boardCard .big { font-size:54px; margin-bottom:10px; }
+  #boardCard p { font-size:15px; color:#cfd4e0; font-weight:600; }
+  @keyframes pop { from { transform:scale(.85); opacity:0; } }
+  #flash { position:fixed; inset:0; z-index:12; background:#fff; opacity:0; pointer-events:none; }
+  #toast { position:fixed; z-index:15; bottom:calc(env(safe-area-inset-bottom,0px) + 90px); left:50%;
+    transform:translateX(-50%) translateY(16px); background:#1a1d26; color:#f0c884;
+    font-size:14px; font-weight:700; padding:12px 24px; border-radius:999px; opacity:0;
+    transition:all .25s; pointer-events:none; border:1px solid rgba(232,163,61,.4); white-space:nowrap; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="mapUI">
+  <div id="top" class="panel">
+    <h1>tran<span class="amber">sit</span></h1>
+    <p>Tap the map: first tap sets <b style="color:#4da3ff">station A</b>, second tap sets <b style="color:#e8a33d">station B</b>. Then ride.</p>
+  </div>
+  <div id="bottom" class="panel">
+    <div id="routeLbl">tap twice on the map to plot a route</div>
+    <div id="vehRow">
+      <button class="veh on" data-v="taxi"><span class="e">🚕</span>taxi</button>
+      <button class="veh" data-v="train"><span class="e">🚂</span>train</button>
+      <button class="veh" data-v="ship"><span class="e">🚢</span>ship</button>
+    </div>
+    <div id="durRow">
+      <label>RIDE TIME</label>
+      <input type="range" id="dur" min="5" max="30" step="1" value="12">
+      <span id="durVal">12s</span>
+    </div>
+    <button id="goBtn">GO →</button>
+  </div>
+</div>
+
+<div id="rideUI">
+  <div id="rideTop">
+    <div id="progWrap"><div id="progBar"></div></div>
+    <div id="eta">12s</div>
+    <button id="cancelBtn">✕</button>
+  </div>
+  <div id="rideLbl"><b id="rideVeh">🚕 taxi</b> · drag to look around</div>
+</div>
+
+<div id="board"><div id="boardCard"><div class="big" id="boardIco">🚕</div><p id="boardTxt">taxi arriving…</p></div></div>
+<div id="flash"></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+ * TransitContract — the transportation contract.
+ * book({from:{x,y}, to:{x,y}, vehicle, durationSec}) -> trip
+ * Lifecycle: boarding (1.5s) -> enroute (durationSec) -> arriving (0.8s) -> arrived.
+ * GUARANTEE: at durationSec after departure, position EXACTLY equals `to`.
+ *   The final approach eases the last 2% (no overshoot, no shortfall):
+ *   progress is clamped and the terminal sample is the literal `to` object.
+ * cancel() -> traveler returns to `from`, state 'cancelled'.
+ * Events: onState(trip, state), onProgress(trip, t01, pos).
+ * Drive it with contract.update(nowMs) — pass your own clock for tests.
+ * ===================================================================== */
+function TransitContract(opts){
+  opts = opts || {};
+  const BOARD_MS = 1500, ARRIVE_MS = 800;
+  const onState = opts.onState || function(){};
+  const onProgress = opts.onProgress || function(){};
+  const nowFn = opts.now || function(){ return performance.now(); };
+
+  /* --- per-vehicle path functions: quadratic bezier, from -> to --- */
+  function bez(from, to, bend){
+    const mx=(from.x+to.x)/2, my=(from.y+to.y)/2;
+    const dx=to.x-from.x, dy=to.y-from.y;
+    const len=Math.hypot(dx,dy)||1;
+    const px=-dy/len, py=dx/len;               // perpendicular
+    const cx=mx+px*len*bend, cy=my+py*len*bend;
+    return function(t){
+      const u=1-t;
+      return { x: u*u*from.x + 2*u*t*cx + t*t*to.x,
+               y: u*u*from.y + 2*u*t*cy + t*t*to.y };
+    };
+  }
+  const PATHS = {
+    taxi:  function(f,t){ return bez(f,t,0.04); },  // cuts corners, nearly straight
+    train: function(f,t){ return bez(f,t,0.16); },  // gentle curve
+    ship:  function(f,t){ return bez(f,t,0.38); },  // wide arc
+  };
+  const VEHICLES = { taxi:1, train:1, ship:1 };
+
+  let seq = 0;
+  const trips = {};
+
+  function setState(trip, s){
+    trip.state = s;
+    onState(trip, s);
+  }
+
+  function book(o){
+    if(!o || !o.from || !o.to) throw new Error('book needs from + to');
+    if(!VEHICLES[o.vehicle]) throw new Error('unknown vehicle: '+o.vehicle);
+    const dur = Math.max(1, +o.durationSec || 10);
+    const trip = {
+      id: ++seq,
+      from: {x:+o.from.x, y:+o.from.y},
+      to:   {x:+o.to.x,   y:+o.to.y},
+      vehicle: o.vehicle,
+      durationSec: dur,
+      state: 'boarding',
+      boardAt: nowFn(),
+      departAt: null,
+      pos: {x:+o.from.x, y:+o.from.y},
+      path: PATHS[o.vehicle](o.from, o.to),
+      cancel: function(){ cancelTrip(trip); },
+      progress: function(){ return trip.t01; },
+      t01: 0,
+    };
+    trips[trip.id] = trip;
+    setState(trip, 'boarding');
+    return trip;
+  }
+
+  function cancelTrip(trip){
+    if(trip.state==='arrived' || trip.state==='cancelled') return;
+    trip.pos = {x:trip.from.x, y:trip.from.y};   // interruption policy: back to origin
+    trip.t01 = 0;
+    delete trips[trip.id];
+    setState(trip, 'cancelled');
+  }
+
+  /* Advance all live trips to clock time `now`. */
+  function update(now){
+    now = (now===undefined) ? nowFn() : now;
+    Object.keys(trips).forEach(function(id){
+      const trip = trips[id];
+      if(trip.state==='boarding'){
+        if(now - trip.boardAt >= BOARD_MS){
+          trip.departAt = trip.boardAt + BOARD_MS;
+          setState(trip, 'enroute');
+        }
+        return;
+      }
+      if(trip.state==='enroute'){
+        const el = (now - trip.departAt)/1000;
+        let t = el / trip.durationSec;
+        if(t >= 1){
+          /* THE GUARANTEE: terminal sample is literally `to`. */
+          trip.t01 = 1;
+          trip.pos = {x:trip.to.x, y:trip.to.y};
+          onProgress(trip, 1, trip.pos);
+          trip.arriveAt = now;
+          setState(trip, 'arriving');
+          return;
+        }
+        /* ease the final 2%: quadratic ease-out on the last stretch so the
+           vehicle visibly settles instead of slamming into the station */
+        let te = t;
+        if(t > 0.98){ const k=(t-0.98)/0.02; te = 0.98 + 0.02*(1-(1-k)*(1-k)); }
+        trip.t01 = Math.min(1, Math.max(0, te));
+        trip.pos = trip.path(trip.t01);
+        onProgress(trip, trip.t01, trip.pos);
+        return;
+      }
+      if(trip.state==='arriving'){
+        trip.pos = {x:trip.to.x, y:trip.to.y};
+        onProgress(trip, 1, trip.pos);
+        if(now - trip.arriveAt >= ARRIVE_MS){
+          delete trips[trip.id];
+          setState(trip, 'arrived');
+        }
+      }
+    });
+  }
+
+  return { book:book, update:update, PATHS:PATHS };
+}
+/* ================= end TransitContract ================= */
+
+/* ================= demo ================= */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let DPR=1, VW=0, VH=0;
+function resize(){ DPR=Math.min(devicePixelRatio||1,2); VW=innerWidth; VH=innerHeight;
+  cv.width=VW*DPR; cv.height=VH*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); }
+addEventListener('resize',resize); resize();
+
+/* seeded rng for scenery */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;
+  var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;
+  return((t^t>>>14)>>>0)/4294967296;};}
+
+/* ---------- map state ---------- */
+let stationA=null, stationB=null, vehicle='taxi', durationSec=12;
+let view='map';           // 'map' | 'ride'
+let trip=null, traveler={x:0,y:0}, hasTraveler=false;
+const VEH_ICO={taxi:'🚕',train:'🚂',ship:'🚢'};
+
+const mapUI=document.getElementById('mapUI'), rideUI=document.getElementById('rideUI');
+const goBtn=document.getElementById('goBtn'), routeLbl=document.getElementById('routeLbl');
+const progBar=document.getElementById('progBar'), etaEl=document.getElementById('eta');
+const boardEl=document.getElementById('board'), flashEl=document.getElementById('flash');
+const toastEl=document.getElementById('toast');
+let toastT=null;
+function toast(m){ toastEl.textContent=m; toastEl.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),1800); }
+
+/* map <-> screen (map world is 1000x1000, fit to screen) */
+function mapFit(){
+  const s=Math.min(VW,VH)/1000;
+  return { s:s, ox:(VW-1000*s)/2, oy:(VH-1000*s)/2 };
+}
+function toScreen(p){ const f=mapFit(); return {x:f.ox+p.x*f.s, y:f.oy+p.y*f.s}; }
+function toMap(x,y){ const f=mapFit(); return {x:(x-f.ox)/f.s, y:(y-f.oy)/f.s}; }
+
+/* ---------- contract wiring ---------- */
+const contract = TransitContract({
+  onState: function(t, s){
+    if(t!==trip) return;
+    if(s==='enroute'){
+      boardEl.classList.remove('show');
+      view='ride';
+      mapUI.style.display='none'; rideUI.style.display='block';
+      document.getElementById('rideVeh').textContent=VEH_ICO[t.vehicle]+' '+t.vehicle;
+      startRideFx(t);
+    } else if(s==='arrived'){
+      endRide(true);
+    } else if(s==='cancelled'){
+      endRide(false);
+    }
+  },
+  onProgress: function(t, t01, pos){
+    if(t!==trip) return;
+    traveler={x:pos.x,y:pos.y}; hasTraveler=true;
+    progBar.style.width=(t01*100).toFixed(1)+'%';
+    const el=(performance.now()-t.departAt)/1000;
+    const left=Math.max(0, t.durationSec-el);
+    etaEl.textContent=left.toFixed(0)+'s';
+  }
+});
+window.__transit = { contract:contract };   // test hook
+
+/* ---------- ride fx (cinematic) ---------- */
+const fx = { active:false, scroll:0, lookX:0, lookY:0, lookTX:0, lookTY:0,
+             layers:[], veh:'taxi', t01:0, seed:1 };
+function startRideFx(t){
+  fx.active=true; fx.scroll=0; fx.veh=t.vehicle; fx.t01=0;
+  fx.lookX=fx.lookY=fx.lookTX=fx.lookTY=0;
+  fx.seed=(Math.random()*1e9)|0;
+  const r=mulberry32(fx.seed);
+  fx.layers=[];
+  if(t.vehicle==='taxi'){
+    // city: 3 parallax layers of buildings + streetlights
+    for(let L=0;L<3;L++){
+      const items=[]; const n=26;
+      for(let i=0;i<n;i++) items.push({x:r()*4000, w:60+r()*120, h:80+r()*(160-L*30), hue:r()*360, win:r()});
+      fx.layers.push({spd:[0.5,1.0,1.8][L], items:items});
+    }
+  } else if(t.vehicle==='train'){
+    // countryside: hills, trees, houses
+    for(let L=0;L<3;L++){
+      const items=[]; const n=22;
+      for(let i=0;i<n;i++) items.push({x:r()*4000, s:20+r()*60, k:r(), hue:90+r()*60});
+      fx.layers.push({spd:[0.3,0.65,1.2][L], items:items});
+    }
+  } else {
+    // ship: starfield + slow nebula blobs
+    for(let L=0;L<3;L++){
+      const items=[]; const n=60;
+      for(let i=0;i<n;i++) items.push({x:r()*4000, y:r(), s:0.6+r()*2.2, tw:r()*6.28});
+      fx.layers.push({spd:[0.12,0.3,0.7][L], items:items});
+    }
+  }
+}
+function endRide(arrived){
+  fx.active=false;
+  view='map';
+  rideUI.style.display='none'; mapUI.style.display='block';
+  flashEl.style.transition='none'; flashEl.style.opacity='1';
+  requestAnimationFrame(function(){
+    flashEl.style.transition='opacity .6s'; flashEl.style.opacity='0';
+  });
+  if(arrived){
+    stationA={x:trip.to.x,y:trip.to.y}; stationB=null;   // you are now here
+    refreshRoute();
+    toast('arrived · '+trip.durationSec+'s '+VEH_ICO[trip.vehicle]);
+  } else {
+    refreshRoute();
+    toast('trip cancelled — back at A');
+  }
+  trip=null;
+}
+
+/* ---------- map interaction ---------- */
+cv.addEventListener('pointerdown', function(e){
+  if(view!=='map') return;
+  const m=toMap(e.clientX,e.clientY);
+  if(m.x<0||m.y<0||m.x>1000||m.y>1000) return;
+  if(!stationA){ stationA=m; }
+  else if(!stationB){ stationB=m; }
+  else { stationA=m; stationB=null; }
+  refreshRoute();
+});
+function refreshRoute(){
+  if(stationA&&stationB){
+    const dx=stationB.x-stationA.x, dy=stationB.y-stationA.y;
+    const km=(Math.hypot(dx,dy)/100).toFixed(1);
+    routeLbl.innerHTML='route: <b>A → B</b> · '+km+' km · '+VEH_ICO[vehicle]+' '+vehicle+' · '+durationSec+'s';
+    goBtn.classList.add('ready'); goBtn.textContent='GO →  '+VEH_ICO[vehicle];
+  } else {
+    routeLbl.textContent = stationA ? 'now tap a destination' : 'tap twice on the map to plot a route';
+    goBtn.classList.remove('ready'); goBtn.textContent='GO →';
+  }
+}
+document.querySelectorAll('.veh').forEach(function(b){
+  b.addEventListener('click', function(){
+    document.querySelectorAll('.veh').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); vehicle=b.dataset.v; refreshRoute();
+  });
+});
+document.getElementById('dur').addEventListener('input', function(e){
+  durationSec=+e.target.value;
+  document.getElementById('durVal').textContent=durationSec+'s';
+  refreshRoute();
+});
+goBtn.addEventListener('click', function(){
+  if(!(stationA&&stationB)) return;
+  document.getElementById('boardIco').textContent=VEH_ICO[vehicle];
+  document.getElementById('boardTxt').textContent=vehicle+' arriving…';
+  boardEl.classList.add('show');
+  trip=contract.book({from:stationA, to:stationB, vehicle:vehicle, durationSec:durationSec});
+});
+document.getElementById('cancelBtn').addEventListener('click', function(){
+  if(trip) trip.cancel();
+});
+
+/* look-around drag during ride */
+let lookId=null, lookLX=0, lookLY=0;
+cv.addEventListener('pointerdown', function(e){
+  if(view!=='ride'||!fx.active) return;
+  lookId=e.pointerId; lookLX=e.clientX; lookLY=e.clientY;
+});
+cv.addEventListener('pointermove', function(e){
+  if(e.pointerId!==lookId||!fx.active) return;
+  fx.lookTX=Math.max(-1,Math.min(1, fx.lookTX+(e.clientX-lookLX)/140));
+  fx.lookTY=Math.max(-1,Math.min(1, fx.lookTY+(e.clientY-lookLY)/140));
+  lookLX=e.clientX; lookLY=e.clientY;
+});
+['pointerup','pointercancel'].forEach(function(ev){
+  cv.addEventListener(ev, function(e){ if(e.pointerId===lookId){ lookId=null; fx.lookTX=0; fx.lookTY=0; } });
+});
+
+/* ================= rendering ================= */
+function drawMap(){
+  // bg
+  const g=ctx.createLinearGradient(0,0,0,VH);
+  g.addColorStop(0,'#0c1220'); g.addColorStop(1,'#080b12');
+  ctx.fillStyle=g; ctx.fillRect(0,0,VW,VH);
+  // grid
+  const f=mapFit();
+  ctx.strokeStyle='rgba(120,160,220,.10)'; ctx.lineWidth=1; ctx.beginPath();
+  for(let i=0;i<=10;i++){
+    const x=f.ox+i*100*f.s, y=f.oy+i*100*f.s;
+    ctx.moveTo(x,f.oy); ctx.lineTo(x,f.oy+1000*f.s);
+    ctx.moveTo(f.ox,y); ctx.lineTo(f.ox+1000*f.s,y);
+  }
+  ctx.stroke();
+  // route arc
+  if(stationA&&stationB){
+    const path=contract.PATHS[vehicle](stationA,stationB);
+    ctx.strokeStyle='rgba(232,163,61,.8)'; ctx.lineWidth=3; ctx.setLineDash([10,8]);
+    ctx.beginPath();
+    for(let i=0;i<=60;i++){ const p=toScreen(path(i/60)); i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y); }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  function station(p, color, label){
+    const s=toScreen(p);
+    ctx.fillStyle='rgba(0,0,0,.4)';
+    ctx.beginPath(); ctx.arc(s.x,s.y+3,15,0,7); ctx.fill();
+    ctx.fillStyle=color;
+    ctx.beginPath(); ctx.arc(s.x,s.y,13,0,7); ctx.fill();
+    ctx.fillStyle='#0a0d14'; ctx.font='700 13px -apple-system,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(label,s.x,s.y+1);
+    ctx.strokeStyle=color; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(s.x,s.y,20+Math.sin(performance.now()/400)*3,0,7); ctx.stroke();
+  }
+  if(stationA) station(stationA,'#4da3ff','A');
+  if(stationB) station(stationB,'#e8a33d','B');
+  if(hasTraveler){
+    const s=toScreen(traveler);
+    ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(s.x,s.y,6,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.5)';
+    ctx.beginPath(); ctx.arc(s.x,s.y,11,0,7); ctx.stroke();
+  }
+}
+
+function drawRide(dt){
+  const t=performance.now();
+  // scroll speed tied to trip progress so ETA matches motion
+  if(trip&&trip.state==='enroute'){
+    const el=(t-trip.departAt)/1000;
+    const target=Math.min(1, el/trip.durationSec);
+    const dT=Math.max(0, target-fx.t01);
+    fx.t01=target;
+    const base={taxi:2600,train:1700,ship:700}[fx.veh];
+    fx.scroll+=base*dT*1.0 + base*dt*0.02*(1-fx.t01*0.85); // fast mid-trip, settle at end
+  }
+  fx.lookX+=(fx.lookTX-fx.lookX)*0.12;
+  fx.lookY+=(fx.lookTY-fx.lookY)*0.12;
+  const lx=fx.lookX*VW*0.06, ly=fx.lookY*VH*0.04;
+
+  if(fx.veh==='taxi') drawTaxiWorld(lx,ly,t);
+  else if(fx.veh==='train') drawTrainWorld(lx,ly,t);
+  else drawShipWorld(lx,ly,t);
+
+  if(fx.veh==='taxi') drawTaxiFrame();
+  else if(fx.veh==='train') drawTrainFrame();
+  else drawShipFrame();
+}
+
+/* ----- taxi: city streets whipping past ----- */
+function drawTaxiWorld(lx,ly,t){
+  const g=ctx.createLinearGradient(0,0,0,VH);
+  g.addColorStop(0,'#1a2030'); g.addColorStop(.55,'#141a28'); g.addColorStop(1,'#0b0e16');
+  ctx.fillStyle=g; ctx.fillRect(0,0,VW,VH);
+  // sky glow
+  ctx.fillStyle='rgba(232,163,61,.06)';
+  ctx.fillRect(0,0,VW,VH*0.4);
+  fx.layers.forEach(function(L,li){
+    const horizon=VH*(0.42+li*0.06);
+    L.items.forEach(function(b){
+      let x=((b.x - fx.scroll*L.spd)%(VW+400)); if(x<0)x+=VW+400; x-=200;
+      x+=lx*(li+1)*0.5;
+      const bh=b.h*(0.5+li*0.35);
+      const y=horizon+ly*(li+1)*0.3;
+      ctx.fillStyle='hsl('+b.hue+',22%,'+(10+li*5)+'%)';
+      ctx.fillRect(x, y-bh, b.w, bh);
+      // lit windows
+      if(li===2){
+        ctx.fillStyle='rgba(255,210,130,.5)';
+        for(let wy=y-bh+10; wy<y-8; wy+=16)
+          for(let wx=x+8; wx<x+b.w-8; wx+=18)
+            if(((wx*7+wy*13)|0)%5===0) ctx.fillRect(wx,wy,7,9);
+      }
+    });
+    // streetlights streak
+    if(li===2){
+      ctx.strokeStyle='rgba(255,220,150,.35)'; ctx.lineWidth=3;
+      ctx.beginPath();
+      for(let i=0;i<8;i++){
+        let x=((i*613 - fx.scroll*1.8)%(VW+300)); if(x<0)x+=VW+300; x-=150;
+        ctx.moveTo(x, VH*0.72); ctx.lineTo(x-40, VH*0.6);
+      }
+      ctx.stroke();
+    }
+  });
+  // road
+  ctx.fillStyle='#0d1119'; ctx.fillRect(0,VH*0.78,VW,VH*0.22);
+  ctx.strokeStyle='rgba(232,163,61,.55)'; ctx.lineWidth=4; ctx.setLineDash([40,36]);
+  ctx.lineDashOffset=-fx.scroll*1.8;
+  ctx.beginPath(); ctx.moveTo(0,VH*0.89); ctx.lineTo(VW,VH*0.89); ctx.stroke();
+  ctx.setLineDash([]);
+}
+function drawTaxiFrame(){
+  // windshield trapezoid
+  ctx.fillStyle='rgba(8,10,16,.92)';
+  ctx.beginPath();
+  ctx.moveTo(0,0); ctx.lineTo(VW,0); ctx.lineTo(VW*0.86,VH*0.30); ctx.lineTo(VW*0.14,VH*0.30);
+  ctx.closePath();
+  // punch the glass: use composite to cut a window
+  ctx.save();
+  ctx.globalCompositeOperation='destination-out';
+  ctx.beginPath();
+  ctx.moveTo(VW*0.06,VH*0.03); ctx.lineTo(VW*0.94,VH*0.03);
+  ctx.lineTo(VW*0.82,VH*0.26); ctx.lineTo(VW*0.18,VH*0.26);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // dashboard silhouette
+  const g=ctx.createLinearGradient(0,VH*0.72,0,VH);
+  g.addColorStop(0,'#1c2230'); g.addColorStop(1,'#0a0d14');
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.moveTo(0,VH); ctx.lineTo(0,VH*0.80);
+  ctx.quadraticCurveTo(VW*0.5,VH*0.70,VW,VH*0.80);
+  ctx.lineTo(VW,VH); ctx.closePath(); ctx.fill();
+  // rear-view mirror
+  ctx.fillStyle='#141a26';
+  roundRect(VW/2-52, VH*0.05, 104, 26, 8); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.14)'; ctx.lineWidth=2; ctx.stroke();
+}
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+
+/* ----- train: countryside ----- */
+function drawTrainWorld(lx,ly,t){
+  const g=ctx.createLinearGradient(0,0,0,VH);
+  g.addColorStop(0,'#7fb2e0'); g.addColorStop(.5,'#a8c8e2'); g.addColorStop(.62,'#8aa864'); g.addColorStop(1,'#5d7a48');
+  ctx.fillStyle=g; ctx.fillRect(0,0,VW,VH);
+  // sun
+  ctx.fillStyle='rgba(255,244,200,.9)';
+  ctx.beginPath(); ctx.arc(VW*0.78+lx*0.2, VH*0.16+ly*0.2, 30, 0, 7); ctx.fill();
+  // clouds
+  ctx.fillStyle='rgba(255,255,255,.75)';
+  for(let i=0;i<4;i++){
+    let x=((i*397+300 - fx.scroll*0.12)%(VW+300)); if(x<0)x+=VW+300; x-=150;
+    const y=VH*(0.10+i*0.07)+ly*0.3;
+    ctx.beginPath(); ctx.ellipse(x,y,46,15,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x+28,y+5,34,12,0,0,7); ctx.fill();
+  }
+  fx.layers.forEach(function(L,li){
+    const baseY=VH*(0.60+li*0.10);
+    L.items.forEach(function(it){
+      let x=((it.x - fx.scroll*L.spd)%(VW+300)); if(x<0)x+=VW+300; x-=150;
+      x+=lx*(li+1)*0.6;
+      const y=baseY+((it.k*97)|0)%40+ly*(li+1)*0.4;
+      const s=it.s*(0.6+li*0.5);
+      if(li===0){
+        // distant hills
+        ctx.fillStyle='hsl('+it.hue+',25%,'+(52-li*6)+'%)';
+        ctx.beginPath(); ctx.ellipse(x,y,s*3.2,s*0.9,0,0,7); ctx.fill();
+      } else if(it.k<0.72){
+        // tree: trunk + canopy
+        ctx.fillStyle='#5a4028'; ctx.fillRect(x-2,y-s*0.7,4,s*0.7);
+        ctx.fillStyle='hsl('+it.hue+',40%,'+(30+it.k*14)+'%)';
+        ctx.beginPath(); ctx.arc(x,y-s*0.85,s*0.42,0,7); ctx.fill();
+        ctx.beginPath(); ctx.arc(x-s*0.25,y-s*0.7,s*0.3,0,7); ctx.fill();
+      } else {
+        // house
+        ctx.fillStyle='hsl(20,30%,42%)'; ctx.fillRect(x-s*0.4,y-s*0.55,s*0.8,s*0.55);
+        ctx.fillStyle='hsl(0,45%,32%)';
+        ctx.beginPath(); ctx.moveTo(x-s*0.5,y-s*0.55); ctx.lineTo(x,y-s*0.95); ctx.lineTo(x+s*0.5,y-s*0.55); ctx.fill();
+      }
+    });
+  });
+}
+function drawTrainFrame(){
+  ctx.fillStyle='rgba(12,14,20,.94)';
+  ctx.fillRect(0,0,VW,VH*0.06);                       // top bar
+  ctx.fillRect(0,VH*0.62,VW,VH*0.38);                 // bottom panel
+  ctx.fillRect(0,0,VW*0.045,VH); ctx.fillRect(VW*0.955,0,VW*0.045,VH); // sides
+  ctx.fillRect(VW*0.485,VH*0.06,VW*0.03,VH*0.56);      // center divider
+  // window glass sheen
+  const g=ctx.createLinearGradient(0,VH*0.06,0,VH*0.62);
+  g.addColorStop(0,'rgba(255,255,255,.10)'); g.addColorStop(.4,'rgba(255,255,255,0)');
+  ctx.fillStyle=g; ctx.fillRect(VW*0.045,VH*0.06,VW*0.91,VH*0.56);
+  // seat hints
+  ctx.fillStyle='#232838';
+  roundRect(VW*0.08,VH*0.78,VW*0.36,VH*0.16,14); ctx.fill();
+  roundRect(VW*0.56,VH*0.78,VW*0.36,VH*0.16,14); ctx.fill();
+  ctx.fillStyle='#2e3650';
+  roundRect(VW*0.10,VH*0.70,VW*0.32,VH*0.12,12); ctx.fill();
+  roundRect(VW*0.58,VH*0.70,VW*0.32,VH*0.12,12); ctx.fill();
+}
+
+/* ----- ship: starfield ----- */
+function drawShipWorld(lx,ly,t){
+  // hull background
+  ctx.fillStyle='#10141d'; ctx.fillRect(0,0,VW,VH);
+  const cxp=VW/2, cyp=VH*0.40, rad=Math.min(VW,VH)*0.52;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cxp,cyp,rad,0,7); ctx.clip();
+  // space inside the viewport
+  ctx.fillStyle='#04060d'; ctx.fillRect(cxp-rad,cyp-rad,rad*2,rad*2);
+  // nebula blobs
+  const r=mulberry32(fx.seed+7);
+  for(let i=0;i<5;i++){
+    const nx=r(), ny=r(), nh=r()*360;
+    let x=((nx*(rad*2.4) - fx.scroll*0.05 + lx*8)%(rad*2.6));
+    if(x<0)x+=rad*2.6;
+    const g=ctx.createRadialGradient(cxp-rad+x, cyp-rad+ny*rad*2, 10, cxp-rad+x, cyp-rad+ny*rad*2, 190);
+    g.addColorStop(0,'hsla('+nh+',60%,30%,.20)'); g.addColorStop(1,'hsla('+nh+',60%,30%,0)');
+    ctx.fillStyle=g; ctx.fillRect(cxp-rad,cyp-rad,rad*2,rad*2);
+  }
+  fx.layers.forEach(function(L,li){
+    L.items.forEach(function(s){
+      let x=((s.x - fx.scroll*L.spd)%(rad*2+60)); if(x<0)x+=rad*2+60;
+      x=cxp-rad-30+x+lx*(li+1)*1.4;
+      let y=cyp-rad+((s.y*rad*2.2 + ly*(li+1)*2)%(rad*2+40));
+      if(y<cyp-rad)y+=rad*2+40;
+      const tw=0.55+0.45*Math.sin(t/300+s.tw);
+      ctx.fillStyle='rgba(255,255,255,'+(tw*(0.35+li*0.3)).toFixed(2)+')';
+      ctx.fillRect(x, y, s.s, s.s);
+    });
+  });
+  // inner vignette
+  const vg=ctx.createRadialGradient(cxp,cyp,rad*0.55,cxp,cyp,rad);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.45)');
+  ctx.fillStyle=vg; ctx.fillRect(cxp-rad,cyp-rad,rad*2,rad*2);
+  ctx.restore();
+  // viewport ring
+  ctx.strokeStyle='#2a3348'; ctx.lineWidth=14;
+  ctx.beginPath(); ctx.arc(cxp,cyp,rad,0,7); ctx.stroke();
+  ctx.strokeStyle='rgba(120,200,255,.25)'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(cxp,cyp,rad-9,0,7); ctx.stroke();
+  // console glow at bottom
+  const cg=ctx.createLinearGradient(0,VH*0.78,0,VH);
+  cg.addColorStop(0,'rgba(40,80,140,.25)'); cg.addColorStop(1,'#0a0e16');
+  ctx.fillStyle=cg; ctx.fillRect(0,VH*0.78,VW,VH*0.22);
+  ctx.fillStyle='rgba(120,200,255,.5)';
+  for(let i=0;i<9;i++){
+    const x=VW*0.12+i*VW*0.095;
+    const h=6+((Math.sin(performance.now()/500+i*2.3)+1)*10);
+    ctx.fillRect(x, VH*0.90-h, VW*0.05, h);
+  }
+}
+function drawShipFrame(){
+  /* hull, viewport, ring, and console are all drawn in drawShipWorld
+     (the world must be clipped inside the viewport circle). */
+}
+
+/* ---------- main loop ---------- */
+let lastT=performance.now();
+function frame(t){
+  const dt=Math.min(.05,(t-lastT)/1000); lastT=t;
+  contract.update(t);
+  ctx.clearRect(0,0,VW,VH);
+  if(view==='map') drawMap();
+  else drawRide(dt);
+  requestAnimationFrame(frame);
+}
+refreshRoute();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
