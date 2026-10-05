@@ -791,11 +791,17 @@ function decorateFunnel(){
   var top=document.querySelector('.pf-shell .pf-top'); if(!top)return;
   var badge=top.querySelector('.ps-funnel-badge');
   if(!badge){badge=document.createElement('button');badge.className='ps-funnel-badge';badge.dataset.spineInbox='1';top.appendChild(badge);}
-  badge.textContent='Inbox '+S.funnelInbox.length;
+  // This runs from a subtree observer: unchanged DOM must stay untouched.
+  var label='Inbox '+S.funnelInbox.length;
+  if(badge.textContent!==label)badge.textContent=label;
   var panel=document.querySelector('.pf-shell .ps-funnel-panel');
   if(panel){
-    panel.innerHTML='<div class="ps-funnel-panel-head"><b>Funnel inbox</b><button data-spine-hide-inbox>×</button></div>'+
+    var markup='<div class="ps-funnel-panel-head"><b>Funnel inbox</b><button data-spine-hide-inbox>×</button></div>'+
       (S.funnelInbox.length?S.funnelInbox.slice().reverse().map(function(x){return '<div class="ps-funnel-item"><strong>'+esc2(x.record.title)+'</strong><span>'+esc2(x.record.kind)+' · '+esc2(x.record.source)+(x.training_refs&&x.training_refs.length?' · '+x.training_refs.length+' training refs':'')+'</span></div>';}).join(''):'<div class="ps-empty">Nothing waiting.</div>');
+    if(panel._pulseInboxMarkup!==markup){
+      panel._pulseInboxMarkup=markup;
+      panel.innerHTML=markup;
+    }
   }
 }
 function toggleInbox(show){

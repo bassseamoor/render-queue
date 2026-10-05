@@ -12,6 +12,8 @@ This repository publishes Project Pulse. Multiple builders update it. Always fet
 
 Before publishing a rebuild, verify both tools appear from the normal dashboard URL, without a component query parameter, and open from the bin. If changing component IDs, migrate saved UI state and deep links.
 
+Run `node tests/pulse-checks.cjs` before publishing Pulse changes. Escape `<` as `\u003c` in embedded JavaScript source strings so HTML closing tags cannot terminate the dashboard scripts. Insert update scripts at the actual final body closing tag, never the first text match. Keep the inline `PULSE_VERSION` and `pulse-version.txt` synchronized. Mutation observer decorators must avoid writing unchanged DOM content; always verify entering Funnel and returning to Bin remains responsive.
+
 ## Component project workspace
 - Keep `<script src="pulse-workspace.js"></script>` before the independent-component extensions hook in every dashboard rebuild.
 - `pulse-workspace.js` owns the multi-window canvas, drag/resize, assembly projects, save/import/export, and chat handoff. It is additive; do not replace it with single-tool focus navigation.
