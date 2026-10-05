@@ -446,7 +446,10 @@ var BLUEPRINTS=[
 var CONTRACTS=[
  {id:'harness-completion',name:'Harness Completion Invariant',
   summary:'Even garbage or incomplete input must produce the best-known candidate. Passing gates teaches logic; intent confidence is tracked separately.',
-  source:'moor-harness-runtime-v1.html'}
+  source:'moor-harness-runtime-v1.html'},
+ {id:'reference-graph',name:'Universal Reference Graph',
+  summary:'Bin stores concepts, intent, recipes, artifacts, rules, failures, evidence, projects, versions, components, generators, and implementations as linked references.',
+  source:'pulse-reference-graph-schema.json'}
 ];
 function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS);}
 
