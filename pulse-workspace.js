@@ -44,19 +44,22 @@ style.textContent=[
 '.pf-project:hover{background:#ffffff08;border-color:var(--line)}.pf-project.on{background:#7fd4ff12;border-color:#7fd4ff55}',
 '.pf-project-icon{font-size:18px;width:24px;text-align:center}.pf-project-copy{flex:1;min-width:0}.pf-project-copy strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pf-project-copy small{display:block;margin-top:3px;font-size:11px;color:var(--muted)}',
 '.pf-q{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #f4cb7766;color:var(--amber);border-radius:999px;padding:3px 6px}',
-'.pf-stage{overflow:auto;padding:18px 18px 40px}',
+'.pf-stage{overflow:auto;padding:18px 18px 40px;background:radial-gradient(circle at 78% 0,rgba(89,52,120,.12),transparent 34%),linear-gradient(180deg,rgba(11,9,18,.9),rgba(7,7,13,.94))}',
 '.pf-empty{display:grid;place-items:center;min-height:50%;color:var(--muted);text-align:center}.pf-empty strong{display:block;color:var(--text);font-size:18px;margin-bottom:6px}',
-'.pf-project-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px}.pf-project-head>div:first-child{flex:1}.pf-project-head h2{font-size:1.45rem}.pf-project-head p{margin-top:5px;color:var(--muted);font-size:.86rem;max-width:760px}.pf-head-actions{display:flex;gap:8px;flex-wrap:wrap}.pf-head-actions .btn{min-height:36px;font-size:12px;padding:7px 10px}',
+'.pf-project-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px}.pf-project-head>div:first-child{flex:1}.pf-project-head h2{font-size:1.45rem}.pf-project-head p{margin-top:5px;color:var(--muted);font-size:.86rem;max-width:760px}.pf-head-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.pf-head-actions .btn{min-height:36px;font-size:12px;padding:7px 10px}',
+'.pf-layout-toggle{display:inline-flex;padding:3px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.045);box-shadow:inset 0 1px rgba(255,255,255,.05)}.pf-layout-toggle button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:11px;padding:6px 9px;border-radius:8px;cursor:pointer}.pf-layout-toggle button.on{color:#0b0d12;background:linear-gradient(180deg,#fff,#e9e9ee);box-shadow:0 4px 14px #0005}',
 '.pf-queue{border:1px solid #806b3b;background:#2d26142e;border-radius:14px;padding:16px}.pf-queue strong{color:var(--amber)}.pf-queue p{margin-top:6px;color:var(--muted);font-size:.86rem}',
-'.pf-line{position:relative;padding-left:38px}.pf-line:before{content:"";position:absolute;left:13px;top:10px;bottom:10px;width:1px;background:linear-gradient(#7fd4ff66,#7fd4ff12)}',
-'.pf-version{position:relative;border:1px solid #3a435c;border-radius:15px;background:#101522;margin:0 0 18px;padding:14px;box-shadow:0 12px 36px #0003}.pf-version:before{content:"";position:absolute;left:-32px;top:23px;width:11px;height:11px;border-radius:50%;background:#0b101b;border:2px solid var(--cyan);box-shadow:0 0 14px #7fd4ff55}.pf-version.working{border-color:#f4cb7766}.pf-version.working:before{border-color:var(--amber);box-shadow:0 0 14px #f4cb7755}',
-'.pf-vhead{display:flex;align-items:flex-start;gap:10px}.pf-vcopy{flex:1;min-width:0}.pf-vtitle{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.pf-vtitle strong{font-size:15px}.pf-state{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:var(--muted)}.pf-state.locked{color:var(--cyan);border-color:#7fd4ff55}.pf-state.working{color:var(--amber);border-color:#f4cb7766}.pf-vmeta{font-size:11px;color:var(--muted);margin-top:4px}.pf-vactions{display:flex;gap:7px;flex-wrap:wrap}.pf-vactions .btn{min-height:34px;padding:6px 9px;font-size:12px}',
-'.pf-components{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid #ffffff0b}.pf-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #454e66;border-radius:9px;background:#171d2b;color:var(--text);padding:7px 9px;font-size:12px;max-width:280px}.pf-chip.inherited{opacity:.28}.pf-chip.changed{border-color:#7fd4ff88;background:#7fd4ff10}.pf-chip small{font-size:10px;color:var(--muted)}',
+'.pf-line{position:relative}.pf-line.mode-vertical{padding-left:38px}.pf-line.mode-vertical:before{content:"";position:absolute;left:13px;top:10px;bottom:10px;width:1px;background:linear-gradient(#ffffff55,#ffffff0d)}.pf-line.mode-horizontal{display:flex;align-items:flex-start;gap:18px;min-width:max-content;padding:8px 8px 18px 8px}.pf-line.mode-horizontal:before{content:"";position:absolute;left:12px;right:12px;top:19px;height:1px;background:linear-gradient(90deg,#ffffff22,#ffffff55,#ffffff22)}',
+'.pf-version{position:relative;border:1px solid rgba(255,255,255,.13);border-radius:20px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));margin:0 0 18px;padding:15px;box-shadow:0 18px 50px #0006,inset 0 1px rgba(255,255,255,.08);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);overflow:visible}.pf-version:before{content:"";position:absolute;left:-32px;top:23px;width:11px;height:11px;border-radius:50%;background:#0b101b;border:2px solid #f8f8fa;box-shadow:0 0 15px #ffffff33}.pf-line.mode-horizontal .pf-version{width:min(520px,72vw);min-width:380px;margin:22px 0 0}.pf-line.mode-horizontal .pf-version:before{left:18px;top:-16px}.pf-version.working{border-color:rgba(244,203,119,.30);box-shadow:0 18px 50px #0006,inset 0 1px rgba(255,255,255,.09),0 0 0 1px rgba(244,203,119,.08)}.pf-version.working:before{border-color:var(--amber);box-shadow:0 0 16px #f4cb7755}',
+'.pf-vhead{display:flex;align-items:flex-start;gap:10px}.pf-vcopy{flex:1;min-width:0}.pf-vtitle{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.pf-vtitle strong{font-size:15px}.pf-state{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:var(--muted)}.pf-state.locked{color:#f2f5fa;border-color:#ffffff2e}.pf-state.working{color:var(--amber);border-color:#f4cb7766}.pf-vmeta{font-size:11px;color:var(--muted);margin-top:4px}.pf-vactions{display:flex;gap:7px;flex-wrap:wrap}.pf-vactions .btn{min-height:34px;padding:6px 9px;font-size:12px}',
+'.pf-summary{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.pf-summary span{font-size:10px;color:var(--muted);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:3px 7px;background:rgba(255,255,255,.025)}',
+'.pf-components{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #ffffff10}.pf-line.mode-horizontal .pf-components{grid-template-columns:repeat(2,minmax(0,1fr))}',
+'.pf-tile{position:relative;min-height:94px;padding:13px 12px 11px;border:1px solid rgba(255,255,255,.72);border-radius:17px;background:linear-gradient(160deg,rgba(255,255,255,.98),rgba(237,238,243,.94));color:#16171b;box-shadow:0 10px 24px #0005,inset 0 1px rgba(255,255,255,1);overflow:hidden;isolation:isolate}.pf-tile:before{content:"";position:absolute;inset:0;background:linear-gradient(125deg,rgba(255,255,255,.72),rgba(255,255,255,.14) 38%,rgba(255,255,255,0) 62%);border-radius:inherit;pointer-events:none;z-index:-1}.pf-tile:after{content:"";position:absolute;inset:1px;border-radius:16px;border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 0 24px rgba(255,255,255,.18);pointer-events:none}.pf-tile strong{display:block;font-size:12px;line-height:1.28;letter-spacing:-.01em}.pf-tile small{display:block;margin-top:8px;font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#656a72}.pf-tile .pf-kind{position:absolute;right:9px;bottom:8px;font-size:9px;color:#7b8088;opacity:.75}.pf-tile.inherited{opacity:.28;filter:saturate(.5);box-shadow:0 5px 16px #0003}.pf-tile.changed{opacity:1;box-shadow:0 12px 30px #0007,0 0 0 1px rgba(110,255,170,.34),0 0 26px rgba(77,255,145,.20)}.pf-tile.new{opacity:1;box-shadow:0 12px 30px #0007,0 0 0 1px rgba(110,255,170,.52),0 0 34px rgba(77,255,145,.30)}.pf-tile.removed{opacity:.18;background:transparent;color:#e8e8ed;border:1px dashed rgba(255,255,255,.35);box-shadow:none}.pf-tile.removed:before,.pf-tile.removed:after{display:none}.pf-tile.blocked{box-shadow:0 10px 24px #0005,0 0 0 1px rgba(244,203,119,.38),0 0 24px rgba(244,203,119,.12)}',
 '.pf-detail{margin-top:12px;border-top:1px solid #ffffff0d;padding-top:10px}.pf-detail summary{color:var(--muted);font-size:12px}.pf-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px}.pf-card{border:1px solid #30394f;border-radius:10px;padding:10px;background:#0d1220}.pf-card strong{display:block;font-size:12px}.pf-card p{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45}',
 '.pf-ramble{margin-top:13px;padding-top:12px;border-top:1px solid #ffffff0d}.pf-ramble label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.pf-ramble textarea{width:100%;min-height:92px;resize:vertical}.pf-ramble .pf-note{font-size:11px;color:var(--muted);margin-top:6px}.pf-ramble-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.pf-ramble-actions .btn{min-height:34px;padding:6px 9px;font-size:12px}',
 '.pf-status{font-size:11px;color:var(--muted);padding:0 4px;min-height:16px}',
 '@media(max-width:900px){.pf-layout{grid-template-columns:190px minmax(0,1fr)}}',
-'@media(max-width:760px){body.pw-active #main{padding:6px!important}.pf-layout{display:block;overflow:auto}.pf-bin{max-height:210px;margin-bottom:8px}.pf-stage{overflow:visible;padding:14px}.pf-project-head{display:block}.pf-head-actions{margin-top:10px}.pf-line{padding-left:27px}.pf-line:before{left:9px}.pf-version:before{left:-23px}.pf-components{gap:5px}.pf-chip{font-size:11px;padding:6px 7px}}'
+'@media(max-width:760px){body.pw-active #main{padding:6px!important}.pf-layout{display:block;overflow:auto}.pf-bin{max-height:210px;margin-bottom:8px}.pf-stage{overflow:visible;padding:14px}.pf-project-head{display:block}.pf-head-actions{margin-top:10px}.pf-line.mode-vertical{padding-left:27px}.pf-line.mode-vertical:before{left:9px}.pf-line.mode-vertical .pf-version:before{left:-23px}.pf-line.mode-horizontal{overflow-x:auto;padding-bottom:14px}.pf-line.mode-horizontal .pf-version{min-width:82vw;width:82vw}.pf-components{display:flex;overflow-x:auto;flex-wrap:nowrap;padding-bottom:8px;scroll-snap-type:x proximity}.pf-tile{flex:0 0 138px;scroll-snap-align:start}.pf-layout-toggle{width:100%}.pf-layout-toggle button{flex:1}}'
 ].join('\n');
 document.head.appendChild(style);
 
@@ -83,6 +86,7 @@ function init(){
 
  const STORE='moor-pulse-funnel-projects-v1';
  const LEGACY='moor-pulse-component-projects-v1';
+ const LAYOUT_KEY='moor-pulse-funnel-layout-mode';
  const originalOpen=openComponent,originalTab=selectTab,originalBar=ensureTabbar,originalBin=binView;
  const main=document.getElementById('main');
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -156,6 +160,8 @@ function init(){
 
  let state=loadState();
  let selected=state.selected;
+ let layoutMode=read(LAYOUT_KEY,'vertical');
+ if(!['vertical','horizontal'].includes(layoutMode))layoutMode='vertical';
 
  const shell=document.createElement('section');
  shell.className='pf-shell';
@@ -169,7 +175,8 @@ function init(){
 
  const listEl=shell.querySelector('#pf-list'),stage=shell.querySelector('#pf-stage'),search=shell.querySelector('#pf-search'),statusEl=shell.querySelector('#pf-status');
  const status=t=>statusEl.textContent=t||'';
- function save(){state.selected=selected;write(STORE,state);renderCounts();}
+ function save(){state.selected=selected;write(STORE,state);write(LAYOUT_KEY,layoutMode);renderCounts();}
+ function setLayout(mode){if(!['vertical','horizontal'].includes(mode))return;layoutMode=mode;write(LAYOUT_KEY,layoutMode);renderStage();status(mode==='horizontal'?'Horizontal lineage · oldest left, newest right.':'Vertical lineage · newest top, oldest bottom.');}
  function renderCounts(){
   shell.querySelector('#pf-project-count').textContent=state.projects.length;
   shell.querySelector('#pf-queue-count').textContent=state.projects.filter(p=>p.queued).length;
@@ -212,9 +219,31 @@ function init(){
    (p.queued?'<span class="pf-q">Queued</span>':'')+'</button>'
   ).join('');
  }
- function itemChip(i){
-  const cls=i.inherited?' inherited':(i.change&&i.change!=='baseline'?' changed':'');
-  return '<span class="pf-chip'+cls+'" title="'+esc(i.source||'')+'"><span>'+esc(i.label||i.ref)+'</span><small>'+esc(i.sourceVersion||'')+'</small></span>';
+ function itemState(i){
+  if(i.change==='removed')return 'removed';
+  if(i.change==='new'||i.change==='added')return 'new';
+  if(i.change==='blocked')return 'blocked';
+  if(i.inherited||i.change==='inherited')return 'inherited';
+  if(i.change&&i.change!=='baseline')return 'changed';
+  return 'baseline';
+ }
+ function itemTile(i){
+  const st=itemState(i);
+  const cls=st==='baseline'?'':(' '+st);
+  const stateText=st==='baseline'?'present':st;
+  return '<div class="pf-tile'+cls+'" title="'+esc(i.source||'')+'"><strong>'+esc(i.label||i.ref)+'</strong><small>'+esc(i.sourceVersion||'current')+' · '+esc(stateText)+'</small><span class="pf-kind">'+esc(i.kind||'part')+'</span></div>';
+ }
+ function versionSummary(v){
+  const counts={changed:0,inherited:0,new:0,removed:0,blocked:0,present:0};
+  (v.items||[]).forEach(i=>{const st=itemState(i);if(st==='baseline')counts.present++;else if(counts[st]!==undefined)counts[st]++;});
+  const bits=[];
+  if(counts.changed)bits.push('<span>'+counts.changed+' changed</span>');
+  if(counts.new)bits.push('<span>'+counts.new+' new</span>');
+  if(counts.inherited)bits.push('<span>'+counts.inherited+' inherited</span>');
+  if(counts.removed)bits.push('<span>'+counts.removed+' removed</span>');
+  if(counts.blocked)bits.push('<span>'+counts.blocked+' blocked</span>');
+  if(counts.present&&!bits.length)bits.push('<span>'+counts.present+' present</span>');
+  return bits.join('');
  }
  function detailCard(i){
   return '<div class="pf-card"><strong>'+esc(i.label||i.ref)+'</strong><p>'+esc(i.kind||'part')+' · '+esc(i.source||'source unknown')+(i.detail?' · '+esc(i.detail):'')+'</p></div>';
@@ -230,20 +259,22 @@ function init(){
    : '';
   return '<article class="pf-version '+(isWorking?'working':'')+'" data-version-card="'+esc(v.id)+'">'+
    '<div class="pf-vhead"><div class="pf-vcopy"><div class="pf-vtitle"><strong>'+esc(p.name)+' · '+esc(v.number)+'</strong><span class="pf-state '+(isWorking?'working':'locked')+'">'+stateLabel+'</span></div><div class="pf-vmeta">'+esc(v.title||'')+' · '+esc(new Date(v.createdAt).toLocaleString())+(v.parentId?' · from '+esc(versionById(p,v.parentId)?.number||'parent'):'')+'</div></div><div class="pf-vactions">'+actions+'</div></div>'+
-   '<div class="pf-components">'+(v.items||[]).map(itemChip).join('')+'</div>'+
+   '<div class="pf-summary">'+versionSummary(v)+'</div><div class="pf-components">'+(v.items||[]).map(itemTile).join('')+'</div>'+
    '<details class="pf-detail"><summary>Expand version details</summary><div class="pf-detail-grid">'+(v.items||[]).map(detailCard).join('')+'</div></details>'+ramble+'</article>';
  }
  function renderStage(){
   const p=projectById(selected);
   if(!p){stage.innerHTML='<div class="pf-empty"><div><strong>Select a project</strong><span>Choose one from the project bin.</span></div></div>';return;}
-  const actions=(p.page?'<button class="btn" data-open-project="'+esc(p.id)+'">Open project</button>':'')+
+  const toggle='<div class="pf-layout-toggle" role="group" aria-label="Version layout"><button data-layout="vertical" class="'+(layoutMode==='vertical'?'on':'')+'">Vertical</button><button data-layout="horizontal" class="'+(layoutMode==='horizontal'?'on':'')+'">Horizontal</button></div>';
+  const actions=toggle+(p.page?'<button class="btn" data-open-project="'+esc(p.id)+'">Open project</button>':'')+
     '<button class="btn" data-export-project="'+esc(p.id)+'">Export manifest</button>';
   let body='';
   if(p.queued){
    body='<div class="pf-queue"><strong>Queued — intentionally not imported yet.</strong><p>'+esc(p.description)+'</p><p>Nothing from the active Beta has been frozen, duplicated, or modified by this Funnel migration. When you are ready, this queue entry can become the first immutable Beta snapshot.</p></div>';
   }else{
-   const versions=(p.versions||[]).slice().reverse();
-   body='<div class="pf-line">'+versions.map(v=>versionHtml(p,v)).join('')+'</div>';
+   const versions=(p.versions||[]).slice();
+   if(layoutMode==='vertical')versions.reverse();
+   body='<div class="pf-line mode-'+layoutMode+'">'+versions.map(v=>versionHtml(p,v)).join('')+'</div>';
   }
   stage.innerHTML='<header class="pf-project-head"><div><h2>'+esc(p.icon||'')+' '+esc(p.name)+'</h2><p>'+esc(p.description)+'</p></div><div class="pf-head-actions">'+actions+'</div></header>'+body;
  }
@@ -263,6 +294,7 @@ function init(){
   selected=b.dataset.project;save();render();
  });
  stage.addEventListener('click',e=>{
+  const layout=e.target.closest('[data-layout]');if(layout){setLayout(layout.dataset.layout);return;}
   const p=projectById(selected);if(!p)return;
   const dup=e.target.closest('[data-duplicate]');if(dup){const v=versionById(p,dup.dataset.duplicate);if(v)duplicateVersion(p,v);return;}
   const saveBtn=e.target.closest('[data-save-revision]');if(saveBtn){const v=versionById(p,saveBtn.dataset.saveRevision),ta=stage.querySelector('[data-revision="'+CSS.escape(saveBtn.dataset.saveRevision)+'"]');if(v)queueRevision(p,v,ta?.value||'');return;}
