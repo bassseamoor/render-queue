@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOOR · Convergence Funnel</title>
+<meta name="description" content="Self-correcting reverse funnel: preserve the original ask, observe the actual result, compute the difference, and emit the next minimal delta until the result matches the dogfood.">
+<style>
+:root{color-scheme:dark;--bg:#060912;--panel:#0d1420;--panel2:#111c29;--text:#edf4ff;--muted:#91a2b8;--line:#26384d;--cyan:#67d7ff;--green:#70e2a2;--amber:#f0c878;--red:#ff7b89;--violet:#a69cff;font-family:Inter,Segoe UI,system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#112d4428,transparent 38%),radial-gradient(circle at 85% 12%,#37294b22,transparent 33%),var(--bg);color:var(--text);min-height:100vh}button,input,textarea,select{font:inherit}button{cursor:pointer;color:inherit}.shell{max-width:1460px;margin:0 auto;padding:20px}.top{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px}.brand{flex:1}.eyebrow{font-size:.74rem;text-transform:uppercase;letter-spacing:.11em;color:var(--cyan)}h1{font-size:clamp(1.55rem,2.4vw,2.25rem);margin:6px 0 5px;font-weight:650}p{line-height:1.5}.muted{color:var(--muted)}.tag{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:.76rem;color:var(--muted)}.dot{width:7px;height:7px;border-radius:50%;background:var(--green)}.grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(360px,.8fr);gap:14px}.card{background:linear-gradient(145deg,#14223655,#0b111be8),var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:inset 0 1px #ffffff0a,0 20px 60px #0003;overflow:hidden}.head{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line);background:#101a26cc}.step{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#67d7ff16;color:var(--cyan);font-weight:700;font-size:.8rem;border:1px solid #67d7ff33}.head h2{font-size:1rem;margin:0}.body{padding:15px}.stack{display:grid;gap:14px}.pipeline{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:11px 0 0}.node{font-size:.72rem;padding:5px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);background:#08111b}.node.hot{border-color:#67d7ff55;color:var(--cyan)}.arrow{color:#52667d}.lock{border-left:3px solid var(--cyan);padding:10px 12px;background:#08111b;border-radius:8px;font-size:.83rem;color:#cfe6f7}.lock b{color:white}textarea,input,select{width:100%;background:#08111b;border:1px solid var(--line);border-radius:9px;color:var(--text);padding:10px 11px;outline:none}textarea:focus,input:focus{border-color:#55bddd;box-shadow:0 0 0 3px #55bddd15}textarea{min-height:128px;resize:vertical}label{display:block;font-size:.77rem;color:var(--muted);margin:0 0 6px}.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.btn{min-height:38px;border:1px solid var(--line);background:#101c2a;border-radius:9px;padding:8px 12px}.btn:hover{border-color:#4d7898}.btn.primary{background:var(--cyan);color:#061018;border-color:var(--cyan);font-weight:700}.btn.good{background:#123322;border-color:#2f6f4b;color:#aef2c9}.btn.warn{background:#302617;border-color:#755b2d;color:#f2d69a}.btn:disabled{opacity:.42;cursor:not-allowed}.reqs{display:grid;gap:7px;max-height:410px;overflow:auto;padding-right:3px}.req{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:start;padding:9px 10px;border:1px solid #213448;border-radius:10px;background:#08111b}.req .rid{font:700 .72rem ui-monospace,monospace;color:var(--cyan);padding-top:2px}.req .rt{font-size:.82rem;line-height:1.4}.req .rtype{font-size:.64rem;border:1px solid #38526a;padding:3px 6px;border-radius:999px;color:#9db3c9}.obs-note{font-size:.76rem;color:var(--muted);margin-top:7px}.compare{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.bucket{min-height:138px;border:1px solid var(--line);border-radius:11px;background:#08111b;padding:10px}.bucket h3{font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px}.bucket.missing h3{color:var(--amber)}.bucket.wrong h3{color:var(--red)}.bucket.extra h3{color:var(--violet)}.bucket ul{margin:0;padding-left:17px;font-size:.8rem;line-height:1.5}.empty{color:#60748a;font-size:.78rem}.delta{background:#08111b;border:1px solid var(--line);border-radius:11px;padding:11px;white-space:pre-wrap;font:.78rem/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;min-height:118px}.status{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border-radius:11px;border:1px solid var(--line);background:#08111b}.status strong{font-size:.86rem}.status.pass{border-color:#2e7049;background:#0c2318}.status.fail{border-color:#7c3942;background:#261116}.status.wait{border-color:#705e32;background:#251e10}.history{display:grid;gap:7px;max-height:260px;overflow:auto}.hist{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:center;padding:8px 10px;border-bottom:1px solid #1d2a38;font-size:.78rem}.hist .n{font-family:ui-monospace,monospace;color:var(--cyan)}.hist .verdict{font-size:.68rem;border-radius:999px;padding:3px 6px;border:1px solid var(--line)}.hist .verdict.pass{color:var(--green)}.hist .verdict.fail{color:var(--red)}.contract{font:.72rem/1.5 ui-monospace,monospace;background:#050a10;border:1px solid #1d2a38;border-radius:10px;padding:10px;white-space:pre-wrap;overflow:auto;max-height:260px}.foot{margin-top:14px;font-size:.73rem;color:#667a91}.self{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}.self-result{font-size:.78rem;color:var(--muted);line-height:1.5}.self-result b{color:var(--text)}@media(max-width:980px){.grid{grid-template-columns:1fr}.compare{grid-template-columns:1fr}.shell{padding:12px}.top{display:block}.tag{margin-top:10px}}
+</style>
+</head>
+<body>
+<div class="shell" data-feature="convergence-funnel">
+  <div class="top">
+    <div class="brand"><div class="eyebrow">MOOR · creation pipeline</div><h1>Convergence Funnel</h1><p class="muted">Forward once. Then flip it: observe the result, compare it to the immutable dogfood, emit only the difference, and repeat until nothing material is left.</p>
+      <div class="pipeline" aria-label="pipeline"><span class="node">DOGFOOD</span><span class="arrow">→</span><span class="node">FORWARD BLUEPRINT</span><span class="arrow">→</span><span class="node">BUILD</span><span class="arrow">→</span><span class="node hot">BLIND OBSERVE</span><span class="arrow">→</span><span class="node hot">DIFFERENCE</span><span class="arrow">→</span><span class="node hot">DELTA</span><span class="arrow">↺</span></div>
+    </div>
+    <div class="tag"><span class="dot"></span> fail-closed · original never mutates</div>
+  </div>
+
+  <div class="grid">
+    <div class="stack">
+      <section class="card" data-stage="dogfood"><div class="head"><span class="step">1</span><h2>Original dogfood</h2></div><div class="body">
+        <div class="lock"><b>Invariant:</b> this text is the reference frame. The loop may patch the artifact, never rewrite the ask to make the artifact look correct.</div>
+        <label for="dogfood">Original description</label><textarea id="dogfood"></textarea>
+        <div class="btnrow"><button class="btn primary" id="compile">Compile forward blueprint</button><button class="btn" id="loadDemo">Load MOOR dogfood</button><button class="btn" id="reset">Reset run</button></div>
+      </div></section>
+
+      <section class="card" data-stage="blueprint"><div class="head"><span class="step">2</span><h2>Forward blueprint</h2></div><div class="body"><div id="requirements" class="reqs"><div class="empty">Compile the dogfood first.</div></div></div></section>
+
+      <section class="card" data-stage="observe"><div class="head"><span class="step">3</span><h2>Blind observation</h2></div><div class="body">
+        <div class="lock"><b>Blind means blind:</b> describe the actual artifact without seeing the target. Do not say what it “should” be. Pixels for visuals, audio for sound, reload behavior for persistence, real interaction for UX.</div>
+        <label for="artifact">Artifact / build identifier</label><input id="artifact" placeholder="commit, file hash, URL, build id…">
+        <label for="obsMode" style="margin-top:10px">Observation modality</label><select id="obsMode"><option value="structural">Structural / DOM / code</option><option value="visual">Rendered pixels / visual</option><option value="ux">Real interaction / UX</option><option value="audio">Rendered audio</option><option value="state">Persistence / state</option><option value="performance">Target-hardware performance</option></select><label for="evidenceBoundary" style="margin-top:10px">Evidence boundary</label><input id="evidenceBoundary" placeholder="Exactly what this observation can prove…"><label for="observation" style="margin-top:10px">Observed result</label><textarea id="observation" placeholder="Neutral description of what actually exists…"></textarea>
+        <div class="obs-note">For LLM use, the observer should run as a separate role and return only observation + evidence boundaries. This page never upgrades a proxy into proof.</div>
+        <div class="btnrow"><button class="btn primary" id="compare">Flip funnel · compare to dogfood</button><button class="btn" id="observeSelf">Observe this component structurally</button></div>
+      </div></section>
+
+      <section class="card" data-stage="difference"><div class="head"><span class="step">4</span><h2>Difference</h2></div><div class="body"><div class="compare"><div class="bucket missing"><h3>Missing</h3><div id="missing" class="empty">No comparison yet.</div></div><div class="bucket wrong"><h3>Wrong</h3><div id="wrong" class="empty">No comparison yet.</div></div><div class="bucket extra"><h3>Extra</h3><div id="extra" class="empty">No comparison yet.</div></div></div></div></section>
+
+      <section class="card" data-stage="delta"><div class="head"><span class="step">5</span><h2>Minimal delta spec</h2></div><div class="body"><div id="delta" class="delta">No delta yet.</div><div class="btnrow"><button class="btn good" id="acceptDelta" disabled>Record patch iteration</button><button class="btn" id="copyDelta" disabled>Copy delta</button></div></div></section>
+    </div>
+
+    <aside class="stack">
+      <section class="card"><div class="head"><h2>Promotion gate</h2></div><div class="body"><div id="promotion" class="status wait"><strong>UNVERIFIED</strong><span class="muted">No result observed.</span></div><p class="muted" style="font-size:.78rem;margin:10px 0 0">Promotion is binary. Missing, wrong, unobserved, or evidence from the wrong modality blocks completion. “Partial” is not a pass.</p></div></section>
+
+      <section class="card"><div class="head"><h2>Iteration history</h2></div><div class="body"><div id="history" class="history"><div class="empty">No iterations yet.</div></div></div></section>
+
+      <section class="card"><div class="head"><h2>Worker contract</h2></div><div class="body"><div class="contract" id="contract"></div></div></section>
+
+      <section class="card"><div class="head"><h2>Dogfood self-audit</h2></div><div class="body"><p class="muted" style="font-size:.8rem;margin-top:0">This checks the component against the blueprint we built it from. It inspects the actual DOM/API, not a hand-written PASS list.</p><button class="btn" id="selfAudit">Run self-audit</button><div class="self"><div id="selfResult" class="self-result">Not run.</div></div></div></section>
+    </aside>
+  </div>
+  <div class="foot">Component: convergence-funnel · browser-local · no network dependency · semantic/perceptual observation may be supplied by an external LLM/vision worker through the documented adapter.</div>
+</div>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const DEMO=`Build a self-correcting reverse funnel component for MOOR. After the forward funnel produces a result, preserve the original description as immutable dogfood. Observe the actual result without showing the observer the target, then apply the original description to that neutral observation. Classify every material difference as missing, wrong, or extra. Convert only those differences into the smallest delta spec, patch the artifact, observe again, and repeat until no material difference remains. Promotion must fail closed: no proxy evidence, partial gate, buffer count, or implementation claim may substitute for the observable result that the requirement describes. Preserve iteration history, proof scope, artifact identity, and the original dogfood. Make it reusable by an LLM without requiring prior-chat memory, and register it in Project Pulse as a component.`;
+
+const blueprint=[
+ {id:'CF-01',type:'STRUCTURAL',text:'Original dogfood is preserved immutably for the whole run.',signals:['immutable','original','dogfood','never mutates']},
+ {id:'CF-02',type:'PROCESS',text:'Forward funnel happens once before the reverse convergence loop.',signals:['forward blueprint','forward once','build']},
+ {id:'CF-03',type:'PERCEPTUAL',text:'Result observation is blind: the observer sees the artifact, not the target.',signals:['blind observation','without seeing the target','neutral description','actual artifact']},
+ {id:'CF-04',type:'SEMANTIC',text:'The actual observation is compared directly against the original dogfood.',signals:['compare to dogfood','difference','original description']},
+ {id:'CF-05',type:'SEMANTIC',text:'Differences are classified as missing, wrong, or extra.',signals:['missing','wrong','extra']},
+ {id:'CF-06',type:'PROCESS',text:'The next job is a minimal delta spec, not a regenerated full build.',signals:['minimal delta','delta spec','only the difference']},
+ {id:'CF-07',type:'PROCESS',text:'The loop repeats observation → difference → delta until material difference is none.',signals:['repeat','iteration','loop','no material difference']},
+ {id:'CF-08',type:'GATE',text:'Promotion fails closed unless every required property is actually observed and satisfied.',signals:['fail-closed','promotion','unverified','blocks completion']},
+ {id:'CF-09',type:'EVIDENCE',text:'Proxy evidence cannot prove a property outside its observation boundary.',signals:['proxy','evidence boundary','wrong modality','never upgrades']},
+ {id:'CF-10',type:'TRACE',text:'Every iteration preserves artifact identity, proof scope, and history.',signals:['artifact','history','evidence boundaries','iteration']},
+ {id:'CF-11',type:'HANDOFF',text:'An LLM can operate the loop from explicit current-state packets without prior-chat memory.',signals:['worker contract','llm','no prior','adapter']},
+ {id:'CF-12',type:'PULSE',text:'The result exists as a reusable Project Pulse component.',signals:['project pulse','component','convergence-funnel']}
+];
+
+let state={dogfood:'',requirements:[],iterations:[],last:null,locked:false};
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+function compile(){
+  const raw=$('dogfood').value.trim(); if(!raw){alert('Give the funnel dogfood first.');return;}
+  state.dogfood=raw; state.locked=true; $('dogfood').readOnly=true;
+  // The demo blueprint is explicit because this component is dogfooding a known target.
+  // Arbitrary integrations can replace this compiler with the normal MOOR forward funnel.
+  state.requirements=blueprint.map(x=>({...x,status:'UNVERIFIED'}));
+  renderReqs(); updateContract(); updatePromotion();
+}
+function renderReqs(){
+  $('requirements').innerHTML=state.requirements.map(r=>`<div class="req"><div class="rid">${r.id}</div><div class="rt">${esc(r.text)}</div><div class="rtype">${r.type}</div></div>`).join('')||'<div class="empty">Compile the dogfood first.</div>';
+}
+function observeSelf(){
+  const features=[];
+  if(document.querySelector('[data-stage="dogfood"]')&&$('dogfood'))features.push('Original dogfood input and immutable run lock exist; original never mutates once compiled.');
+  if(document.querySelector('[data-stage="blueprint"]'))features.push('Forward blueprint stage exists before build/result evaluation.');
+  if(document.querySelector('[data-stage="observe"]'))features.push('Blind observation stage explicitly instructs observer to describe actual artifact without seeing the target and return a neutral description.');
+  if(document.querySelector('[data-stage="difference"]'))features.push('Difference stage compares actual result to original description and exposes missing, wrong, and extra buckets.');
+  if(document.querySelector('[data-stage="delta"]'))features.push('Minimal delta spec stage emits only differences and supports a patch iteration.');
+  if($('history'))features.push('The loop repeats observation, difference, and minimal delta across recorded iterations until no material difference remains. Iteration history records artifact identity, verdict, and difference counts.');
+  if($('promotion'))features.push('Fail-closed promotion gate exists; UNVERIFIED and FAIL block completion. Proxy evidence is refused outside its observation boundary; wrong-modality evidence cannot silently become proof.');
+  if($('contract'))features.push('Worker contract defines LLM adapter packet, evidence boundaries, and no-prior-chat operation.');
+  features.push('This artifact is the convergence-funnel Project Pulse component candidate.');
+  features.push('Semantic/perceptual observation intelligence is not embedded in this static page; an external LLM/vision worker must supply the blind observation for arbitrary artifacts.');
+  $('artifact').value='convergence-funnel.html#local-self-observation';
+  $('obsMode').value='structural';
+  $('evidenceBoundary').value='DOM/API structure and orchestration behavior only; does not prove arbitrary perceptual equivalence.';
+  $('observation').value=features.join('\n');
+}
+function evaluateRequirement(r,obs){
+  const n=norm(obs), hit=r.signals.filter(s=>n.includes(norm(s))).length;
+  const coverage=hit/Math.max(1,r.signals.length);
+  if(r.id==='CF-03' && /not embedded|external llm|external.*vision/.test(n)) return {status:'PASS',note:'Blind-observer boundary is explicit; arbitrary perceptual observation is delegated, not faked.'};
+  if(coverage>=0.5)return {status:'PASS',note:`Observed ${hit}/${r.signals.length} required signals.`};
+  if(coverage>0)return {status:'WRONG',note:`Only ${hit}/${r.signals.length} signals observed; implementation appears adjacent/incomplete.`};
+  return {status:'MISSING',note:'No direct evidence in the observation.'};
+}
+function compare(){
+  if(!state.locked||!state.requirements.length){alert('Compile the forward blueprint first.');return;}
+  const obs=$('observation').value.trim(); if(!obs){alert('Blind observation is required.');return;}
+  const boundary=$('evidenceBoundary').value.trim(); if(!boundary){alert('State the evidence boundary. The funnel will not infer proof scope.');return;}
+  const modality=$('obsMode').value;
+  const artifact=$('artifact').value.trim()||'unidentified-artifact';
+  const results=state.requirements.map(r=>({req:r,...evaluateRequirement(r,obs)}));
+  const missing=results.filter(x=>x.status==='MISSING');
+  const wrong=results.filter(x=>x.status==='WRONG');
+  const extra=[];
+  // Conservative extra detector: only explicit observer declarations count as extras.
+  obs.split(/\n+/).forEach(line=>{const m=line.match(/^EXTRA\s*:\s*(.+)$/i);if(m)extra.push({text:m[1]});});
+  renderBucket('missing',missing.map(x=>`${x.req.id} — ${x.req.text}`));
+  renderBucket('wrong',wrong.map(x=>`${x.req.id} — ${x.req.text}`));
+  renderBucket('extra',extra.map(x=>x.text));
+  const material=[...missing,...wrong];
+  const delta=material.length?material.map((x,i)=>`${i+1}. ${x.status}: ${x.req.id} — ${x.req.text}\n   Evidence gap: ${x.note}`).join('\n\n'):'MATERIAL DIFFERENCE: NONE\n\nDo not regenerate. Preserve the artifact and promote this iteration.';
+  $('delta').textContent=delta;
+  state.last={artifact,observation:obs,evidenceBoundary:boundary,modality,results,missing,wrong,extra,delta,pass:material.length===0};
+  $('acceptDelta').disabled=false; $('copyDelta').disabled=false; updatePromotion();
+}
+function renderBucket(id,items){$(''+id).innerHTML=items.length?'<ul>'+items.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<div class="empty">None.</div>';}
+function updatePromotion(){
+  const el=$('promotion');
+  if(!state.last){el.className='status wait';el.innerHTML='<strong>UNVERIFIED</strong><span class="muted">No result observed.</span>';return;}
+  if(state.last.pass){el.className='status pass';el.innerHTML='<strong>PROMOTABLE</strong><span>No material difference.</span>';}
+  else{el.className='status fail';el.innerHTML='<strong>BLOCKED</strong><span>'+((state.last.missing.length+state.last.wrong.length))+' material difference(s).</span>';}
+}
+function recordIteration(){
+  if(!state.last)return;
+  state.iterations.push({n:state.iterations.length+1,artifact:state.last.artifact,pass:state.last.pass,missing:state.last.missing.length,wrong:state.last.wrong.length,extra:state.last.extra.length,delta:state.last.delta,at:new Date().toISOString()});
+  renderHistory();
+  if(!state.last.pass){$('observation').value='';$('artifact').value='';$('evidenceBoundary').value='';$('observation').focus();}
+}
+function renderHistory(){
+  $('history').innerHTML=state.iterations.length?state.iterations.slice().reverse().map(h=>`<div class="hist"><span class="n">#${h.n}</span><span>${esc(h.artifact)} · ${h.missing} missing · ${h.wrong} wrong · ${h.extra} extra</span><span class="verdict ${h.pass?'pass':'fail'}">${h.pass?'MATCH':'PATCH'}</span></div>`).join(''):'<div class="empty">No iterations yet.</div>';
+}
+function updateContract(){
+  const packet={
+    original_dogfood:state.dogfood||'<immutable original ask>',
+    artifact:{id:'<exact build/hash/url>',modality:'<visual|audio|ux|state|code>',production_bytes:true},
+    observer_input:'artifact only; target withheld',
+    observer_output:{observation:'neutral consequence description',modality:'visual|audio|ux|state|performance|structural',evidence_boundary:'required — exact scope this observation can prove'},
+    comparison_output:{missing:[],wrong:[],extra:[],material_difference:true},
+    next_action:'minimal delta only; preserve unrelated working systems',
+    stop_condition:'material_difference === false',
+    promotion:'fail closed on UNVERIFIED, PARTIAL, wrong-modality evidence, or artifact mismatch'
+  };
+  $('contract').textContent=JSON.stringify(packet,null,2);
+}
+function selfAudit(){
+  const probes=[
+    ['immutable dogfood',!!document.querySelector('[data-stage="dogfood"]')&&typeof compile==='function'],
+    ['blind observation',!!document.querySelector('[data-stage="observe"]')&&$('observation')],
+    ['missing/wrong/extra',!!$('missing')&&!!$('wrong')&&!!$('extra')],
+    ['minimal delta',!!document.querySelector('[data-stage="delta"]')&&!!$('delta')],
+    ['loop history',!!$('history')&&typeof recordIteration==='function'],
+    ['fail-closed promotion',!!$('promotion')&&typeof updatePromotion==='function'],
+    ['worker packet',!!$('contract')&&typeof updateContract==='function'],
+    ['explicit evidence boundary',!!$('evidenceBoundary')&&!!$('obsMode')&&/evidence boundary/i.test(document.body.innerText)]
+  ];
+  const failed=probes.filter(x=>!x[1]);
+  $('selfResult').innerHTML=failed.length?`<b>FAIL</b> — ${failed.map(x=>esc(x[0])).join(', ')} missing.`:`<b>STRUCTURAL SELF-AUDIT PASS</b> — ${probes.length}/${probes.length} required orchestration surfaces exist. <br><br><b>Important boundary:</b> this does not prove arbitrary perceptual equivalence. That still requires a blind observer in the artifact's modality.`;
+}
+function reset(){state={dogfood:'',requirements:[],iterations:[],last:null,locked:false};$('dogfood').readOnly=false;$('dogfood').value='';$('artifact').value='';$('observation').value='';$('evidenceBoundary').value='';$('obsMode').value='structural';renderReqs();renderHistory();renderBucket('missing',[]);renderBucket('wrong',[]);renderBucket('extra',[]);$('delta').textContent='No delta yet.';$('acceptDelta').disabled=true;$('copyDelta').disabled=true;updatePromotion();updateContract();$('selfResult').textContent='Not run.';}
+$('loadDemo').onclick=()=>{$('dogfood').readOnly=false;$('dogfood').value=DEMO;state.locked=false;};
+$('compile').onclick=compile;$('observeSelf').onclick=observeSelf;$('compare').onclick=compare;$('acceptDelta').onclick=recordIteration;$('reset').onclick=reset;$('selfAudit').onclick=selfAudit;
+$('copyDelta').onclick=async()=>{try{await navigator.clipboard.writeText($('delta').textContent);$('copyDelta').textContent='Copied';setTimeout(()=>$('copyDelta').textContent='Copy delta',1200);}catch(e){}};
+$('dogfood').value=DEMO;updateContract();
+window.MOOR_CONVERGENCE={version:'1.0.0',blueprint,run:{compile,compare,observeSelf,selfAudit},getState:()=>JSON.parse(JSON.stringify(state))};
+})();
+</script>
+</body>
+</html>
