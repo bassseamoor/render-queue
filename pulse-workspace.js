@@ -175,7 +175,7 @@ function init(){
 
  const listEl=shell.querySelector('#pf-list'),stage=shell.querySelector('#pf-stage'),search=shell.querySelector('#pf-search'),statusEl=shell.querySelector('#pf-status');
  const status=t=>statusEl.textContent=t||'';
- function save(){state.selected=selected;write(STORE,state);write(LAYOUT_KEY,layoutMode);renderCounts();}
+ function save(){state.selected=selected;write(STORE,state);write(LAYOUT_KEY,layoutMode);renderCounts();if(window.PulseReferences)setTimeout(()=>{try{PulseReferences.sync();}catch(e){}},0);}
  function setLayout(mode){if(!['vertical','horizontal'].includes(mode))return;layoutMode=mode;write(LAYOUT_KEY,layoutMode);renderStage();status(mode==='horizontal'?'Horizontal lineage · oldest left, newest right.':'Vertical lineage · newest top, oldest bottom.');}
  function renderCounts(){}
  function show(){document.body.classList.add('pw-active');ensureTabbar();render();}
