@@ -130,6 +130,7 @@ function init(){
 
  function seeds(){
   return [
+   seedProject('moor-whole-blueprint','MOOR Whole Blueprint','◇','The whole-product blueprint: audited offer, 645 cards, dependency order, editable connections, reference previews and complete context export.',[pageItem('moor-whole-blueprint','MOOR Whole Blueprint','moor-blueprint.html','Audited baseline and editable versions.'),pageItem('moor-whole-blueprint-data','Complete graph data','blueprint/moor-blueprint-data.json','Source ledger, specifications and build dependencies.')],'moor-blueprint.html',false),
    seedProject('funnel','Funnel','🌀','The full v43 Funnel system itself: quiz resolver, pages, workers, verification, Engine, Foundry, and versions.',funnelMembers(),'quiz-funnel-v3.html',false),
    seedProject('project-pulse','Project Pulse','◈','The Project Pulse environment itself — inventory, tools, projects, and the Funnel surface.',[componentItem('project-pulse')],'pulse-dashboard.html',false),
    seedProject('procedural-generators','Procedural Generators','⚙','Every current Pulse component explicitly tagged as a generator, kept together as one heavyweight generator project.',generatorMembers(),null,false),

@@ -8,6 +8,7 @@ This repository publishes Project Pulse. Multiple builders update it. Always fet
 - Do not inline, remove, or overwrite this registration file when reorganizing the dashboard.
 - Preserve these tool records in `pulse-manifest.json`: `living-garden`, `planet-workshop`, and `wall-mirror`.
 - Both belong in Bin > Generators and remain outside production MOOR.
+- Preserve `moor-blueprint` in the independent component registry and manifest, plus the `moor-whole-blueprint` Funnel project seed and Bin project reference. Its source is `moor-blueprint.html`; rebuild with `node blueprint/build.cjs` and run `node tests/blueprint-checks.cjs`. Preserve owner drafts, IDs, references, tombstones and unresolved decisions. Build-order edges never prove implementation, and generated reference previews are not production feature verification.
 - Their standalone implementations are `moor-living-garden.html` and `moor-planet-workshop.html`.
 
 Before publishing a rebuild, verify both tools appear from the normal dashboard URL, without a component query parameter, and open from the bin. If changing component IDs, migrate saved UI state and deep links.
