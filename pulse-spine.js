@@ -83,18 +83,38 @@ var BLUEPRINTS=[
  {id:'bin',name:'Bin',summary:'Durable searchable inventory for every Pulse component plus kept knowledge and blueprints.'},
  {id:'funnel',name:'Funnel',summary:'Canonical v43 two-sided resolver. User or system answers the same questions; locked pages precede building.'}
 ];
+var CONTRACTS=[
+ {id:'harness-completion',name:'Harness Completion Invariant',
+  summary:'Even garbage or incomplete input must produce the best-known candidate. Passing gates teaches logic; intent confidence is tracked separately.',
+  source:'moor-harness-runtime-v1.html'}
+];
+function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS);}
 
 function ensureFunnelProject(){
   try{
     if(!window.PulseFunnel||!PulseFunnel.state||!Array.isArray(PulseFunnel.state.projects))return;
-    var fs=PulseFunnel.state, exists=fs.projects.some(function(p){return p.id==='learning-spine';});
-    if(exists)return;
-    var now=new Date().toISOString();
-    var members=BLUEPRINTS.map(function(b){return {kind:'architecture',ref:'spine-'+b.id,label:b.name,sourceVersion:b.id==='funnel'?'v43':'v1',source:'pulse-learning-spine-blueprints.json',detail:b.summary};});
-    fs.projects.push({id:'learning-spine',name:'Pulse Learning Spine',icon:'◇',
-      description:'Input → Stream → Discover → Bin → Funnel. Frozen from the conversation Funnel run; existing Pulse data remains intact.',
-      members:members,page:'pulse-dashboard.html',queued:false,versions:[{id:'spine-v1',number:'v1',title:'Funnel blueprint build',state:'locked-import',createdAt:now,parentId:null,revision:'',
-        items:members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='baseline';return y;})}]});
+    var fs=PulseFunnel.state, now=new Date().toISOString();
+    var members=blueprintDocs().map(function(b){return {kind:b.id==='harness-completion'?'compiler-contract':'architecture',
+      ref:(b.id==='harness-completion'?'contract-':'spine-')+b.id,label:b.name,
+      sourceVersion:b.id==='funnel'?'v43':b.id==='harness-completion'?'v1':'v1',
+      source:'pulse-learning-spine-blueprints.json',detail:b.summary};});
+    var p=fs.projects.find(function(x){return x.id==='learning-spine';});
+    if(!p){
+      p={id:'learning-spine',name:'Pulse Learning Spine',icon:'◇',
+        description:'Input → Stream → Discover → Bin → Funnel, plus downstream compiler contracts. Existing Pulse data remains intact.',
+        members:members,page:'pulse-dashboard.html',queued:false,versions:[{id:'spine-v1',number:'v1',title:'Funnel blueprint build',state:'locked-import',createdAt:now,parentId:null,revision:'',
+          items:members.filter(function(x){return x.ref!=='contract-harness-completion';}).map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='baseline';return y;})}]};
+      fs.projects.push(p);
+    }
+    var hasContract=(p.members||[]).some(function(x){return x.ref==='contract-harness-completion';});
+    if(!hasContract){
+      var contract=members.find(function(x){return x.ref==='contract-harness-completion';});
+      p.members=(p.members||[]).concat([contract]);
+      p.versions=p.versions||[];
+      p.versions.push({id:'spine-v2-harness-completion',number:'v2',title:'Harness completion invariant',state:'locked-import',createdAt:now,
+        parentId:p.versions.length?p.versions[p.versions.length-1].id:null,revision:'Separate verified logic from intent confidence; always attempt a gated candidate.',
+        items:(p.members||[]).map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-harness-completion';y.change=x.ref==='contract-harness-completion'?'new':'inherited';return y;})});
+    }
     try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
   }catch(e){}
 }
@@ -185,7 +205,7 @@ function binView2(){
   });
   var kept=S.kept.filter(function(k){return !q||textOf(k.snapshot).toLowerCase().indexOf(q)>=0;});
   var records=S.stream.filter(function(r){return !q||textOf(r).toLowerCase().indexOf(q)>=0;});
-  var bps=BLUEPRINTS.filter(function(b){return !q||(b.name+' '+b.summary).toLowerCase().indexOf(q)>=0;});
+  var bps=blueprintDocs().filter(function(b){return !q||(b.name+' '+b.summary).toLowerCase().indexOf(q)>=0;});
   return '<div class="ps-head"><h2>Bin</h2><p>Everything stays addressable.</p></div>'+
     '<div class="ps-compose ps-search"><input id="ps-bin-search" type="search" value="'+esc2(q)+'" placeholder="Search everything…"></div>'+
     '<section class="ps-section"><h3>Blueprints</h3><div class="ps-rows">'+bps.map(function(b){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(b.name)+'</strong><span>'+esc2(b.summary)+'</span></div><div class="ps-actions"><button data-spine-blueprint="'+b.id+'">View</button></div></div>';}).join('')+'</div></section>'+
@@ -229,7 +249,7 @@ ensureTabbar=function(){
 };
 
 function showBlueprint(id){
-  var b=BLUEPRINTS.find(function(x){return x.id===id;}); if(!b)return;
+  var b=blueprintDocs().find(function(x){return x.id===id;}); if(!b)return;
   var old=document.getElementById('ps-modal'); if(old)old.remove();
   var m=document.createElement('div');m.id='ps-modal';
   m.innerHTML='<div class="ps-modal-card"><button class="ps-x" data-spine-close>×</button><div class="ps-head"><h2>'+esc2(b.name)+'</h2><p>Locked learning-spine blueprint</p></div><p class="ps-blue">'+esc2(b.summary)+'</p><a class="ps-link" href="pulse-learning-spine-blueprints.json" target="_blank" rel="noopener">Full blueprint ↗</a></div>';
@@ -307,7 +327,8 @@ window.PulseSpine={
   keep:keepRecord,
   funnel:sendRecordToFunnel,
   harvest:harvest,
-  blueprints:BLUEPRINTS.slice()
+  blueprints:BLUEPRINTS.slice(),
+  contracts:CONTRACTS.slice()
 };
 
 harvest();
