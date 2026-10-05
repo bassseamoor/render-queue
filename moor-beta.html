@@ -7535,16 +7535,18 @@ function twig(x,y,z,dx,dy,dz,len,r0,cr,cg,cb,bend){
 /* ---- vegetation builders: Living Garden Lab canonicals ----
  * Lab language throughout: tapered/curled/creased blade leaves, tapered tube
  * branches, per-blade brightness. No blob canopies, no cone trees. */
-function treeConifer(x,y,z,s,R,pal){
+function treeConifer(x,y,z,s,R,pal,opt){
   /* Lab mountain cedar: trunk + layered whorls of needle-bearing branchlets
-   * tapering toward the light, needles riding each branchlet + leader. */
+   * tapering toward the light, needles riding each branchlet + leader.
+   * opt.mature: an unusually old specimen — stockier, thick trunk, broad whorls. */
+  var mat=opt&&opt.mature?1:0;
   var g=famLeaf(pal,R,'cedar',x,z);
-  var h=(2.0+R()*0.4)*s;
-  twig(x,y,z, 0,1,0, h, 0.15*s, 0.36,0.26,0.17);
+  var h=(2.0+R()*0.4)*s*(mat?0.9:1);
+  twig(x,y,z, 0,1,0, h, 0.15*s*(mat?1.65:1), 0.36,0.26,0.17);
   var layers=3, wI, k, l;
   for(wI=0;wI<layers;wI++){
     var t=0.28+(wI/layers)*0.64;
-    var wy=y+h*t, wr=(1.05-t*0.75)*s, nn=5+Math.floor(R()*2);
+    var wy=y+h*t, wr=(1.05-t*0.75)*s*(mat?1.2:1), nn=5+Math.floor(R()*2);
     for(k=0;k<nn;k++){
       var a=k/nn*Math.PI*2+R()*0.4;
       var bdx=Math.cos(a), bdz=Math.sin(a), blen=wr*(0.8+R()*0.4);
@@ -7563,27 +7565,30 @@ function treeConifer(x,y,z,s,R,pal){
   var gl=famLeaf(pal,R,'cedar',x+3.1,z+7.7);
   leafBlade(x, y+h, z, 0,1,0, 0.7*s, 0.05*s, 0.1, gl[0],gl[1],gl[2]); /* leader */
 }
-function treeBroad(x,y,z,s,R,pal){
+function treeBroad(x,y,z,s,R,pal,opt){
   /* Lab meadow oak: trunk -> open golden-angle branches -> twig arcs with
-   * blades riding along them (never pom-pom tips). Birch-pale bark variant. */
+   * blades riding along them (never pom-pom tips). Birch-pale bark variant.
+   * opt.mature: an unusually old specimen — thick gnarled trunk, low limbs,
+   * broad asymmetric crown. */
+  var mat=opt&&opt.mature?1:0;
   var g=famLeaf(pal,R,R()<0.25?'birch':'oak',x,z);
   var pale=R()<0.3, bark=pale?[0.74,0.76,0.69]:[0.40,0.29,0.19];
-  var h=(2.2+R()*0.5)*s;
-  twig(x,y,z, 0,1,0, h, 0.20*s, bark[0],bark[1],bark[2]);
+  var h=(2.2+R()*0.5)*s*(mat?0.9:1);
+  twig(x,y,z, 0,1,0, h, 0.20*s*(mat?1.65:1), bark[0],bark[1],bark[2]);
   var nb=6+Math.floor(R()*2), b, twI, l; // 6-7 branches
   for(b=0;b<nb;b++){
-    var t=0.25+(b/nb)*0.65, ang=b*2.399+R()*0.7; // golden-angle phyllotaxis, low limbs
+    var t=(mat?0.16:0.25)+(b/nb)*0.65, ang=b*2.399+R()*0.7; // golden-angle phyllotaxis, low limbs
     var bx0=x, by0=y+h*t*0.92, bz0=z;
-    var blen=(0.9+R()*0.7)*s;
-    var bdx=Math.cos(ang), bdy=0.45+R()*0.4, bdz=Math.sin(ang);
+    var blen=(0.9+R()*0.7)*s*(mat?1.25:1);
+    var bdx=Math.cos(ang), bdy=(mat?0.30:0.45)+R()*0.4, bdz=Math.sin(ang);
     twig(bx0,by0,bz0, bdx,bdy,bdz, blen, 0.07*s, bark[0],bark[1],bark[2]);
-    var ntw=3; // twig arcs per branch
+    var ntw=mat?4:3; // twig arcs per branch
     for(twI=0;twI<ntw;twI++){
       var tt=0.35+(twI/ntw)*0.6;
       var px=bx0+bdx*blen*tt, py=by0+bdy*blen*tt, pz=bz0+bdz*blen*tt;
       var ta=ang+(twI%2?1:-1)*(0.6+R()*0.5);
       var tdx=Math.cos(ta), tdy=0.35+R()*0.45, tdz=Math.sin(ta);
-      var tlen=blen*(0.35+R()*0.25), nl=4;
+      var tlen=blen*(0.35+R()*0.25), nl=mat?5:4;
       for(l=0;l<nl;l++){
         var lt=0.25+(l/nl)*0.75;
         var la2=ta+(l%2?1:-1)*(0.9+R()*0.6), bs=0.8+R()*0.4;
@@ -7887,8 +7892,9 @@ function buildScatterChunk(cx,cz){
       var _ti,_pi;
       for(_ti=0;_ti<ecoPlan.trees.length;_ti++){ var _t=ecoPlan.trees[_ti];
         var _tr=mulberry32(_t.seed);
-        if(_t.gen==='treeConifer') treeConifer(_t.x,_t.y-0.1,_t.z,_t.scale,_tr,pal);
-        else treeBroad(_t.x,_t.y-0.1,_t.z,_t.scale,_tr,pal);
+        var _mo=_t.mature?{mature:true}:null; /* unusually mature giant specimen */
+        if(_t.gen==='treeConifer') treeConifer(_t.x,_t.y-0.1,_t.z,_t.scale,_tr,pal,_mo);
+        else treeBroad(_t.x,_t.y-0.1,_t.z,_t.scale,_tr,pal,_mo);
         placed.push({x:_t.x,z:_t.z,r:_t.canopyR||3});
       }
       for(_pi=0;_pi<ecoPlan.plants.length;_pi++){ var _p=ecoPlan.plants[_pi];
@@ -9586,19 +9592,26 @@ function settleName(R,archId){
  * into B_KINDS, com = commercial/special kinds (placed near the center). */
 var ARCHETYPES=[
  {id:'hamlet', icon:'houses', label:'Hamlet', blurb:'A few houses around a quiet green',
-  houses:[3,5], hsizes:['S','S','M'], com:['civic'], themes:['craftsman','adobe'], water:'near', r:70},
+  houses:[3,5], hsizes:['S','S','M'], com:['civic'], themes:['craftsman','adobe'], water:'near', r:70,
+  spacing:380, satellite:true},
  {id:'farming', icon:'wheat', label:'Farming Village', blurb:'Farmsteads, a barn and tilled fields',
-  houses:[4,6], hsizes:['S','M','M'], com:['farm','barn','shed'], themes:['craftsman','adobe'], water:'near', r:110, fields:true},
+  houses:[4,6], hsizes:['S','M','M'], com:['farm','barn','shed'], themes:['craftsman','adobe'], water:'near', r:110, fields:true,
+  spacing:520, cluster:['farming'], clusterSpacing:300},
  {id:'forest', icon:'tree', label:'Forest Village', blurb:'Cabins and a lumber workshop among the trees',
-  houses:[3,5], hsizes:['S','S','M'], com:['workshop','shed'], themes:['craftsman'], water:'near', r:80},
+  houses:[3,5], hsizes:['S','S','M'], com:['workshop','shed'], themes:['craftsman'], water:'near', r:80,
+  spacing:450},
  {id:'fishing', icon:'fish', label:'Fishing Settlement', blurb:'Huts and a dock by the water',
-  houses:[3,5], hsizes:['S','S','M'], com:['shed'], themes:['craftsman','modern'], water:'shore', r:80, dock:true},
+  houses:[3,5], hsizes:['S','S','M'], com:['shed'], themes:['craftsman','modern'], water:'shore', r:80, dock:true,
+  spacing:500},
  {id:'mining', icon:'pick', label:'Mining Settlement', blurb:'A rough camp dug in by the ore',
-  houses:[3,5], hsizes:['S','S','M'], com:['workshop','shed','shed'], themes:['brick-row','adobe'], water:'near', r:90, mine:true},
+  houses:[3,5], hsizes:['S','S','M'], com:['workshop','shed','shed'], themes:['brick-row','adobe'], water:'near', r:90, mine:true,
+  spacing:560},
  {id:'crossroads', icon:'signpost', label:'Crossroads', blurb:'A tavern and traders where the roads meet',
-  houses:[5,7], hsizes:['S','M','M'], com:['tavern','shop','blacksmith','shed'], themes:['craftsman','brick-row'], water:'near', r:110, cross:true},
+  houses:[5,7], hsizes:['S','M','M'], com:['tavern','shop','blacksmith','shed'], themes:['craftsman','brick-row'], water:'near', r:110, cross:true,
+  spacing:800},
  {id:'market', icon:'store', label:'Market Town', blurb:'A market square with shops and a civic hall',
-  houses:[7,10], hsizes:['S','M','M','L'], com:['market','grocery','shop','blacksmith','tavern','civic'], themes:['brick-row','modern','craftsman'], water:'near', r:150}
+  houses:[7,10], hsizes:['S','M','M','L'], com:['market','grocery','shop','blacksmith','tavern','civic'], themes:['brick-row','modern','craftsman'], water:'near', r:150,
+  spacing:1200}
 ];
 function archById(id){ for(var i=0;i<ARCHETYPES.length;i++) if(ARCHETYPES[i].id===id) return ARCHETYPES[i]; return ARCHETYPES[0]; }
 
@@ -9709,6 +9722,18 @@ function nearestSettlementDist(w,x,z){
   for(var i=0;i<ss.length;i++){ var d=Math.hypot(x-ss[i].cx,z-ss[i].cz); if(d<best) best=d; }
   return best;
 }
+/* nearest settlement WITH its archetype (for civilization-adaptive spacing) */
+function nearestSettlementInfo(w,x,z){
+  var best=null, bd=1e9, ss=w.settlements||[];
+  for(var i=0;i<ss.length;i++){ var d=Math.hypot(x-ss[i].cx,z-ss[i].cz);
+    if(d<bd){ bd=d; best=ss[i]; } }
+  return best?{d:bd,arch:best.archetype||best.arch||null}:null;
+}
+function countSettlementsWithin(w,x,z,rad){
+  var n=0, ss=w.settlements||[];
+  for(var i=0;i<ss.length;i++){ if(Math.hypot(x-ss[i].cx,z-ss[i].cz)<rad) n++; }
+  return n;
+}
 function nearestResourceDist(x,z,kind){
   var best=1e9, rs=resourceNodes();
   for(var i=0;i<rs.length;i++){ if(kind&&rs[i].kind!==kind) continue;
@@ -9727,10 +9752,33 @@ function siteScore(w,arch,x,z,R){
       score+=dw>35?Math.min(45,(dw-35)*0.25):-(35-dw)*2.2;
       if(dw>600) score-=50;
     }
-    var ds=nearestSettlementDist(w,x,z);
-    if(ds<520) score-=(520-ds)*0.45;
+    /* Sebastian Type C (adaptive by civilization): separation follows the civ's
+     * logic, not one global rarity. Each archetype carries its own spacing;
+     * farming villages cluster into agricultural regions (soft spacing vs
+     * other farms); market towns hold a wide territory; hamlets fill gaps. */
+    var ns=nearestSettlementInfo(w,x,z), sp=arch.spacing||520, effSp=sp;
+    if(ns&&arch.cluster&&ns.arch&&arch.cluster.indexOf(ns.arch)>=0)
+      effSp=arch.clusterSpacing||Math.round(sp*0.6);
+    if(ns&&ns.d<effSp) score-=(effSp-ns.d)*0.45;
+    if(arch.satellite&&ns&&ns.d>600&&ns.d<1600) score+=15; /* hamlets orbit towns */
+    /* civilization site logic: each archetype wants the land its economy needs */
+    var ecoM=(typeof Eco!=='undefined'&&Eco)?Eco:null;
+    if(arch.id==='farming'){ /* fertile: moist + gentle */
+      if(ecoM&&ecoM.moistureAt){ try{ score+=ecoM.moistureAt(x,z)*45; }catch(_m){} }
+      if(sl<0.18) score+=18;
+    }
+    if(arch.id==='forest'&&ecoM&&ecoM.groveDensity){ /* lumber where the woods are */
+      try{ score+=Math.min(1,ecoM.groveDensity(x,z))*35; }catch(_g){}
+    }
+    if(arch.id==='crossroads'){ /* passable corridors: gentle ground in all directions */
+      var s2=slopeAt(x+60,z)+slopeAt(x-60,z)+slopeAt(x,z+60)+slopeAt(x,z-60);
+      score+=(s2<0.9?30:-20);
+    }
+    if(arch.id==='market'){ /* trade hub: wants neighbors to trade with */
+      score+=Math.min(3,countSettlementsWithin(w,x,z,2500))*30;
+    }
     if(arch.mine){ var rn=nearestResourceDist(x,z,'ore');
-      score+=rn<260?(260-rn)*0.25:-35; }
+      score+=rn<260?(260-rn)*0.4:-50; }
     if(arch.id==='forest'){ try{ var lat=climLat(x,z); score+=(lat>0.35&&lat<0.75)?25:-15; }catch(e){} }
     return score+R()*10;
   }catch(e){ return -1e9; }
@@ -11822,7 +11870,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-0640';
+var BETA_VERSION='20261005-0736';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
@@ -13860,10 +13908,17 @@ function planChunk(cx,cz){
     q=trySpot(T.r, tier==='giant'?60:26);
     if(!q) continue;
     sc=T.sMin+R()*(T.sMax-T.sMin);
-    gen=R()<coniferBias?'treeConifer':'treeBroad';
+    var flip=R(); /* consume the stream slot even for giants: layout stays stable */
+    /* Sebastian Type C (realistic but unusually mature): a giant is a believable,
+     * impressively old specimen of the biome's NATURAL tree — the deterministic
+     * majority gen for this planet type, never a mixed coin-flip variant. */
+    var mature=(tier==='giant');
+    gen=mature?(coniferBias>=0.5?'treeConifer':'treeBroad')
+              :(flip<coniferBias?'treeConifer':'treeBroad');
     id='tree:'+key+':'+ti+':'+(ehash(seed+pid+key+ti)%1296).toString(36);
     plan.trees.push({id:id,x:q.x,z:q.z,y:q.y,gen:gen,kind:'tree',tier:tier,scale:sc,
-      seed:(R()*1e9)|0,hp:T.hp,trunkR:T.trunkR*sc,canopyR:T.canopyR*sc,
+      seed:(R()*1e9)|0,hp:T.hp,mature:mature?1:0,
+      trunkR:T.trunkR*sc*(mature?1.6:1),canopyR:T.canopyR*sc*(mature?1.15:1),
       resourceId:(tier==='giant'||tier==='large')?('wood:'+id):null,
       colliderId:'col:'+id});
   }
@@ -14615,6 +14670,7 @@ var Eco={
   exclusionAt:exclAt,
   grassDensity:grassDensity,
   grassWet:grassWet,
+  moistureAt:(typeof moistAt!=='undefined')?moistAt:null,
   grovesAt:function(x,z){ /* records covering a point, for map/debug */
     var mkx=Math.floor(x/ECC),mkz=Math.floor(z/ECC),ax,az,out=[],list,i;
     for(ax=-1;ax<=1;ax++) for(az=-1;az<=1;az++){ list=cellGroves(mkx+ax,mkz+az);
