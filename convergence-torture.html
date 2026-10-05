@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOOR · Convergence Torture Lab</title>
+<meta name="description" content="Procedurally hammers the reverse half of the MOOR convergence funnel with dogfood plus deliberately bad results.">
+<style>
+:root{color-scheme:dark;--bg:#060912;--p:#0c1420;--p2:#101b29;--line:#26394e;--text:#edf5ff;--mut:#8fa3bb;--cyan:#67d7ff;--green:#75e5a6;--red:#ff7d8a;--amber:#f0c878;font-family:Inter,Segoe UI,system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% 0,#16334b33,transparent 38%),var(--bg);color:var(--text)}button,input{font:inherit}.shell{max-width:1400px;margin:auto;padding:20px}.top{display:flex;gap:16px;align-items:flex-start}.top>div:first-child{flex:1}.ey{font-size:.74rem;text-transform:uppercase;letter-spacing:.1em;color:var(--cyan)}h1{margin:6px 0;font-size:clamp(1.5rem,2.5vw,2.3rem)}p{line-height:1.5}.mut{color:var(--mut)}.card{background:linear-gradient(145deg,#14223655,#0b111be8),var(--p);border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:14px}.controls{display:grid;grid-template-columns:1fr 150px auto;gap:9px}.controls input{background:#07101a;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:10px}.btn{border:1px solid var(--line);background:#102034;color:var(--text);border-radius:9px;padding:9px 13px;cursor:pointer}.btn.primary{background:var(--cyan);color:#061018;font-weight:700;border-color:var(--cyan)}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-top:12px}.stat{background:#07101a;border:1px solid var(--line);border-radius:11px;padding:11px}.stat b{display:block;font-size:1.35rem;margin-top:4px}.good b{color:var(--green)}.bad b{color:var(--red)}.warn b{color:var(--amber)}.bar{height:10px;background:#172434;border-radius:99px;overflow:hidden;margin-top:10px}.bar>i{display:block;height:100%;background:var(--green);width:0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.case{border:1px solid var(--line);background:#07101a;border-radius:12px;padding:12px;margin-top:9px}.case h3{font-size:.85rem;margin:0 0 8px;color:var(--cyan)}pre{white-space:pre-wrap;word-break:break-word;background:#050a10;border:1px solid #1c2b3a;border-radius:9px;padding:10px;font:.74rem/1.5 ui-monospace,monospace;color:#cfe1f2;max-height:330px;overflow:auto}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 7px;font-size:.67rem;color:var(--mut);margin:2px}.fail{color:var(--red)}.pass{color:var(--green)}table{width:100%;border-collapse:collapse;font-size:.78rem}td,th{padding:7px;border-bottom:1px solid #1d2d3d;text-align:left}th{color:var(--mut)}@media(max-width:850px){.grid{grid-template-columns:1fr}.controls{grid-template-columns:1fr}.shell{padding:12px}}
+</style></head>
+<body><div class="shell">
+<div class="top"><div><div class="ey">MOOR · reverse-funnel adversary</div><h1>Convergence Torture Lab</h1><p class="mut">No forward building. It procedurally generates dogfood plus deliberately shitty observed results, feeds only those into the reverse half, scores the difference, applies the minimum correction, and repeats. Default run: 1,000 situations.</p></div><a class="btn" href="convergence-funnel.html">Open Convergence Funnel</a></div>
+<section class="card"><div class="controls"><input id="seed" value="moor-convergence-1000-v1" aria-label="seed"><input id="count" type="number" min="1" max="10000" value="1000" aria-label="situation count"><button class="btn primary" id="run">Run situations</button></div><div id="stats" class="stats"></div><div class="bar"><i id="bar"></i></div></section>
+<div class="grid">
+<section class="card"><h2>What it attacks</h2><p class="mut">Missing requirements, wrong consequences, proxy evidence, contradictions, unrequested extras, missing proof boundaries, wrong observation modality, artifact mismatch, and false “all gates pass” language.</p><div id="faults"></div></section>
+<section class="card"><h2>Selected situation</h2><select id="sample" class="btn" style="width:100%"></select><div id="detail"></div></section>
+</div>
+<section class="card"><h2>Failures</h2><p class="mut">Only mismatches between the reverse half and the hidden procedural oracle appear here. Zero means the orchestration survived this synthetic suite; it does not claim human-level perceptual judgment.</p><div id="failures"></div></section>
+</div>
+<script src="convergence-torture.js"></script>
+<script>
+(function(){const $=id=>document.getElementById(id);let last=null;
+function render(){
+ const n=Math.max(1,Math.min(10000,Number($('count').value)||1000)),seed=$('seed').value||'moor-convergence-1000-v1';
+ last=MOOR_CONVERGENCE_TORTURE.runSuite(n,seed);
+ const S=last;
+ $('stats').innerHTML=[
+  ['Exact classifications',S.exact+'/'+S.count,'good'],['False promotions',S.falsePromotions,'bad'],['Bad situations',S.badCases,''],['Clean situations passed',S.cleanPassed+'/'+S.cleanCases,'good'],['Converged after delta',S.convergedAfterDelta+'/'+S.badCases,'good'],['Failed to converge',S.failedToConverge,'bad']
+ ].map(x=>'<div class="stat '+x[2]+'"><span class="mut">'+x[0]+'</span><b>'+x[1]+'</b></div>').join('');
+ $('bar').style.width=(S.accuracy*100).toFixed(2)+'%';
+ $('faults').innerHTML='<table><tr><th>Fault</th><th>Injected</th></tr>'+Object.entries(S.byFault).map(([k,v])=>'<tr><td>'+k+'</td><td>'+v+'</td></tr>').join('')+'</table>';
+ const samples=S.samples.concat(S.failures.slice(0,8).map(f=>({id:f.id,public:f.public,truth:f.truth,reverse:f.result})));
+ $('sample').innerHTML=samples.map((s,i)=>'<option value="'+i+'">'+s.id+(S.failures.some(f=>f.id===s.id)?' · mismatch':'')+'</option>').join('');
+ $('sample').onchange=()=>show(samples[Number($('sample').value)||0]); show(samples[0]);
+ $('failures').innerHTML=S.failures.length?S.failures.map(f=>'<div class="case"><h3>'+f.id+'</h3><pre>'+esc(JSON.stringify(f.score,null,2))+'</pre></div>').join(''):'<div class="case pass">No oracle mismatches in this run.</div>';
+}
+function esc(s){return String(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function show(s){if(!s){$('detail').innerHTML='<p class="mut">No sample.</p>';return;}$('detail').innerHTML='<div class="case"><h3>DOGFOOD</h3><pre>'+esc(s.public.dogfood)+'</pre><h3>SHITTY RESULT</h3><pre>'+esc(s.public.result)+'</pre><div><span class="pill">'+esc(s.public.modality)+'</span><span class="pill">'+esc(s.public.evidence_boundary||'NO BOUNDARY')+'</span></div><h3>REVERSE-HALF DELTA</h3><pre>'+esc((s.reverse.delta||[]).join('\n'))+'</pre><div class="'+(s.reverse.pass?'pass':'fail')+'">'+(s.reverse.pass?'PROMOTABLE':'BLOCKED')+'</div></div>';}
+$('run').onclick=render;render();
+})();
+</script></body></html>
