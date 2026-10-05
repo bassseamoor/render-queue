@@ -14,13 +14,24 @@ function read(){
     if(raw){ var x=JSON.parse(raw); if(x&&x.version) return x; }
   }catch(e){}
   if(mem) return mem;
-  return {version:1,createdAt:new Date().toISOString(),stream:[],kept:[],funnelInbox:[],seen:{}};
+  return {version:1,createdAt:new Date().toISOString(),stream:[],kept:[],funnelInbox:[],seen:{},training:[],trainingBatches:[],trainingLessons:[]};
+}
+function normalizeState(s){
+  s=s||{};
+  if(!Array.isArray(s.stream))s.stream=[];
+  if(!Array.isArray(s.kept))s.kept=[];
+  if(!Array.isArray(s.funnelInbox))s.funnelInbox=[];
+  if(!s.seen||typeof s.seen!=='object')s.seen={};
+  if(!Array.isArray(s.training))s.training=[];
+  if(!Array.isArray(s.trainingBatches))s.trainingBatches=[];
+  if(!Array.isArray(s.trainingLessons))s.trainingLessons=[];
+  return s;
 }
 function write(s){
   mem=s;
   try{ localStorage.setItem(LS,JSON.stringify(s)); }catch(e){}
 }
-var S=read();
+var S=normalizeState(read());
 function save(){ write(S); decorateFunnel(); }
 function esc2(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function uid(p){ return (p||'sp')+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7); }
@@ -47,10 +58,24 @@ function keepRecord(id,reason){
     save();
   }
 }
+function trainingText(t){
+  return [t.one_line].concat(t.intent||[],t.logic_patterns||[],t.hard_rules||[],t.verification||[],t.negative_scope||[]).join(' ');
+}
+function relatedTraining(r,limit){
+  var q=tokens((r&&r.title||'')+' '+textOf(r&&r.payload||'')), ranked=[];
+  S.training.forEach(function(t,idx){
+    var hay=trainingText(t).toLowerCase(),score=0;
+    q.forEach(function(w){if(hay.indexOf(w)>=0)score+=w.length>6?3:2;});
+    if(score>0)ranked.push({id:t.id,source_file:t.source_file,score:score,idx:idx});
+  });
+  ranked.sort(function(a,b){return b.score-a.score||a.idx-b.idx;});
+  return ranked.slice(0,limit||5);
+}
 function sendRecordToFunnel(id){
   var r=S.stream.find(function(x){return x.id===id;}); if(!r)return;
   if(!S.funnelInbox.some(function(k){return k.recordId===id;})){
-    S.funnelInbox.push({id:uid('fin'),recordId:id,at:new Date().toISOString(),record:r,status:'waiting'});
+    S.funnelInbox.push({id:uid('fin'),recordId:id,at:new Date().toISOString(),record:r,status:'waiting',
+      training_refs:relatedTraining(r,5),training_batch_ids:S.trainingBatches.slice()});
     save();
   }
 }
@@ -76,6 +101,36 @@ function harvest(){
     });
   }catch(e){}
 }
+function ingestTrainingBatch(doc){
+  if(!doc||!doc.id||!Array.isArray(doc.records))return false;
+  if(S.trainingBatches.indexOf(doc.id)>=0)return false;
+  var existing={};S.training.forEach(function(x){existing[x.id]=1;});
+  doc.records.forEach(function(r){
+    if(existing[r.id])return;
+    var x={};Object.keys(r).forEach(function(k){x[k]=r[k];});
+    x.batch_id=doc.id;x.admitted_at=new Date().toISOString();x.implementation_status=r.status||'specified-not-verified';
+    S.training.push(x);existing[x.id]=1;
+  });
+  (doc.cross_file_lessons||[]).forEach(function(l){
+    if(!S.trainingLessons.some(function(x){return x.id===l.id;}))S.trainingLessons.push(l);
+  });
+  S.trainingBatches.push(doc.id);
+  addStream('training','Pulse Training',doc.title||doc.id,
+    {batch_id:doc.id,records:doc.records.length,lessons:(doc.cross_file_lessons||[]).length},
+    {mode:'training-deposit',admission_policy:doc.admission_policy},'training-batch:'+doc.id);
+  save();return true;
+}
+function loadTrainingBatches(){
+  if(window.PULSE_TRAINING_BLUEPRINTS_11){
+    if(ingestTrainingBatch(window.PULSE_TRAINING_BLUEPRINTS_11))ensureFunnelProject();
+    return;
+  }
+  if(location.protocol==='file:')return;
+  fetch('pulse-training-blueprints-11.json',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;})
+    .then(function(doc){if(doc&&ingestTrainingBatch(doc)){ensureFunnelProject();if(typeof renderStage==='function')renderStage();}})
+    .catch(function(){});
+}
+
 var BLUEPRINTS=[
  {id:'input',name:'Input',summary:'Human, app, and procedural interfaces enter one pipe. Preserve raw payload and provenance; never delete the source.'},
  {id:'stream',name:'Stream',summary:'Append-only arrival lane. Records stay raw and can be kept in Bin or sent to Funnel.'},
@@ -105,6 +160,18 @@ function ensureFunnelProject(){
         members:members,page:'pulse-dashboard.html',queued:false,versions:[{id:'spine-v1',number:'v1',title:'Funnel blueprint build',state:'locked-import',createdAt:now,parentId:null,revision:'',
           items:members.filter(function(x){return x.ref!=='contract-harness-completion';}).map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='baseline';return y;})}]};
       fs.projects.push(p);
+    }
+    var hasTraining=(p.versions||[]).some(function(v){return v.id==='spine-v3-training-11';});
+    if(!hasTraining&&S.trainingBatches.indexOf('training-20261005-blueprint-11')>=0){
+      var trainMembers=S.training.map(function(t){return {kind:'training-source',ref:'training-'+t.id,label:t.source_file||t.id,
+        sourceVersion:'blueprint',source:'pulse-training-blueprints-11.json',detail:t.one_line||''};});
+      p.members=p.members||[];
+      trainMembers.forEach(function(tm){if(!p.members.some(function(x){return x.ref===tm.ref;}))p.members.push(tm);});
+      p.versions=p.versions||[];
+      p.versions.push({id:'spine-v3-training-11',number:'v3',title:'11 blueprint training pass',state:'locked-import',createdAt:now,
+        parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
+        revision:'Admitted blueprint intent, rules, failures, and verification contracts. Implementation logic stays specified-not-verified until real gates pass.',
+        items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.kind!=='training-source';y.change=x.kind==='training-source'?'new':'inherited';return y;})});
     }
     var hasContract=(p.members||[]).some(function(x){return x.ref==='contract-harness-completion';});
     if(!hasContract){
@@ -205,10 +272,12 @@ function binView2(){
   });
   var kept=S.kept.filter(function(k){return !q||textOf(k.snapshot).toLowerCase().indexOf(q)>=0;});
   var records=S.stream.filter(function(r){return !q||textOf(r).toLowerCase().indexOf(q)>=0;});
+  var training=S.training.filter(function(t){return !q||trainingText(t).toLowerCase().indexOf(q)>=0||(t.source_file||'').toLowerCase().indexOf(q)>=0;});
   var bps=blueprintDocs().filter(function(b){return !q||(b.name+' '+b.summary).toLowerCase().indexOf(q)>=0;});
   return '<div class="ps-head"><h2>Bin</h2><p>Everything stays addressable.</p></div>'+
     '<div class="ps-compose ps-search"><input id="ps-bin-search" type="search" value="'+esc2(q)+'" placeholder="Search everything…"></div>'+
     '<section class="ps-section"><h3>Blueprints</h3><div class="ps-rows">'+bps.map(function(b){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(b.name)+'</strong><span>'+esc2(b.summary)+'</span></div><div class="ps-actions"><button data-spine-blueprint="'+b.id+'">View</button></div></div>';}).join('')+'</div></section>'+
+    (training.length?'<section class="ps-section"><h3>Training · '+training.length+'</h3><div class="ps-rows">'+training.map(function(t){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(t.source_file||t.id)+'</strong><span>'+esc2(t.one_line||'training record')+' · '+esc2(t.implementation_status||t.status||'specified')+'</span></div><div class="ps-actions"><button data-spine-training="'+esc2(t.id)+'">View</button></div></div>';}).join('')+'</div></section>':'')+
     (kept.length?'<section class="ps-section"><h3>Kept</h3><div class="ps-rows">'+kept.slice().reverse().map(function(k){return recordRow(k.snapshot);}).join('')+'</div></section>':'')+
     (records.length?'<details class="ps-section ps-all"><summary>Stream records · '+records.length+'</summary><div class="ps-rows">'+records.slice().reverse().map(recordRow).join('')+'</div></details>':'')+
     '<section class="ps-section"><h3>Components</h3><div class="ps-rows">'+comps.map(function(c){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(c.label)+'</strong><span>'+esc2(c.short||c.job||c.source||'component')+'</span></div><div class="ps-actions"><button data-open="'+esc2(c.id)+'">Open</button><button data-spine-comp-funnel="'+esc2(c.id)+'">Funnel</button></div></div>';}).join('')+'</div></section>';
@@ -248,6 +317,16 @@ ensureTabbar=function(){
   });
 };
 
+function showTraining(id){
+  var t=S.training.find(function(x){return x.id===id;});if(!t)return;
+  var old=document.getElementById('ps-modal');if(old)old.remove();
+  function group(name,a){return a&&a.length?'<h3>'+esc2(name)+'</h3><ul>'+a.map(function(x){return '<li>'+esc2(x)+'</li>';}).join('')+'</ul>':'';}
+  var m=document.createElement('div');m.id='ps-modal';
+  m.innerHTML='<div class="ps-modal-card ps-train-card"><button class="ps-x" data-spine-close>×</button><div class="ps-head"><h2>'+esc2(t.source_file||t.id)+'</h2><p>'+esc2(t.implementation_status||t.status||'specified')+'</p></div>'+
+    '<p class="ps-blue">'+esc2(t.one_line||'')+'</p>'+group('Intent',t.intent)+group('Logic patterns',t.logic_patterns)+group('Hard rules',t.hard_rules)+group('Verification',t.verification)+group('Negative scope',t.negative_scope)+
+    '<a class="ps-link" href="pulse-training-blueprints-11.json" target="_blank" rel="noopener">Training batch ↗</a></div>';
+  document.body.appendChild(m);
+}
 function showBlueprint(id){
   var b=blueprintDocs().find(function(x){return x.id===id;}); if(!b)return;
   var old=document.getElementById('ps-modal'); if(old)old.remove();
@@ -263,7 +342,7 @@ function decorateFunnel(){
   var panel=document.querySelector('.pf-shell .ps-funnel-panel');
   if(panel){
     panel.innerHTML='<div class="ps-funnel-panel-head"><b>Funnel inbox</b><button data-spine-hide-inbox>×</button></div>'+
-      (S.funnelInbox.length?S.funnelInbox.slice().reverse().map(function(x){return '<div class="ps-funnel-item"><strong>'+esc2(x.record.title)+'</strong><span>'+esc2(x.record.kind)+' · '+esc2(x.record.source)+'</span></div>';}).join(''):'<div class="ps-empty">Nothing waiting.</div>');
+      (S.funnelInbox.length?S.funnelInbox.slice().reverse().map(function(x){return '<div class="ps-funnel-item"><strong>'+esc2(x.record.title)+'</strong><span>'+esc2(x.record.kind)+' · '+esc2(x.record.source)+(x.training_refs&&x.training_refs.length?' · '+x.training_refs.length+' training refs':'')+'</span></div>';}).join(''):'<div class="ps-empty">Nothing waiting.</div>');
   }
 }
 function toggleInbox(show){
@@ -289,6 +368,7 @@ document.addEventListener('click',function(e){
   var f=e.target.closest('[data-spine-funnel]'); if(f){sendRecordToFunnel(f.dataset.spineFunnel);decorateFunnel();return;}
   var cf=e.target.closest('[data-spine-comp-funnel]'); if(cf){var r=componentRecord(cf.dataset.spineCompFunnel);if(r)sendRecordToFunnel(r.id);decorateFunnel();return;}
   var bp=e.target.closest('[data-spine-blueprint]'); if(bp){showBlueprint(bp.dataset.spineBlueprint);return;}
+  var tr=e.target.closest('[data-spine-training]'); if(tr){showTraining(tr.dataset.spineTraining);return;}
   if(e.target.closest('[data-spine-close]')){var m=document.getElementById('ps-modal');if(m)m.remove();return;}
   if(e.target.closest('[data-spine-inbox]')){toggleInbox(true);return;}
   if(e.target.closest('[data-spine-hide-inbox]')){toggleInbox(false);return;}
@@ -313,7 +393,7 @@ var st=document.createElement('style');st.id='pulse-spine-style';st.textContent=
 '.ps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.ps-card{display:flex;flex-direction:column;gap:5px;text-align:left;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.025);color:var(--text);padding:13px;font:inherit;cursor:pointer}.ps-card b{font-size:12px}.ps-card span{font-size:10px;color:var(--muted);line-height:1.4}.ps-card-static{cursor:default}.ps-card details{margin-top:5px}.ps-card summary{cursor:pointer;font-size:10px;color:var(--cyan)}.ps-mini{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}.ps-mini button{font:inherit;font-size:9px;color:var(--muted);border:1px solid rgba(255,255,255,.08);border-radius:999px;background:transparent;padding:4px 7px;cursor:pointer}'+
 '.ps-kicker,.ps-context{font-size:10px;color:var(--muted);margin:2px 0 9px}.ps-rows{display:flex;flex-direction:column;gap:5px}.ps-row{display:flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(255,255,255,.02);padding:8px 9px}.ps-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.ps-row-main strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ps-row-main span{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ps-actions{display:flex;gap:3px}.ps-actions button{border:1px solid rgba(255,255,255,.09);background:transparent;color:var(--muted);border-radius:8px;padding:5px 7px;font:inherit;font-size:9px;cursor:pointer}.ps-actions button:hover{color:var(--text)}'+
 '.ps-section{margin:15px 0}.ps-section h3,.ps-all>summary{font-size:10px;letter-spacing:.11em;text-transform:uppercase;margin:0 0 6px;color:var(--muted)}.ps-all>summary{cursor:pointer;list-style:none}.ps-all>summary::-webkit-details-marker{display:none}.ps-empty{padding:14px;color:var(--muted);font-size:11px}.ps-search{max-width:520px}'+
-'#ps-modal{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.65);display:grid;place-items:center;padding:18px}.ps-modal-card{position:relative;width:min(520px,100%);border:1px solid rgba(255,255,255,.13);border-radius:18px;background:#10131d;padding:18px;box-shadow:0 25px 80px #000}.ps-x{position:absolute;right:10px;top:10px;border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}.ps-blue{font-size:13px;line-height:1.6;color:#dce2ee}.ps-link{display:inline-block;margin-top:14px;color:var(--cyan);font-size:11px;text-decoration:none}'+
+'#ps-modal{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.65);display:grid;place-items:center;padding:18px}.ps-modal-card{position:relative;width:min(520px,100%);border:1px solid rgba(255,255,255,.13);border-radius:18px;background:#10131d;padding:18px;box-shadow:0 25px 80px #000}.ps-x{position:absolute;right:10px;top:10px;border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}.ps-blue{font-size:13px;line-height:1.6;color:#dce2ee}.ps-train-card{max-height:82vh;overflow:auto}.ps-train-card h3{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:16px 0 5px}.ps-train-card ul{margin:0;padding-left:18px}.ps-train-card li{font-size:11px;line-height:1.45;margin:4px 0;color:#dce2ee}.ps-link{display:inline-block;margin-top:14px;color:var(--cyan);font-size:11px;text-decoration:none}'+
 '.ps-funnel-badge{margin-left:auto;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(255,255,255,.035);color:#eef3fa;padding:5px 9px;font:inherit;font-size:10px;cursor:pointer}.ps-funnel-panel{display:none;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(10,12,19,.85);padding:9px;margin-bottom:8px}.ps-funnel-panel-head{display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:6px}.ps-funnel-panel-head button{border:0;background:transparent;color:var(--muted);cursor:pointer}.ps-funnel-item{display:flex;justify-content:space-between;gap:8px;padding:6px 2px;border-top:1px solid rgba(255,255,255,.05);font-size:10px}.ps-funnel-item span{color:var(--muted)}'+
 'body.tabs-on #tabbar button>span:not(.tb-ic){display:inline!important;visibility:visible!important;opacity:1!important;color:inherit!important;white-space:nowrap!important}.pf-project-copy strong{display:block!important;visibility:visible!important;opacity:1!important;color:#eef3fa!important}'+
 '@media(min-width:761px){body.tabs-on #tabbar button{overflow:visible!important}.ps-row{min-height:38px}}'+
@@ -328,10 +408,14 @@ window.PulseSpine={
   funnel:sendRecordToFunnel,
   harvest:harvest,
   blueprints:BLUEPRINTS.slice(),
-  contracts:CONTRACTS.slice()
+  contracts:CONTRACTS.slice(),
+  get training(){return S.training.slice();},
+  get trainingLessons(){return S.trainingLessons.slice();},
+  findTraining:function(q){return relatedTraining({title:q||'',payload:q||''},8);}
 };
 
 harvest();
+loadTrainingBatches();
 ensureFunnelProject();
 ensureTabbar();
 if(typeof renderStage==='function')renderStage();
