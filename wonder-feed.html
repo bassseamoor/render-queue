@@ -2696,7 +2696,9 @@ var RANGES = {
   blobs:[3,8,1], goo:[0.3,1,0], curtains:[4,9,1], speed:[0.2,2,0],
   voices:[2,4,1], rate:[0.3,1.5,0], glyphs:[14,40,1],
   petalsA:[4,12,1], petalsB:[4,12,1], count:[150,600,1], swirl:[0.5,2,0],
-  spin:[0.2,1.5,0], walkers:[300,900,1], blend:[0,1,0], bmode:[0,4,1]
+  spin:[0.2,1.5,0], walkers:[300,900,1], blend:[0,1,0], bmode:[0,4,1],
+  capA:[0,999,1], capB:[0,999,1], capC:[0,999,1], capD:[0,999,1],
+  partCount:[2,4,1], mixMode:[0,5,1]
 };
 function clampJit(v, key, rng){
   var r = RANGES[key]; if (!r) return v;
@@ -6613,92 +6615,262 @@ TYPES.push({kind:'motive', icon:'💬', label:'Motive',
 
 /* ---------- 42. IDEA — concept cards distilled from capabilities ---------- */
 /* ================= AMALGAMATIONS =================
- * Wonder Feed is intentionally simple: no canned idea kits and no fake prompt
- * understanding. It recombines the distilled capabilities that already exist
- * across the whole MOOR OS into deterministic system mashups.
- * Same seed = same amalgamation. */
+ * Whole-OS invention stream. Real MOOR capabilities are recombined, then the
+ * result is presented in the medium it most resembles: UI, animation, model,
+ * environment, function, or system. Same seed = same amalgamation + preview. */
 function capShort(c){
   var w=String(c.what||c.verb||c.component||'capability').replace(/\s+/g,' ').trim();
-  return w.length>86?w.slice(0,83)+'…':w;
+  return w.length>94?w.slice(0,91)+'…':w;
 }
 function compLabel(n){
-  return String(n||'component').replace(/^comp-/,'').replace(/[-_]+/g,' ').replace(/\b\w/g,function(m){return m.toUpperCase();});
+  return String(n||'component').replace(/^comp-/,'').replace(/[-_]+/g,' ')
+    .replace(/\b\w/g,function(m){return m.toUpperCase();});
+}
+function uniq(a){
+  var out=[], seen={};
+  for(var i=0;i<a.length;i++) if(a[i]!==undefined&&a[i]!==null&&!seen[String(a[i])]){
+    seen[String(a[i])]=1; out.push(a[i]);
+  }
+  return out;
 }
 function amalgamCaps(P){
   var C=caps(), out=[], seen={};
   if(!C.length) return out;
-  var idx=[P.a,P.b,P.c,P.d], want=Math.max(2,Math.min(4,Math.round(P.count||3)));
+  var idx=[P.capA,P.capB,P.capC,P.capD];
+  var want=Math.max(2,Math.min(4,Math.round(P.partCount||3)));
   for(var i=0;i<idx.length&&out.length<want;i++){
     var k=((Math.round(idx[i]||0)%C.length)+C.length)%C.length, tries=0;
-    while(tries<C.length && seen[C[k].id]){k=(k+1)%C.length;tries++;}
+    while(tries<C.length&&seen[C[k].id]){k=(k+1)%C.length;tries++;}
     if(!seen[C[k].id]){seen[C[k].id]=1;out.push(C[k]);}
   }
-  for(var j=0;j<C.length&&out.length<want;j++) if(!seen[C[j].id]){seen[C[j].id]=1;out.push(C[j]);}
+  for(var j=0;j<C.length&&out.length<want;j++){
+    if(!seen[C[j].id]){seen[C[j].id]=1;out.push(C[j]);}
+  }
   return out;
 }
-function amalgamCopy(parts,mode,seed){
-  var names=parts.map(function(c){return c.component;});
+function amalgamHay(parts){
+  return parts.map(function(c){
+    return [
+      c.component,c.verb,c.what,c.code_ref,
+      (c.knobs||[]).join(' '),(c.outputs||[]).join(' '),(c.notes||'')
+    ].join(' ');
+  }).join(' ').toLowerCase();
+}
+function artifactTypeFor(parts){
+  var h=amalgamHay(parts);
+  var s={ui:0,animation:0,model:0,environment:0,function:0,system:0};
+  function hit(re,k,w){var m=h.match(re); if(m)s[k]+=w*(m.length||1);}
+  hit(/\b(ui|panel|window|editor|workspace|dashboard|canvas|feed|browser|overlay|screen|menu|tab|grid|card|repl|console)\b/g,'ui',3);
+  hit(/\b(particle|spell|effect|animate|animation|motion|loop|audio|ambience|sound|reactive|trail|lightning|emitter|rain|wave|drift)\b/g,'animation',3);
+  hit(/\b(mesh|model|geometry|creature|softbody|metaball|item|relic|asset|sprite|body|sdf|voxel|solid|aabb)\b/g,'model',3);
+  hit(/\b(terrain|world|map|biome|forest|district|room|scene|island|planet|sky|landscape|environment|maze|spawn|station|city)\b/g,'environment',3);
+  hit(/\b(save|export|import|transform|compile|codec|generator|route|query|tool|function|adapter|builder|seed|validate|encode|decode|search)\b/g,'function',2.5);
+  hit(/\b(network|sync|state|pipeline|provenance|directory|navigation|graph|workflow|event|registry|continuity|system|log)\b/g,'system',2.5);
+  var best='function',score=-1;
+  Object.keys(s).forEach(function(k){if(s[k]>score){best=k;score=s[k];}});
+  return best;
+}
+function amalgamSpec(parts,P,seed){
+  var mode=Math.round(P.mixMode||0)%6;
+  var modeNames=['PIPELINE','SHARED STATE','CONTROL LOOP','LENS','FEEDBACK','TOOLCHAIN'];
+  var knobs=[],outputs=[],labels=[];
+  parts.forEach(function(c){
+    labels.push(compLabel(c.component));
+    (c.knobs||[]).slice(0,4).forEach(function(x){knobs.push(x);});
+    (c.outputs||[]).slice(0,3).forEach(function(x){outputs.push(x);});
+  });
+  knobs=uniq(knobs).slice(0,9); outputs=uniq(outputs).slice(0,8);
+  var type=artifactTypeFor(parts), relation='';
+  if(mode===0) relation=parts.map(function(c){return c.verb+' '+capShort(c);}).join(' → ');
+  else if(mode===1) relation='A shared state lets '+labels.join(', ')+' behave like one tool without fusing their internals.';
+  else if(mode===2) relation=capShort(parts[0])+' drives '+capShort(parts[1])+(parts[2]?' while '+capShort(parts[2])+' reacts to the result.':'.');
+  else if(mode===3) relation='Use '+capShort(parts[0])+' as source material and reinterpret it through '+parts.slice(1).map(capShort).join(', ')+'.';
+  else if(mode===4) relation='A bounded feedback loop lets '+labels.join(' ↔ ')+' continuously reshape the result.';
+  else relation='Collapse '+labels.join(' + ')+' into one immediately usable MOOR capability.';
+  return {
+    seed:seed>>>0, type:type, mode:mode, modeName:modeNames[mode],
+    title:labels.join(' × '), labels:labels, knobs:knobs, outputs:outputs,
+    parts:parts, relation:relation
+  };
+}
+function makePreviewCanvas(slot,h){
+  var cv=document.createElement('canvas'), dpr=Math.min(window.devicePixelRatio||1,2);
+  var cssH=h||220, cssW=Math.max(280,Math.min(window.innerWidth||390,760));
+  cv.width=Math.round(cssW*dpr); cv.height=Math.round(cssH*dpr);
+  cv.style.cssText='display:block;width:100%;height:'+cssH+'px;border-radius:14px';
+  slot.appendChild(cv);
+  return {cv:cv,ctx:cv.getContext('2d'),dpr:dpr};
+}
+function roundRect(ctx,x,y,w,h,r){
+  r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+function drawLabel(ctx,text,x,y,maxW,size){
+  ctx.font=(size||12)+'px system-ui,-apple-system,sans-serif';
+  ctx.fillStyle='rgba(226,233,255,.88)';
+  var t=String(text||''); while(t.length>4&&ctx.measureText(t).width>maxW)t=t.slice(0,-2);
+  if(t!==String(text||''))t+='…'; ctx.fillText(t,x,y);
+}
+function renderUIPreview(slot,spec){
+  slot.innerHTML='<div class="wf-preview wf-ui"></div>';
+  var p=slot.firstChild;
+  var controls=(spec.knobs.length?spec.knobs:['input','choice','trigger','value']).slice(0,5);
+  var outs=(spec.outputs.length?spec.outputs:['live result','saved state']).slice(0,4);
+  p.innerHTML=
+   '<div style="border:1px solid rgba(255,255,255,.11);border-radius:16px;overflow:hidden;background:#0a0d18">'+
+    '<div style="height:42px;display:flex;align-items:center;gap:9px;padding:0 11px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)">'+
+      '<span style="width:9px;height:9px;border-radius:50%;background:#8088ff"></span>'+
+      '<span style="width:9px;height:9px;border-radius:50%;background:#5961c7"></span>'+
+      '<div style="height:26px;flex:1;border:1px solid rgba(255,255,255,.08);border-radius:8px;display:flex;align-items:center;padding:0 9px;color:#8f9ac4;font-size:11px">'+esc(spec.labels[0]||'MOOR')+'</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:minmax(86px,24%) 1fr;min-height:210px">'+
+      '<div style="padding:10px;border-right:1px solid rgba(255,255,255,.08);display:grid;align-content:start;gap:7px">'+
+        spec.labels.slice(0,4).map(function(x,i){return '<div style="padding:8px;border-radius:9px;background:'+(i===0?'rgba(128,136,255,.15)':'rgba(255,255,255,.035)')+';font-size:10px;color:#ccd4f3">'+esc(x)+'</div>';}).join('')+
+      '</div>'+
+      '<div style="padding:11px;display:grid;grid-template-columns:1fr 1fr;gap:9px;align-content:start">'+
+        '<div style="border:1px solid rgba(255,255,255,.075);border-radius:12px;padding:10px"><div style="font-size:10px;letter-spacing:.14em;color:#8da7ff;margin-bottom:9px">CONTROLS</div>'+
+          controls.map(function(k,i){return '<div style="margin:7px 0"><div style="font-size:10px;color:#c9d2f3;margin-bottom:4px">'+esc(k)+'</div><div style="height:7px;border-radius:5px;background:linear-gradient(90deg,rgba(128,136,255,.88) 0 '+(28+i*13)+'%,rgba(255,255,255,.07) '+(28+i*13)+'% 100%)"></div></div>';}).join('')+
+        '</div>'+
+        '<div style="border:1px solid rgba(255,255,255,.075);border-radius:12px;padding:10px"><div style="font-size:10px;letter-spacing:.14em;color:#8da7ff;margin-bottom:9px">LIVE OUTPUT</div>'+
+          outs.map(function(o){return '<div style="height:29px;margin:6px 0;border-radius:8px;background:rgba(255,255,255,.045);display:flex;align-items:center;padding:0 8px;font-size:10px;color:#dce3fb">'+esc(o)+'</div>';}).join('')+
+        '</div>'+
+        '<div style="grid-column:1/-1;height:58px;border-radius:12px;border:1px solid rgba(128,136,255,.16);background:linear-gradient(120deg,rgba(128,136,255,.12),rgba(255,255,255,.015));padding:10px;display:flex;align-items:center;gap:7px;overflow:hidden">'+
+          spec.labels.slice(0,4).map(function(x){return '<span style="padding:6px 9px;border-radius:999px;background:rgba(128,136,255,.13);font-size:10px;color:#dce3fb;white-space:nowrap">'+esc(x)+'</span>';}).join('')+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+   '</div>';
+  return {};
+}
+function renderFunctionPreview(slot,spec){
+  slot.innerHTML='<div style="border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:14px;background:linear-gradient(145deg,#0b1020,#090b14)">'+
+    '<div style="display:grid;grid-template-columns:1fr 36px 1fr 36px 1fr;gap:6px;align-items:center;min-height:160px">'+
+      '<div class="wf-fn-in"></div><div style="text-align:center;color:#8998d9">→</div>'+
+      '<div class="wf-fn-mid"></div><div style="text-align:center;color:#8998d9">→</div><div class="wf-fn-out"></div>'+
+    '</div></div>';
+  function box(title,body,strong){
+    return '<div style="min-height:112px;border:1px solid '+(strong?'rgba(128,136,255,.26)':'rgba(255,255,255,.08)')+';border-radius:12px;padding:10px;background:'+(strong?'rgba(128,136,255,.09)':'rgba(255,255,255,.025)')+'"><div style="font-size:9px;letter-spacing:.13em;color:#8da7ff;margin-bottom:8px">'+title+'</div><div style="font-size:11px;line-height:1.45;color:#e1e7fb">'+esc(body)+'</div></div>';
+  }
+  slot.querySelector('.wf-fn-in').innerHTML=box('INPUT',capShort(spec.parts[0]),false);
+  slot.querySelector('.wf-fn-mid').innerHTML=box('TRANSFORM',spec.labels.slice(0,2).join(' + '),true);
+  slot.querySelector('.wf-fn-out').innerHTML=box('RESULT',spec.outputs[0]||capShort(spec.parts[spec.parts.length-1]),false);
+  return {};
+}
+function renderSystemPreview(slot,spec){
+  var q=makePreviewCanvas(slot,220),cv=q.cv,ctx=q.ctx,W=cv.width,H=cv.height,d=q.dpr;
+  function paint(){
+    ctx.clearRect(0,0,W,H);ctx.fillStyle='#090d18';ctx.fillRect(0,0,W,H);
+    var pts=[[.14,.5],[.42,.27],[.42,.73],[.78,.5]], labels=spec.labels.slice(0,4);
+    while(labels.length<4)labels.push(['SOURCE','TRANSFORM','STATE','RESULT'][labels.length]);
+    ctx.strokeStyle='rgba(124,145,235,.32)';ctx.lineWidth=2*d;
+    [[0,1],[0,2],[1,3],[2,3]].forEach(function(e){ctx.beginPath();ctx.moveTo(pts[e[0]][0]*W,pts[e[0]][1]*H);ctx.lineTo(pts[e[1]][0]*W,pts[e[1]][1]*H);ctx.stroke();});
+    pts.forEach(function(p,i){var x=p[0]*W,y=p[1]*H,w=132*d,h=42*d;roundRect(ctx,x-w/2,y-h/2,w,h,10*d);ctx.fillStyle=i===1||i===2?'rgba(124,134,255,.15)':'rgba(255,255,255,.045)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.10)';ctx.stroke();drawLabel(ctx,labels[i],x-w/2+9*d,y+4*d,w-18*d,10*d);});
+  }
+  paint(); return {};
+}
+function renderEnvironmentPreview(slot,spec){
+  var q=makePreviewCanvas(slot,235),cv=q.cv,ctx=q.ctx,W=cv.width,H=cv.height,d=q.dpr,r=mulberry32((spec.seed^0x7431)>>>0);
+  function paint(){
+    var sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#151d43');sky.addColorStop(.52,'#151a32');sky.addColorStop(1,'#090c15');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+    for(var k=0;k<3;k++){
+      ctx.beginPath();ctx.moveTo(0,H);
+      for(var x=0;x<=W;x+=24*d){var y=H*(.43+k*.13)+Math.sin(x/(80*d)+k*1.6)*18*d+(r()-.5)*28*d;ctx.lineTo(x,y);}
+      ctx.lineTo(W,H);ctx.closePath();ctx.fillStyle=['rgba(92,111,192,.30)','rgba(58,71,124,.55)','rgba(24,31,55,.92)'][k];ctx.fill();
+    }
+    for(var i=0;i<28;i++){var px=r()*W,py=H*(.58+r()*.28),hh=(16+r()*42)*d;ctx.strokeStyle='rgba(122,149,178,'+(.18+r()*.25)+')';ctx.lineWidth=(1+r()*2)*d;ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+(r()-.5)*8*d,py-hh);ctx.stroke();}
+    var text=spec.labels.slice(0,3).join(' · ');ctx.fillStyle='rgba(5,8,14,.62)';roundRect(ctx,14*d,14*d,Math.min(W-28*d,340*d),34*d,10*d);ctx.fill();drawLabel(ctx,text,26*d,36*d,Math.min(W-52*d,310*d),11*d);
+  }
+  paint();return {};
+}
+function renderModelPreview(slot,spec){
+  var q=makePreviewCanvas(slot,235),cv=q.cv,ctx=q.ctx,W=cv.width,H=cv.height,d=q.dpr,r=mulberry32((spec.seed^0x192a)>>>0),t=0,raf=0;
+  function paint(){
+    ctx.clearRect(0,0,W,H);var bg=ctx.createRadialGradient(W*.5,H*.38,10,W*.5,H*.48,W*.6);bg.addColorStop(0,'#1a2144');bg.addColorStop(1,'#080b14');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    ctx.save();ctx.translate(W*.5,H*.5);ctx.rotate(Math.sin(t*.65)*.08);
+    var pts=[],n=8;for(var i=0;i<n;i++){var a=i/n*Math.PI*2,rr=(58+(i%2?24:0)+(r()*0))*d;pts.push([Math.cos(a)*rr,Math.sin(a)*rr*.78]);}
+    ctx.beginPath();pts.forEach(function(p,i){if(!i)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);});ctx.closePath();
+    var g=ctx.createLinearGradient(-90*d,-80*d,90*d,90*d);g.addColorStop(0,'rgba(229,235,255,.92)');g.addColorStop(.35,'rgba(138,148,255,.82)');g.addColorStop(1,'rgba(49,60,121,.95)');ctx.fillStyle=g;ctx.shadowColor='rgba(113,128,255,.28)';ctx.shadowBlur=36*d;ctx.fill();ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(255,255,255,.24)';ctx.lineWidth=1*d;ctx.stroke();
+    for(var j=0;j<5;j++){ctx.fillStyle='rgba(8,12,24,.75)';ctx.beginPath();ctx.arc((j-2)*22*d,Math.sin(j+t)*17*d,4*d,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+    ctx.fillStyle='rgba(9,13,24,.78)';roundRect(ctx,14*d,H-48*d,Math.min(W-28*d,390*d),32*d,9*d);ctx.fill();drawLabel(ctx,spec.outputs.slice(0,3).join(' · ')||spec.title,26*d,H-27*d,Math.min(W-52*d,350*d),10*d);
+  }
+  function frame(){raf=requestAnimationFrame(frame);t+=.016;paint();}
+  frame();return {stop:function(){if(raf)cancelAnimationFrame(raf);raf=0;}};
+}
+function renderAnimationPreview(slot,spec){
+  var q=makePreviewCanvas(slot,235),cv=q.cv,ctx=q.ctx,W=cv.width,H=cv.height,d=q.dpr,r=mulberry32((spec.seed^0xa41f)>>>0),t=0,raf=0,nodes=[];
+  for(var i=0;i<26;i++)nodes.push({x:r()*W,y:r()*H,vx:(r()-.5)*1.2*d,vy:(r()-.5)*.9*d,rad:(1.5+r()*3)*d});
+  function paint(){
+    ctx.fillStyle='rgba(7,10,18,.23)';ctx.fillRect(0,0,W,H);
+    for(var i=0;i<nodes.length;i++){
+      var a=nodes[i];a.x+=a.vx;a.y+=a.vy+Math.sin(t*1.2+i)*.12*d;
+      if(a.x<0||a.x>W)a.vx*=-1;if(a.y<0||a.y>H)a.vy*=-1;
+      for(var j=i+1;j<nodes.length;j++){var b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,dd=Math.sqrt(dx*dx+dy*dy);if(dd<110*d){ctx.strokeStyle='rgba(126,147,255,'+(0.18-dd/(110*d)*.14)+')';ctx.lineWidth=.75*d;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}}
+      var rg=ctx.createRadialGradient(a.x,a.y,0,a.x,a.y,a.rad*5);rg.addColorStop(0,'rgba(235,239,255,.95)');rg.addColorStop(.3,'rgba(133,145,255,.75)');rg.addColorStop(1,'rgba(98,112,255,0)');ctx.fillStyle=rg;ctx.beginPath();ctx.arc(a.x,a.y,a.rad*5,0,Math.PI*2);ctx.fill();
+    }
+  }
+  ctx.fillStyle='#080b15';ctx.fillRect(0,0,W,H);
+  function frame(){raf=requestAnimationFrame(frame);t+=.016;paint();}
+  frame();return {stop:function(){if(raf)cancelAnimationFrame(raf);raf=0;}};
+}
+function renderArtifactPreview(slot,spec){
+  if(spec.type==='ui')return renderUIPreview(slot,spec);
+  if(spec.type==='animation')return renderAnimationPreview(slot,spec);
+  if(spec.type==='model')return renderModelPreview(slot,spec);
+  if(spec.type==='environment')return renderEnvironmentPreview(slot,spec);
+  if(spec.type==='system')return renderSystemPreview(slot,spec);
+  return renderFunctionPreview(slot,spec);
+}
+function amalgamCopy(spec){
   var lines=[
-    'Build a MOOR OS component amalgamation from these existing capabilities.',
-    'Seed: '+seed+'.',
-    'Parts: '+names.join(' + ')+'.',
-    'Do not replace the source components; connect them with explicit adapters.',
-    'Use each component\'s real inputs, outputs, knobs, and contracts.'
+    'Build this MOOR OS amalgamation exactly as a '+spec.type+' artifact.',
+    'Seed: '+spec.seed+'.',
+    'Parts: '+spec.parts.map(function(c){return c.component;}).join(' + ')+'.',
+    'Composition: '+spec.modeName+'.',
+    'Intent: '+spec.relation,
+    'Preserve the original components; connect them with explicit adapters.'
   ];
-  if(mode===0) lines.push('Shape: pipeline. Feed the useful output of each capability into the next one where possible.');
-  else if(mode===1) lines.push('Shape: shared state. Let the capabilities read/write one small common state object while remaining independently replaceable.');
-  else if(mode===2) lines.push('Shape: control loop. Let one capability\'s output modulate another\'s knobs, then expose the resulting state to the remaining capability.');
-  else if(mode===3) lines.push('Shape: lens. Use one capability as data source, one as transformation, and the others as presentation/persistence/interaction as their contracts allow.');
-  else if(mode===4) lines.push('Shape: feedback. Route the downstream result back into one upstream control without creating an unstable unbounded loop.');
-  else lines.push('Shape: toolchain. Make the parts feel like one OS capability with one obvious first action and one saved result.');
-  parts.forEach(function(c,i){
+  spec.parts.forEach(function(c,i){
     lines.push((i+1)+'. '+c.component+' — '+c.verb+' '+c.what+'; knobs: '+((c.knobs||[]).slice(0,5).join(', ')||'none listed')+'; outputs: '+((c.outputs||[]).slice(0,4).join(', ')||'none listed')+'.');
   });
-  lines.push('Return the smallest working integration first. Preserve deterministic behavior where the source parts are seeded.');
+  lines.push('Present the working result in its native medium first; explanation is secondary.');
   return lines.join('\n');
 }
-TYPES.push({kind:'amalgam', icon:'✣', label:'Amalgam',
+TYPES.push({kind:'amalgam',icon:'✣',label:'Amalgam',
  params:function(r){
    var n=Math.max(1,caps().length);
-   return {a:(r()*n)|0,b:(r()*n)|0,c:(r()*n)|0,d:(r()*n)|0,count:2+((r()*3)|0),mode:(r()*6)|0,hue:r()*360};
+   return {capA:(r()*n)|0,capB:(r()*n)|0,capC:(r()*n)|0,capD:(r()*n)|0,partCount:2+((r()*3)|0),mixMode:(r()*6)|0};
  },
  make:function(genome){
-   var P=genome.p, seed=genome.seed, parts=amalgamCaps(P);
-   var el=cardShell(genome,'Amalgam '+((seed%900)+100),'MOOR OS · component recombination');
+   var P=genome.p,seed=genome.seed,parts=amalgamCaps(P);
+   var el=cardShell(genome,'Amalgam '+((seed%900)+100),'MOOR OS');
    var vis=el.querySelector('.wd-visual');
    if(!parts.length){
      vis.innerHTML='<div class="wd-idea"><div class="wd-ideaB">No distilled capabilities yet.</div></div>';
      return {el:el,title:'Amalgam',sub:'empty catalog',start:function(){},stop:function(){}};
    }
-   genome.capIds=parts.map(function(c){return c.id;});
-   var mode=Math.round(P.mode)%6;
-   var modeNames=['PIPELINE','SHARED STATE','CONTROL LOOP','LENS','FEEDBACK','TOOLCHAIN'];
-   var title=parts.map(function(c){return compLabel(c.component);}).join(' × ');
-   var relation;
-   if(mode===0) relation=parts.map(function(c){return c.verb+' '+capShort(c);}).join(' → ');
-   else if(mode===1) relation='One shared state, '+parts.length+' independent capabilities: '+parts.map(function(c){return capShort(c);}).join(' · ');
-   else if(mode===2) relation=capShort(parts[0])+' drives the controls of '+capShort(parts[1])+(parts[2]?' while '+capShort(parts[2])+' observes or stores the result':'')+'.';
-   else if(mode===3) relation='Treat '+capShort(parts[0])+' as source material; reinterpret it through '+parts.slice(1).map(function(c){return capShort(c);}).join(', ')+'.';
-   else if(mode===4) relation='Create a bounded feedback loop between '+parts.map(function(c){return capShort(c);}).join(' ↔ ')+'.';
-   else relation='Collapse these into one user-facing MOOR tool: '+parts.map(function(c){return capShort(c);}).join(' + ')+'.';
+   var spec=amalgamSpec(parts,P,seed), preview=null;
    var chips=parts.map(function(c){return '<span>'+esc(c.component)+'</span>';}).join('');
-   var knobs=[];
-   parts.forEach(function(c){(c.knobs||[]).slice(0,2).forEach(function(k){if(knobs.indexOf(k)<0)knobs.push(k);});});
-   el.querySelector('.wd-cap b').textContent=title;
-   el.querySelector('.wd-cap span').textContent='amalgam · '+modeNames[mode]+' · '+parts.length+' parts';
-   vis.innerHTML='<div class="wd-idea">'+
-     '<div class="wd-kicker">'+modeNames[mode]+'</div>'+
-     '<div class="wd-ideaT">'+esc(title)+'</div>'+
-     '<div class="wd-ideaB">'+esc(relation)+'</div>'+
-     '<div class="wd-ideaS">'+chips+'</div>'+
-     '<div style="margin-top:13px;color:#a5adc4;font-size:12px;line-height:1.5">Expose first: '+esc(knobs.slice(0,6).join(' · ')||'component defaults')+'</div>'+
-     '<button class="wd-hbtn wd-copy-build" style="margin-top:14px">copy build task ↗</button>'+
+   el.querySelector('.wd-cap b').textContent=spec.title;
+   el.querySelector('.wd-cap span').textContent=spec.type+' · '+spec.parts.length+' parts';
+   vis.innerHTML=
+     '<div class="wd-idea">'+
+       '<div class="wd-kicker">'+esc(spec.modeName)+' · '+esc(spec.type.toUpperCase())+'</div>'+
+       '<div class="wf-artifact-preview" style="margin:0 0 14px"></div>'+
+       '<div class="wd-ideaT" style="font-size:18px">'+esc(spec.title)+'</div>'+
+       '<div class="wd-ideaB" style="font-size:13px;line-height:1.45;opacity:.82">'+esc(spec.relation)+'</div>'+
+       '<div class="wd-ideaS">'+chips+'</div>'+
+       '<button class="wd-hbtn wd-copy-build" style="margin-top:12px">build this ↗</button>'+
      '</div>';
+   preview=renderArtifactPreview(vis.querySelector('.wf-artifact-preview'),spec)||{};
    vis.querySelector('.wd-copy-build').onclick=function(e){
-     e.stopPropagation();
-     copyText(amalgamCopy(parts,mode,seed),function(ok){toast(ok?'build task copied':'copy unavailable');});
+     e.stopPropagation();copyText(amalgamCopy(spec),function(ok){toast(ok?'build task copied':'copy unavailable');});
    };
-   return {el:el,title:title,sub:'MOOR OS amalgam · '+modeNames[mode],start:function(){},stop:function(){}};
+   return {
+     el:el,title:spec.title,sub:spec.type+' · '+spec.parts.length+' parts',
+     start:function(){},stop:function(){if(preview&&preview.stop)preview.stop();}
+   };
  }
 });
 
@@ -7223,7 +7395,7 @@ function mountFeed(host, opts){
       card: function(genome){
         var w = makeWonder(genome);
         try{ w.el.dataset.kind = genome.type; }catch(e){}
-        var rec = {genome:genome, w:w, el:w.el, started:false, viewT0:0};
+        var rec = {genome:(w.genome||genome), w:w, el:w.el, started:false, viewT0:0};
         wireActions(rec);
         return rec;
       }
