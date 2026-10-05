@@ -14,7 +14,7 @@ function read(){
     if(raw){ var x=JSON.parse(raw); if(x&&x.version) return x; }
   }catch(e){}
   if(mem) return mem;
-  return {version:1,createdAt:new Date().toISOString(),stream:[],kept:[],funnelInbox:[],seen:{},training:[],trainingBatches:[],trainingLessons:[]};
+  return {version:1,createdAt:new Date().toISOString(),stream:[],kept:[],funnelInbox:[],seen:{},training:[],trainingBatches:[],trainingLessons:[],refs:[],edges:[],refSeen:{}};
 }
 function normalizeState(s){
   s=s||{};
@@ -25,6 +25,9 @@ function normalizeState(s){
   if(!Array.isArray(s.training))s.training=[];
   if(!Array.isArray(s.trainingBatches))s.trainingBatches=[];
   if(!Array.isArray(s.trainingLessons))s.trainingLessons=[];
+  if(!Array.isArray(s.refs))s.refs=[];
+  if(!Array.isArray(s.edges))s.edges=[];
+  if(!s.refSeen||typeof s.refSeen!=='object')s.refSeen={};
   return s;
 }
 function write(s){
@@ -44,6 +47,167 @@ function hash(s){
   for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
   return (h>>>0).toString(16);
 }
+var REF_KINDS=['concept','intent','component','generator','recipe','artifact','blueprint','rule','requirement','evidence','failure','project','version','implementation','training'];
+function slug(v){return String(v||'ref').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,80)||'ref';}
+function refStatusWeight(s){return {canonical:9,'human-approved':8,'machine-verified':7,generated:5,observed:4,'specified-not-verified':3,failed:1}[s]||2;}
+function normalizeRefKind(k){
+  k=String(k||'artifact').toLowerCase();
+  if(k==='logic')return 'recipe';
+  if(k==='asset'||k==='model'||k==='output'||k==='result')return 'artifact';
+  if(k==='spec'||k==='contract')return 'blueprint';
+  if(k==='component-project')return 'project';
+  return REF_KINDS.indexOf(k)>=0?k:'artifact';
+}
+function refKey(x){
+  if(x.id)return String(x.id);
+  var base=[normalizeRefKind(x.kind),x.source||'',x.source_id||'',x.title||'',x.stableKey||''].join('|');
+  return normalizeRefKind(x.kind)+':'+slug(x.title||x.source_id||x.source||'ref')+':'+hash(base);
+}
+function cloneSimple(x){try{return JSON.parse(JSON.stringify(x));}catch(e){return x;}}
+function addEdge(from,to,type,provenance){
+  if(!from||!to||from===to)return;
+  type=type||'related';
+  var key=from+'|'+type+'|'+to;
+  if(S.edges.some(function(e){return e.key===key;}))return;
+  S.edges.push({key:key,from:from,to:to,type:type,provenance:provenance||'observed',at:new Date().toISOString()});
+}
+function addReference(input){
+  input=input||{};
+  var id=refKey(input), now=new Date().toISOString(), existing=S.refs.find(function(r){return r.id===id;});
+  var node={
+    id:id,kind:normalizeRefKind(input.kind),title:input.title||input.name||id,summary:input.summary||'',
+    status:input.status||'observed',source:input.source||'Pulse',source_id:input.source_id||null,
+    provenance:input.provenance||'observed',concepts:Array.isArray(input.concepts)?input.concepts.slice():[],
+    roles:Array.isArray(input.roles)?input.roles.slice():[],doc_ref:input.doc_ref||null,
+    implementation_ref:input.implementation_ref||null,data:cloneSimple(input.data!=null?input.data:input.payload),
+    created_at:existing?existing.created_at:now,updated_at:now,revisions:existing&&Array.isArray(existing.revisions)?existing.revisions:[]
+  };
+  if(existing){
+    var oldSig=hash(textOf([existing.kind,existing.title,existing.summary,existing.status,existing.source,existing.source_id,existing.provenance,existing.concepts,existing.roles,existing.doc_ref,existing.implementation_ref,existing.data]));
+    var newSig=hash(textOf([node.kind,node.title,node.summary,node.status,node.source,node.source_id,node.provenance,node.concepts,node.roles,node.doc_ref,node.implementation_ref,node.data]));
+    if(oldSig!==newSig){
+      var snap=cloneSimple(existing);delete snap.revisions;
+      node.revisions=(existing.revisions||[]).concat([snap]).slice(-20);
+      S.refs[S.refs.indexOf(existing)]=node;
+    }else node=existing;
+  }else{
+    S.refs.push(node);S.refSeen[id]=1;
+  }
+  (input.concepts||[]).forEach(function(c){
+    var cid=String(c).indexOf('concept:')===0?String(c):'concept:'+slug(c);
+    var label=String(c).replace(/^concept:/,'').replace(/-/g,' ');
+    if(!S.refs.some(function(r){return r.id===cid;})){
+      S.refs.push({id:cid,kind:'concept',title:label,summary:'Semantic concept reference.',status:'observed',source:'Reference Graph',source_id:null,provenance:'inferred',concepts:[],roles:[],doc_ref:null,implementation_ref:null,data:null,created_at:now,updated_at:now,revisions:[]});
+      S.refSeen[cid]=1;
+    }
+    addEdge(id,cid,'about',input.provenance||'observed');
+  });
+  if(input.generated_by)addEdge(id,input.generated_by,'generated_by',input.provenance||'observed');
+  if(input.derived_from)[].concat(input.derived_from).forEach(function(x){addEdge(id,x,'derived_from',input.provenance||'observed');});
+  if(input.version_of)addEdge(id,input.version_of,'version_of',input.provenance||'observed');
+  if(input.implements)addEdge(id,input.implements,'implements',input.provenance||'observed');
+  if(input.verifies)addEdge(id,input.verifies,'verifies',input.provenance||'observed');
+  if(input.where_used)[].concat(input.where_used).forEach(function(x){addEdge(id,x,'where_used',input.provenance||'observed');});
+  return node;
+}
+function outputSourceId(src){
+  if(!src)return null;
+  if(typeof src==='string')return src;
+  return src.component||src.app||src.project||src.id||null;
+}
+function ingestOutput(d){
+  d=d||{};
+  var src=d.source||{}, sourceName=(typeof src==='string'?src:(src.app||src.project||src.component||'Application'));
+  var srcId=outputSourceId(src);
+  var output=addReference({
+    id:d.id||null,kind:normalizeRefKind(d.kind||'artifact'),title:d.title||d.name||'Application output',summary:d.summary||'',
+    status:d.status||'generated',source:sourceName,source_id:srcId,provenance:d.provenance||'procedural',
+    concepts:d.concepts||[],roles:d.roles||[],doc_ref:d.doc_ref||null,
+    implementation_ref:d.implementation_ref||(typeof d.implementation==='string'?d.implementation:null),
+    data:d.payload!=null?d.payload:(d.data!=null?d.data:d)
+  });
+  var sourceRef=null;
+  if(srcId){
+    sourceRef=S.refs.find(function(r){return r.id==='component:'+srcId||r.source_id===srcId;});
+    if(sourceRef)addEdge(output.id,sourceRef.id,'generated_by','output-source');
+  }
+  if(d.recipe){
+    var rr=addReference({id:d.recipe_id||('recipe:'+slug(d.title||srcId||'output')+':'+hash(textOf(d.recipe))),kind:'recipe',
+      title:(d.title||'Output')+' recipe',summary:'Reconstruction recipe for '+(d.title||'this output')+'.',
+      status:(d.status==='machine-verified'||d.status==='human-approved')?d.status:'generated',source:sourceName,source_id:srcId,
+      provenance:d.provenance||'procedural',concepts:d.concepts||[],data:d.recipe});
+    addEdge(output.id,rr.id,'derived_from','recipe');
+    if(sourceRef)addEdge(rr.id,sourceRef.id,'generated_by','recipe-source');
+  }
+  if(d.intent){
+    var ir=addReference({id:d.intent_id||('intent:'+hash(textOf(d.intent))),kind:'intent',title:'Intent · '+(d.title||sourceName),
+      summary:typeof d.intent==='string'?d.intent:'Resolved intent record',status:d.intent_status||'observed',source:sourceName,
+      source_id:srcId,provenance:d.intent_provenance||'explicit',data:d.intent,concepts:d.concepts||[]});
+    addEdge(output.id,ir.id,'answers','output-intent');
+  }
+  if(d.evidence){
+    var er=addReference({id:d.evidence_id||('evidence:'+hash(textOf(d.evidence))),kind:'evidence',title:'Evidence · '+(d.title||sourceName),
+      summary:'Verification evidence for an application output.',status:d.status==='failed'?'failed':'machine-verified',source:sourceName,
+      source_id:srcId,provenance:'verified',data:d.evidence});
+    addEdge(er.id,output.id,'verifies','output-evidence');
+  }
+  if(d.failure||d.status==='failed'){
+    var fr=addReference({id:d.failure_id||('failure:'+hash(textOf(d.failure||d.payload||d))),kind:'failure',title:'Failure · '+(d.title||sourceName),
+      summary:(d.failure&&d.failure.reason)||d.failure_reason||'Output failed.',status:'failed',source:sourceName,source_id:srcId,
+      provenance:'verified',data:d.failure||d.payload||d});
+    addEdge(output.id,fr.id,'failed_because','output-failure');
+  }
+  save();
+  return output;
+}
+function refText(r){
+  return [r.title,r.summary,r.kind,r.status,r.source,r.source_id,(r.concepts||[]).join(' '),(r.roles||[]).join(' '),textOf(r.data)].join(' ').toLowerCase();
+}
+function searchReferences(query,opts){
+  opts=opts||{};var ts=tokens(query), scored=[];
+  S.refs.forEach(function(r,idx){
+    if(opts.kinds&&opts.kinds.length&&opts.kinds.indexOf(r.kind)<0)return;
+    var hay=refText(r),score=0;
+    ts.forEach(function(t){if(hay.indexOf(t)>=0)score+=t.length>6?4:2;});
+    if(!ts.length)score=1;
+    if(score>0){score+=refStatusWeight(r.status)*.2;scored.push({ref:r,score:score,idx:idx});}
+  });
+  scored.sort(function(a,b){return b.score-a.score||b.idx-a.idx;});
+  return scored.slice(0,opts.limit||30).map(function(x){return x.ref;});
+}
+function referencePacket(query,limit){
+  var roots=searchReferences(query,{limit:limit||8}), ids={};roots.forEach(function(r){ids[r.id]=1;});
+  var related=[];
+  S.edges.forEach(function(e){
+    if(ids[e.from]||ids[e.to]){
+      var other=ids[e.from]?e.to:e.from;
+      var r=S.refs.find(function(x){return x.id===other;});
+      if(r&&!ids[r.id]){ids[r.id]=1;related.push(r);}
+    }
+  });
+  var all=roots.concat(related).slice(0,(limit||8)*3);
+  return {
+    query:query,
+    concepts:all.filter(function(r){return r.kind==='concept';}),
+    recipes:all.filter(function(r){return r.kind==='recipe';}),
+    implementations:all.filter(function(r){return r.kind==='component'||r.kind==='generator'||r.kind==='implementation'||r.kind==='artifact';}),
+    rules:all.filter(function(r){return r.kind==='rule'||r.kind==='requirement'||r.kind==='blueprint';}),
+    failures:all.filter(function(r){return r.kind==='failure';}),
+    evidence:all.filter(function(r){return r.kind==='evidence';}),
+    intents:all.filter(function(r){return r.kind==='intent';})
+  };
+}
+function refMarkdown(r){
+  if(!r)return '';
+  var out=['# '+r.title,'','- Reference: '+r.id,'- Kind: '+r.kind,'- Status: '+r.status,'- Source: '+r.source,'- Provenance: '+r.provenance];
+  if(r.summary)out.push('',r.summary);
+  if(r.concepts&&r.concepts.length)out.push('','## Concepts','',r.concepts.map(function(x){return '- '+x;}).join('\\n'));
+  if(r.doc_ref)out.push('','## Readable source','',r.doc_ref);
+  if(r.implementation_ref)out.push('','## Implementation','',r.implementation_ref);
+  if(r.data!=null)out.push('','## Data','',JSON.stringify(r.data,null,2));
+  return out.join('\\n');
+}
+
 function addStream(kind,source,title,payload,meta,stableKey){
   var sig=stableKey||hash(kind+'|'+source+'|'+title+'|'+textOf(payload));
   if(S.seen[sig]) return S.stream.find(function(x){return x.id===S.seen[sig];})||null;
