@@ -693,6 +693,7 @@ function discoverView2(){
 function binView2(){
   harvest();
   var q=(window.PulseSpine&&PulseSpine.query||'').trim().toLowerCase();
+  var uf=window.PulseDatasets&&PulseDatasets.ultraFeedback||null,ufs=uf?uf.state:null;
   var comps=allVisibleComps().filter(function(c){
     if(!q)return true;
     if(window.Smart&&Smart.matches){try{return Smart.matches(c,q,((c.label||'')+' '+(c.short||'')));}catch(e){}}
@@ -712,6 +713,7 @@ function binView2(){
     '</div><div class="ps-actions"><button data-bin-sync>Sync local now</button>'+
       (window.showDirectoryPicker?'<button data-bin-mirror>Mirror to device folder</button>':'')+
     '</div>'+(binBacking.error?'<p class="ps-back-error">'+esc2(binBacking.error)+'</p>':'')+'</section>'+
+    (uf?'<section class="ps-section ps-backing"><h3>Dataset training</h3><div class="ps-backing-grid"><div><strong>UltraFeedback</strong><span>'+esc2(ufs&&ufs.status||'not-local')+(ufs&&ufs.rows?' · '+ufs.rows+' rows':'')+'</span></div><div><strong>Local dataset</strong><span>moor-bin/datasets/ultrafeedback/ · ~940 MB raw</span></div></div><div class="ps-actions">'+((ufs&&ufs.status==='pulling')?'<button disabled>Pulling…</button>':'<button data-ultrafeedback-pull>Pull full dataset local</button>')+'</div>'+(ufs&&ufs.error?'<p class="ps-back-error">'+esc2(ufs.error)+'</p>':'')+'</section>':'')+
     '<section class="ps-section"><h3>Reference graph · '+S.refs.length+' refs · '+S.edges.length+' links</h3><div class="ps-ref-kinds">'+Object.keys(kindCounts).sort().map(function(k){return '<span>'+esc2(k)+' '+kindCounts[k]+'</span>';}).join('')+'</div><div class="ps-rows">'+refs.map(function(r){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(r.title)+'</strong><span>'+esc2(r.kind)+' · '+esc2(r.status)+' · '+esc2(r.source)+'</span></div><div class="ps-actions"><button data-spine-ref="'+esc2(r.id)+'">View</button></div></div>';}).join('')+'</div></section>'+    '<section class="ps-section"><h3>Blueprints</h3><div class="ps-rows">'+bps.map(function(b){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(b.name)+'</strong><span>'+esc2(b.summary)+'</span></div><div class="ps-actions"><button data-spine-blueprint="'+b.id+'">View</button></div></div>';}).join('')+'</div></section>'+
     (training.length?'<section class="ps-section"><h3>Training · '+training.length+'</h3><div class="ps-rows">'+training.map(function(t){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(t.source_file||t.id)+'</strong><span>'+esc2(t.one_line||'training record')+' · '+esc2(t.implementation_status||t.status||'specified')+'</span></div><div class="ps-actions"><button data-spine-training="'+esc2(t.id)+'">View</button></div></div>';}).join('')+'</div></section>':'')+
     (kept.length?'<section class="ps-section"><h3>Kept</h3><div class="ps-rows">'+kept.slice().reverse().map(function(k){return recordRow(k.snapshot);}).join('')+'</div></section>':'')+
@@ -823,6 +825,13 @@ document.addEventListener('click',function(e){
   var rf=e.target.closest('[data-spine-ref]'); if(rf){showReference(rf.dataset.spineRef);return;}
   if(e.target.closest('[data-bin-sync]')){syncLocalBinNow(true).then(function(){if(typeof renderStage==='function')renderStage();});return;}
   if(e.target.closest('[data-bin-mirror]')){chooseLocalBinMirror().then(function(){if(typeof renderStage==='function')renderStage();}).catch(function(err){binBacking.error=String(err&&err.message||err);if(typeof renderStage==='function')renderStage();});return;}
+  if(e.target.closest('[data-ultrafeedback-pull]')){
+    var uf=window.PulseDatasets&&PulseDatasets.ultraFeedback;
+    if(uf)uf.pullLocal(function(){if(typeof renderStage==='function'&&typeof UI!=='undefined'&&UI.tab==='bin')renderStage();})
+      .then(function(){if(typeof renderStage==='function')renderStage();})
+      .catch(function(){if(typeof renderStage==='function')renderStage();});
+    return;
+  }
   if(e.target.closest('[data-spine-close]')){var m=document.getElementById('ps-modal');if(m)m.remove();return;}
   if(e.target.closest('[data-spine-inbox]')){toggleInbox(true);return;}
   if(e.target.closest('[data-spine-hide-inbox]')){toggleInbox(false);return;}
@@ -838,6 +847,7 @@ window.addEventListener('storage',function(e){
   if(!e||!e.key)return;
   if(e.key.indexOf('moor-output:')===0||e.key==='moor-wonder-library-v1'||e.key==='moor-pulse-canvas-v1'||e.key==='moor-harness-training')harvest();
 });
+window.addEventListener('moor:dataset-status',function(){if(typeof renderStage==='function'&&typeof UI!=='undefined'&&UI.tab==='bin')renderStage();});
 window.addEventListener('focus',function(){harvest();});
 document.addEventListener('visibilitychange',function(){if(!document.hidden)harvest();});
 
