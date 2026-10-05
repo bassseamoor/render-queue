@@ -4318,7 +4318,9 @@ function create(cv,hooks){
   var S={key:null,terrain:null,disc:null,glass:null,grid:null,contours:null,nodes:null};
   var GLASS_Y=[-4,1,6,11,16,22,30];
   var worldKey=null, lens='normal';
-  var HSEG=128, HST=84, sBuild=null; /* chunked sphere builder state */
+  var HSEG=128, HST=168, sBuild=null; /* chunked sphere builder state.
+   * HST=168 keeps the pole fan tight (224m) so the dense surface patch
+   * (±300m) fully covers it — no more radial streaks under the camera. */
   function computeNormals(pos,idx){
     var n=new Float32Array(pos.length);
     for(var t=0;t<idx.length;t+=3){
@@ -4336,11 +4338,18 @@ function create(cv,hooks){
     }
     return n;
   }
+  /* Lat/lon sphere with WELDED poles: rows j=0 and j=HST emit a single
+   * vertex each (not HSEG+1 duplicates). The old duplicated pole verts gave
+   * every pole copy a different fan-triangle normal, which shaded as ugly
+   * radial spokes — very visible now that ORG recenters under the camera.
+   * Layout: [northPole, rows 1..HST-1 (HSEG+1 verts each), southPole]. */
   function sphereRow(j,pos,col){
     var ph=j/HST*Math.PI;
     var sph=Math.sin(ph), cph=Math.cos(ph);
-    for(var i=0;i<=HSEG;i++){
-      var th=i/HSEG*Math.PI*2;
+    var pole=(j===0||j===HST);
+    var n= pole?1:(HSEG+1), i;
+    for(i=0;i<n;i++){
+      var th= pole?0:(i/HSEG*Math.PI*2);
       var cth=Math.cos(th), sth=Math.sin(th);
       var mx=ORG.x+R*ph*cth, mz=ORG.z+R*ph*sth; /* game meters under this sphere point */
       var h=planetField(mx,mz);
@@ -4364,6 +4373,30 @@ function create(cv,hooks){
   }
   function buildStatics(){
     var i, k;
+    /* dense surface terrain: the global sphere's lat/lon pole fan is far too
+     * coarse for surface zoom (449m streaks under the camera). A Cartesian
+     * patch around ORG gives real terrain detail; +0.3 lift sits it above
+     * the sphere so there's no z-fighting. Fades with the disc. */
+    var PG=120, PR=300, tpos=[], tcol=[], tidx=[], tii, tjj;
+    for(tjj=0;tjj<=PG;tjj++) for(tii=0;tii<=PG;tii++){
+      var tx2=ORG.x-PR+2*PR*tii/PG, tz2=ORG.z-PR+2*PR*tjj/PG;
+      var th2=planetField(tx2,tz2);
+      var tq=surfPoint(tx2,tz2,th2+0.3);
+      tpos.push(tq[0],tq[1],tq[2]);
+      var tc2=tint(tx2,tz2,th2,lens); tcol.push(tc2[0],tc2[1],tc2[2]);
+    }
+    for(tjj=0;tjj<PG;tjj++) for(tii=0;tii<PG;tii++){
+      var ta=tjj*(PG+1)+tii, tb=ta+1, tc3=ta+PG+1, td=tc3+1;
+      tidx.push(ta,tc3,tb, tb,tc3,td); /* outward for the (x,z) grid */
+    }
+    var tnrm=computeNormals(tpos,tidx), tinter=[];
+    for(k=0;k<tpos.length/3;k++)
+      tinter.push(tpos[k*3],tpos[k*3+1],tpos[k*3+2],
+        tnrm[k*3],tnrm[k*3+1],tnrm[k*3+2],
+        tcol[k*3],tcol[k*3+1],tcol[k*3+2]);
+    if(S.patch){ gl.deleteBuffer(S.patch.vb); gl.deleteBuffer(S.patch.ib); }
+    S.patch=mkBuf(tinter,null,null,tidx,9);
+
     /* table disc under the patch (fades out as you leave the surface) */
     var dp=[],di=[],SEG=48;
     dp.push(0,-9,0);
@@ -4835,11 +4868,16 @@ function create(cv,hooks){
       var rows=0;
       while(sBuild.j<=HST&&rows<10){ sphereRow(sBuild.j,sBuild.pos,sBuild.col); sBuild.j++; rows++; }
       if(sBuild.j>HST){
+        /* welded-pole indexing: [northPole(0), rows 1..HST-1, southPole].
+         * Matches sphereRow's layout; fan windings match the old quads. */
         var idx=[], j, i;
-        for(j=0;j<HST;j++) for(i=0;i<HSEG;i++){
-          var a=j*(HSEG+1)+i, b=a+1, c=a+HSEG+1, d=c+1;
-          idx.push(a,c,b, b,c,d);
+        for(i=0;i<HSEG;i++) idx.push(0, 1+i+1, 1+i); /* north fan (outward) */
+        for(j=1;j<HST-1;j++) for(i=0;i<HSEG;i++){
+          var a=1+(j-1)*(HSEG+1)+i, b=a+1, c=a+HSEG+1, d=c+1;
+          idx.push(a,b,c, b,d,c);
         }
+        var L=1+(HST-2)*(HSEG+1), sPole=1+(HST-1)*(HSEG+1); /* last row, south pole */
+        for(i=0;i<HSEG;i++) idx.push(L+i, L+i+1, sPole); /* south fan (outward) */
         var nrm=computeNormals(sBuild.pos,idx), inter=[], k;
         for(k=0;k<sBuild.pos.length/3;k++)
           inter.push(sBuild.pos[k*3],sBuild.pos[k*3+1],sBuild.pos[k*3+2],
@@ -4862,9 +4900,12 @@ function create(cv,hooks){
     var aDisc=1-sstep(500,1200,dist), aGrid=1-sstep(900,2200,dist);
     var aCont=1-sstep(1500,3500,dist), aMark=1-sstep(2000,5000,dist);
 
-    /* hero planet */
-    if(layers.terrain&&S.terrain)
-      drawMeshBuf(S.terrain,mvp,eye,t,{atmo:0.55,atmoCol:[0.25,0.55,1.0]});
+    /* hero planet: the coarse sphere fades out at surface zoom — its lat/lon
+     * triangles are far too big up close (radial streaks). The dense patch
+     * takes over under the camera; the sphere returns as you zoom out. */
+    var aSphere=sstep(400,900,dist);
+    if(aSphere>0.01&&layers.terrain&&S.terrain)
+      drawMeshBuf(S.terrain,mvp,eye,t,{atmo:0.55,atmoCol:[0.25,0.55,1.0],fade:aSphere});
     /* verse impostor planets + stars: fade when the camera gets close
      * (no planet ever swallows the camera) */
     function camFade(x,y,z,r){
@@ -4917,6 +4958,8 @@ function create(cv,hooks){
 
     /* surface furniture (fades with distance — no popping) */
     if(aDisc>0.01&&S.disc) drawMeshBuf(S.disc,mvp,eye,t,{alpha:aDisc});
+    if(aDisc>0.01&&S.patch)
+      drawMeshBuf(S.patch,mvp,eye,t,{atmo:0.35,atmoCol:[0.25,0.55,1.0],alpha:aDisc});
     if(aDisc>0.01&&layers.glass&&S.glass)
       drawMeshBuf(S.glass,mvp,eye,t,{additive:true,alpha:0.12*aDisc});
     gl.useProgram(lineP);
@@ -4958,7 +5001,7 @@ function create(cv,hooks){
     cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
   }
   function dispose(){
-    [S.terrain,S.disc,S.glass].forEach(function(b){ if(b){gl.deleteBuffer(b.vb);gl.deleteBuffer(b.ib);} });
+    [S.terrain,S.disc,S.glass,S.patch].forEach(function(b){ if(b){gl.deleteBuffer(b.vb);gl.deleteBuffer(b.ib);} });
     [S.grid,S.contours,S.nodes].forEach(function(b){ if(b) gl.deleteBuffer(b.vb); });
     [D.lines].forEach(function(b){ if(b) gl.deleteBuffer(b.vb); });
     [D.solid,D.wp,D.claim,D.life].forEach(function(b){ if(b){gl.deleteBuffer(b.vb);gl.deleteBuffer(b.ib);} });
@@ -4970,6 +5013,13 @@ function create(cv,hooks){
   return {
     setPlanet:setPlanet, setWorld:buildStatic, refreshTerrain:refreshTerrain,
     setData:buildDynamic, setLife:setLife, render:render,
+    /* ORG recenter: the hero sphere + detail patch are parameterized around
+     * ORG (spawn by default). When the player wanders far from ORG, the
+     * surface view degrades to a coarse empty sphere — recenter ORG on the
+     * player and the ORG-keyed build (buildStatic) rebuilds dense terrain
+     * under the camera. */
+    setOrg:function(x,z){ ORG.x=x; ORG.z=z; },
+    getOrg:function(){ return {x:ORG.x,z:ORG.z}; },
     setLens:function(l){ if(l!==lens){ lens=l; buildStatic(worldKey); } },
     getLens:function(){ return lens; },
     setVerseData:setVerseData, pickBody:pickBody,
@@ -5730,6 +5780,13 @@ function groundColor(x,z,h){
  * Buildings and furniture emit into CityMesh (stride 23: pos/normal/color…);
  * we merge them into compact world buffers with placement transforms. */
 var objPos=[], objNrm=[], objCol=[], objIdx=[];
+/* BotW grass: a dedicated buffer so blades get their own wind shader.
+ * bend=0 at the root, 1 at the tip — the vertex shader sways tips more. */
+var grassPos=[], grassNrm=[], grassCol=[], grassBend=[], grassIdx=[];
+function pushG(x,y,z,nx,ny,nz,r,g,b,bend){
+  grassPos.push(x,y,z); grassNrm.push(nx,ny,nz); grassCol.push(r,g,b); grassBend.push(bend);
+  return grassPos.length/3-1;
+}
 /* ---------------- glow (the LED cheat) ----------------
  * Emissive accents — flower hearts, bud tips, spore dots — emit into these
  * parallel buffers and draw in ONE additive pass (blend ONE,ONE, no depth
@@ -5875,6 +5932,12 @@ var FSH_WATER='precision mediump float;varying vec3 vC;varying vec3 vN;varying v
 'col*=0.94+0.06*sin(vW.x*0.05+uTime*0.7)*sin(vW.z*0.06-uTime*0.5);'+
 'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+
 'gl_FragColor=vec4(col,0.86);}';
+/* BotW grass: per-blade wind. bend=0 at the root (stays planted), 1 at the
+ * tip. Two wave trains + a slow traveling gust so waves roll across the
+ * meadow. Tips lighten as they catch the light (fragment). */
+var VSH_GRASS='attribute vec3 p;attribute vec3 n;attribute vec3 c;attribute float bend;'+'uniform mat4 mvp;uniform float uTime;'+'varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'void main(){vC=c;vN=n;vBend=bend;'+'float t=uTime;'+'float w1=sin(p.x*0.35+t*1.8)+sin(p.z*0.27-t*1.3)*0.7;'+'float w2=sin((p.x+p.z)*0.12+t*0.7);'+'vec3 dp=p+vec3(w1*0.08+w2*0.18,-abs(w1+w2)*0.03,w1*0.06-w2*0.12)*bend;'+'vec4 wp=mvp*vec4(dp,1.0);vD=-wp.z;gl_Position=wp;}';
+var FSH_GRASS='precision mediump float;varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'uniform vec3 sun;uniform vec3 fog;uniform float fogK;'+'void main(){'+'vec3 N=normalize(vN);'+'float lam=0.55+0.45*max(dot(N,normalize(sun)),0.0);'+'vec3 col=vC*lam;'+'col+=vec3(0.10,0.14,0.04)*vBend;'+'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+'gl_FragColor=vec4(col,1.0);}';
+var gprog=null, gAPos, gANrm, gACol, gABend, gUMVP, gUTime, gUSun, gUFog, gUFogK;
 var wprog=null, wAPos, wANrm, wACol, wUMVP, wUTime, wUSun, wUCam, wUFog, wUFogK,
     wUShallow, wUDeep, wUSky;
 
@@ -5906,6 +5969,15 @@ function initGL(){
   wUFog=gl.getUniformLocation(wprog,'fog'); wUFogK=gl.getUniformLocation(wprog,'fogK');
   wUShallow=gl.getUniformLocation(wprog,'uShallow'); wUDeep=gl.getUniformLocation(wprog,'uDeep');
   wUSky=gl.getUniformLocation(wprog,'uSky');
+  /* BotW grass program (wind-blown blades, dedicated buffer with bend) */
+  gprog=gl.createProgram();
+  gl.attachShader(gprog,sh(gl.VERTEX_SHADER,VSH_GRASS)); gl.attachShader(gprog,sh(gl.FRAGMENT_SHADER,FSH_GRASS));
+  gl.linkProgram(gprog);
+  gAPos=gl.getAttribLocation(gprog,'p'); gANrm=gl.getAttribLocation(gprog,'n');
+  gACol=gl.getAttribLocation(gprog,'c'); gABend=gl.getAttribLocation(gprog,'bend');
+  gUMVP=gl.getUniformLocation(gprog,'mvp'); gUTime=gl.getUniformLocation(gprog,'uTime');
+  gUSun=gl.getUniformLocation(gprog,'sun'); gUFog=gl.getUniformLocation(gprog,'fog');
+  gUFogK=gl.getUniformLocation(gprog,'fogK');
   initSkyGL();
   return true;
 }
@@ -5915,6 +5987,20 @@ function makeBuf(pos,nrm,col,idx){
   for(var i=0;i<n;i++){ data[i*stride]=pos[i*3]; data[i*stride+1]=pos[i*3+1]; data[i*stride+2]=pos[i*3+2];
     data[i*stride+3]=nrm[i*3]; data[i*stride+4]=nrm[i*3+1]; data[i*stride+5]=nrm[i*3+2];
     data[i*stride+6]=col[i*3]; data[i*stride+7]=col[i*3+1]; data[i*stride+8]=col[i*3+2]; }
+  gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+  var ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(idx),gl.STATIC_DRAW);
+  gl.getExtension('OES_element_index_uint');
+  return {vb:vb,ib:ib,count:idx.length};
+}
+/* grass buffer: stride 10 (pos3, nrm3, col3, bend1). Bend drives the wind. */
+function makeGrassBuf(pos,nrm,col,bend,idx){
+  var vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+  var n=pos.length/3, stride=10, data=new Float32Array(n*stride);
+  for(var i=0;i<n;i++){ data[i*stride]=pos[i*3]; data[i*stride+1]=pos[i*3+1]; data[i*stride+2]=pos[i*3+2];
+    data[i*stride+3]=nrm[i*3]; data[i*stride+4]=nrm[i*3+1]; data[i*stride+5]=nrm[i*3+2];
+    data[i*stride+6]=col[i*3]; data[i*stride+7]=col[i*3+1]; data[i*stride+8]=col[i*3+2];
+    data[i*stride+9]=bend[i]; }
   gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
   var ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(idx),gl.STATIC_DRAW);
@@ -5951,6 +6037,33 @@ function drawWater(t, mvpMat, eye, sunV, fogV, fogKV){
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
   gl.drawElements(gl.TRIANGLES,waterBuf.count,gl.UNSIGNED_INT,0);
   gl.disable(gl.BLEND);
+  gl.useProgram(prog);
+  /* re-enable main attribs (program switch may disturb state) */
+  gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aNrm); gl.enableVertexAttribArray(aCol);
+}
+/* BotW grass draw: switches to the grass program, draws every scatter chunk's
+ * grass buffer with wind, then restores the main program. */
+function drawGrass(t, mvpMat, sunV, fogV, fogKV){
+  if(!gprog) return;
+  gl.useProgram(gprog);
+  gl.uniformMatrix4fv(gUMVP,false,mvpMat);
+  gl.uniform1f(gUTime,t);
+  gl.uniform3f(gUSun,sunV[0],sunV[1],sunV[2]);
+  gl.uniform3f(gUFog,fogV[0],fogV[1],fogV[2]);
+  gl.uniform1f(gUFogK,fogKV);
+  gl.disable(gl.CULL_FACE); /* grass quads are single-sided; show both faces */
+  for(var si=0;si<scatChunkList.length;si++){
+    var gr=scatChunkList[si].buf&&scatChunkList[si].buf.grass;
+    if(!gr) continue;
+    gl.bindBuffer(gl.ARRAY_BUFFER,gr.vb);
+    gl.vertexAttribPointer(gAPos,3,gl.FLOAT,false,40,0); gl.enableVertexAttribArray(gAPos);
+    gl.vertexAttribPointer(gANrm,3,gl.FLOAT,false,40,12); gl.enableVertexAttribArray(gANrm);
+    gl.vertexAttribPointer(gACol,3,gl.FLOAT,false,40,24); gl.enableVertexAttribArray(gACol);
+    gl.vertexAttribPointer(gABend,1,gl.FLOAT,false,40,36); gl.enableVertexAttribArray(gABend);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,gr.ib);
+    gl.drawElements(gl.TRIANGLES,gr.count,gl.UNSIGNED_INT,0);
+  }
+  gl.enable(gl.CULL_FACE);
   gl.useProgram(prog);
   /* re-enable main attribs (program switch may disturb state) */
   gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aNrm); gl.enableVertexAttribArray(aCol);
@@ -6234,7 +6347,8 @@ function worldScatterKey(){ var w=activeWorld();
   return (w?w.seed:'?')+'|'+((w&&w.terrainEdits)?w.terrainEdits.length:0)+
     '|'+((w&&w.paintOps)?w.paintOps.length:0); }
 function disposeChunk(c){ if(c&&c.buf){ gl.deleteBuffer(c.buf.vb); gl.deleteBuffer(c.buf.ib);
-  if(c.buf.gbuf){ gl.deleteBuffer(c.buf.gbuf.vb); gl.deleteBuffer(c.buf.gbuf.ib); } } }
+  if(c.buf.gbuf){ gl.deleteBuffer(c.buf.gbuf.vb); gl.deleteBuffer(c.buf.gbuf.ib); }
+  if(c.buf.grass){ gl.deleteBuffer(c.buf.grass.vb); gl.deleteBuffer(c.buf.grass.ib); } } }
 var _wx=[0,0];
 function buildTerrainChunk(cx,cz){
   var N=CHN, S=CH, x0=cx*S-S/2, z0=cz*S-S/2, pos=[],nrm=[],col=[],idx=[];
@@ -6331,7 +6445,8 @@ function pumpTerrain(){
  * sit slightly above it near the player, so no z-fighting. */
 var farBuild=null, farKey='\0';
 function planetFarKey(){ var w=activeWorld(); return (w?w.seed:'?')+'|'+((w&&w.terrainEdits)?w.terrainEdits.length:0)+'|'+PLANET_R; }
-var FHSEG=96, FHST=60;
+var FHSEG=160, FHST=100; /* #32: denser far sphere (was 96x60) so distant
+ * terrain holds its shape now that the fog lets you see 3-4km. */
 function recenterFar(pcx,pcz){
   var key=planetFarKey();
   if(farBuf&&key===farKey&&!farBuild) return;
@@ -6498,6 +6613,21 @@ function drapeObjRange(v0){
     objNrm[vi]  =nx*_df.t1[0]+ny*_df.up[0]+nz*_df.t2[0];
     objNrm[vi+1]=nx*_df.t1[1]+ny*_df.up[1]+nz*_df.t2[1];
     objNrm[vi+2]=nx*_df.t1[2]+ny*_df.up[2]+nz*_df.t2[2];
+  }
+}
+/* drape the grass buffer's flat (x,y,z) verts onto the sphere, same as objects.
+ * Bend weights ride along untouched (they're per-vertex, not spatial). */
+function drapeGrassRange(v0){
+  for(var vi=v0*3; vi<grassPos.length; vi+=3){
+    var vx=grassPos[vi], vy=grassPos[vi+1], vz=grassPos[vi+2];
+    wrapXZ(vx,vz,_wx);
+    planetXYZ(_wx[0],_wx[1],vy,_dp);
+    grassPos[vi]=_dp[0]; grassPos[vi+1]=_dp[1]; grassPos[vi+2]=_dp[2];
+    planetFrame(_wx[0],_wx[1],_df);
+    var nx=grassNrm[vi], ny=grassNrm[vi+1], nz=grassNrm[vi+2];
+    grassNrm[vi]  =nx*_df.t1[0]+ny*_df.up[0]+nz*_df.t2[0];
+    grassNrm[vi+1]=nx*_df.t1[1]+ny*_df.up[1]+nz*_df.t2[1];
+    grassNrm[vi+2]=nx*_df.t1[2]+ny*_df.up[2]+nz*_df.t2[2];
   }
 }
 function emitPath(p){
@@ -6837,18 +6967,19 @@ function leafBlade(bx,by,bz,dx,dy,dz,len,wid,curl,cr,cg,cb,segs){
   }
 }
 function grassBlade(bx,by,bz,dx,dz,len,wid,cr,cg,cb){
-  /* cheap 2-segment blade for grass tufts: 8 tris */
+  /* cheap 2-segment blade for grass tufts: 8 tris. Lives in the grass buffer
+   * (bend=t: roots stay planted, tips catch the wind). */
   var dl=Math.hypot(dx,dz)||1; dx/=dl; dz/=dl;
   var sx=-dz, sz=dx;
-  var v0=objPos.length/3, i, sgn, k;
+  var v0=grassPos.length/3, i, sgn, k;
   for(sgn=0;sgn<2;sgn++){
     for(i=0;i<=2;i++){
-      var t=i/2, prof=Math.sin(t*Math.PI*0.5)+0.15, bend=t*t*len*0.45;
-      var cxp=bx+dx*(bend+len*t*0.3), cyp=by+len*t, czp=bz+dz*(bend+len*t*0.3);
+      var t=i/2, prof=Math.sin(t*Math.PI*0.5)+0.15, bnd=t*t*len*0.45;
+      var cxp=bx+dx*(bnd+len*t*0.3), cyp=by+len*t, czp=bz+dz*(bnd+len*t*0.3);
       for(k=-1;k<=1;k+=2){
         var off=k*wid*prof*(1-t*0.7), bsh=0.75+0.45*t;
-        pushV(cxp+sx*off,cyp,czp+sz*off, sx,0,sz,
-          Math.min(1,cr*bsh),Math.min(1,cg*bsh),Math.min(1,cb*bsh));
+        pushG(cxp+sx*off,cyp,czp+sz*off, sx,0,sz,
+          Math.min(1,cr*bsh),Math.min(1,cg*bsh),Math.min(1,cb*bsh), t);
       }
     }
   }
@@ -6856,8 +6987,8 @@ function grassBlade(bx,by,bz,dx,dz,len,wid,cr,cg,cb){
     var b=v0+sgn*3*2;
     for(i=0;i<2;i++){
       var a0=b+i*2, b0=a0+1, c0=a0+2, d0=a0+3;
-      if(sgn===0) objIdx.push(a0,c0,b0, b0,c0,d0);
-      else objIdx.push(a0,b0,c0, b0,d0,c0);
+      if(sgn===0) grassIdx.push(a0,c0,b0, b0,c0,d0);
+      else grassIdx.push(a0,b0,c0, b0,d0,c0);
     }
   }
 }
@@ -7052,19 +7183,21 @@ function updateScatterChunks(pcx,pcz){
  * pebble clusters (~24 tris), mushrooms (~20), crystal shards (~24),
  * fallen logs (~48). All deterministic via the passed RNG. */
 function grassSprig(x,y,z,s,R,tint){
-  /* 2 crossed quads leaning with the wind — reads as grass at 4 triangles */
-  var wa=R()*Math.PI, wl=0.15+R()*0.25, h=(0.5+R()*0.5)*s, w2=0.09*s;
+  /* 3 crossed quads leaning with the wind — reads as grass at 6 triangles.
+   * In the grass buffer: roots bend=0, tips bend=1 for the wind shader.
+   * BotW scale: big clumps (1.5-3m) so the meadow reads at a distance. */
+  var wa=R()*Math.PI, wl=0.15+R()*0.25, h=(0.9+R()*0.9)*s, w2=0.16*s;
   var c=tint||[0.42,0.58,0.24];
   var bj=0.8+0.4*R();
   var cr=Math.min(1,c[0]*bj), cg=Math.min(1,c[1]*bj), cb=Math.min(1,c[2]*bj);
-  for(var q=0;q<2;q++){
-    var a=wa+q*Math.PI/2, dx=Math.cos(a), dz=Math.sin(a);
+  for(var q=0;q<3;q++){
+    var a=wa+q*Math.PI/3, dx=Math.cos(a), dz=Math.sin(a);
     var lx=Math.cos(wa)*wl, lz=Math.sin(wa)*wl;
-    var v0=pushV(x-dx*w2,y,z-dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8);
-    var v1=pushV(x+dx*w2,y,z+dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8);
-    var v2=pushV(x+dx*w2+lx,y+h,z+dz*w2+lz, 0,1,0, cr,cg,cb);
-    var v3=pushV(x-dx*w2+lx,y+h,z-dz*w2+lz, 0,1,0, cr,cg,cb);
-    objIdx.push(v0,v1,v2, v0,v2,v3);
+    var v0=pushG(x-dx*w2,y,z-dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8, 0);
+    var v1=pushG(x+dx*w2,y,z+dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8, 0);
+    var v2=pushG(x+dx*w2+lx,y+h,z+dz*w2+lz, 0,1,0, cr,cg,cb, 1);
+    var v3=pushG(x-dx*w2+lx,y+h,z-dz*w2+lz, 0,1,0, cr,cg,cb, 1);
+    grassIdx.push(v0,v1,v2, v0,v2,v3);
   }
 }
 function pebbleCluster(x,y,z,s,R,pal){
@@ -7191,6 +7324,8 @@ function buildScatterChunk(cx,cz){
   objPos=[]; objNrm=[]; objCol=[]; objIdx=[];
   var gP=gloPos, gN=gloNrm, gC=gloCol, gI=gloIdx;
   gloPos=[]; gloNrm=[]; gloCol=[]; gloIdx=[];
+  var grP=grassPos, grN=grassNrm, grC=grassCol, grB=grassBend, grI=grassIdx;
+  grassPos=[]; grassNrm=[]; grassCol=[]; grassBend=[]; grassIdx=[];
   var placed=[];
   try{
     if(!w) return null;
@@ -7275,7 +7410,7 @@ function buildScatterChunk(cx,cz){
       if(inClaim(x,z,0.5)) return true;
       return false;
     }
-    var CN=170, ck, cx2, cz2, cy2;
+    var CN=1000, ck, cx2, cz2, cy2; /* BotW carpet: dense meadow, big clumps */
     for(ck=0;ck<CN;ck++){
       cx2=ccx+(R()*2-1)*CH/2; cz2=ccz+(R()*2-1)*CH/2;
       wrapXZ(cx2,cz2,_wx); cx2=_wx[0]; cz2=_wx[1];
@@ -7312,13 +7447,17 @@ function buildScatterChunk(cx,cz){
     scatterPlacedMap[cx+','+cz]=placed;
     drapeObjRange(0); /* flat emission -> planet sphere */
     drapeGlowRange(); /* LED accents ride along */
+    drapeGrassRange(0); /* grass blades drape too */
     var gb=gloIdx.length?makeBuf(gloPos,gloNrm,gloCol,gloIdx):null;
     var ob=objIdx.length?makeBuf(objPos,objNrm,objCol,objIdx):null;
     if(ob) ob.gbuf=gb;
+    var grb=grassIdx.length?makeGrassBuf(grassPos,grassNrm,grassCol,grassBend,grassIdx):null;
+    if(ob) ob.grass=grb; else if(grb){ ob={vb:null,ib:null,count:0,grass:grb}; }
     return ob;
   } finally {
     objPos=sP; objNrm=sN; objCol=sC; objIdx=sI;
     gloPos=gP; gloNrm=gN; gloCol=gC; gloIdx=gI;
+    grassPos=grP; grassNrm=grN; grassCol=grC; grassBend=grB; grassIdx=grI;
   }
 }
 
@@ -7411,7 +7550,9 @@ var VSH_CLAIM='attribute vec3 p;attribute vec4 c;uniform mat4 mvp;varying vec4 v
 var FSH_CLAIM='precision mediump float;varying vec4 vC;varying float vD;uniform vec3 fog;uniform float fogK;'+
 'void main(){float f=1.0-exp(-vD*fogK);vec3 col=mix(vC.rgb,fog,clamp(f,0.0,1.0));gl_FragColor=vec4(col,vC.a);}';
 var claimProg=null, claimBuf=null, CLA_aP, CLA_aC, CLA_uMVP, CLA_uFog, CLA_uFogK;
-var lastFog=[0.74,0.82,0.90], lastFogK=0.0035; /* frame's fog, reused by the claim pass */
+var lastFog=[0.74,0.82,0.90], lastFogK=0.0011; /* frame's fog, reused by the claim pass.
+ * #32: render distance way further — was 0.0035 (fully hazed by ~1.5km).
+ * Now terrain reads to ~3-4km before dissolving into haze. */
 function initClaimGL(){
   if(claimProg||!gl) return;
   claimProg=gl.createProgram();
@@ -9769,8 +9910,9 @@ function frame(t){
   drawWater(t/1000, vpMat, e, [-0.45,0.8,0.35], lastFog, lastFogK); /* dedicated water program */
   if(objBuf){ bindBuf(objBuf); gl.drawElements(gl.TRIANGLES,objBuf.count,gl.UNSIGNED_INT,0); }
   if(crBuf){ bindBuf(crBuf); gl.drawElements(gl.TRIANGLES,crBuf.count,gl.UNSIGNED_INT,0); } /* P4 */
-  for(var si=0;si<scatChunkList.length;si++){ var sh=scatChunkList[si]; if(!sh.buf) continue;
+  for(var si=0;si<scatChunkList.length;si++){ var sh=scatChunkList[si]; if(!sh.buf||!sh.buf.vb) continue;
     bindBuf(sh.buf); gl.drawElements(gl.TRIANGLES,sh.buf.count,gl.UNSIGNED_INT,0); }
+  drawGrass(t/1000, vpMat, [-0.45,0.8,0.35], lastFog, lastFogK); /* BotW wind-blown grass */
   /* LED-cheat glow: one additive pass over every scatter chunk's glow tips */
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE); gl.depthMask(false);
   for(var gi=0;gi<scatChunkList.length;gi++){ var gh=scatChunkList[gi];
@@ -9807,7 +9949,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-0317';
+var BETA_VERSION='20261005-0526';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
@@ -10266,6 +10408,15 @@ function mapFeed(){
   if(!map3d) return;
   var w=activeWorld(); if(!w) return;
   feedVerse(false);
+  var pl0=(cam.mode==='walk')?{x:cam.wx,z:cam.wz}:{x:cam.tx,z:cam.tz};
+  /* the map's sphere + detail patch are built around ORG (spawn). If the
+   * player wandered off, recenter ORG on them first — otherwise the surface
+   * view is a coarse empty sphere. ORG is part of the build key, so the
+   * setWorld below rebuilds automatically. */
+  try{
+    var org0=map3d.getOrg();
+    if(Math.hypot(pl0.x-org0.x,pl0.z-org0.z)>250) map3d.setOrg(pl0.x,pl0.z);
+  }catch(_){}
   map3d.setWorld(mapWorldKey());
   var pl=(cam.mode==='walk')?{x:cam.wx,z:cam.wz}:{x:cam.tx,z:cam.tz};
   map3d.setData({
@@ -10861,7 +11012,9 @@ window.__beta.cloudsOn=function(){ return !!(cldMesh&&cldTex); };
 window.__beta.scatTris=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++) if(scatChunkList[i].buf) t+=scatChunkList[i].buf.count; return t; };
 window.__beta.glowTris=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++) if(scatChunkList[i].buf&&scatChunkList[i].buf.gbuf) t+=scatChunkList[i].buf.gbuf.count; return t; };
 window.__beta.scatChunks=function(){ return scatChunkList.length; };
+window.__beta.grassIdx=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++){ var b=scatChunkList[i].buf; if(b&&b.grass) t+=b.grass.count; } return t; };
 window.__beta.terrChunkCount=function(){ return terrChunkList.length; };
+window.__beta.terrQueueLen=function(){ return terrQueue.length; };
 window.__beta.terrIdx=function(){ var t=0,i; for(i=0;i<terrChunkList.length;i++) t+=terrChunkList[i].buf.count; return t; };
 window.__beta.terrKeys=function(){ var k=[]; for(var key in terrChunks) k.push(key); return k; };
 window.__beta.holeRect=function(){ return {cx:streamPCX*CH, cz:streamPCZ*CH, half:CH*(CHW+0.5), queued:terrQueue.length}; };
