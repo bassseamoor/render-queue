@@ -6091,6 +6091,16 @@ function groundColor(x,z,h){
     var gcover=clamp01((Eco.moistureAt(x,z)-0.35)/0.40);
     if(gcover>0.01) c=tintToward(c,[0.29,0.45,0.23],gcover*0.55);
   }
+  /* GRASS GS-10: far-field meadow tint from the same patch field that places
+   * blades at 1cm — patches read at 1km. Seed synced per world. */
+  if(h>=0.8&&h<34&&s<0.55&&snowF<0.5&&typeof GrassPlace!=='undefined'){
+    grassSeedSync();
+    try{ var _gpi=GrassPlace.patchInfo(x,z);
+      if(_gpi.i>0.01){
+        c=tintToward(c,[0.30,0.44,0.22],Math.min(0.5,_gpi.i*0.5));
+        c=mix(c,[0.46,0.42,0.25],_gpi.dry*_gpi.i*0.4);
+      } }catch(_ge){}
+  }
   var v=0.94+0.06*vnoise(x*0.11,z*0.11); /* grain */
   v*=0.97+0.06*vnoise(x*0.53+9.1,z*0.53+4.7); /* fine grain: close-up isn't mush */
   v*=0.98+0.04*vnoise(x*0.021+31.7,z*0.021+17.3); /* patchiness */
@@ -6103,7 +6113,16 @@ function groundColor(x,z,h){
 var objPos=[], objNrm=[], objCol=[], objIdx=[];
 /* BotW grass: a dedicated buffer so blades get their own wind shader.
  * bend=0 at the root, 1 at the tip — the vertex shader sways tips more. */
-var grassPos=[], grassNrm=[], grassCol=[], grassBend=[], grassIdx=[];
+var grassPos=[], grassNrm=[], grassCol=[], grassBend=[], grassDat=[], grassIdx=[];
+/* GRASS rebuild: per-world seed sync for the patch field — placement and far
+ * tint must agree. Cheap string compare; called from buildScatterChunk and
+ * groundColor so terrain tint and blade placement never desync. */
+var gGrassSeed='';
+function grassSeedSync(){
+  try{ var _w=activeWorld(), _s=(_w&&_w.seed)?_w.seed:'';
+    if(_s!==gGrassSeed){ gGrassSeed=_s; if(typeof GrassPlace!=='undefined') GrassPlace.setWorldSeed(strHash(_s)>>>0); }
+  }catch(_e){}
+}
 function pushG(x,y,z,nx,ny,nz,r,g,b,bend){
   grassPos.push(x,y,z); grassNrm.push(nx,ny,nz); grassCol.push(r,g,b); grassBend.push(bend);
   return grassPos.length/3-1;
@@ -6300,22 +6319,9 @@ var FSH_WATER='precision mediump float;varying vec3 vC;varying vec3 vN;varying v
 /* BotW grass: per-blade wind. bend=0 at the root (stays planted), 1 at the
  * tip. Two wave trains + a slow traveling gust so waves roll across the
  * meadow. Tips lighten as they catch the light (fragment). */
-var VSH_GRASS='attribute vec3 p;attribute vec3 n;attribute vec3 c;attribute float bend;'+'uniform mat4 mvp;uniform float uTime;uniform float uWindK;uniform vec3 uPlayer;'+'varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'void main(){'+'float b2=bend*bend;'+ /* quadratic: base stays rooted, tips do the dancing */
-'vC=c;vN=n;vBend=bend;'+
-'float t=uTime;'+
-'float w1=sin(p.x*0.35+t*1.8)+sin(p.z*0.27-t*1.3)*0.7;'+
-'float w2=sin((p.x+p.z)*0.12+t*0.7);'+
-'float w3=sin(p.x*0.05-p.z*0.04+t*0.45)+sin(p.z*0.06+p.x*0.03-t*0.3)*0.6;'+ /* slow traveling gust field */
-'vec3 dp=p+vec3(w1*0.08+w2*0.18+w3*0.22,-abs(w1+w2+w3)*0.02,w1*0.06-w2*0.12+w3*0.15)*b2*uWindK;'+
-'vec2 pd=p.xz-uPlayer.xy;float pdist=length(pd);'+ /* player/object disturbance */
-'float push=1.0-smoothstep(0.0,uPlayer.z,pdist);'+
-'dp.x+=(pd.x/(pdist+0.001))*push*push*0.45*b2;'+
-'dp.z+=(pd.y/(pdist+0.001))*push*push*0.45*b2;'+
-'float cv=fract(sin(dot(floor(p.xz*7.0),vec2(12.9898,78.233)))*43758.5453);'+ /* per-blade color variation */
-'vC*=0.85+0.3*cv;'+
-'vec4 wp=mvp*vec4(dp,1.0);vD=-wp.z;gl_Position=wp;}';
-var FSH_GRASS='precision mediump float;varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'uniform vec3 sun;uniform vec3 fog;uniform float fogK;uniform float uSunI;'+'void main(){'+'vec3 N=normalize(vN);'+'float lam=0.55+0.45*max(dot(N,normalize(sun)),0.0);'+'vec3 col=vC*lam*(0.55+0.45*uSunI);'+'col+=vec3(0.16,0.22,0.06)*vBend*vBend;'+'col=mix(col,col*vec3(0.9,1.05,0.75),vBend*0.5);'+'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+'gl_FragColor=vec4(col,1.0);}';
-var gprog=null, gAPos, gANrm, gACol, gABend, gUMVP, gUTime, gUSun, gUFog, gUFogK, gUSunI, gUWindK, gUPlayer;
+var VSH_GRASS=null; /* GRASS rebuild: bound to GrassWind.VSH by the boot snippet after the grass modules load */
+var FSH_GRASS=null; /* GRASS rebuild: bound to GrassLight.FSH by the boot snippet */
+var gprog=null, gAPos, gANrm, gACol, gABend, gADat, gUMVP, gUTime, gUSun, gUFog, gUFogK, gUSunI, gUWindK, gUWind, gLastT=-1;
 var wprog=null, wAPos, wANrm, wACol, wUMVP, wUTime, wUSun, wUCam, wUFog, wUFogK,
     wUShallow, wUDeep, wUSky, wUSkyZen, wUSkyHor, wUSunCol, wUSunI, wURain, wUGlint, wUCamP;
 
@@ -6362,12 +6368,14 @@ function initGL(){
   gl.linkProgram(gprog);
   gAPos=gl.getAttribLocation(gprog,'p'); gANrm=gl.getAttribLocation(gprog,'n');
   gACol=gl.getAttribLocation(gprog,'c'); gABend=gl.getAttribLocation(gprog,'bend');
+  gADat=gl.getAttribLocation(gprog,'dat');
   gUMVP=gl.getUniformLocation(gprog,'mvp'); gUTime=gl.getUniformLocation(gprog,'uTime');
   gUSun=gl.getUniformLocation(gprog,'sun'); gUFog=gl.getUniformLocation(gprog,'fog');
   gUFogK=gl.getUniformLocation(gprog,'fogK');
   gUSunI=gl.getUniformLocation(gprog,'uSunI');
   gUWindK=gl.getUniformLocation(gprog,'uWindK');
-  gUPlayer=gl.getUniformLocation(gprog,'uPlayer');
+  /* GRASS rebuild: gust fronts + memory-field uniforms live in GrassWind */
+  gUWind=(typeof GrassWind!=='undefined'&&GrassWind.locate)?GrassWind.locate(gl,gprog):null;
   initSkyGL();
   initShaftBlobGL(); /* W1: volumetric shafts + blob AO programs */
   return true;
@@ -6384,14 +6392,14 @@ function makeBuf(pos,nrm,col,idx){
   gl.getExtension('OES_element_index_uint');
   return {vb:vb,ib:ib,count:idx.length};
 }
-/* grass buffer: stride 10 (pos3, nrm3, col3, bend1). Bend drives the wind. */
-function makeGrassBuf(pos,nrm,col,bend,idx){
+/* grass buffer: stride 12 (pos3, nrm3, col3, bend1, dat2). Bend drives the wind; dat=(stiffness,heightNorm). */
+function makeGrassBuf(pos,nrm,col,bend,dat,idx){
   var vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
-  var n=pos.length/3, stride=10, data=new Float32Array(n*stride);
+  var n=pos.length/3, stride=12, data=new Float32Array(n*stride);
   for(var i=0;i<n;i++){ data[i*stride]=pos[i*3]; data[i*stride+1]=pos[i*3+1]; data[i*stride+2]=pos[i*3+2];
     data[i*stride+3]=nrm[i*3]; data[i*stride+4]=nrm[i*3+1]; data[i*stride+5]=nrm[i*3+2];
     data[i*stride+6]=col[i*3]; data[i*stride+7]=col[i*3+1]; data[i*stride+8]=col[i*3+2];
-    data[i*stride+9]=bend[i]; }
+    data[i*stride+9]=bend[i]; data[i*stride+10]=dat[i*2]; data[i*stride+11]=dat[i*2+1]; }
   gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
   var ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(idx),gl.STATIC_DRAW);
@@ -6447,38 +6455,44 @@ function drawWater(t, mvpMat, eye, sunV, fogV, fogKV){
 }
 /* BotW grass draw: switches to the grass program, draws every scatter chunk's
  * grass buffer with wind, then restores the main program. */
+/* GRASS rebuild: two LOD reps from one deterministic field — near (<40m)
+ * segmented blades, mid (40-120m) crossed cards, far = ground tint. */
 function drawGrass(t, mvpMat, sunV, fogV, fogKV){
   if(!gprog||!W1FX.grass) return;
   gl.useProgram(gprog);
   gl.uniformMatrix4fv(gUMVP,false,mvpMat);
-  gl.uniform1f(gUTime,t);
   gl.uniform3f(gUSun,sunV[0],sunV[1],sunV[2]);
   gl.uniform3f(gUFog,fogV[0],fogV[1],fogV[2]);
   gl.uniform1f(gUFogK,fogKV);
   gl.uniform1f(gUSunI,ENV.sunI); /* W1: grass dims under cloud like everything else */
   /* GB-13: wind shimmer reads as "bugs crawling" once blades go subpixel.
    * Damp the sway with orbit distance (walk/dev keep full wind). */
-  var windK=1;
+  var windMul=1;
   try{ if(typeof cam!=='undefined'&&cam.mode==='orbit'&&cam.dist>40)
-    windK=Math.max(0.1,1-(cam.dist-40)/140); }catch(_wk){}
-  gl.uniform1f(gUWindK,windK);
-  /* grass parts around the player as he walks through it */
+    windMul=Math.max(0.1,1-(cam.dist-40)/140); }catch(_wk){}
+  /* GRASS: traveling gust fronts + near-field bend memory. GrassWind owns
+   * its uniforms (uTime/uWindK included); reads playerXZ + Weather itself. */
+  var gdt=gLastT<0||t<gLastT?0.016:Math.min(0.1,t-gLastT); gLastT=t;
+  try{ GrassWind.setWindMul(windMul); GrassWind.setUniforms(gl,gUWind,t,gdt); }catch(_ge){}
+  gl.disable(gl.CULL_FACE); /* grass quads are single-sided; show both faces */
   var ppx=0, ppz=0;
   try{ if(typeof playerXZ==='function'){ var _pp=playerXZ(); ppx=_pp.x; ppz=_pp.z; } }catch(_pe){}
-  gl.uniform3f(gUPlayer,ppx,ppz,2.5);
-  gl.disable(gl.CULL_FACE); /* grass quads are single-sided; show both faces */
   for(var si=0;si<scatChunkList.length;si++){
-    var gr=scatChunkList[si].buf&&scatChunkList[si].buf.grass;
+    var ce=scatChunkList[si]; if(!ce||!ce.buf) continue;
+    var cdx=ce.cx*CH-ppx, cdz=ce.cz*CH-ppz, cd2=cdx*cdx+cdz*cdz;
+    var gr=cd2<1600?ce.buf.grassNear:(cd2<14400?ce.buf.grassMid:null);
     if(!gr) continue;
     gl.bindBuffer(gl.ARRAY_BUFFER,gr.vb);
-    gl.vertexAttribPointer(gAPos,3,gl.FLOAT,false,40,0); gl.enableVertexAttribArray(gAPos);
-    gl.vertexAttribPointer(gANrm,3,gl.FLOAT,false,40,12); gl.enableVertexAttribArray(gANrm);
-    gl.vertexAttribPointer(gACol,3,gl.FLOAT,false,40,24); gl.enableVertexAttribArray(gACol);
-    gl.vertexAttribPointer(gABend,1,gl.FLOAT,false,40,36); gl.enableVertexAttribArray(gABend);
+    gl.vertexAttribPointer(gAPos,3,gl.FLOAT,false,48,0); gl.enableVertexAttribArray(gAPos);
+    gl.vertexAttribPointer(gANrm,3,gl.FLOAT,false,48,12); gl.enableVertexAttribArray(gANrm);
+    gl.vertexAttribPointer(gACol,3,gl.FLOAT,false,48,24); gl.enableVertexAttribArray(gACol);
+    gl.vertexAttribPointer(gABend,1,gl.FLOAT,false,48,36); gl.enableVertexAttribArray(gABend);
+    gl.vertexAttribPointer(gADat,2,gl.FLOAT,false,48,40); gl.enableVertexAttribArray(gADat);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,gr.ib);
     gl.drawElements(gl.TRIANGLES,gr.count,gl.UNSIGNED_INT,0);
   }
   gl.enable(gl.CULL_FACE);
+  gl.activeTexture(gl.TEXTURE0); /* GrassWind used units 0/1; leave unit 0 active */
   gl.useProgram(prog);
   /* re-enable main attribs (program switch may disturb state) */
   gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aNrm); gl.enableVertexAttribArray(aCol);
@@ -7290,6 +7304,8 @@ function worldScatterKey(){ var w=activeWorld();
     '|'+((w&&w.paintOps)?w.paintOps.length:0); }
 function disposeChunk(c){ if(c&&c.buf){ gl.deleteBuffer(c.buf.vb); gl.deleteBuffer(c.buf.ib);
   if(c.buf.gbuf){ gl.deleteBuffer(c.buf.gbuf.vb); gl.deleteBuffer(c.buf.gbuf.ib); }
+  if(c.buf.grassNear){ gl.deleteBuffer(c.buf.grassNear.vb); gl.deleteBuffer(c.buf.grassNear.ib); }
+  if(c.buf.grassMid){ gl.deleteBuffer(c.buf.grassMid.vb); gl.deleteBuffer(c.buf.grassMid.ib); }
   if(c.buf.grass){ gl.deleteBuffer(c.buf.grass.vb); gl.deleteBuffer(c.buf.grass.ib); } } }
 var _wx=[0,0];
 function buildTerrainChunk(cx,cz){
@@ -7929,32 +7945,6 @@ function leafBlade(bx,by,bz,dx,dy,dz,len,wid,curl,cr,cg,cb,segs){
     }
   }
 }
-function grassBlade(bx,by,bz,dx,dz,len,wid,cr,cg,cb){
-  /* cheap 2-segment blade for grass tufts: 8 tris. Lives in the grass buffer
-   * (bend=t: roots stay planted, tips catch the wind). */
-  var dl=Math.hypot(dx,dz)||1; dx/=dl; dz/=dl;
-  var sx=-dz, sz=dx;
-  var v0=grassPos.length/3, i, sgn, k;
-  for(sgn=0;sgn<2;sgn++){
-    for(i=0;i<=2;i++){
-      var t=i/2, prof=Math.sin(t*Math.PI*0.5)+0.15, bnd=t*t*len*0.45;
-      var cxp=bx+dx*(bnd+len*t*0.3), cyp=by+len*t, czp=bz+dz*(bnd+len*t*0.3);
-      for(k=-1;k<=1;k+=2){
-        var off=k*wid*prof*(1-t*0.7), bsh=0.75+0.45*t;
-        pushG(cxp+sx*off,cyp,czp+sz*off, sx,0,sz,
-          Math.min(1,cr*bsh),Math.min(1,cg*bsh),Math.min(1,cb*bsh), t);
-      }
-    }
-  }
-  for(sgn=0;sgn<2;sgn++){
-    var b=v0+sgn*3*2;
-    for(i=0;i<2;i++){
-      var a0=b+i*2, b0=a0+1, c0=a0+2, d0=a0+3;
-      if(sgn===0) grassIdx.push(a0,c0,b0, b0,c0,d0);
-      else grassIdx.push(a0,b0,c0, b0,d0,c0);
-    }
-  }
-}
 function twig(x,y,z,dx,dy,dz,len,r0,cr,cg,cb,bend){
   /* Lab-canonical tapered tube: 6-sided, 92% taper to the tip, optional
    * mid-arc bend [bx,by,bz] for arching branches and fern fronds. 24 tris. */
@@ -8072,42 +8062,6 @@ function fernGen(x,y,z,s,R,pal){
           ls, ls*0.16, 0.10, g[0]*bs,g[1]*bs,g[2]*bs);
       }
     }
-  }
-}
-function grassTuft(x,y,z,s,R,tint){
-  /* Painterly meadow grass (reference: dense tall flowing blades, seed stalks
-   * rising above, light/shadow drifting through). Coherent wind-lean per tuft
-   * so blades comb in waves; understory dark, sunlit blades bright. */
-  var g=tint||[0.45+R()*0.15,0.60,0.24], k, a;
-  var wa=R()*Math.PI*2, wl=0.25+R()*0.35; /* the wind combing this tuft */
-  var lx=Math.cos(wa)*wl, lz=Math.sin(wa)*wl;
-  var n=24;
-  for(k=0;k<n;k++){
-    a=k/n*Math.PI*2+R()*0.5;
-    var rr=Math.sqrt(R())*0.55*s; /* filled disc, dense heart */
-    var h=(0.55+R()*0.65)*s, bs=0.75+R()*0.5;
-    var sun=R()<0.45?1.18:0.78; /* sunlit vs shadowed blades */
-    grassBlade(x+Math.cos(a)*rr+lx*0.3*s, y, z+Math.sin(a)*rr+lz*0.3*s,
-      Math.cos(a)+lx*2.2, Math.sin(a)+lz*2.2, h, 0.035*s*bs,
-      Math.min(1,g[0]*bs*sun),Math.min(1,g[1]*bs*sun),Math.min(1,g[2]*bs*sun));
-  }
-  /* tall seed stalks rising above the blades, plumes nodding at their tips */
-  var ns=3;
-  for(k=0;k<ns;k++){
-    a=R()*Math.PI*2;
-    var sx=x+Math.cos(a)*0.3*s, sz=z+Math.sin(a)*0.3*s;
-    var sh=(1.1+R()*0.5)*s;
-    grassBlade(sx,y,sz, lx*3, lz*3, sh, 0.02*s, 0.55,0.58,0.32);
-    for(var p=0;p<3;p++){
-      var pa=p/3*Math.PI*2+R();
-      leafBlade(sx+lx*sh*0.35, y+sh*0.92, sz+lz*sh*0.35,
-        Math.cos(pa)*0.8, 0.9, Math.sin(pa)*0.8,
-        0.16*s, 0.018*s, 0.05, 0.72,0.68,0.42);
-    }
-  }
-  if(R()<0.35){ /* one tuft in three carries a glowing seed tip */
-    glowDot(x+(R()-0.5)*0.4*s, y+(0.6+R()*0.3)*s, z+(R()-0.5)*0.4*s,
-      0.06*s, 0.5+R()*0.5, 0.9, 1.0);
   }
 }
 function flowerPatch(x,y,z,s,R){
@@ -8306,8 +8260,8 @@ function buildScatterChunk(cx,cz){
   objPos=[]; objNrm=[]; objCol=[]; objIdx=[];
   var gP=gloPos, gN=gloNrm, gC=gloCol, gI=gloIdx;
   gloPos=[]; gloNrm=[]; gloCol=[]; gloIdx=[];
-  var grP=grassPos, grN=grassNrm, grC=grassCol, grB=grassBend, grI=grassIdx;
-  grassPos=[]; grassNrm=[]; grassCol=[]; grassBend=[]; grassIdx=[];
+  var grP=grassPos, grN=grassNrm, grC=grassCol, grB=grassBend, grD=grassDat, grI=grassIdx;
+  grassPos=[]; grassNrm=[]; grassCol=[]; grassBend=[]; grassDat=[]; grassIdx=[];
   var placed=[];
   try{
     if(!w) return null;
@@ -8385,7 +8339,7 @@ function buildScatterChunk(cx,cz){
     /* W2 lifeworld: ecology-driven placement (groves, tiers, ecotones).
      * Eco.planChunk is deterministic per seed+pid+chunk; emits via the
      * existing generators, then registers Collide/Interact. */
-    var ecoPlan=null;
+    var ecoPlan=null, ecoPlants=[];
     try{ if(typeof Eco!=='undefined'&&Eco&&Eco.planChunk) ecoPlan=Eco.planChunk(cx,cz); }catch(_ee){ ecoPlan=null; }
     if(ecoPlan){
       var _ti,_pi;
@@ -8403,9 +8357,9 @@ function buildScatterChunk(cx,cz){
         else if(_p.gen==='fernGen') fernGen(_p.x,_py,_p.z,_p.scale,_pr,pal);
         else if(_p.gen==='flowerGen') flowerGen(_p.x,_py,_p.z,_p.scale,_pr,pal,_p.variant||'cup');
         else if(_p.gen==='grassTuft'){
-          var _gr=pal.grass&&pal.grass.length?pal.grass[(_pr()*pal.grass.length)|0]:[0.42,0.58,0.24];
-          if(_p.wet) _gr=[0.36,0.56,0.34];
-          grassTuft(_p.x,_py,_p.z,_p.scale,_pr,vibJit(_gr,_p.x,_p.z,0.15));
+          /* GRASS rebuild: hero tufts join the deterministic tuft field
+           * (GrassPlace converts them); no direct emission here. */
+          ecoPlants.push({x:_p.x,y:_py,z:_p.z,scale:_p.scale,wet:_p.wet,seed:_p.seed});
         }
         placed.push({x:_p.x,z:_p.z,r:1,kind:'plant'});
       }
@@ -8431,17 +8385,48 @@ function buildScatterChunk(cx,cz){
       if(inClaim(x,z,0.5)) return true;
       return false;
     }
-    var CN=1000, ck, cx2, cz2, cy2; /* BotW carpet: dense meadow, big clumps */
-    for(ck=0;ck<CN;ck++){
-      cx2=ccx+(R()*2-1)*CH/2; cz2=ccz+(R()*2-1)*CH/2;
-      wrapXZ(cx2,cz2,_wx); cx2=_wx[0]; cz2=_wx[1];
-      if(carpetBlocked(cx2,cz2)) continue;
-      if(typeof Eco!=='undefined'&&Eco&&Eco.grassDensity&&Eco.grassDensity(cx2,cz2)<R()) continue; /* W2: ecology grass mask */
-      if(carpetHardExcl(cx2,cz2)) continue; /* G4-02: buildings/paths/roads/major rocks */
-      cy2=heightAt(cx2,cz2);
-      var gr=pal.grass&&pal.grass.length?pal.grass[Math.floor(R()*pal.grass.length)]:[0.42,0.58,0.24];
-      grassSprig(cx2,cy2,cz2,0.8+R()*0.9,R,vibJit(gr,cx2,cz2,0.18));
+    /* GRASS rebuild: one deterministic tuft field -> two LOD reps.
+     * patch/colony/tuft hierarchy (GrassPlace), segmented blades + crossed
+     * cards (GrassBlade), traveling gust fronts (GrassWind). */
+    grassSeedSync();
+    try{ if(Weather&&Weather.state&&Weather.state.wind) GrassPlace.setWindDir(Weather.state.wind.dir); }catch(_wd){}
+    var gChunkSeed=w.seed+'|'+(pid||'custom')+'|scatter|'+cx+','+cz;
+    var gTrees=[], gRocks=[], _gi;
+    for(_gi=0;_gi<placed.length;_gi++){ var _gp=placed[_gi];
+      if(_gp.kind==='tree') gTrees.push({x:_gp.x,z:_gp.z,r:_gp.canopyR||_gp.r||3});
+      else if(_gp.kind==='rock') gRocks.push({x:_gp.x,z:_gp.z,r:_gp.r||1}); }
+    var gEnv={cx:cx,cz:cz,ccx:ccx,ccz:ccz,chunkSeed:gChunkSeed,pal:pal,tk:tk,
+      placed:placed,trees:gTrees,rocks:gRocks,
+      excl:function(x,z){ return carpetHardExcl(x,z); },
+      ecoMask:function(x,z){ try{ if(typeof Eco!=='undefined'&&Eco&&Eco.grassDensity) return Eco.grassDensity(x,z); }catch(_e){} return 1; },
+      ecoPlants:ecoPlants,
+      paths:(w&&w.paths)?w.paths:[]};
+    var gTufts=GrassPlace.planTufts(gEnv);
+    var gNA={pos:[],nrm:[],col:[],bend:[],dat:[],idx:[]};
+    var gMA={pos:[],nrm:[],col:[],bend:[],dat:[],idx:[]};
+    var _ge;
+    for(_ge=0;_ge<gTufts.length;_ge++){
+      var _gt=gTufts[_ge];
+      GrassBlade.emitTuft(_gt,gNA,'near');
+      GrassBlade.emitTuft(_gt,gMA,'mid');
+      if((_gt.seed%3)===0) glowDot(_gt.x,_gt.y+_gt.hMax*0.55,_gt.z,0.05,0.9,1.0,0.85); /* LED accent, was 1 tuft in 3 */
     }
+    /* legacy moss sprigs (fallenLog accents) ride the near field */
+    var _mbase=gNA.pos.length/3, _mn=grassPos.length/3, _mi;
+    for(_mi=0;_mi<_mn;_mi++){
+      gNA.pos.push(grassPos[_mi*3],grassPos[_mi*3+1],grassPos[_mi*3+2]);
+      gNA.nrm.push(grassNrm[_mi*3],grassNrm[_mi*3+1],grassNrm[_mi*3+2]);
+      gNA.col.push(grassCol[_mi*3],grassCol[_mi*3+1],grassCol[_mi*3+2]);
+      gNA.bend.push(grassBend[_mi]); gNA.dat.push(0.5,0.5);
+    }
+    for(_mi=0;_mi<grassIdx.length;_mi++) gNA.idx.push(grassIdx[_mi]+_mbase);
+    /* GS-11 shard assert: count + loud log, never a silent shard */
+    var _gv1=GrassBlade.validate(gNA), _gv2=GrassBlade.validate(gMA);
+    if(!_gv1.ok||!_gv2.ok){
+      try{ window.__grassViolations=(window.__grassViolations||0)+_gv1.violations.length+_gv2.violations.length; }catch(_w2){}
+      try{ console.error('[grass] SHARD ASSERT: '+(_gv1.violations.length+_gv2.violations.length)+' bad tris in chunk '+cx+','+cz); }catch(_w3){}
+    }
+    var ck, cx2, cz2, cy2; /* pebble + accent loops below still use these */
     var PN=46;
     for(ck=0;ck<PN;ck++){
       cx2=ccx+(R()*2-1)*CH/2; cz2=ccz+(R()*2-1)*CH/2;
@@ -8470,17 +8455,23 @@ function buildScatterChunk(cx,cz){
     scatterPlacedMap[cx+','+cz]=placed;
     drapeObjRange(0); /* flat emission -> planet sphere */
     drapeGlowRange(); /* LED accents ride along */
+    /* GRASS rebuild: drape each LOD rep, then buffer it */
+    grassPos=gNA.pos; grassNrm=gNA.nrm; grassCol=gNA.col; grassBend=gNA.bend; grassDat=gNA.dat; grassIdx=gNA.idx;
     drapeGrassRange(0); /* grass blades drape too */
+    var grbN=grassIdx.length?makeGrassBuf(grassPos,grassNrm,grassCol,grassBend,grassDat,grassIdx):null;
+    grassPos=gMA.pos; grassNrm=gMA.nrm; grassCol=gMA.col; grassBend=gMA.bend; grassDat=gMA.dat; grassIdx=gMA.idx;
+    drapeGrassRange(0);
+    var grbM=grassIdx.length?makeGrassBuf(grassPos,grassNrm,grassCol,grassBend,grassDat,grassIdx):null;
     var gb=gloIdx.length?makeBuf(gloPos,gloNrm,gloCol,gloIdx):null;
     var ob=objIdx.length?makeBuf(objPos,objNrm,objCol,objIdx):null;
     if(ob) ob.gbuf=gb;
-    var grb=grassIdx.length?makeGrassBuf(grassPos,grassNrm,grassCol,grassBend,grassIdx):null;
-    if(ob) ob.grass=grb; else if(grb){ ob={vb:null,ib:null,count:0,grass:grb}; }
+    if(ob){ ob.grassNear=grbN; ob.grassMid=grbM; }
+    else if(grbN||grbM){ ob={vb:null,ib:null,count:0,grassNear:grbN,grassMid:grbM}; }
     return ob;
   } finally {
     objPos=sP; objNrm=sN; objCol=sC; objIdx=sI;
     gloPos=gP; gloNrm=gN; gloCol=gC; gloIdx=gI;
-    grassPos=grP; grassNrm=grN; grassCol=grC; grassBend=grB; grassIdx=grI;
+    grassPos=grP; grassNrm=grN; grassCol=grC; grassBend=grB; grassDat=grD; grassIdx=grI;
   }
 }
 
@@ -9468,6 +9459,1209 @@ function emitNpc(n,t){
   for(i=v0*3;i<cPos.length;i+=3) cPos[i+1]+=gy;
   drapeCRange(v0);
 }
+
+/* ===== grass-blade.js (GRASS: segmented blades + shard assert, GS-01/02/11) ===== */
+/* GRASS-BLADE — segmented blade geometry + tuft emission + shard assert.
+ * Canonical spec: GRASS-SPEC.md ("The blade").
+ * Concatenated inside the beta's single shared IIFE (ES5 only).
+ * Shares scope with app1.js helpers: mulberry32(seedInt), strHash(str),
+ * clamp01, heightAt, slopeAt.
+ * TAGS: grass, geometry, emission, validation, LOD
+ *
+ * CONTRACT:
+ *   GrassBlade.emitTuft(tuft, arrays, rep)  -> appends into arrays
+ *   GrassBlade.validate(arrays)             -> {ok, violations:[{tri,maxEdge,area}]}
+ *
+ * tuft: {x,y,z (birthplace, y=heightAt), nBlades (5..20),
+ *        hMin,hMax (blade height range), wBase (base half-width),
+ *        crook (0..1), stiff (0..1, 1=stiff), leanA, leanM (lean angle/mag),
+ *        r,g,b (tuft color), dry (0..1 fraction of dry blades), seed (uint32)}
+ * arrays: {pos:[], nrm:[], col:[], bend:[], dat:[], idx:[]} plain JS arrays.
+ *   dat gets [stiff, hNorm] pairs per vertex (hNorm = blade h / hMax).
+ * rep: 'near' | 'mid'
+ */
+var GrassBlade = (function () {
+
+  /* GS-11 shard caps: a giant triangular green shard is impossible by
+   * construction because no single blade or quad can exceed these bounds,
+   * and the largest possible triangle edge stays far under the 2.4m fail line. */
+  var MAX_H = 1.6;      /* blade height cap (m) */
+  var MAX_WBASE = 0.07; /* base half-width cap (m) */
+  var FAIL_EDGE = 2.4;  /* triangle edge length fail threshold (m) */
+  var FAIL_AREA = 0.9;  /* triangle area fail threshold (m^2) */
+
+  var GOLDEN = 2.39996; /* golden-angle spiral for per-blade placement */
+  var MAX_LEANM = 0.8;  /* prevailing lean magnitude cap (m tip offset scale) */
+  var DRY_COL = [0.62, 0.55, 0.32]; /* desaturated straw for dry blades */
+
+  function log(msg) {
+    if (typeof console !== 'undefined' && console.log) { console.log(msg); }
+  }
+
+  /* ---- vertex writer -------------------------------------------------- */
+  function pushVert(arrays, x, y, z, nx, ny, nz, r, g, b, bend, stiff, hNorm) {
+    arrays.pos.push(x, y, z);
+    arrays.nrm.push(nx, ny, nz);
+    arrays.col.push(r, g, b);
+    arrays.bend.push(bend);
+    arrays.dat.push(stiff, hNorm);
+    return arrays.pos.length / 3 - 1;
+  }
+
+  /* root->tip color: dark root, full tip */
+  function shade(base, t) {
+    return base * (0.42 + 0.58 * t);
+  }
+
+  function emitTuft(tuft, arrays, rep) {
+    /* GS-11: clamp tuft parameters at the emitter (use locals, don't mutate caller) */
+    var hMin = tuft.hMin, hMax = tuft.hMax, wBase = tuft.wBase;
+    var crook = clamp01(tuft.crook), stiff = clamp01(tuft.stiff);
+    var dry = clamp01(tuft.dry);
+    var nBlades = Math.max(1, Math.round(tuft.nBlades));
+    if (hMax > MAX_H) { log('[grass] tuft hMax clamped ' + hMax + ' -> ' + MAX_H); hMax = MAX_H; }
+    if (hMin > MAX_H) { log('[grass] tuft hMin clamped ' + hMin + ' -> ' + MAX_H); hMin = MAX_H; }
+    if (hMin < 0.01) { hMin = 0.01; }
+    if (hMax < hMin) { hMax = hMin; }
+    if (wBase > MAX_WBASE) { log('[grass] tuft wBase clamped ' + wBase + ' -> ' + MAX_WBASE); wBase = MAX_WBASE; }
+    if (wBase < 0.004) { wBase = 0.004; }
+
+    var leanA = tuft.leanA || 0;
+    var leanM = tuft.leanM || 0;
+    if (leanM > MAX_LEANM) { log('[grass] tuft leanM clamped ' + leanM + ' -> ' + MAX_LEANM); leanM = MAX_LEANM; }
+    if (leanM < -MAX_LEANM) { log('[grass] tuft leanM clamped ' + leanM + ' -> ' + (-MAX_LEANM)); leanM = -MAX_LEANM; }
+    var leanX = Math.cos(leanA), leanZ = Math.sin(leanA);
+    /* lean perp for sideways crook wobble */
+    var perpX = -leanZ, perpZ = leanX;
+
+    if (rep === 'mid') {
+      emitMid(tuft, arrays, hMax, wBase, stiff, dry, leanX, leanZ, leanM);
+    } else {
+      emitNear(tuft, arrays, hMin, hMax, wBase, crook, stiff, dry,
+               nBlades, leanX, leanZ, perpX, perpZ, leanM);
+    }
+  }
+
+  /* ---- rep 'near': 4 stacked segments (5 levels) per blade ------------ */
+  function emitNear(tuft, arrays, hMin, hMax, wBase, crook, stiff, dry,
+                   nBlades, leanX, leanZ, perpX, perpZ, leanM) {
+    var R = mulberry32(tuft.seed >>> 0);
+    var rootX = tuft.x, rootY = tuft.y, rootZ = tuft.z;
+    var k, s, t;
+
+    for (k = 0; k < nBlades; k++) {
+      /* GS-02: every blade-level random derives from the tuft seed */
+      /* per-blade angle = golden-angle spiral + jitter (optimal packing) */
+      var faceA = k * GOLDEN + (R() - 0.5) * 0.9;
+      /* height: pow(R,1.4) -> a few tall folders among the young */
+      var h = hMin + (hMax - hMin) * Math.pow(R(), 1.4);
+      if (h > MAX_H) { h = MAX_H; }
+      /* width jitter +-20% */
+      var wj = 0.8 + 0.4 * R();
+      /* crook sign: deterministic per blade */
+      var crookSign = R() < 0.5 ? -1 : 1;
+      /* blade facing direction: ribbon width axis from the per-blade angle */
+      var faceX = Math.cos(faceA), faceZ = Math.sin(faceA);
+      /* dry blades: deterministic fraction, bladeIndex/nBlades < dry */
+      var isDry = (k / nBlades) < dry;
+      var baseR = isDry ? DRY_COL[0] : tuft.r;
+      var baseG = isDry ? DRY_COL[1] : tuft.g;
+      var baseB = isDry ? DRY_COL[2] : tuft.b;
+      var hNorm = h / hMax;
+      var leanAmt = leanM;
+      var crookAmt = crook * 0.1 * h * crookSign;
+
+      var base = arrays.pos.length / 3;
+      for (s = 0; s <= 4; s++) {
+        t = s / 4;
+        var t2 = t * t;
+        /* continuous root->tip curve: lean grows quadratically, crook bends sideways */
+        var cx = rootX + leanX * (leanAmt * t2 * (0.5 + crook)) + perpX * crookAmt * t2;
+        var cy = rootY + h * t;
+        var cz = rootZ + leanZ * (leanAmt * t2 * (0.5 + crook)) + perpZ * crookAmt * t2;
+        var hw = wBase * (1 - t * 0.72) * wj;
+        /* bend=t: root (t=0) is PROVABLY immobile, shader displacement * 0 = 0 */
+        pushVert(arrays, cx - faceX * hw, cy, cz - faceZ * hw,
+                 0, 1, 0, shade(baseR, t), shade(baseG, t), shade(baseB, t),
+                 t, stiff, hNorm);
+        pushVert(arrays, cx + faceX * hw, cy, cz + faceZ * hw,
+                 0, 1, 0, shade(baseR, t), shade(baseG, t), shade(baseB, t),
+                 t, stiff, hNorm);
+      }
+      /* 4 quads = 8 tris per blade */
+      for (s = 0; s < 4; s++) {
+        var b = base + s * 2;
+        arrays.idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+      }
+    }
+  }
+
+  /* ---- rep 'mid': 3 crossed quads per tuft (not per blade) ------------ */
+  function emitMid(tuft, arrays, hMax, wBase, stiff, dry, leanX, leanZ, leanM) {
+    var R = mulberry32((tuft.seed >>> 0) ^ 0x9E3779B9); /* different stream, same seed */
+    var h = hMax * 0.9;
+    if (h > MAX_H) { h = MAX_H; }
+    var hw = wBase * 9;
+    /* mid rep can blend toward straw by dry fraction */
+    var baseR = tuft.r + (DRY_COL[0] - tuft.r) * dry;
+    var baseG = tuft.g + (DRY_COL[1] - tuft.g) * dry;
+    var baseB = tuft.b + (DRY_COL[2] - tuft.b) * dry;
+    var leanAmt = leanM * 0.5;
+    var a0 = R() * Math.PI;
+    var q;
+    for (q = 0; q < 3; q++) {
+      var qa = a0 + q * (Math.PI / 3);
+      var fx = Math.cos(qa), fz = Math.sin(qa);
+      var lx = leanX * leanAmt, lz = leanZ * leanAmt;
+      var base = pushVert(arrays, tuft.x - fx * hw, tuft.y, tuft.z - fz * hw,
+                          0, 1, 0, shade(baseR, 0), shade(baseG, 0), shade(baseB, 0),
+                          0, stiff, 0.5);
+      pushVert(arrays, tuft.x + fx * hw, tuft.y, tuft.z + fz * hw,
+               0, 1, 0, shade(baseR, 0), shade(baseG, 0), shade(baseB, 0),
+               0, stiff, 0.5);
+      pushVert(arrays, tuft.x - fx * hw * 0.28 + lx, tuft.y + h, tuft.z - fz * hw * 0.28 + lz,
+               0, 1, 0, shade(baseR, 1), shade(baseG, 1), shade(baseB, 1),
+               1, stiff, 0.5);
+      pushVert(arrays, tuft.x + fx * hw * 0.28 + lx, tuft.y + h, tuft.z + fz * hw * 0.28 + lz,
+               0, 1, 0, shade(baseR, 1), shade(baseG, 1), shade(baseB, 1),
+               1, stiff, 0.5);
+      arrays.idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+    }
+  }
+
+  /* ---- GS-11 validate: no shard escapes -------------------------------- */
+  function validate(arrays) {
+    var pos = arrays.pos, idx = arrays.idx;
+    var violations = [];
+    var triCount = Math.floor(idx.length / 3);
+    var i;
+    for (i = 0; i < triCount; i++) {
+      var a = idx[i * 3] * 3, b = idx[i * 3 + 1] * 3, c = idx[i * 3 + 2] * 3;
+      var ax = pos[a], ay = pos[a + 1], az = pos[a + 2];
+      var bx = pos[b], by = pos[b + 1], bz = pos[b + 2];
+      var cx = pos[c], cy = pos[c + 1], cz = pos[c + 2];
+      var e1 = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay) + (bz - az) * (bz - az));
+      var e2 = Math.sqrt((cx - bx) * (cx - bx) + (cy - by) * (cy - by) + (cz - bz) * (cz - bz));
+      var e3 = Math.sqrt((ax - cx) * (ax - cx) + (ay - cy) * (ay - cy) + (az - cz) * (az - cz));
+      var maxEdge = Math.max(e1, e2, e3);
+      /* area via cross product */
+      var ux = bx - ax, uy = by - ay, uz = bz - az;
+      var vx = cx - ax, vy = cy - ay, vz = cz - az;
+      var wx = uy * vz - uz * vy, wy = uz * vx - ux * vz, wz = ux * vy - uy * vx;
+      var area = 0.5 * Math.sqrt(wx * wx + wy * wy + wz * wz);
+      if (maxEdge > FAIL_EDGE || area > FAIL_AREA) {
+        violations.push({ tri: i, maxEdge: maxEdge, area: area });
+      }
+    }
+    return { ok: violations.length === 0, violations: violations };
+  }
+
+  return {
+    emitTuft: emitTuft,
+    validate: validate,
+    /* exposed for tests / other workers */
+    MAX_H: MAX_H,
+    MAX_WBASE: MAX_WBASE,
+    MAX_LEANM: MAX_LEANM
+  };
+})();
+
+/* ===== grass-place.js (GRASS: patch/colony/tuft placement, GS-03/04/10) ===== */
+/* ============================================================================
+ * grass-place.js — patch / colony / tuft placement driven by environment
+ * Worker C, beta grass rebuild. Canonical spec: GRASS-SPEC.md
+ *   "The family" (GS-03): tufts -> colonies -> patches -> meadow. No confetti.
+ *   "The soil decides" (GS-04): slope, water, sun, rocks, traffic, biome.
+ *   GS-10 (far-tint half): patchInfo() feeds ground-tint baking (lead wires it
+ *     into groundColor for near + far ground).
+ *
+ * Concatenated inside the beta's single shared IIFE. ES5 only.
+ * Shared scope provides: mulberry32, strHash, clamp01, heightAt, slopeAt,
+ *   vnoise, sstep, Eco (Eco.moistureAt, Eco.grassDensity), CH (=100).
+ * NEVER touches moor-beta.html. No pushes from here.
+ *
+ * Determinism: planTufts() builds a fresh RNG from the chunk seed on every
+ * call and every colony gets its own stream via strHash(chunkSeed+'|col|gx,gz'),
+ * so cell order / early-outs can never desync the stream. Two calls with the
+ * same env return the identical list.
+ * ========================================================================== */
+var GrassPlace = (function () {
+  'use strict';
+
+  var TAU = Math.PI * 2;
+  var CELL = 7;              /* jittered-grid cell, metres */
+  var NCELL = 14;            /* 14x14 cells over the 100m chunk */
+  var COLONY_P = 0.62;       /* P(cell holds a colony) */
+  var COLONY_MIN_I = 0.18;   /* colony skipped below this patch intensity */
+  var VIGOR_MIN = 0.12;      /* soft edge: below this, tuft is skipped */
+
+  var _worldSeed = 1;        /* env-independent; set via setWorldSeed */
+  var _windDir = 0.7;        /* prevailing wind angle, radians */
+  var _seedOff1 = 0, _seedOff2 = 0;
+
+  var DEFAULT_GRASS = [[0.16, 0.44, 0.15]];
+
+  function reseed() {
+    _seedOff1 = strHash('grass|p1|' + _worldSeed) % 977;
+    _seedOff2 = strHash('grass|p2|' + _worldSeed) % 613;
+  }
+  reseed();
+
+  function setWorldSeed(s) { _worldSeed = s; reseed(); }
+  function setWindDir(a) { _windDir = a; }
+
+  /* ------------------------------------------------------------------ */
+  /* Patch field: two-scale value noise, soft boundaries. Everything     */
+  /* downstream multiplies by i smoothly — never a hard cutoff.         */
+  /* ------------------------------------------------------------------ */
+  function _patch(x, z) {
+    var n1 = vnoise(x * 0.022 + _seedOff1, z * 0.022);
+    var n2 = vnoise(x * 0.077 + _seedOff2, z * 0.077);
+    var i = sstep(0.38, 0.72, n1 * 0.65 + n2 * 0.35);
+    var dry = sstep(0.4, 0.8, vnoise(x * 0.031 + 99.1, z * 0.031 + 7.7));
+    return { i: i, dry: dry };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Vigor factors ("the soil decides"). Each is 0..1, multiplied.       */
+  /* ------------------------------------------------------------------ */
+  function _moistF(x, z) {
+    if (typeof Eco === 'undefined' || !Eco ||
+        typeof Eco.moistureAt !== 'function') return 0.7;
+    return clamp01((Eco.moistureAt(x, z) - 0.30) / 0.50);
+  }
+
+  function _shade(x, z, trees) {
+    if (!trees || !trees.length) return 0;
+    var s = 0, k, t, dx, dz, d2;
+    for (k = 0; k < trees.length; k++) {
+      t = trees[k];
+      dx = x - t.x; dz = z - t.z;
+      d2 = dx * dx + dz * dz;
+      if (d2 < 0.0001) d2 = 0.0001;
+      s += (t.r * t.r) / d2;
+    }
+    var sh = 1 - Math.exp(-s);
+    return sh > 1 ? 1 : sh;
+  }
+
+  /* Grass wraps the rock footprint: dead inside 0.8r, recovering ring. */
+  function _rockF(x, z, rocks) {
+    if (!rocks || !rocks.length) return 1;
+    var best = 1, k, rk, dx, dz, d, r08, r16, f;
+    for (k = 0; k < rocks.length; k++) {
+      rk = rocks[k];
+      dx = x - rk.x; dz = z - rk.z;
+      d = Math.sqrt(dx * dx + dz * dz);
+      r08 = rk.r * 0.8; r16 = rk.r * 1.6;
+      if (d < r08) return 0;
+      if (d < r16) {
+        f = sstep(r08, r16, d) * 0.9 + 0.1;
+        if (f < best) best = f;
+      }
+    }
+    return best;
+  }
+
+  function _ptX(p) { return (p && typeof p.x === 'number') ? p.x : p[0]; }
+  function _ptZ(p) { return (p && typeof p.z === 'number') ? p.z : p[1]; }
+
+  function _segDist(px, pz, ax, az, bx, bz) {
+    var dx = bx - ax, dz = bz - az;
+    var L2 = dx * dx + dz * dz;
+    var t = L2 > 0 ? ((px - ax) * dx + (pz - az) * dz) / L2 : 0;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    var qx = ax + dx * t - px, qz = az + dz * t - pz;
+    return Math.sqrt(qx * qx + qz * qz);
+  }
+
+  /* Foot traffic: trampled near paths (0.45), untouched elsewhere. */
+  function _trafficF(x, z, paths) {
+    if (!paths || !paths.length) return 1;
+    var best = 1e9, p, i, d;
+    for (p = 0; p < paths.length; p++) {
+      var line = paths[p];
+      if (!line || line.length < 2) continue;
+      for (i = 0; i < line.length - 1; i++) {
+        d = _segDist(x, z,
+          _ptX(line[i]), _ptZ(line[i]),
+          _ptX(line[i + 1]), _ptZ(line[i + 1]));
+        if (d < best) best = d;
+      }
+    }
+    return best < 2.5 ? 0.45 : 1;
+  }
+
+  function _mixc(c, straw, m) { return c + (straw - c) * m; }
+
+  /* ------------------------------------------------------------------ */
+  /* Tuft struct — EXACT contract consumed by Worker A.                  */
+  /* ------------------------------------------------------------------ */
+  function _makeTuft(x, y, z, vigor, p, crng, pal) {
+    var du = crng();
+    /* occasional dry/pale tuft (spec: "occasional dry/pale/damaged blade") */
+    var dry = du < 0.10 ? 0.25 + crng() * 0.3 : crng() * 0.06;
+    var hMax = (0.45 + vigor * 0.85) * (1.2 - 0.4 * p.dry);
+    if (hMax > 1.4) hMax = 1.4; else if (hMax < 0.3) hMax = 0.3;
+    var hMin = hMax * 0.45;
+    if (hMin < 0.25) hMin = 0.25;
+    /* taller -> less stiff, so gusts pull tall blades over */
+    var stiff = (0.35 + crng() * 0.5) * (1.1 - hMax * 0.25);
+    if (stiff > 1) stiff = 1; else if (stiff < 0.05) stiff = 0.05;
+    var base = pal[(crng() * pal.length) | 0];
+    /* dry patches shift toward straw */
+    var strawMix = clamp01(p.dry * 0.55 + dry * 0.9);
+    var j = 0.88 + crng() * 0.24; /* ±12% value jitter */
+    var r = clamp01(_mixc(base[0], 0.58, strawMix) * j);
+    var g = clamp01(_mixc(base[1], 0.47, strawMix) * j);
+    var b = clamp01(_mixc(base[2], 0.22, strawMix) * j);
+    var nBlades = 5 + Math.round(vigor * 15);
+    if (nBlades > 20) nBlades = 20;
+    return {
+      x: x, y: y, z: z,
+      nBlades: nBlades,
+      hMin: hMin, hMax: hMax,
+      wBase: 0.025 + crng() * 0.02,
+      crook: crng(),
+      stiff: stiff,
+      leanA: _windDir + (crng() - 0.5) * 0.5,
+      leanM: 0.05 + crng() * 0.12,
+      r: r, g: g, b: b,
+      dry: dry,
+      seed: (crng() * 4294967296) >>> 0
+    };
+  }
+
+  /* Hero tufts from Eco.planChunk: converted, not re-scattered. */
+  function _heroTuft(pl, pal) {
+    var prng = mulberry32((pl.seed >>> 0) || 1);
+    var wet = clamp01(typeof pl.wet === 'number' ? pl.wet : 0.7);
+    var base = pal[((pl.seed >>> 0) || 0) % pal.length];
+    var y = (typeof pl.y === 'number') ? pl.y : heightAt(pl.x, pl.z);
+    var hMax = 0.45 + clamp01(pl.scale || 1) * 0.7;
+    if (hMax > 1.4) hMax = 1.4;
+    var hMin = hMax * 0.45;
+    if (hMin < 0.25) hMin = 0.25;
+    var j = 0.9 + prng() * 0.2;
+    return {
+      x: pl.x, y: y, z: pl.z,
+      nBlades: 8 + Math.round(wet * 10),
+      hMin: hMin, hMax: hMax,
+      wBase: 0.03,
+      crook: prng(),
+      stiff: 0.55,
+      leanA: _windDir,
+      leanM: 0.08,
+      r: clamp01(base[0] * j), g: clamp01(base[1] * j), b: clamp01(base[2] * j),
+      dry: clamp01(1 - wet) * 0.4,
+      seed: (pl.seed >>> 0)
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* planTufts(env) — colonies on a jittered grid, tufts by vigor.       */
+  /* ------------------------------------------------------------------ */
+  function planTufts(env) {
+    /* Own stream, created fresh every call; colonies use per-cell streams
+       so consumption order can never desync the plan. */
+    var rng = mulberry32(strHash(env.chunkSeed + '|grass'));
+    void rng;
+    var out = [];
+    var ccx = env.ccx, ccz = env.ccz;
+    var pal = (env.pal && env.pal.grass && env.pal.grass.length)
+      ? env.pal.grass : DEFAULT_GRASS;
+    var x0 = ccx - CH / 2, z0 = ccz - CH / 2;
+    var gx, gz, crng, cx, cz, pc, radius, budget, ti;
+    var a, rr, x, z, y, sl, p, vigor;
+
+    for (gx = 0; gx < NCELL; gx++) {
+      for (gz = 0; gz < NCELL; gz++) {
+        crng = mulberry32(strHash(env.chunkSeed + '|col|' + gx + ',' + gz));
+        if (crng() >= COLONY_P) continue;              /* no colony here */
+        cx = x0 + (gx + 0.5) * CELL + (crng() - 0.5) * 5;
+        cz = z0 + (gz + 0.5) * CELL + (crng() - 0.5) * 5;
+        pc = _patch(cx, cz);
+        if (pc.i < COLONY_MIN_I) continue;             /* patch too thin */
+        radius = 1.5 + crng() * 2.5;
+        budget = 3 + ((crng() * 9) | 0);               /* 3..11 tufts */
+
+        for (ti = 0; ti < budget; ti++) {
+          a = crng() * TAU;
+          rr = radius * Math.sqrt(crng());
+          x = cx + Math.cos(a) * rr;
+          z = cz + Math.sin(a) * rr;
+          y = heightAt(x, z);
+          if (y < 1.15) continue;                     /* water / lowland */
+          sl = slopeAt(x, z);
+          if (sl > 0.75) continue;                    /* cliff / scree */
+          if (env.excl && env.excl(x, z)) continue;   /* hard exclusions */
+
+          p = _patch(x, z);
+          vigor = p.i *
+            _moistF(x, z) *
+            (1 - sstep(0.30, 0.72, sl)) *
+            (1 - 0.55 * _shade(x, z, env.trees)) *
+            _rockF(x, z, env.rocks) *
+            _trafficF(x, z, env.paths) *
+            ((typeof env.ecoMask === 'function') ? env.ecoMask(x, z) : 1);
+          if (vigor < VIGOR_MIN) continue;            /* soft edge */
+
+          out.push(_makeTuft(x, y, z, vigor, p, crng, pal));
+        }
+      }
+    }
+
+    /* Hero tufts appended verbatim (converted), never re-scattered. */
+    var plants = env.ecoPlants || [], pi;
+    for (pi = 0; pi < plants.length; pi++) out.push(_heroTuft(plants[pi], pal));
+
+    return out;
+  }
+
+  return {
+    patchAt: _patch,      /* {i, dry} — colony gating + tuft vigor */
+    patchInfo: _patch,    /* {i, dry} — ground-tint baking (GS-10 far tint);
+                             the lead mixes bare soil -> grass tint by i and
+                             shifts hue by dry when baking groundColor */
+    planTufts: planTufts,
+    setWorldSeed: setWorldSeed,
+    setWindDir: setWindDir
+  };
+})();
+
+/* node test hook — inert inside the beta IIFE (module is undefined there) */
+if (typeof module !== 'undefined' && module.exports) module.exports = GrassPlace;
+
+/* ===== grass-wind.js (GRASS: gust fronts + memory + VSH, GS-05/06/07) ===== */
+/* grass-wind.js — Worker B: traveling gust-front wind field + interaction
+ * memory texture + grass vertex shader (gates GS-05, GS-06, GS-07).
+ *
+ * Concatenated into the beta's single shared IIFE. ES5 ONLY (no ES2015+
+ * declarations, arrow functions, template literals, classes, or ES6 builtins). Shared scope
+ * provides: mulberry32, strHash, clamp01, Weather (window.Weather), playerXZ()
+ * (app2.js — guarded with typeof), camEye() (app2.js — guarded).
+ *
+ * Node safety: top-level code allocates typed arrays only. Every touch of
+ * window/document/gl/camEye/playerXZ/planetXYZ lives inside functions behind
+ * typeof guards, so requiring this file in node never throws.
+ *
+ * Coordinate spaces (read this before touching the shader):
+ *   - Gust math, the memory field, player trail, blast/scorch all live in
+ *     WORLD xz (the (mx,mz) gameplay plane, metres from spawn).
+ *   - The grass vertex attribute `p` is PLANET-DRAPED 3D (planetXYZ output).
+ *     Near the player the local flat approximation p.xz ~= world xz holds
+ *     (planetXYZ is x->x, z->z scaled by ~1.0; R=12000m so distortion within
+ *     a gust's 900m travel is <1%). uGustA and uFieldOrigin are therefore
+ *     passed in world xz and compared against p.xz directly in the shader.
+ *     vWorld carries the true draped position for Worker D's lighting.
+ *   - uCamP comes from camEye() (planet-draped 3D, same space as p), so
+ *     vD = distance(uCamP, p) is exact regardless of the flat approx.
+ *
+ * THE LAW (GRASS-SPEC "The wind"): no global sin(time), no per-blade random
+ * wiggle phases. Every time-dependent term below is either a gust-front
+ * analytic (phase from front travel) or an advected traveling wave of the
+ * form sin(dot(pos,vec)*k - t*w). Wind is a continuous world-space field;
+ * grass reveals it.
+ *
+ * Gust asymmetry note (GS-06): the front travels downwind (+d). For a fixed
+ * point the front has not yet reached, along = dot(p-front,d) > 0. The extra
+ * exp(-along/(width*2.5)) suppression therefore bites on the AHEAD side:
+ * the meadow ahead stays calm until the front is nearly on top of it (sharp
+ * attack), while the trailing side keeps the full gaussian wake (slow
+ * recovery, further slowed by the memory texture's slow channel). The brief's
+ * parenthetical "(behind the front)" on along>0 reads swapped against the
+ * spawn geometry (gusts spawn upwind at player - d*350); the FORMULA is
+ * implemented literally and produces the spec'd behaviour.
+ *
+ * Memory texture (GS-06/GS-07): 48x48 RGBA8 over 96m x 96m centred on the
+ * player (origin snapped to a 2m grid; the CPU buffer re-centres with a
+ * content-preserving shift so memory sticks to the world, not the screen).
+ * R=fast bend x, G=fast bend z, B=slow bend x, A=slow bend z, packed
+ * v=clamp(b,-1,1)*0.5+0.5 (metres of bend). Fast decays with tau 1.1s,
+ * slow with tau 3.4s: heavy blades recover slower. A second 48x48 LUMINANCE
+ * texture holds scorch 0..1 (fire CHANGES state: no meaningful decay).
+ * Player-trail impulse rates below are per-second, integrated with dt.
+ *
+ * Devices without vertex texture fetch (MAX_VERTEX_TEXTURE_IMAGE_UNITS == 0):
+ * uHasField is 0, the shader skips both texture reads (uniform branch), and
+ * all memory/scorch features are silently off. Wind still works — it needs
+ * no textures.
+ */
+var GrassWind = (function () {
+'use strict';
+
+/* ================= configuration ================= */
+var MAX_GUSTS = 6;
+var MEM_N = 48;                    /* memory texture cells per side */
+var MEM_SIZE = 96;                 /* metres covered per side */
+var MEM_CELL = MEM_SIZE / MEM_N;   /* 2 m per cell */
+var MEM_HALF = MEM_SIZE / 2;
+var SNAP = 2;                      /* field-origin snap, metres */
+var TRAIL_R = 1.3;                 /* player-trail stamp radius, m */
+var GUST_TRAVEL = 900;             /* gust lifetime travel distance, m */
+var SCORCH_TAU = 300;              /* scorch decay time-constant, s (fire persists) */
+
+/* ================= guarded shared-scope helpers ================= */
+var _clamp01 = (typeof clamp01 === 'function') ? clamp01
+  : function (v) { return v < 0 ? 0 : (v > 1 ? 1 : v); };
+function _clampB(v) { return v < -1 ? -1 : (v > 1 ? 1 : v); }
+var _rand = (typeof mulberry32 === 'function') ? mulberry32(0xC10C5EED)
+  : (function () {
+      var s = 0xC10C5EED >>> 0;
+      return function () {
+        s = (Math.imul(s, 1664525) + 1013904223) | 0;
+        return (s >>> 0) / 4294967296;
+      };
+    })();
+
+/* Weather.state.wind = {dir, speed, gust}; dir is radians, downwind vector
+ * is (cos(dir), sin(dir)) in world xz. getTune().gustMul scales gust power. */
+function _weather() {
+  var dir = 0.7, speed = 2.5, gust = 0.35, gustMul = 1;
+  try {
+    var W = (typeof window !== 'undefined') ? window.Weather : null;
+    if (W) {
+      if (W.state && W.state.wind) {
+        var w = W.state.wind;
+        if (isFinite(w.dir)) dir = w.dir;
+        if (isFinite(w.speed)) speed = Math.max(0, w.speed);
+        if (isFinite(w.gust)) gust = w.gust;
+      }
+      if (typeof W.getTune === 'function') {
+        var t = W.getTune();
+        if (t && isFinite(t.gustMul) && t.gustMul > 0) gustMul = t.gustMul;
+      }
+    }
+  } catch (e) {}
+  return { dir: dir, speed: speed, gust: gust, gustMul: gustMul };
+}
+
+function _player() {
+  try {
+    if (typeof playerXZ === 'function') {
+      var q = playerXZ();
+      if (q && isFinite(q.x) && isFinite(q.z)) return { x: q.x, z: q.z };
+    }
+  } catch (e) {}
+  return null;
+}
+
+/* camEye() returns planet-draped 3D [x,y,z] — the same space as attribute p. */
+function _camEye() {
+  try {
+    if (typeof camEye === 'function') {
+      var e = camEye();
+      if (e && isFinite(e[0]) && isFinite(e[1]) && isFinite(e[2])) return e;
+    }
+  } catch (e2) {}
+  return null;
+}
+
+/* ================= gust field (GS-05) ================= */
+var _gusts = [];          /* live gust structs */
+var _nextSpawn = 0;
+var _spawnInit = false;
+var _windK = 0;           /* master wind gain -> uWindK */
+var _windMul = 1;         /* external multiplier (orbit-distance damping) */
+function setWindMul(m) { _windMul = (typeof m === 'number' && isFinite(m) && m >= 0) ? m : 1; }
+var _rainK = 0;           /* -> uRainK */
+var _gA = new Float32Array(MAX_GUSTS * 4);  /* (ox,oz,dx,dz) */
+var _gB = new Float32Array(MAX_GUSTS * 4);  /* (speed,width,strength,born) */
+
+function _gustDur(g) { return GUST_TRAVEL / Math.max(g.speed, 0.001); }
+
+function _spawnGust(t, px, pz, w) {
+  var dir = w.dir + (_rand() * 0.8 - 0.4);   /* downwind ± 0.4 rad */
+  var dx = Math.cos(dir), dz = Math.sin(dir);
+  var lat = (_rand() * 2 - 1) * 150;         /* lateral jitter, m */
+  var ox = px - dx * 350 - dz * lat;         /* upwind edge */
+  var oz = pz - dz * 350 + dx * lat;
+  var speed = 8 + _rand() * 14;               /* 8–22 m/s */
+  var width = 30 + _rand() * 60;             /* 30–90 m */
+  /* calm weather = rare weak gusts: strength scales with wind speed and the
+   * weather tuning gust multiplier. */
+  var strength = (0.4 + _rand() * 0.9) * w.gustMul * (0.4 + w.speed / 12);
+  _gusts.push({ ox: ox, oz: oz, dx: dx, dz: dz,
+                speed: speed, width: width, strength: strength, born: t });
+}
+
+/* CPU mirror of the gust field (no ambient, no turbulence): the raw
+ * accumulated gust strength at world (x,z) at time t. Used by tests and by
+ * any CPU-side system that needs to know what the wind is doing. */
+function debugInfluence(x, z, t) {
+  var acc = 0, i, g, age, dur, fx, fz, rx, rz, along, cross, sa, sc, gv;
+  for (i = 0; i < _gusts.length; i++) {
+    g = _gusts[i];
+    age = t - g.born;
+    dur = _gustDur(g);
+    if (age < 0 || age > dur || g.strength <= 0) continue;
+    fx = g.ox + g.dx * g.speed * age;
+    fz = g.oz + g.dz * g.speed * age;
+    rx = x - fx; rz = z - fz;
+    along = rx * g.dx + rz * g.dz;
+    cross = rx * -g.dz + rz * g.dx;
+    sa = g.width * 1.1; sc = g.width * 0.45;
+    gv = g.strength * Math.exp(-along * along / (2 * sa * sa)) *
+                      Math.exp(-cross * cross / (2 * sc * sc));
+    if (along > 0) gv *= Math.exp(-along / (g.width * 2.5));  /* sharp attack */
+    acc += gv;
+  }
+  return _clamp01(acc);
+}
+
+/* ================= interaction memory (GS-06, GS-07) ================= */
+var _NC = MEM_N * MEM_N;
+var _fX = new Float32Array(_NC), _fZ = new Float32Array(_NC);  /* fast bend */
+var _sX = new Float32Array(_NC), _sZ = new Float32Array(_NC);  /* slow bend */
+var _sc = new Float32Array(_NC);                              /* scorch 0..1 */
+var _tmp = new Float32Array(_NC);                             /* shift scratch */
+var _memPx = new Uint8Array(_NC * 4);
+var _scPx = new Uint8Array(_NC);
+var _fOX = 0, _fOZ = 0, _fInit = false;
+var _memDirty = true, _scDirty = true;
+var _ppx = 0, _ppz = 0, _havePrev = false;
+
+function _cellOf(v, o) { return Math.floor((v - (o - MEM_HALF)) / MEM_CELL); }
+function _cellWX(c, o) { return o - MEM_HALF + (c + 0.5) * MEM_CELL; }
+
+function _initField(wx, wz) {
+  _fOX = Math.round(wx / SNAP) * SNAP;
+  _fOZ = Math.round(wz / SNAP) * SNAP;
+  _fInit = true;
+  _memDirty = true; _scDirty = true;
+}
+
+/* Re-centre the field keeping world-anchored content: when the origin moves
+ * by (dcx,dcz) cells, the cell now covering a world point is (x-dcx,y-dcz). */
+function _shiftArr(a, dcx, dcz) {
+  var x, y, nx, ny, i;
+  for (i = 0; i < _NC; i++) _tmp[i] = 0;
+  for (y = 0; y < MEM_N; y++) {
+    for (x = 0; x < MEM_N; x++) {
+      nx = x - dcx; ny = y - dcz;
+      if (nx >= 0 && nx < MEM_N && ny >= 0 && ny < MEM_N)
+        _tmp[ny * MEM_N + nx] = a[y * MEM_N + x];
+    }
+  }
+  a.set(_tmp);
+}
+
+function _ptSegDist(px, pz, x0, z0, x1, z1) {
+  var dx = x1 - x0, dz = z1 - z0;
+  var L2 = dx * dx + dz * dz;
+  var u = (L2 > 1e-9) ? ((px - x0) * dx + (pz - z0) * dz) / L2 : 0;
+  u = u < 0 ? 0 : (u > 1 ? 1 : u);
+  var ex = px - (x0 + dx * u), ez = pz - (z0 + dz * u);
+  return Math.sqrt(ex * ex + ez * ez);
+}
+
+/* Stamp a bend impulse along a segment. slowAdd/fastAdd are TOTAL impulse
+ * (already scaled by dt and sprint boost by the caller). */
+function _stampTrail(x0, z0, x1, z1, ix, iz, slowAdd, fastAdd) {
+  if (!_fInit) return;
+  var cx0 = Math.max(0, _cellOf(Math.min(x0, x1) - TRAIL_R, _fOX));
+  var cx1 = Math.min(MEM_N - 1, _cellOf(Math.max(x0, x1) + TRAIL_R, _fOX));
+  var cy0 = Math.max(0, _cellOf(Math.min(z0, z1) - TRAIL_R, _fOZ));
+  var cy1 = Math.min(MEM_N - 1, _cellOf(Math.max(z0, z1) + TRAIL_R, _fOZ));
+  var x, y, idx, wx, wz, d, fall;
+  for (y = cy0; y <= cy1; y++) {
+    for (x = cx0; x <= cx1; x++) {
+      wx = _cellWX(x, _fOX); wz = _cellWX(y, _fOZ);
+      d = _ptSegDist(wx, wz, x0, z0, x1, z1);
+      if (d <= TRAIL_R) {
+        fall = 1 - (d / TRAIL_R) * (d / TRAIL_R);  /* beside = less force */
+        idx = y * MEM_N + x;
+        _sX[idx] = _clampB(_sX[idx] + ix * slowAdd * fall);
+        _sZ[idx] = _clampB(_sZ[idx] + iz * slowAdd * fall);
+        _fX[idx] = _clampB(_fX[idx] + ix * fastAdd * fall);
+        _fZ[idx] = _clampB(_fZ[idx] + iz * fastAdd * fall);
+      }
+    }
+  }
+}
+
+function _memFrame(dt, pl) {
+  var i, m, maxMag = 0;
+  if (pl) {
+    var ox = Math.round(pl.x / SNAP) * SNAP;
+    var oz = Math.round(pl.z / SNAP) * SNAP;
+    if (!_fInit) {
+      _initField(pl.x, pl.z);
+    } else if (ox !== _fOX || oz !== _fOZ) {
+      var dcx = Math.round((ox - _fOX) / SNAP);
+      var dcz = Math.round((oz - _fOZ) / SNAP);
+      _shiftArr(_fX, dcx, dcz); _shiftArr(_fZ, dcx, dcz);
+      _shiftArr(_sX, dcx, dcz); _shiftArr(_sZ, dcx, dcz);
+      _shiftArr(_sc, dcx, dcz);
+      _fOX = ox; _fOZ = oz;
+      _memDirty = true; _scDirty = true;
+    }
+  }
+  /* Decay: fast channel recovers in ~1.1s, slow (heavy blades) in ~3.4s.
+   * Scorch barely decays — fire changes vegetation state. */
+  var kf = Math.exp(-dt / 1.1), ks = Math.exp(-dt / 3.4), kc = Math.exp(-dt / SCORCH_TAU);
+  for (i = 0; i < _NC; i++) {
+    _fX[i] *= kf; _fZ[i] *= kf;
+    _sX[i] *= ks; _sZ[i] *= ks;
+    _sc[i] *= kc;
+    m = Math.abs(_fX[i]) + Math.abs(_fZ[i]) + Math.abs(_sX[i]) + Math.abs(_sZ[i]);
+    if (m > maxMag) maxMag = m;
+  }
+  /* Player trail: grass is pushed along -velocity (away from the motion);
+   * blades ahead of the player bend before contact (segment extended along
+   * velocity); sprinting leaves a violent wake, walking a subtle one. */
+  if (pl && _havePrev && _fInit) {
+    var vx = pl.x - _ppx, vz = pl.z - _ppz;
+    var dist = Math.sqrt(vx * vx + vz * vz);
+    if (dist > 0.001) {
+      var spd = dist / dt;
+      var boost = (spd > 6) ? 2.2 : 1.0;
+      var dxn = vx / dist, dzn = vz / dist;
+      var lead = Math.min(spd * 0.4, 1.5);
+      _stampTrail(_ppx, _ppz, pl.x + dxn * lead, pl.z + dzn * lead,
+                  -dxn, -dzn,
+                  spd * 0.06 * boost * dt,   /* slow channel rate, per second */
+                  spd * 0.03 * boost * dt);  /* fast channel rate, per second */
+      _memDirty = true;
+    }
+  }
+  if (pl) { _ppx = pl.x; _ppz = pl.z; _havePrev = true; }
+  if (maxMag > 0.002) _memDirty = true;  /* keep uploading while decay is visible */
+}
+
+/* Radial pressure wave into the SLOW channel (explosions). */
+function blast(x, z, r, power) {
+  if (!(r > 0) || !isFinite(power) || power === 0) return;
+  if (!_fInit) _initField(x, z);
+  var cx0 = Math.max(0, _cellOf(x - r, _fOX)), cx1 = Math.min(MEM_N - 1, _cellOf(x + r, _fOX));
+  var cy0 = Math.max(0, _cellOf(z - r, _fOZ)), cy1 = Math.min(MEM_N - 1, _cellOf(z + r, _fOZ));
+  var x2, y, idx, wx, wz, dx, dz, d, fall;
+  for (y = cy0; y <= cy1; y++) {
+    for (x2 = cx0; x2 <= cx1; x2++) {
+      wx = _cellWX(x2, _fOX); wz = _cellWX(y, _fOZ);
+      dx = wx - x; dz = wz - z;
+      d = Math.sqrt(dx * dx + dz * dz);
+      if (d <= r && d > 1e-6) {
+        fall = 1 - (d / r) * (d / r);
+        idx = y * MEM_N + x2;
+        _sX[idx] = _clampB(_sX[idx] + (dx / d) * power * fall);
+        _sZ[idx] = _clampB(_sZ[idx] + (dz / d) * power * fall);
+      }
+    }
+  }
+  _memDirty = true;
+}
+
+/* Fire changes vegetation state: scorch cells to 1.0 (no meaningful decay). */
+function scorch(x, z, r) {
+  if (!(r > 0)) return;
+  if (!_fInit) _initField(x, z);
+  var cx0 = Math.max(0, _cellOf(x - r, _fOX)), cx1 = Math.min(MEM_N - 1, _cellOf(x + r, _fOX));
+  var cy0 = Math.max(0, _cellOf(z - r, _fOZ)), cy1 = Math.min(MEM_N - 1, _cellOf(z + r, _fOZ));
+  var x2, y, idx, wx, wz, dx, dz;
+  for (y = cy0; y <= cy1; y++) {
+    for (x2 = cx0; x2 <= cx1; x2++) {
+      wx = _cellWX(x2, _fOX); wz = _cellWX(y, _fOZ);
+      dx = wx - x; dz = wz - z;
+      if (dx * dx + dz * dz <= r * r) _sc[y * MEM_N + x2] = 1.0;
+    }
+  }
+  _scDirty = true;
+}
+
+function setRain(k) { _rainK = _clamp01(+k || 0); }
+
+/* ================= per-frame driver ================= */
+var _frameT = -1e30;
+function _frame(t, dt) {
+  if (t === _frameT) return;   /* one sim step per frame even with N grass draws */
+  _frameT = t;
+  dt = (isFinite(dt) && dt > 0) ? Math.min(dt, 0.25) : 0.016;
+  var w = _weather();
+  var pl = _player();
+
+  _windK = Math.min(1.5, Math.max(0, w.gust) * w.gustMul) * _windMul;
+
+  if (pl) {
+    if (!_spawnInit) { _nextSpawn = t + 1.0; _spawnInit = true; }
+    if (t >= _nextSpawn) {
+      if (_gusts.length < MAX_GUSTS) _spawnGust(t, pl.x, pl.z, w);
+      /* 2.5–7s base interval, compressed by wind speed: calm = rare gusts. */
+      _nextSpawn = t + (2.5 + _rand() * 4.5) * (8 / (2 + w.speed));
+    }
+  }
+  var i, g, age;
+  for (i = _gusts.length - 1; i >= 0; i--) {
+    g = _gusts[i]; age = t - g.born;
+    if (age > _gustDur(g) || age < -5) _gusts.splice(i, 1);
+  }
+  for (i = 0; i < MAX_GUSTS; i++) {
+    if (i < _gusts.length) {
+      g = _gusts[i];
+      _gA[i * 4] = g.ox;     _gA[i * 4 + 1] = g.oz;
+      _gA[i * 4 + 2] = g.dx; _gA[i * 4 + 3] = g.dz;
+      _gB[i * 4] = g.speed;     _gB[i * 4 + 1] = g.width;
+      _gB[i * 4 + 2] = g.strength; _gB[i * 4 + 3] = g.born;
+    } else {
+      _gA[i * 4] = 0; _gA[i * 4 + 1] = 0; _gA[i * 4 + 2] = 1; _gA[i * 4 + 3] = 0;
+      _gB[i * 4] = 1; _gB[i * 4 + 1] = 60; _gB[i * 4 + 2] = 0; _gB[i * 4 + 3] = 0;
+    }
+  }
+  _memFrame(dt, pl);
+}
+
+/* ================= GL resources ================= */
+var _gl = null, _hasField = 0, _memTex = null, _scTex = null;
+
+function _ensureGL(gl) {
+  if (gl === _gl && (_memTex || !_hasField)) return;
+  _gl = gl;
+  _hasField = 0; _memTex = null; _scTex = null;
+  if (!gl) return;
+  var n = 0;
+  try { n = gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS); } catch (e) {}
+  if (!(n > 0)) return;   /* no vertex texture fetch: memory features off */
+  _hasField = 1;
+  _memTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, _memTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, MEM_N, MEM_N, 0,
+                gl.RGBA, gl.UNSIGNED_BYTE, _memPx);
+  _scTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, _scTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, MEM_N, MEM_N, 0,
+                gl.LUMINANCE, gl.UNSIGNED_BYTE, _scPx);
+  _memDirty = true; _scDirty = true;
+}
+
+function _packByte(v) { return Math.round(_clamp01(v * 0.5 + 0.5) * 255); }
+function _packMem() {
+  for (var i = 0, j = 0; i < _NC; i++, j += 4) {
+    _memPx[j]     = _packByte(_fX[i]);
+    _memPx[j + 1] = _packByte(_fZ[i]);
+    _memPx[j + 2] = _packByte(_sX[i]);
+    _memPx[j + 3] = _packByte(_sZ[i]);
+  }
+}
+
+/* ================= vertex shader ================= */
+var VSH = [
+'precision highp float;',
+'/* GrassWind vertex shader (Worker B). p is planet-draped 3D; near the',
+'   player the local flat approximation p.xz ~= world xz holds, so the',
+'   gust field (uGustA, world xz) and memory field (uFieldOrigin, world xz)',
+'   are sampled directly against p.xz. */',
+'attribute vec3 p;',      /* draped position */
+'attribute vec3 n;',      /* normal (same space as p) */
+'attribute vec3 c;',      /* base color */
+'attribute float bend;',  /* 0 root -> 1 tip */
+'attribute vec2 dat;',    /* x: stiff, y: hNorm */
+'uniform mat4 mvp;',
+'uniform float uTime;',
+'uniform float uWindK;',
+'uniform vec4 uGustA[6];',  /* per gust: ox,oz,dx,dz */
+'uniform vec4 uGustB[6];',  /* per gust: speed,width,strength,born */
+'uniform vec2 uFieldOrigin;',
+'uniform float uFieldSize;',
+'uniform sampler2D uMemTex;',
+'uniform sampler2D uScorchTex;',
+'uniform float uHasField;',
+'uniform float uRainK;',
+'uniform vec3 uCamP;',
+'varying vec3 vC;',
+'varying vec3 vN;',
+'varying float vD;',
+'varying float vBend;',
+'varying vec3 vWorld;',
+'varying float vScorch;',
+'void main(){',
+'  float stiff = dat.x;',
+'  float hNorm = dat.y;',
+'  vec2 pxz = p.xz;',
+'  /* ---- traveling gust fronts: origin, direction, speed, width ---- */',
+'  vec2 dispV = vec2(0.0);',
+'  float gAccum = 0.0;',
+'  vec2 wDirSum = vec2(0.0);',
+'  float wSpdSum = 0.0;',
+'  float wW = 0.0;',
+'  vec2 strongDir = vec2(1.0, 0.0);',
+'  float strongG = 0.0;',
+'  for(int i=0;i<6;i++){',
+'    vec4 A = uGustA[i];',
+'    vec4 B = uGustB[i];',
+'    float age = uTime - B.w;',
+'    float dur = 900.0 / max(B.x, 0.001);',
+'    if(B.z > 0.0001 && age >= 0.0 && age <= dur){',
+'      vec2 gdir = A.zw;',
+'      vec2 front = A.xy + gdir * (B.x * age);',
+'      vec2 rel = pxz - front;',
+'      float along = dot(rel, gdir);',
+'      vec2 gperp = vec2(-gdir.y, gdir.x);',
+'      float cross = dot(rel, gperp);',
+'      float sa = B.y * 1.1;',
+'      float sc = B.y * 0.45;',
+'      float g = B.z * exp(-along*along/(2.0*sa*sa)) * exp(-cross*cross/(2.0*sc*sc));',
+'      if(along > 0.0){ g *= exp(-along/(B.y*2.5)); }',  /* sharp attack ahead */
+'      dispV += gdir * g;',
+'      gAccum += g;',
+'      wDirSum += gdir * g;',
+'      wSpdSum += B.x * g;',
+'      wW += g;',
+'      if(g > strongG){ strongG = g; strongDir = gdir; }',
+'    }',
+'  }',
+'  /* ---- turbulence lives INSIDE gusts only (scaled by gAccum) ---- */',
+'  vec2 perpAvg = normalize(vec2(-strongDir.y, strongDir.x) + vec2(0.001, 0.0));',
+'  float tb = sin(p.x*1.31 - uTime*2.3 + gAccum*4.0) * sin(p.z*1.73 + uTime*1.7);',
+'  dispV += perpAvg * (tb * gAccum * 0.35);',
+'  /* ---- tip flutter: bases stay planted, tips get thrown ---- */',
+'  vec2 dispDir = dispV / max(length(dispV), 0.0001);',
+'  float bend3 = bend*bend*bend;',
+'  dispV += dispDir * bend3 * gAccum * 0.18 * sin(p.x*6.1 - uTime*9.2 + p.z*5.3);',
+'  /* ---- ambient breath: a slow wave traveling downwind (never global sin(t)) ---- */',
+'  vec2 ambDir = (wW > 0.0001) ? (wDirSum / wW) : vec2(1.0, 0.0);',
+'  float ambSpd = (wW > 0.0001) ? (wSpdSum / wW) : 2.0;',
+'  float breath = 0.035 * sin((p.x*ambDir.x + p.z*ambDir.y)*0.045 - uTime*(0.6 + ambSpd*0.08));',
+'  dispV += ambDir * breath;',
+'  /* ---- interaction memory: world-anchored bend state ---- */',
+'  vec2 memUV = (pxz - uFieldOrigin) / uFieldSize + 0.5;',
+'  vec2 memBend = vec2(0.0);',
+'  float scorch = 0.0;',
+'  if(uHasField > 0.5){',
+'    if(memUV.x >= 0.0 && memUV.x <= 1.0 && memUV.y >= 0.0 && memUV.y <= 1.0){',
+'      vec4 mem = texture2D(uMemTex, memUV);',
+'      memBend = (mem.rg - 0.5)*2.0 + (mem.ba - 0.5)*2.0;',  /* fast + slow */
+'      scorch = texture2D(uScorchTex, memUV).r;',
+'    }',
+'  }',
+'  /* ---- response: tall supple blades move, short stiff ones barely ---- */',
+'  float resp = (1.3 - stiff*0.75) * (0.55 + 0.45*hNorm) * uWindK;',
+'  resp *= (1.0 - scorch*0.85);',   /* scorched grass barely responds */
+'  resp *= (1.0 - uRainK*0.45);',   /* rain weighs it down */
+'  float bend2 = bend*bend;',
+'  vec3 windOff = vec3(dispV.x, -abs(dispV.x + dispV.y)*0.04, dispV.y) * bend2 * resp;',
+'  vec3 memOff = vec3(memBend.x, -abs(memBend.x + memBend.y)*0.03, memBend.y)',
+'             * bend2 * (1.0 - scorch*0.85);',
+'  vec3 dp = p + windOff + memOff;',
+'  dp.y -= uRainK * 0.05 * bend2;',
+'  vC = c;',
+'  vN = n;',
+'  vD = distance(uCamP, p);',
+'  vBend = bend;',
+'  vWorld = p;',
+'  vScorch = scorch;',
+'  gl_Position = mvp * vec4(dp, 1.0);',
+'}'
+].join('\n');
+
+/* ================= public contract ================= */
+function locate(gl, prog) {
+  function ul(n) { try { return gl.getUniformLocation(prog, n); } catch (e) { return null; } }
+  function al(n) { try { return gl.getAttribLocation(prog, n); } catch (e) { return -1; } }
+  var L = {
+    mvp: ul('mvp'), uTime: ul('uTime'), uWindK: ul('uWindK'),
+    uGustA: [], uGustB: [],
+    uFieldOrigin: ul('uFieldOrigin'), uFieldSize: ul('uFieldSize'),
+    uMemTex: ul('uMemTex'), uScorchTex: ul('uScorchTex'),
+    uHasField: ul('uHasField'), uRainK: ul('uRainK'), uCamP: ul('uCamP'),
+    aP: al('p'), aN: al('n'), aC: al('c'), aBend: al('bend'), aDat: al('dat')
+  };
+  for (var i = 0; i < MAX_GUSTS; i++) {
+    L.uGustA.push(ul('uGustA[' + i + ']'));
+    L.uGustB.push(ul('uGustB[' + i + ']'));
+  }
+  return L;
+}
+
+/* Per frame per grass draw: advances wind + memory sim (once per t), packs
+ * gust uniforms, binds + uploads memory textures, sets all VSH uniforms
+ * except mvp (the caller's matrix). Reads playerXZ + Weather itself. */
+function setUniforms(gl, locs, t, dt) {
+  if (!gl || !locs) return;
+  _frame(t, dt);
+  _ensureGL(gl);
+  function u1f(loc, v) { if (loc) gl.uniform1f(loc, v); }
+  var i, la, lb;
+  u1f(locs.uTime, t);
+  u1f(locs.uWindK, _windK);
+  if (locs.uGustA && typeof locs.uGustA.length === 'number') {
+    for (i = 0; i < MAX_GUSTS; i++) {
+      la = locs.uGustA[i]; lb = locs.uGustB[i];
+      if (la) gl.uniform4f(la, _gA[i * 4], _gA[i * 4 + 1], _gA[i * 4 + 2], _gA[i * 4 + 3]);
+      if (lb) gl.uniform4f(lb, _gB[i * 4], _gB[i * 4 + 1], _gB[i * 4 + 2], _gB[i * 4 + 3]);
+    }
+  } else if (locs.uGustA) {
+    gl.uniform4fv(locs.uGustA, _gA);
+    gl.uniform4fv(locs.uGustB, _gB);
+  }
+  if (locs.uFieldOrigin) gl.uniform2f(locs.uFieldOrigin, _fOX, _fOZ);
+  u1f(locs.uFieldSize, MEM_SIZE);
+  if (locs.uMemTex) gl.uniform1i(locs.uMemTex, 0);
+  if (locs.uScorchTex) gl.uniform1i(locs.uScorchTex, 1);
+  u1f(locs.uHasField, _hasField);
+  u1f(locs.uRainK, _rainK);
+  var ce = _camEye(), pl = null;
+  if (locs.uCamP) {
+    if (ce) gl.uniform3f(locs.uCamP, ce[0], ce[1], ce[2]);
+    else { pl = _player(); gl.uniform3f(locs.uCamP, pl ? pl.x : 0, 2, pl ? pl.z : 0); }
+  }
+  if (_hasField) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, _memTex);
+    if (_memDirty) {
+      _packMem();
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, MEM_N, MEM_N,
+                       gl.RGBA, gl.UNSIGNED_BYTE, _memPx);
+      _memDirty = false;
+    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, _scTex);
+    if (_scDirty) {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, MEM_N, MEM_N,
+                       gl.LUMINANCE, gl.UNSIGNED_BYTE, _scPx);
+      _scDirty = false;
+    }
+  }
+}
+
+return {
+  VSH: VSH,
+  locate: locate,
+  setUniforms: setUniforms,
+  blast: blast,
+  scorch: scorch,
+  setRain: setRain,
+  setWindMul: setWindMul,
+  debugInfluence: debugInfluence,
+  /* test-only hooks (not part of the render contract) */
+  _tSpawn: function (g) { _gusts.push(g); },
+  _tClear: function () { _gusts.length = 0; _spawnInit = true; },
+  _tGustCount: function () { return _gusts.length; },
+  _tInitField: function (x, z) { _initField(x, z); _havePrev = false; },
+  _tStamp: function (x, z, ix, iz, s, f) { _stampTrail(x, z, x, z, ix, iz, s, f); },
+  _tBlast: blast,
+  _tScorch: scorch,
+  _tDecay: function (dt) {
+    var kf = Math.exp(-dt / 1.1), ks = Math.exp(-dt / 3.4);
+    for (var i = 0; i < _NC; i++) {
+      _fX[i] *= kf; _fZ[i] *= kf; _sX[i] *= ks; _sZ[i] *= ks;
+    }
+  },
+  _tRead: function (x, z) {
+    var cx = _cellOf(x, _fOX), cy = _cellOf(z, _fOZ);
+    if (cx < 0 || cx >= MEM_N || cy < 0 || cy >= MEM_N || !_fInit) return null;
+    var i = cy * MEM_N + cx;
+    return { fx: _fX[i], fz: _fZ[i], sx: _sX[i], sz: _sZ[i], scorch: _sc[i] };
+  },
+  _tMemFrame: function (dt, px, pz) { _memFrame(dt, { x: px, z: pz }); },
+  _tOrigin: function () { return { x: _fOX, z: _fOZ, init: _fInit }; }
+};
+
+})();
+
+/* ===== grass-light.js (GRASS: FSH, GS-08/09) ===== */
+// grass-light.js — WORKER D (grass light), MOOR beta grass rebuild.
+// Canonical spec: GRASS-SPEC.md §Light — backlit translucency, vertical
+// hierarchy, stylized not photoreal. Gates: GS-08, GS-09.
+//
+// This file is concatenated inside the beta's single shared IIFE (ES5 only).
+// It owns ONLY the fragment shader string; Worker B's vertex shader provides
+// the varyings; the lead wires program setup. NEVER edit moor-beta.html.
+//
+// Varyings (read-only contract from Worker B's VSH):
+//   vC vec3  - vertex color, already root-dark -> tip-light from geometry
+//   vN vec3  - normal
+//   vD float - view depth
+//   vBend float - 0 root -> 1 tip
+//   vWorld vec3 - world position
+//   vScorch float - 0..1 interaction/fire memory from Worker B's memory texture
+// Uniforms (set by the lead):
+//   sun vec3, fog vec3, fogK float, uSunI float (sun intensity 0..1, dims under
+//   cloud), uCamP vec3 (camera position).
+// Deliberately cheap: no loops, no textures.
+
+var GrassLight = typeof GrassLight !== "undefined" ? GrassLight : {};
+
+GrassLight.FSH = [
+  "precision mediump float;",
+
+  // Contract: exactly these six varyings, no others.
+  "varying vec3  vC;",
+  "varying vec3  vN;",
+  "varying float vD;",
+  "varying float vBend;",
+  "varying vec3  vWorld;",
+  "varying float vScorch;",
+
+  // Contract: exactly these five uniforms, no others.
+  "uniform vec3  sun;",
+  "uniform vec3  fog;",
+  "uniform float fogK;",
+  "uniform float uSunI;",
+  "uniform vec3  uCamP;",
+
+  "void main() {",
+  "  vec3 viewDir = normalize(vWorld - uCamP);", // camera -> fragment
+  "  vec3 sunDir  = normalize(sun);",
+
+  // -- Vertical hierarchy: dark earth -> deep crowded green -> healthy
+  //    middle -> bright illuminated tips (GS-08).
+  "  float h    = vBend;",
+  "  vec3  hier = vC * mix(0.62, 1.18, smoothstep(0.05, 0.95, h));",
+  // Warm lift near tips; gated by uSunI so returning sun catches edges.
+  "  hier += vec3(0.10, 0.12, 0.02) * smoothstep(0.55, 1.0, h) * uSunI;",
+
+  // -- Cloud compression: under cloud the hierarchy flattens toward
+  //    gray-green; full sun restores contrast (GS-08).
+  "  float contrast = mix(0.45, 1.0, uSunI);",
+  "  hier = mix(vec3(dot(hier, vec3(0.333))), hier, contrast);",
+
+  // -- Sun lambert + sun-intensity dimming (kept behavior).
+  "  float lam = 0.55 + 0.45 * max(dot(normalize(vN), sunDir), 0.0);",
+  "  vec3 col = hier * lam * (0.55 + 0.45 * uSunI);",
+
+  // -- Backlit translucency: looking toward the sun through grass makes
+  //    blades GLOW, never go black. Tips glow more than roots (GS-08).
+  "  float backlit = pow(clamp(dot(viewDir, sunDir), 0.0, 1.0), 3.0);",
+  "  float scorchK = clamp(vScorch, 0.0, 1.0);",
+  "  col += vec3(0.42, 0.46, 0.16) * backlit",
+  "       * (0.25 + 0.75 * vBend)",
+  "       * (0.35 + 0.65 * uSunI)",
+  "       * (1.0 - scorchK);", // no glow where scorched
+
+  // -- Scorch memory from Worker B's interaction memory (GS-08).
+  "  col = mix(col, vec3(0.15, 0.13, 0.11), scorchK * 0.92);",
+
+  // -- Fog (kept behavior). Applied after scorch so scorched patches stay
+  //    correctly fogged instead of punching through distance haze.
+  "  float f = 1.0 - exp(-vD * fogK);",
+  "  col = mix(col, fog, clamp(f, 0.0, 1.0));",
+
+  // -- Stylized: silhouettes stay readable, roots never fully black (GS-09).
+  "  col = max(col, vec3(0.03, 0.05, 0.02));",
+
+  // -- Stylized: soft filmic-ish rolloff into a pleasing readable range
+  //    (GS-09).
+  "  col = col / (col + 0.35) * 1.35;",
+
+  "  gl_FragColor = vec4(col, 1.0);",
+  "}"
+].join("\n");
+
+/* GRASS boot: bind module shaders (VSH_GRASS/FSH_GRASS are null until here) */
+if(typeof GrassWind!=="undefined"&&GrassWind.VSH) VSH_GRASS=GrassWind.VSH;
+if(typeof GrassLight!=="undefined"&&GrassLight.FSH) FSH_GRASS=GrassLight.FSH;
+if(!VSH_GRASS||!FSH_GRASS) throw new Error("grass modules failed to load");
+/* GRASS debug surface (headless verification + dev): */
+window.__grass={wind:GrassWind,blade:GrassBlade,place:GrassPlace,light:GrassLight,
+  violations:function(){ return window.__grassViolations||0; }};
 
 /* ===== doors.js (W3: Collide/Interact/Doors/Own, IIFE) ===== */
 /* ================= MOOR Beta — W3: Collision / Interaction / Doors / Ownership =================
@@ -13061,7 +14255,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-1550';
+var BETA_VERSION='20261005-1626';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
@@ -14575,7 +15769,7 @@ window.__beta.cloudsOn=function(){ return !!(cldMesh&&cldTex); };
 window.__beta.scatTris=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++) if(scatChunkList[i].buf) t+=scatChunkList[i].buf.count; return t; };
 window.__beta.glowTris=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++) if(scatChunkList[i].buf&&scatChunkList[i].buf.gbuf) t+=scatChunkList[i].buf.gbuf.count; return t; };
 window.__beta.scatChunks=function(){ return scatChunkList.length; };
-window.__beta.grassIdx=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++){ var b=scatChunkList[i].buf; if(b&&b.grass) t+=b.grass.count; } return t; };
+window.__beta.grassIdx=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++){ var b=scatChunkList[i].buf; if(b){ if(b.grassNear) t+=b.grassNear.count; if(b.grassMid) t+=b.grassMid.count; if(b.grass) t+=b.grass.count; } } return t; };
 window.__beta.terrChunkCount=function(){ return terrChunkList.length; };
 window.__beta.terrQueueLen=function(){ return terrQueue.length; };
 window.__beta.terrIdx=function(){ var t=0,i; for(i=0;i<terrChunkList.length;i++) t+=terrChunkList[i].buf.count; return t; };
