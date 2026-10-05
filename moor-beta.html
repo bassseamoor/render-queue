@@ -9809,12 +9809,13 @@ var GrassPlace = (function () {
     var stiff = (0.35 + crng() * 0.5) * (1.1 - hMax * 0.25);
     if (stiff > 1) stiff = 1; else if (stiff < 0.05) stiff = 0.05;
     var base = pal[(crng() * pal.length) | 0];
-    /* dry patches shift toward straw */
-    var strawMix = clamp01(p.dry * 0.55 + dry * 0.9);
+    /* dry patches shift toward straw — restrained: regional dryness tints,
+     * it never bleaches. Occasional dry tufts carry the straw, not the field. */
+    var strawMix = clamp01(p.dry * 0.22 + dry * 0.85);
     var j = 0.88 + crng() * 0.24; /* ±12% value jitter */
-    var r = clamp01(_mixc(base[0], 0.58, strawMix) * j);
-    var g = clamp01(_mixc(base[1], 0.47, strawMix) * j);
-    var b = clamp01(_mixc(base[2], 0.22, strawMix) * j);
+    var r = clamp01(_mixc(base[0], 0.40, strawMix) * j);
+    var g = clamp01(_mixc(base[1], 0.36, strawMix) * j);
+    var b = clamp01(_mixc(base[2], 0.16, strawMix) * j);
     var nBlades = 5 + Math.round(vigor * 15);
     if (nBlades > 20) nBlades = 20;
     return {
@@ -10629,9 +10630,10 @@ GrassLight.FSH = [
 
   // -- Backlit translucency: looking toward the sun through grass makes
   //    blades GLOW, never go black. Tips glow more than roots (GS-08).
+  //    Restrained: warm saturation lift, never a blowout to white.
   "  float backlit = pow(clamp(dot(viewDir, sunDir), 0.0, 1.0), 3.0);",
   "  float scorchK = clamp(vScorch, 0.0, 1.0);",
-  "  col += vec3(0.42, 0.46, 0.16) * backlit",
+  "  col += vec3(0.26, 0.28, 0.09) * backlit",
   "       * (0.25 + 0.75 * vBend)",
   "       * (0.35 + 0.65 * uSunI)",
   "       * (1.0 - scorchK);", // no glow where scorched
@@ -14255,7 +14257,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-1700';
+var BETA_VERSION='20261005-1708';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
