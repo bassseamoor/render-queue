@@ -248,12 +248,112 @@ function componentRecord(id){
   return addStream('component','Pulse',c.label,{componentId:c.id,label:c.label,short:c.short||'',job:c.job||'',cats:c.cats||[],source:c.source||'',technical:c.technical||'',toolSrc:c.toolSrc||'',page:c.page||''},
     {mode:'selected',componentId:c.id},'component:'+c.id);
 }
+
+function seedCoreConcepts(){
+  addReference({id:'concept:furniture',kind:'concept',title:'furniture',summary:'Objects designed to furnish inhabited spaces.',status:'observed',source:'User/example',provenance:'explicit'});
+  addReference({id:'concept:couch',kind:'concept',title:'couch',summary:'A loosely defined furniture concept that may have many recipes and implementations.',status:'observed',source:'User/example',provenance:'explicit',concepts:['concept:furniture']});
+  addEdge('concept:couch','concept:furniture','instance_of','user-example');
+}
+function syncReferenceGraph(){
+  seedCoreConcepts();
+  COMPS.forEach(function(c){
+    var roles=(c.cats||[]).indexOf('generators')>=0?['generator']:[];
+    var cr=addReference({id:'component:'+c.id,kind:'component',title:c.label||c.id,summary:c.short||c.job||'Pulse component',
+      status:c.inMoor||c.in_moor?'canonical':'observed',source:'Pulse Catalog',source_id:c.id,provenance:'imported',
+      roles:roles,doc_ref:c.source||c.component_source||null,implementation_ref:c.toolSrc||c.panel_source||c.page||c.component_source||null,
+      data:{id:c.id,cats:c.cats||[],job:c.job||'',why:c.why||'',technical:c.technical||'',limits:c.toolGap||c.honest_limits||''}});
+    if(roles.length){
+      var gr=addReference({id:'generator:'+c.id,kind:'generator',title:(c.label||c.id)+' generator',summary:c.short||c.job||'Procedural generator capability.',
+        status:cr.status,source:'Pulse Catalog',source_id:c.id,provenance:'imported',doc_ref:cr.doc_ref,implementation_ref:cr.implementation_ref,
+        data:{component_ref:cr.id,cats:c.cats||[]}});
+      addEdge(gr.id,cr.id,'implements','catalog-role');
+    }
+  });
+  blueprintDocs().forEach(function(b){
+    addReference({id:'blueprint:'+b.id,kind:'blueprint',title:b.name,summary:b.summary,status:'specified-not-verified',
+      source:'Pulse Learning Spine',source_id:b.id,provenance:'imported',doc_ref:b.source||'pulse-learning-spine-blueprints.json',data:b});
+  });
+  S.training.forEach(function(t){
+    var tr=addReference({id:'training:'+t.id,kind:'training',title:t.source_file||t.id,summary:t.one_line||'Training record',
+      status:t.implementation_status||t.status||'specified-not-verified',source:'Pulse Training',source_id:t.id,provenance:'imported',
+      doc_ref:t.source_file||'pulse-training-blueprints-11.json',data:t});
+    (t.hard_rules||[]).forEach(function(rule,i){
+      var rr=addReference({id:'rule:'+t.id+':'+i,kind:'rule',title:(t.source_file||t.id)+' rule '+(i+1),summary:rule,
+        status:'specified-not-verified',source:'Pulse Training',source_id:t.id,provenance:'imported',data:{rule:rule}});
+      addEdge(rr.id,tr.id,'derived_from','training');
+    });
+    (t.verification||[]).forEach(function(v,i){
+      var rq=addReference({id:'requirement:'+t.id+':verify:'+i,kind:'requirement',title:(t.source_file||t.id)+' verification '+(i+1),
+        summary:v,status:'specified-not-verified',source:'Pulse Training',source_id:t.id,provenance:'imported',data:{verification:v}});
+      addEdge(rq.id,tr.id,'derived_from','training');
+    });
+  });
+  S.trainingLessons.forEach(function(l){
+    addReference({id:'rule:lesson:'+l.id,kind:'rule',title:l.id.replace(/-/g,' '),summary:l.lesson||'',status:'observed',
+      source:'Cross-file training',source_id:l.id,provenance:'inferred',data:l});
+  });
+  S.stream.forEach(function(r){
+    var k=r.kind==='intent'?'intent':r.kind==='training'?'training':r.kind==='logic'?'recipe':r.kind==='component'?'component':'artifact';
+    addReference({id:'stream:'+r.id,kind:k,title:r.title,summary:r.kind+' from '+r.source,status:'observed',
+      source:r.source,source_id:r.id,provenance:(r.provenance&&r.provenance.mode)||'observed',data:r.payload});
+  });
+  try{
+    var fs=window.PulseFunnel&&PulseFunnel.state;
+    if(fs&&Array.isArray(fs.projects))fs.projects.forEach(function(p){
+      var pr=addReference({id:'project:'+p.id,kind:'project',title:p.name||p.id,summary:p.description||'Pulse project',
+        status:p.queued?'observed':'canonical',source:'Pulse Funnel',source_id:p.id,provenance:'imported',implementation_ref:p.page||null,data:{queued:!!p.queued}});
+      (p.versions||[]).forEach(function(v){
+        var vr=addReference({id:'version:'+p.id+':'+v.id,kind:'version',title:(p.name||p.id)+' '+(v.number||v.id),
+          summary:v.title||v.revision||'Project version',status:v.state&&v.state.indexOf('locked')>=0?'canonical':'observed',
+          source:'Pulse Funnel',source_id:v.id,provenance:'imported',data:v,version_of:pr.id});
+        addEdge(vr.id,pr.id,'version_of','project-version');
+      });
+    });
+  }catch(e){}
+  try{
+    var ht=JSON.parse(localStorage.getItem('moor-harness-training')||'[]');
+    if(Array.isArray(ht))ht.forEach(function(x,i){
+      var e=addReference({id:'evidence:harness:'+(x.v||i)+':'+hash(textOf(x)),kind:'evidence',title:'Harness evidence '+(x.v||i),
+        summary:x.lesson||'Harness verification record',status:x.logic&&x.logic.status==='verified-working'?'machine-verified':'observed',
+        source:'App Compiler Harness',source_id:x.v||String(i),provenance:'verified',data:x});
+      if(x.request){
+        var ir=addReference({id:'intent:harness:'+hash(x.request),kind:'intent',title:'Harness request '+(x.v||i),summary:x.request,
+          status:x.intent&&x.intent.status==='user-reviewed'?'human-approved':'observed',source:'App Compiler Harness',
+          source_id:x.v||String(i),provenance:'recovered',data:x.intent});
+        addEdge(e.id,ir.id,'verifies','harness-training');
+      }
+    });
+  }catch(e){}
+}
+function harvestProtocolStores(){
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(!k||k.indexOf('moor-output:')!==0)continue;
+      var val=JSON.parse(localStorage.getItem(k)||'null');
+      if(Array.isArray(val))val.forEach(ingestOutput);else if(val)ingestOutput(val);
+    }
+  }catch(e){}
+}
+function captureAppMessage(ev){
+  var d=ev&&ev.data;
+  if(!d||!(d.type==='moor:output'||d.type==='moor:reference'))return;
+  var frames=Array.from(document.querySelectorAll('iframe'));
+  if(ev.source&&frames.length&&!frames.some(function(f){return f.contentWindow===ev.source;}))return;
+  if(d.type==='moor:reference')addReference(d.detail||d.reference||{});
+  else ingestOutput(d.detail||d.output||{});
+  save();
+}
+
 function harvest(){
   try{
     var w=JSON.parse(localStorage.getItem('moor-wonder-library-v1')||'[]');
     if(Array.isArray(w)) w.forEach(function(item,i){
       var g=item&&item.genome||item||{}, seed=g.seed||item.seed||String(i), typ=g.type||'wonder';
       addStream('asset','Wonder Feed',typ+' · '+seed,item,{mode:'procedural',app:'wonder-feed'},'wonder:'+seed+':'+typ);
+      ingestOutput({id:'artifact:wonder:'+hash(typ+'|'+seed+'|'+textOf(g)),kind:'artifact',title:item.title||('Wonder '+typ+' '+seed),
+        summary:item.sub||'Saved Wonder Feed procedural output.',source:{app:'wonder-feed',component:'wonder-feed'},concepts:[typ],
+        recipe:g,status:'generated',provenance:'procedural',payload:item});
     });
   }catch(e){}
   try{
@@ -262,8 +362,25 @@ function harvest(){
     parts.forEach(function(p,i){
       var key=p&&p.id||p&&p.name||String(i);
       addStream('logic','Moor Canvas',(p&&p.name)||'Canvas part',p,{mode:'designed',app:'more-canvas'},'canvas:'+key);
+      ingestOutput({id:'artifact:canvas:'+slug(key),kind:'artifact',title:(p&&p.name)||'Canvas output',
+        summary:(p&&p.desc)||'Saved Moor Canvas composition.',source:{app:'more-canvas',component:'more-canvas'},
+        recipe:p&&p.recipe||p,status:'generated',provenance:'procedural',payload:p,
+        intent:p&&p.recipe&&p.recipe.prompt||null,intent_provenance:p&&p.recipe&&p.recipe.prompt?'explicit':'inferred'});
+    });
+    var versions=c&&Array.isArray(c.version)?c.version:[];
+    versions.forEach(function(v,i){
+      var vr=addReference({id:'version:canvas:'+(v.id||i),kind:'version',title:'Moor Canvas · '+(v.name||('slot '+(i+1))),
+        summary:v.status||'Canvas version slot',status:/pending/i.test(v.status||'')?'observed':'canonical',source:'Moor Canvas',
+        source_id:v.id||String(i),provenance:'procedural',data:v,version_of:'project:moor-canvas'});
+      if(v.recipe){
+        var rr=addReference({id:'recipe:canvas-version:'+hash(textOf(v.recipe)),kind:'recipe',title:(v.name||'Canvas version')+' recipe',
+          summary:'Exact inputs for this Canvas version.',status:'generated',source:'Moor Canvas',provenance:'procedural',data:v.recipe});
+        addEdge(vr.id,rr.id,'derived_from','canvas-version');
+      }
     });
   }catch(e){}
+  harvestProtocolStores();
+  syncReferenceGraph();
 }
 function ingestTrainingBatch(doc){
   if(!doc||!doc.id||!Array.isArray(doc.records))return false;
