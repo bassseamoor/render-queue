@@ -74,10 +74,14 @@ function addEdge(from,to,type,provenance){
 function addReference(input){
   input=input||{};
   var id=refKey(input), now=new Date().toISOString(), existing=S.refs.find(function(r){return r.id===id;});
+  var conceptPairs=(Array.isArray(input.concepts)?input.concepts:[]).map(function(c){
+    var raw=String(c),cid=raw.indexOf('concept:')===0?raw:'concept:'+slug(raw);
+    return {id:cid,label:raw.replace(/^concept:/,'').replace(/-/g,' ')};
+  });
   var node={
     id:id,kind:normalizeRefKind(input.kind),title:input.title||input.name||id,summary:input.summary||'',
     status:input.status||'observed',source:input.source||'Pulse',source_id:input.source_id||null,
-    provenance:input.provenance||'observed',concepts:Array.isArray(input.concepts)?input.concepts.slice():[],
+    provenance:input.provenance||'observed',concepts:conceptPairs.map(function(x){return x.id;}),
     roles:Array.isArray(input.roles)?input.roles.slice():[],doc_ref:input.doc_ref||null,
     implementation_ref:input.implementation_ref||null,data:cloneSimple(input.data!=null?input.data:input.payload),
     created_at:existing?existing.created_at:now,updated_at:now,revisions:existing&&Array.isArray(existing.revisions)?existing.revisions:[]
@@ -93,14 +97,12 @@ function addReference(input){
   }else{
     S.refs.push(node);S.refSeen[id]=1;
   }
-  (input.concepts||[]).forEach(function(c){
-    var cid=String(c).indexOf('concept:')===0?String(c):'concept:'+slug(c);
-    var label=String(c).replace(/^concept:/,'').replace(/-/g,' ');
-    if(!S.refs.some(function(r){return r.id===cid;})){
-      S.refs.push({id:cid,kind:'concept',title:label,summary:'Semantic concept reference.',status:'observed',source:'Reference Graph',source_id:null,provenance:'inferred',concepts:[],roles:[],doc_ref:null,implementation_ref:null,data:null,created_at:now,updated_at:now,revisions:[]});
-      S.refSeen[cid]=1;
+  conceptPairs.forEach(function(cp){
+    if(!S.refs.some(function(r){return r.id===cp.id;})){
+      S.refs.push({id:cp.id,kind:'concept',title:cp.label,summary:'Semantic concept reference.',status:'observed',source:'Reference Graph',source_id:null,provenance:'inferred',concepts:[],roles:[],doc_ref:null,implementation_ref:null,data:null,created_at:now,updated_at:now,revisions:[]});
+      S.refSeen[cp.id]=1;
     }
-    addEdge(id,cid,'about',input.provenance||'observed');
+    addEdge(id,cp.id,'about',input.provenance||'observed');
   });
   if(input.generated_by)addEdge(id,input.generated_by,'generated_by',input.provenance||'observed');
   if(input.derived_from)[].concat(input.derived_from).forEach(function(x){addEdge(id,x,'derived_from',input.provenance||'observed');});
@@ -185,16 +187,23 @@ function searchReferences(query,opts){
   return scored.slice(0,opts.limit||30).map(function(x){return x.ref;});
 }
 function referencePacket(query,limit){
-  var roots=searchReferences(query,{limit:limit||8}), ids={};roots.forEach(function(r){ids[r.id]=1;});
+  var roots=searchReferences(query,{limit:limit||8}), ids={}, frontier=[];
+  roots.forEach(function(r){ids[r.id]=1;frontier.push(r.id);});
   var related=[];
-  S.edges.forEach(function(e){
-    if(ids[e.from]||ids[e.to]){
-      var other=ids[e.from]?e.to:e.from;
+  for(var depth=0;depth<2&&frontier.length;depth++){
+    var next=[];
+    S.edges.forEach(function(e){
+      var fromHit=frontier.indexOf(e.from)>=0,toHit=frontier.indexOf(e.to)>=0;
+      if(!fromHit&&!toHit)return;
+      var other=fromHit?e.to:e.from;
+      if(ids[other])return;
       var r=S.refs.find(function(x){return x.id===other;});
-      if(r&&!ids[r.id]){ids[r.id]=1;related.push(r);}
-    }
-  });
-  var all=roots.concat(related).slice(0,(limit||8)*3);
+      if(r){ids[r.id]=1;related.push(r);next.push(r.id);}
+    });
+    frontier=next;
+  }
+  related.sort(function(a,b){return refStatusWeight(b.status)-refStatusWeight(a.status);});
+  var all=roots.concat(related).slice(0,(limit||8)*5);
   return {
     query:query,
     concepts:all.filter(function(r){return r.kind==='concept';}),
@@ -362,7 +371,7 @@ function captureAppMessage(ev){
   var d=ev&&ev.data;
   if(!d||!(d.type==='moor:output'||d.type==='moor:reference'))return;
   var frames=Array.from(document.querySelectorAll('iframe'));
-  if(ev.source&&frames.length&&!frames.some(function(f){return f.contentWindow===ev.source;}))return;
+  if(!ev.source||!frames.some(function(f){return f.contentWindow===ev.source;}))return;
   if(d.type==='moor:reference')addReference(d.detail||d.reference||{});
   else ingestOutput(d.detail||d.output||{});
   save();
