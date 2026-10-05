@@ -35,7 +35,11 @@ function write(s){
   try{ localStorage.setItem(LS,JSON.stringify(s)); }catch(e){}
 }
 var S=normalizeState(read());
-function save(){ write(S); decorateFunnel(); }
+var BIN_GITHUB_PATH='moor-bin/';
+var BIN_LOCAL_DIR='moor-bin';
+var binSyncTimer=null,binLastSig='',binMirrorHandle=null;
+var binBacking={local:'pending',lastSync:null,error:null,mirror:null};
+function save(){ write(S); decorateFunnel(); scheduleLocalBinSync(); }
 function esc2(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function uid(p){ return (p||'sp')+'-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7); }
 function textOf(v){
@@ -224,6 +228,98 @@ function refMarkdown(r){
   if(r.implementation_ref)out.push('','## Implementation','',r.implementation_ref);
   if(r.data!=null)out.push('','## Data','',JSON.stringify(r.data,null,2));
   return out.join('\\n');
+}
+
+
+function safeFileName(v){
+  return String(v||'ref').replace(/[^a-zA-Z0-9._-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,140)||'ref';
+}
+function binSnapshot(){
+  return {
+    schema:'moor.bin.snapshot',version:1,generated_at:new Date().toISOString(),
+    github_path:BIN_GITHUB_PATH,local_path:BIN_LOCAL_DIR+'/',
+    refs:S.refs,edges:S.edges,
+    stats:{references:S.refs.length,edges:S.edges.length,training:S.training.length,projects:S.refs.filter(function(r){return r.kind==='project';}).length}
+  };
+}
+function binBackingSignature(){
+  return hash(textOf({
+    refs:S.refs.map(function(r){return [r.id,r.updated_at,r.status];}),
+    edges:S.edges.map(function(e){return e.key;})
+  }));
+}
+async function writeHandleFile(dir,name,text){
+  var h=await dir.getFileHandle(name,{create:true});
+  var w=await h.createWritable();
+  await w.write(text);await w.close();
+}
+async function writeBinTree(base){
+  var refsDir=await base.getDirectoryHandle('refs',{create:true});
+  var recipesDir=await base.getDirectoryHandle('recipes',{create:true});
+  var artifactsDir=await base.getDirectoryHandle('artifacts',{create:true});
+  var evidenceDir=await base.getDirectoryHandle('evidence',{create:true});
+  var failuresDir=await base.getDirectoryHandle('failures',{create:true});
+  var projectsDir=await base.getDirectoryHandle('projects',{create:true});
+  var snapshotsDir=await base.getDirectoryHandle('snapshots',{create:true});
+  var snap=binSnapshot();
+  await writeHandleFile(base,'index.json',JSON.stringify({
+    schema:'moor.bin.backing',version:1,updated_at:snap.generated_at,
+    github_path:BIN_GITHUB_PATH,local_path:BIN_LOCAL_DIR+'/',
+    stats:snap.stats,reference_schema:'pulse-reference-graph-schema.json'
+  },null,2)+'\n');
+  await writeHandleFile(base,'edges.json',JSON.stringify(S.edges,null,2)+'\n');
+  await writeHandleFile(snapshotsDir,'latest.json',JSON.stringify(snap,null,2)+'\n');
+  var kindDirs={};
+  for(var i=0;i<S.refs.length;i++){
+    var r=S.refs[i],kd=kindDirs[r.kind];
+    if(!kd){kd=kindDirs[r.kind]=await refsDir.getDirectoryHandle(safeFileName(r.kind),{create:true});}
+    var body=JSON.stringify(r,null,2)+'\n',fn=safeFileName(r.id)+'.json';
+    await writeHandleFile(kd,fn,body);
+    if(r.kind==='recipe')await writeHandleFile(recipesDir,fn,body);
+    else if(r.kind==='artifact'||r.kind==='implementation')await writeHandleFile(artifactsDir,fn,body);
+    else if(r.kind==='evidence')await writeHandleFile(evidenceDir,fn,body);
+    else if(r.kind==='failure')await writeHandleFile(failuresDir,fn,body);
+    else if(r.kind==='project'||r.kind==='version')await writeHandleFile(projectsDir,fn,body);
+  }
+  return snap;
+}
+async function getOpfsBin(){
+  if(!navigator.storage||!navigator.storage.getDirectory)throw new Error('Origin Private File System unavailable');
+  var root=await navigator.storage.getDirectory();
+  return root.getDirectoryHandle(BIN_LOCAL_DIR,{create:true});
+}
+async function syncLocalBinNow(force){
+  var sig=binBackingSignature();
+  if(!force&&sig===binLastSig)return {ok:true,skipped:true,backing:binBacking};
+  try{
+    binBacking.local='syncing';binBacking.error=null;
+    var dir=await getOpfsBin();
+    var snap=await writeBinTree(dir);
+    if(binMirrorHandle){
+      try{
+        var mirror=await binMirrorHandle.getDirectoryHandle(BIN_LOCAL_DIR,{create:true});
+        await writeBinTree(mirror);
+        binBacking.mirror=binMirrorHandle.name||'attached folder';
+      }catch(me){binBacking.mirror='mirror error';}
+    }
+    binLastSig=sig;binBacking.local='synced';binBacking.lastSync=snap.generated_at;
+    if(typeof renderStage==='function'&&typeof UI!=='undefined'&&UI.tab==='bin')renderStage();
+    return {ok:true,snapshot:snap,backing:binBacking};
+  }catch(e){
+    binBacking.local='fallback';binBacking.error=String(e&&e.message||e);
+    return {ok:false,error:binBacking.error,backing:binBacking};
+  }
+}
+function scheduleLocalBinSync(){
+  clearTimeout(binSyncTimer);
+  binSyncTimer=setTimeout(function(){syncLocalBinNow(false);},1200);
+}
+async function chooseLocalBinMirror(){
+  if(!window.showDirectoryPicker)throw new Error('Visible folder access is unavailable in this browser');
+  var h=await window.showDirectoryPicker({mode:'readwrite'});
+  binMirrorHandle=h;
+  await syncLocalBinNow(true);
+  return h.name||'folder';
 }
 
 function addStream(kind,source,title,payload,meta,stableKey){
@@ -608,6 +704,12 @@ function binView2(){
   var bps=blueprintDocs().filter(function(b){return !q||(b.name+' '+b.summary).toLowerCase().indexOf(q)>=0;});
   return '<div class="ps-head"><h2>Bin</h2><p>Everything stays addressable.</p></div>'+
     '<div class="ps-compose ps-search"><input id="ps-bin-search" type="search" value="'+esc2(q)+'" placeholder="Search everything…"></div>'+
+    '<section class="ps-section ps-backing"><h3>Backing</h3><div class="ps-backing-grid">'+
+      '<div><strong>GitHub</strong><span>'+esc2(BIN_GITHUB_PATH)+'</span></div>'+
+      '<div><strong>Local</strong><span>'+esc2(BIN_LOCAL_DIR)+'/ · '+esc2(binBacking.local)+(binBacking.lastSync?' · '+esc2(binBacking.lastSync):'')+'</span></div>'+
+    '</div><div class="ps-actions"><button data-bin-sync>Sync local now</button>'+
+      (window.showDirectoryPicker?'<button data-bin-mirror>Mirror to device folder</button>':'')+
+    '</div>'+(binBacking.error?'<p class="ps-back-error">'+esc2(binBacking.error)+'</p>':'')+'</section>'+
     '<section class="ps-section"><h3>Reference graph · '+S.refs.length+' refs · '+S.edges.length+' links</h3><div class="ps-ref-kinds">'+Object.keys(kindCounts).sort().map(function(k){return '<span>'+esc2(k)+' '+kindCounts[k]+'</span>';}).join('')+'</div><div class="ps-rows">'+refs.map(function(r){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(r.title)+'</strong><span>'+esc2(r.kind)+' · '+esc2(r.status)+' · '+esc2(r.source)+'</span></div><div class="ps-actions"><button data-spine-ref="'+esc2(r.id)+'">View</button></div></div>';}).join('')+'</div></section>'+    '<section class="ps-section"><h3>Blueprints</h3><div class="ps-rows">'+bps.map(function(b){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(b.name)+'</strong><span>'+esc2(b.summary)+'</span></div><div class="ps-actions"><button data-spine-blueprint="'+b.id+'">View</button></div></div>';}).join('')+'</div></section>'+
     (training.length?'<section class="ps-section"><h3>Training · '+training.length+'</h3><div class="ps-rows">'+training.map(function(t){return '<div class="ps-row"><div class="ps-row-main"><strong>'+esc2(t.source_file||t.id)+'</strong><span>'+esc2(t.one_line||'training record')+' · '+esc2(t.implementation_status||t.status||'specified')+'</span></div><div class="ps-actions"><button data-spine-training="'+esc2(t.id)+'">View</button></div></div>';}).join('')+'</div></section>':'')+
     (kept.length?'<section class="ps-section"><h3>Kept</h3><div class="ps-rows">'+kept.slice().reverse().map(function(k){return recordRow(k.snapshot);}).join('')+'</div></section>':'')+
@@ -717,6 +819,8 @@ document.addEventListener('click',function(e){
   var bp=e.target.closest('[data-spine-blueprint]'); if(bp){showBlueprint(bp.dataset.spineBlueprint);return;}
   var tr=e.target.closest('[data-spine-training]'); if(tr){showTraining(tr.dataset.spineTraining);return;}
   var rf=e.target.closest('[data-spine-ref]'); if(rf){showReference(rf.dataset.spineRef);return;}
+  if(e.target.closest('[data-bin-sync]')){syncLocalBinNow(true).then(function(){if(typeof renderStage==='function')renderStage();});return;}
+  if(e.target.closest('[data-bin-mirror]')){chooseLocalBinMirror().then(function(){if(typeof renderStage==='function')renderStage();}).catch(function(err){binBacking.error=String(err&&err.message||err);if(typeof renderStage==='function')renderStage();});return;}
   if(e.target.closest('[data-spine-close]')){var m=document.getElementById('ps-modal');if(m)m.remove();return;}
   if(e.target.closest('[data-spine-inbox]')){toggleInbox(true);return;}
   if(e.target.closest('[data-spine-hide-inbox]')){toggleInbox(false);return;}
@@ -749,7 +853,7 @@ var st=document.createElement('style');st.id='pulse-spine-style';st.textContent=
 '.ps-compose{display:flex;gap:6px;margin:0 0 12px}.ps-compose input{flex:1;min-width:0;height:38px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#0b111c;color:var(--text);padding:0 11px;font:inherit;font-size:12px}.ps-primary{border:0;border-radius:10px;padding:0 14px;background:#f5f7fb;color:#101218;font-weight:700;cursor:pointer}'+
 '.ps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.ps-card{display:flex;flex-direction:column;gap:5px;text-align:left;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.025);color:var(--text);padding:13px;font:inherit;cursor:pointer}.ps-card b{font-size:12px}.ps-card span{font-size:10px;color:var(--muted);line-height:1.4}.ps-card-static{cursor:default}.ps-card details{margin-top:5px}.ps-card summary{cursor:pointer;font-size:10px;color:var(--cyan)}.ps-mini{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}.ps-mini button{font:inherit;font-size:9px;color:var(--muted);border:1px solid rgba(255,255,255,.08);border-radius:999px;background:transparent;padding:4px 7px;cursor:pointer}'+
 '.ps-kicker,.ps-context{font-size:10px;color:var(--muted);margin:2px 0 9px}.ps-rows{display:flex;flex-direction:column;gap:5px}.ps-row{display:flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(255,255,255,.02);padding:8px 9px}.ps-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.ps-row-main strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ps-row-main span{font-size:9px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ps-actions{display:flex;gap:3px}.ps-actions button{border:1px solid rgba(255,255,255,.09);background:transparent;color:var(--muted);border-radius:8px;padding:5px 7px;font:inherit;font-size:9px;cursor:pointer}.ps-actions button:hover{color:var(--text)}'+
-'.ps-section{margin:15px 0}.ps-ref-kinds{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 7px}.ps-ref-kinds span{font-size:8px;border:1px solid rgba(255,255,255,.07);border-radius:999px;padding:3px 6px;color:var(--muted)}.ps-ref-meta{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}.ps-ref-meta span{font-size:9px;padding:4px 6px;border-radius:6px;background:rgba(255,255,255,.04);color:var(--muted)}.ps-ref-pre{white-space:pre-wrap;word-break:break-word;font-size:9px;line-height:1.45;padding:9px;border-radius:9px;background:#080b12;color:#cfd8e5}.ps-section{margin:15px 0}.ps-section h3,.ps-all>summary{font-size:10px;letter-spacing:.11em;text-transform:uppercase;margin:0 0 6px;color:var(--muted)}.ps-all>summary{cursor:pointer;list-style:none}.ps-all>summary::-webkit-details-marker{display:none}.ps-empty{padding:14px;color:var(--muted);font-size:11px}.ps-search{max-width:520px}'+
+'.ps-section{margin:15px 0}.ps-backing{border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:10px;background:rgba(255,255,255,.018)}.ps-backing-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px}.ps-backing-grid>div{display:flex;flex-direction:column;gap:2px}.ps-backing-grid strong{font-size:10px}.ps-backing-grid span{font-size:9px;color:var(--muted);word-break:break-all}.ps-back-error{font-size:9px;color:#e6b98b;margin:7px 0 0}.ps-ref-kinds{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 7px}.ps-ref-kinds span{font-size:8px;border:1px solid rgba(255,255,255,.07);border-radius:999px;padding:3px 6px;color:var(--muted)}.ps-ref-meta{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}.ps-ref-meta span{font-size:9px;padding:4px 6px;border-radius:6px;background:rgba(255,255,255,.04);color:var(--muted)}.ps-ref-pre{white-space:pre-wrap;word-break:break-word;font-size:9px;line-height:1.45;padding:9px;border-radius:9px;background:#080b12;color:#cfd8e5}.ps-section{margin:15px 0}.ps-section h3,.ps-all>summary{font-size:10px;letter-spacing:.11em;text-transform:uppercase;margin:0 0 6px;color:var(--muted)}.ps-all>summary{cursor:pointer;list-style:none}.ps-all>summary::-webkit-details-marker{display:none}.ps-empty{padding:14px;color:var(--muted);font-size:11px}.ps-search{max-width:520px}'+
 '#ps-modal{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.65);display:grid;place-items:center;padding:18px}.ps-modal-card{position:relative;width:min(520px,100%);border:1px solid rgba(255,255,255,.13);border-radius:18px;background:#10131d;padding:18px;box-shadow:0 25px 80px #000}.ps-x{position:absolute;right:10px;top:10px;border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}.ps-blue{font-size:13px;line-height:1.6;color:#dce2ee}.ps-train-card{max-height:82vh;overflow:auto}.ps-train-card h3{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:16px 0 5px}.ps-train-card ul{margin:0;padding-left:18px}.ps-train-card li{font-size:11px;line-height:1.45;margin:4px 0;color:#dce2ee}.ps-link{display:inline-block;margin-top:14px;color:var(--cyan);font-size:11px;text-decoration:none}'+
 '.ps-funnel-badge{margin-left:auto;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(255,255,255,.035);color:#eef3fa;padding:5px 9px;font:inherit;font-size:10px;cursor:pointer}.ps-funnel-panel{display:none;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(10,12,19,.85);padding:9px;margin-bottom:8px}.ps-funnel-panel-head{display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:6px}.ps-funnel-panel-head button{border:0;background:transparent;color:var(--muted);cursor:pointer}.ps-funnel-item{display:flex;justify-content:space-between;gap:8px;padding:6px 2px;border-top:1px solid rgba(255,255,255,.05);font-size:10px}.ps-funnel-item span{color:var(--muted)}'+
 'body.tabs-on #tabbar button>span:not(.tb-ic){display:inline!important;visibility:visible!important;opacity:1!important;color:inherit!important;white-space:nowrap!important}.pf-project-copy strong{display:block!important;visibility:visible!important;opacity:1!important;color:#eef3fa!important}'+
@@ -780,7 +884,10 @@ window.PulseReferences={
   packet:referencePacket,
   markdown:function(id){return refMarkdown(S.refs.find(function(r){return r.id===id;}));},
   related:function(id){return S.edges.filter(function(e){return e.from===id||e.to===id;});},
-  sync:function(){harvest();return {references:S.refs.length,edges:S.edges.length};}
+  sync:function(){harvest();return {references:S.refs.length,edges:S.edges.length};},
+  backing:function(){return {github:BIN_GITHUB_PATH,local:BIN_LOCAL_DIR+'/',state:Object.assign({},binBacking)};},
+  syncLocal:function(){return syncLocalBinNow(true);},
+  chooseLocalMirror:chooseLocalBinMirror
 };
 window.MoorOutput={
   emit:function(detail){return ingestOutput(detail||{});},
@@ -797,6 +904,7 @@ harvest();
 loadTrainingBatches();
 syncReferenceGraph();
 save();
+scheduleLocalBinSync();
 ensureFunnelProject();
 ensureTabbar();
 if(typeof renderStage==='function')renderStage();
