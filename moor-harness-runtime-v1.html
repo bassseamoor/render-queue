@@ -337,19 +337,27 @@ const PARTS=[
 function partById(id){ return PARTS.find(p=>p.id===id); }
 </script>
 <script>
-/* ================= SPEC COMPILER (heuristic local brain — transparent, no LLM) =================
-   Ramble in -> structured spec out. Every field carries provenance: "you" or "filled". */
-const BRAIN={ id:"local-heuristic-1", kind:"local", label:"Local heuristic compiler", cost:0, online:false };
+/* ================= SPEC COMPILER (local fallback brain — transparent, no LLM) =================
+   Completion invariant: weak, incomplete, or empty input still compiles to a candidate.
+   Provenance is explicit:
+     you      = directly supported by the request
+     inferred = interpretation of request text
+     fallback = local choice made only to keep the pipeline moving
+   A fallback can teach verified LOGIC without being treated as verified INTENT. */
+const BRAIN={ id:"local-fallback-2", kind:"local", label:"Local fallback compiler", cost:0, online:false };
 function compileSpec(ramble){
-  const t=" "+ramble.toLowerCase()+" ";
+  const original=String(ramble==null?"":ramble).trim();
+  const working=original||"make a useful app";
+  ramble=working;
+  const t=" "+working.toLowerCase()+" ";
   const has=(...ws)=>ws.some(w=>t.includes(w));
   // app type
-  let app_type="web app", aSrc="filled", aConf="low";
+  let app_type="web app", aSrc="fallback", aConf="low";
   if(has("game","playable","level","battle","arena","player")){app_type="game";aSrc="you";aConf="high";}
   else if(has("mobile","phone","iphone","android","on the go")){app_type="mobile app";aSrc="you";aConf="high";}
   else if(has("dashboard","team","web","browser","site")){app_type="web app";aSrc="you";aConf="med";}
   // audience: "for X" pattern
-  let audience=null, auSrc="filled";
+  let audience=null, auSrc="fallback";
   const m=ramble.match(/for\s+([a-z][a-z\s]{2,28}?)(?=[,.]| to | who | with |$)/i);
   if(m){audience=m[1].trim();auSrc="you";}
   else{audience={ "mobile app":"busy people","web app":"small teams","game":"casual players"}[app_type];}
@@ -370,9 +378,9 @@ function compileSpec(ramble){
     .filter(p=>p.length>2&&p.length<60&&!deepSkip.test(p)&&!conSkip.test(p));
   feats=feats.filter((p,i)=>feats.indexOf(p)===i);
   feats.sort((a,b)=>(vrx.test(b)?1:0)-(vrx.test(a)?1:0));
-  feats=feats.slice(0,4).map((p,i)=>({text:p, weight:8-i, source:vrx.test(p)?"you":"filled"}));
+  feats=feats.slice(0,4).map((p,i)=>({text:p, weight:8-i, source:vrx.test(p)?"you":"inferred"}));
   if(!feats.length){ const fb={"mobile app":["Track items","Send reminders"],"web app":["Dashboard","Team notes"],"game":["Quick play","Battle arena"]}[app_type];
-    feats=fb.map((p,i)=>({text:p,weight:8-i,source:"filled"})); }
+    feats=fb.map((p,i)=>({text:p,weight:8-i,source:"fallback"})); }
   // constraints
   const constraints=[];
   if(has("offline","no internet","local-first","local first"))constraints.push({text:"works offline",source:"you"});
@@ -380,21 +388,23 @@ function compileSpec(ramble){
   if(has("no sign","guest","no login","without account"))constraints.push({text:"guest mode (no sign-in)",source:"you"});
   // deep aspect per app type
   const deepQ={"mobile app":"sign-in","web app":"collaboration","game":"combat"}[app_type];
-  let deepChoice=null, dSrc="filled";
+  let deepChoice=null, dSrc="fallback";
   if(app_type==="mobile app"){ deepChoice=has("guest","no sign","no login")?"guest":has("password","email")?"password":"sms"; dSrc=has("guest","password","email","phone","sms")?"you":"filled"; }
   if(app_type==="web app"){ deepChoice=has("comment","notes","async")?"comments":has("local","offline","private")?"local":"comments"; dSrc=has("comment","notes","async","local","offline")?"you":"filled"; }
   if(app_type==="game"){ deepChoice=has("turn","strategy")?"turns":has("idle","auto")?"idle":"buttons"; dSrc=has("turn","strategy","idle","auto","real","action")?"you":"filled"; }
   return { app_type, app_type_src:aSrc, app_type_conf:aConf, audience, audience_src:auSrc,
-    features:feats, constraints, deep:{aspect:deepQ, choice:deepChoice, src:dSrc}, raw:ramble };
+    features:feats, constraints, deep:{aspect:deepQ, choice:deepChoice, src:dSrc},
+    raw:original, effective_input:working, input_was_empty:!original,
+    provenance_mode:"explicit > inferred > fallback" };
 }
 /* ================= HOLE-POKER: attack the spec for ambiguity ================= */
 function pokeHoles(spec){
   const holes=[];
-  if(spec.audience_src==="filled")holes.push({id:"aud",q:"Who is this for?",opts:["busy parents","freelancers","small teams","students","gamers"],field:"audience"});
+  if(spec.audience_src!=="you")holes.push({id:"aud",q:"Who is this for?",opts:["busy parents","freelancers","small teams","students","gamers"],field:"audience"});
   if(spec.app_type_conf==="low")holes.push({id:"type",q:"What kind of app is this?",opts:["mobile app","web app","game"],field:"app_type"});
-  if(spec.deep.src==="filled")holes.push({id:"deep",q:{"mobile app":"How do people sign in?","web app":"How do people work together?","game":"What kind of combat?"}[spec.app_type],
+  if(spec.deep.src!=="you")holes.push({id:"deep",q:{"mobile app":"How do people sign in?","web app":"How do people work together?","game":"What kind of combat?"}[spec.app_type],
     opts:{"mobile app":["sms","password","guest"],"web app":["comments","local"],"game":["buttons","turns"]}[spec.app_type],field:"deep"});
-  spec.features.forEach((f,i)=>{ if(f.text.split(" ").length<2||f.source==="filled")
+  spec.features.forEach((f,i)=>{ if(f.text.split(" ").length<2||f.source!=="you")
     holes.push({id:"feat"+i,q:"What should \""+f.text+"\" actually do?",opts:["keep as-is","make it a list","make it cards","drop it"],field:"feat"+i}); });
   const c=spec.constraints.map(x=>x.text);
   if(c.includes("works offline")&&spec.deep.choice==="comments")holes.push({id:"conf",q:"Offline + team comments conflict. Which wins?",
@@ -413,7 +423,8 @@ function fitCheck(spec){
       .map(p=>({part:p,score:fitScore(f,p)})).sort((a,b)=>b.score-a.score);
     const best=ranked[0];
     return {feat:i, text:f.text, best:best.part.id, bestName:best.part.name, score:best.score,
-      ok:best.score>=2, alts:ranked.slice(1,3).map(r=>({id:r.part.id,name:r.part.name,score:r.score}))};
+      ok:best.score>=2, fallback:best.score<2, resolution:best.score>=2?"verified-match":"fallback-match",
+      alts:ranked.slice(1,3).map(r=>({id:r.part.id,name:r.part.name,score:r.score}))};
   });
 }
 function deepPartFor(spec){
@@ -468,7 +479,8 @@ function buildJobs(spec,fit){
   fit.forEach((f,i)=>{ if(f.dropped)return;
     const p=partById(f.best);
     jobs.push({id:"job-"+(++n),kind:"feature",label:p.name+" — "+f.text,part_id:f.best,
-      feature:f.text,weight:spec.features[f.feat].weight,deps:["job-1"],status:"planned"}); });
+      feature:f.text,weight:spec.features[f.feat].weight,deps:["job-1"],status:"planned",
+      resolution:f.resolution||"verified-match",fallback:!!f.fallback}); });
   if(spec.constraints.some(c=>c.text==="dark theme"))
     jobs.push({id:"job-"+(++n),kind:"theme",label:"Dark theme",part_id:"theme-dark",
       feature:"dark theme",weight:4,deps:jobs.map(j=>j.id).filter(id=>id!=="job-"+n),status:"planned"});
@@ -484,7 +496,9 @@ function buildPacket(job,spec){
   return {packet_id:uid("pkt"), job_id:job.id, issued_to:{worker_id:worker.id,codename:worker.codename,role:worker.role},
     role_briefing:ROLESPEC[worker.role].blurb,
     spec_slice:{app:spec.app_type,audience:spec.audience,feature:job.feature,weight:job.weight,
-      constraints:spec.constraints.map(c=>c.text)},
+      constraints:spec.constraints.map(c=>c.text),
+      provenance:{app:spec.app_type_src,audience:spec.audience_src,feature:job.kind==="feature"?(job.fallback?"fallback":"resolved"):"resolved",
+        deep:spec.deep&&spec.deep.src||"unknown",resolution:job.resolution||"resolved"}},
     destination:dest,
     limits:{may_touch:[dest,"its own localStorage keys"],
       may_not_touch:["other jobs' sections","the harness UI","network","any file outside this packet"]},
@@ -645,7 +659,7 @@ async function executeIntegration(job,spec){
 const STAGES=[["intake","1 · Ramble"],["spec","2 · Spec"],["holes","3 · Holes"],["fit","4 · Fit"],["jobs","5 · Jobs"],["build","6 · Build"],["review","7 · Review"],["promote","8 · Promote"],["deliver","9 · Deliver"],["ledger","10 · Ledger"]];
 let H=null;
 function freshH(){ return {stage:"intake",ramble:"",spec:null,holes:[],fit:[],jobs:[],
-  workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],auto:false}; }
+  workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],training:[],auto:false}; }
 const NAMEPOOL=["Anvil","Bishop","Cinder","Drift","Ember","Flint","Gale","Harbor","Iris","Jolt","Kestrel","Lumen","Mesa","North","Onyx","Pico"];
 function initWorkers(){ const pool=NAMEPOOL.slice();
   const mk=(role)=>{ const r=ROLESPEC[role];
@@ -677,9 +691,10 @@ function vIntake(){ return `<div class="card"><h2>Ramble the goal</h2>
 
 /* ---------- stage: spec ---------- */
 function vSpec(){ const s=H.spec;
-  const prov=v=>'<span class="pill '+(v==="you"?"you":"fill")+'">'+(v==="you"?"from you":"filled in")+'</span>';
+  const prov=v=>'<span class="pill '+(v==="you"?"you":"fill")+'">'+
+    (v==="you"?"from you":v==="inferred"?"inferred":"fallback")+'</span>';
   return `<div class="card"><h2>Compiled spec</h2>
-  <p class="sub">Compiled by ${esc(BRAIN.label)} from your ramble. <span class="pill fill">filled in</span> fields are machine guesses — fix anything before continuing.</p>
+  <p class="sub">Compiled by ${esc(BRAIN.label)} from your ramble. <span class="pill fill">inferred / fallback</span> fields are local machine choices. They may teach working logic, but they are not treated as confirmed intent.</p>
   <div class="kv">
    <dt>App type</dt><dd>${esc(s.app_type)} ${prov(s.app_type_src)} <span class="pill">${esc(s.app_type_conf)} confidence</span></dd>
    <dt>Audience</dt><dd>${esc(s.audience)} ${prov(s.audience_src)}</dd>
@@ -700,30 +715,51 @@ function vHoles(){
   ${H.holes.map(h=>`<div class="job work"><b>${esc(h.q)}</b><div class="row" style="margin-top:8px">
     ${h.opts.map(o=>'<button class="ghost" data-h="'+h.id+'" data-o="'+esc(o)+'">'+esc(o)+'</button>').join("")}
    </div></div>`).join("")}
-  <div class="row" style="margin-top:10px"><button class="btn" id="gofit">Resolve & fit check →</button></div></div>`;
+  <div class="row" style="margin-top:10px"><button class="btn" id="gofit">Resolve & fit check →</button>
+   <button class="ghost" id="fallbackholes">Fill open holes locally</button></div></div>`;
 }
-function applyHole(h,opt){
-  const s=H.spec;
-  if(h.field==="audience"){s.audience=opt;s.audience_src="you";}
-  if(h.field==="app_type"){s.app_type=opt;s.app_type_src="you";s.app_type_conf="high";}
-  if(h.field==="deep"){s.deep.choice=opt;s.deep.src="you";}
-  if(h.field==="conflict"){ if(opt.indexOf("offline")===0){s.deep.choice="local";s.constraints=s.constraints.filter(c=>c.text!=="works offline");s.constraints.push({text:"works offline",source:"you"});} }
+function applyHole(h,opt,source){
+  const s=H.spec, src=source||"you";
+  if(h.field==="audience"){s.audience=opt;s.audience_src=src;}
+  if(h.field==="app_type"){s.app_type=opt;s.app_type_src=src;s.app_type_conf=src==="you"?"high":"low";}
+  if(h.field==="deep"){s.deep.choice=opt;s.deep.src=src;}
+  if(h.field==="conflict"){ if(opt.indexOf("offline")===0){s.deep.choice="local";s.deep.src=src;s.constraints=s.constraints.filter(c=>c.text!=="works offline");s.constraints.push({text:"works offline",source:src});} }
   if(h.field.indexOf("feat")===0){ const i=+h.field.slice(4);
-    if(opt==="drop it")s.features.splice(i,1);
-    else if(opt!=="keep as-is"){s.features[i].text=s.features[i].text+" ("+opt+")";s.features[i].source="you";} }
+    if(opt==="drop it"&&src==="you")s.features.splice(i,1);
+    else if(opt!=="keep as-is"){s.features[i].text=s.features[i].text+" ("+opt+")";s.features[i].source=src;}
+    else if(s.features[i])s.features[i].source=src; }
   H.holes=H.holes.filter(x=>x.id!==h.id);
+}
+function resolveOpenHolesByFallback(){
+  const open=H.holes.slice();
+  open.forEach(h=>{
+    let opt=h.opts[0];
+    if(h.field==="audience")opt=H.spec.audience;
+    else if(h.field==="app_type")opt=H.spec.app_type;
+    else if(h.field==="deep")opt=H.spec.deep.choice;
+    else if(h.field.indexOf("feat")===0)opt="keep as-is";
+    else if(h.field==="conflict"&&H.spec.constraints.some(c=>c.text==="works offline"))opt="offline wins (local-first)";
+    applyHole(h,opt,"fallback");
+  });
+  if(open.length)log("<b>fallback resolver</b> closed "+open.length+" open hole"+(open.length===1?"":"s")+" — provenance preserved");
+}
+function acceptFitFallbacks(){
+  H.fit.forEach(f=>{
+    if(!f.ok){ f.ok=true; f.fallback=true; f.resolution="fallback-match"; }
+    else if(!f.resolution)f.resolution="verified-match";
+  });
 }
 
 /* ---------- stage: fit ---------- */
 function vFit(){
   return `<div class="card"><h2>Fit check</h2>
-  <p class="sub">Every feature must map to a pre-verified registry part. Low scores need your pick — the machine doesn't guess silently.</p>
+  <p class="sub">Every feature maps to the best known registry part. Strong matches are reused; weak matches stay visibly marked as fallback and may still build. Verification decides whether the logic is actually reusable.</p>
   ${H.fit.map((f,i)=>`<div class="job ${f.ok?"pass":"fail"}"><b>${esc(f.text)}</b><br>
     <span class="mono">→ ${esc(f.bestName)}</span> <span class="pill ${f.ok?"ok":"bad"}">fit ${f.score}</span>
     ${f.ok?"":'<div class="row" style="margin-top:6px">'+f.alts.map(a=>'<button class="ghost" data-f="'+i+'" data-p="'+a.id+'">'+esc(a.name)+' ('+a.score+')</button>').join("")+"</div>"}
    </div>`).join("")}
-  <div class="row" style="margin-top:10px"><button class="btn" id="gojobs" ${H.fit.some(f=>!f.ok&&!f.dropped)?"disabled":""}>Build job graph →</button></div>
-  ${H.fit.some(f=>!f.ok)?'<p class="note">Resolve the low-fit features above (or drop them) to continue.</p>':""}</div>`;
+  <div class="row" style="margin-top:10px"><button class="btn" id="gojobs">Build best-known job graph →</button></div>
+  ${H.fit.some(f=>!f.ok)?'<p class="note">Low-fit rows will proceed as <b>fallback</b>. A passing build teaches logic; intent remains unconfirmed until judged.</p>':""}</div>`;
 }
 
 /* ---------- stage: jobs ---------- */
@@ -829,16 +865,18 @@ function render(){
 function wire(){
   const on=(id,fn)=>{ const e=$(id); if(e)e.onclick=fn; };
   on("#usesample",()=>{ $("#ramble").value=SAMPLE_RAMBLE; });
-  on("#compile",()=>{ const r=$("#ramble").value.trim()||SAMPLE_RAMBLE;
+  on("#compile",()=>{ const r=$("#ramble").value.trim();
     H.ramble=r; H.spec=compileSpec(r); H.stage="spec"; render(); });
   on("#gospec",()=>{ const pl=H.workers.find(w=>w.role==="planner"&&w.status==="active");
     if(pl){const p=payWorker(pl,8); log("planner "+esc(pl.codename)+" paid "+p.net+" — spec compiled");}
     H.holes=pokeHoles(H.spec); H.stage="holes"; render(); });
   on("#back1",()=>{ H.stage="intake"; render(); });
+  on("#fallbackholes",()=>{ resolveOpenHolesByFallback(); render(); });
   on("#gofit",()=>{ const hp=H.workers.find(w=>w.role==="hole-poker"&&w.status==="active");
     if(hp){const p=payWorker(hp,6); log("hole-poker "+esc(hp.codename)+" paid "+p.net+" — holes attacked");}
+    if(H.holes.length)resolveOpenHolesByFallback();
     H.fit=fitCheck(H.spec); H.stage="fit"; render(); });
-  on("#gojobs",()=>{ H.jobs=buildJobs(H.spec,H.fit); H.stage="jobs"; render(); });
+  on("#gojobs",()=>{ acceptFitFallbacks(); H.jobs=buildJobs(H.spec,H.fit); H.stage="jobs"; render(); });
   on("#gobuild",()=>{ H.stage="build"; render(); runBuild(); });
   on("#goreview",()=>{ H.stage="review"; render(); });
   on("#gopromote",()=>{ H.stage="promote"; render(); });
@@ -891,8 +929,19 @@ function doPromote(){
   if(!integ||integ.status!=="approved"||!integ.appHtml){ log("<b>promotion refused</b> — integration not verified"); return; }
   const next=H.canon==="—"?"1.0":bumpVer(H.canon);
   H.appHtml=integ.appHtml; H.canon=next;
-  H.versions.push({v:next,jobs:H.jobs.length,note:H.spec.audience+" "+H.spec.app_type});
+  const prov=[H.spec.app_type_src,H.spec.audience_src,H.spec.deep&&H.spec.deep.src]
+    .concat(H.spec.features.map(f=>f.source)).concat(H.spec.constraints.map(c=>c.source));
+  const fallbackCount=prov.filter(x=>x==="fallback").length;
+  const explicitCount=prov.filter(x=>x==="you").length;
+  const evidence={v:next,at:new Date().toISOString(),request:H.spec.raw||"",effective_input:H.spec.effective_input||H.spec.raw||"",
+    logic:{status:"verified-working",gates:"syntax+boot+behavior+integration+regression"},
+    intent:{status:H.auto?"unjudged":"user-reviewed",explicit:explicitCount,total:prov.length,fallback:fallbackCount},
+    lesson:fallbackCount?"working logic; intent confidence separate":"working logic with resolved intent"};
+  H.training.push(evidence);
+  H.versions.push({v:next,jobs:H.jobs.length,note:H.spec.audience+" "+H.spec.app_type,training:evidence});
   store.set("moor-harness",JSON.stringify({canon:H.canon,versions:H.versions.map(v=>({v:v.v,note:v.note}))}));
+  let bank=[]; try{bank=JSON.parse(store.get("moor-harness-training")||"[]");if(!Array.isArray(bank))bank=[];}catch(e){}
+  bank.push(evidence); if(bank.length>200)bank=bank.slice(-200); store.set("moor-harness-training",JSON.stringify(bank));
   H.stage="deliver"; render();
 }
 async function runMod(){
@@ -933,10 +982,10 @@ async function autoRun(){
   const pl=H.workers.find(w=>w.role==="planner"&&w.status==="active"); if(pl)payWorker(pl,8);
   const hp=H.workers.find(w=>w.role==="hole-poker"&&w.status==="active"); if(hp)payWorker(hp,6);
   H.holes=pokeHoles(H.spec);
-  // auto-resolve holes with first options (marked filled)
-  while(H.holes.length){ const h=H.holes[0]; applyHole(h,h.opts[0]); }
+  // auto-resolve holes locally, but keep fallback provenance honest
+  resolveOpenHolesByFallback();
   H.fit=fitCheck(H.spec);
-  H.fit.forEach(f=>{ if(!f.ok){ const a=f.alts[0]; if(a){f.best=a.id;f.bestName=a.name;f.score=a.score;f.ok=true;} else f.dropped=true; } });
+  acceptFitFallbacks();
   H.jobs=buildJobs(H.spec,H.fit); H.stage="build"; render();
   await runBuild();
   for(const j of H.jobs){ if(j.status==="failed"&&j.kind!=="integration"&&(j.tries||0)<3){ await reviseJob(j.id); } }
