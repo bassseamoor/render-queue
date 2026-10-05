@@ -499,6 +499,19 @@ function ensureFunnelProject(){
         parentId:p.versions.length?p.versions[p.versions.length-1].id:null,revision:'Separate verified logic from intent confidence; always attempt a gated candidate.',
         items:(p.members||[]).map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-harness-completion';y.change=x.ref==='contract-harness-completion'?'new':'inherited';return y;})});
     }
+    var hasRefGraph=(p.members||[]).some(function(x){return x.ref==='contract-reference-graph';});
+    if(!hasRefGraph){
+      var rg=members.find(function(x){return x.ref==='contract-reference-graph';});
+      if(rg){
+        p.members=p.members||[];p.members.push(rg);p.versions=p.versions||[];
+        var nums=p.versions.map(function(v){return parseInt(String(v.number||'').replace(/\D/g,''),10);}).filter(Number.isFinite);
+        var vn='v'+((nums.length?Math.max.apply(null,nums):0)+1);
+        p.versions.push({id:'spine-reference-graph-'+Date.now(),number:vn,title:'Universal reference graph',state:'locked-import',createdAt:now,
+          parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
+          revision:'Bin now stores concepts, recipes, artifacts, rules, failures, evidence, projects, versions, generators, components, implementations, and training as linked references; app/project outputs feed it with provenance.',
+          items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-reference-graph';y.change=x.ref==='contract-reference-graph'?'new':'inherited';return y;})});
+      }
+    }
     try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
   }catch(e){}
 }
