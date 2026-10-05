@@ -1,0 +1,37 @@
+name: UltraFeedback to MOOR Bin
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ultrafeedback-training.yml"
+      - "scripts/ultrafeedback_to_moor.py"
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Hugging Face datasets
+        run: python -m pip install --upgrade "datasets>=3,<5"
+      - name: Stream full UltraFeedback and build MOOR training index
+        run: python scripts/ultrafeedback_to_moor.py --mode summary --examples 96 --out moor-bin/datasets/ultrafeedback
+      - name: Commit compact training outputs
+        run: |
+          git config user.name "moor-training-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add moor-bin/datasets/ultrafeedback
+          if git diff --cached --quiet; then
+            echo "No generated changes."
+            exit 0
+          fi
+          git commit -m "Train Pulse Bin from UltraFeedback [skip ci]"
+          git push
