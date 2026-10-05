@@ -308,8 +308,11 @@ body.pretending #hud-top{filter:saturate(.7)}
   pointer-events:none;z-index:4;animation:vh-pulse 1.8s ease-in-out infinite}
 #verse-here[hidden]{display:none}
 @keyframes vh-pulse{0%,100%{transform:scale(1);opacity:.95}50%{transform:scale(1.18);opacity:.6}}
-.map-planet{position:absolute;transform:translate(-50%,-135%);font-size:.68rem;letter-spacing:.05em;
+.map-planet{position:absolute;font-size:.68rem;letter-spacing:.05em;
   color:#a8dcf5;text-shadow:0 0 7px rgba(91,216,255,.85),0 1px 2px #000;white-space:nowrap;pointer-events:none}
+/* #20: sector group headers — dimmer than planet names, clear hierarchy */
+.map-sector{position:absolute;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(140,170,200,.62);text-shadow:0 1px 2px #000;white-space:nowrap;pointer-events:none}
 /* map chrome: crisp laser instrument, not chunky panels */
 #map-tiers{box-shadow:0 0 18px rgba(91,216,255,.25),0 8px 30px rgba(0,0,0,.5)}
 #map-tiers button{letter-spacing:.12em;text-transform:uppercase;font-size:.68rem}
@@ -357,24 +360,41 @@ body.pretending #hud-top{filter:saturate(.7)}
 .uv-spin{font-size:1.6rem;color:#5bd8ff;animation:uv-rot 1.1s linear infinite}
 @keyframes uv-rot{to{transform:rotate(360deg)}}
 
+/* ============ custom widget icons (widgets.js) ============
+ * Laser-grid stroke icons. They inherit the surrounding text color
+ * and scale with the surrounding font size (1.3em), so buttons need
+ * no per-icon sizing. The soft cyan drop-shadow is the hologram glow. */
+.wic{display:inline-flex;align-items:center;justify-content:center;line-height:0;vertical-align:-0.18em}
+.wsvg{width:1.3em;height:1.3em;flex:0 0 auto;overflow:visible}
+button .wsvg{filter:drop-shadow(0 0 3px rgba(110,216,255,.45))}
+button.on .wsvg{filter:drop-shadow(0 0 5px rgba(110,216,255,.8))}
+#modebar .mi.wic .wsvg{width:26px;height:26px}
+.pal .wsvg{width:26px;height:26px}
+.trow-icons .wsvg{width:22px;height:22px}
+.tkinds .wsvg{width:22px;height:22px}
+#hud-top .wic .wsvg{width:20px;height:20px}
+#map-tools .wsvg{width:20px;height:20px}
+#map-tiers .wsvg{width:16px;height:16px}
+h3 .wsvg{width:1.1em;height:1.1em}
+
 </style>
 </head>
 <body>
 <div id="app">
   <canvas id="gl"></canvas>
   <div id="hud-top">
-    <button id="world-chip" aria-label="Worlds"><span class="wic">🌍</span><span id="world-name">…</span></button>
+    <button id="world-chip" aria-label="Worlds"><span class="wic" data-wicon="globe"></span><span id="world-name">…</span></button>
     <span style="display:flex;gap:8px;pointer-events:auto">
-      <button id="acct-btn" title="People" aria-label="People">👤</button>
+      <button id="acct-btn" title="People" aria-label="People"><span class="wic" data-wicon="person"></span></button>
       <button id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo">↩</button>
-      <button id="map-btn" title="Map (M)" aria-label="Map">🗺</button>
-      <button id="bug-btn" title="Report a problem" aria-label="Report a problem">🐛</button>
+      <button id="map-btn" title="Map (M)" aria-label="Map"><span class="wic" data-wicon="map"></span></button>
+      <button id="bug-btn" title="Report a problem" aria-label="Report a problem"><span class="wic" data-wicon="bug"></span></button>
       <button id="reset-btn" title="Reset world" aria-label="Reset world">↺</button>
-      <span id="save-state" title="All changes saved">✓</span>
+      <span id="save-state" title="All changes saved"><span class="wic" data-wicon="check"></span></span>
     </span>
   </div>
   <canvas id="minimap" aria-label="Minimap"></canvas>
-  <div id="pretend-pill" hidden>👀 Pretending to be a visitor — tap to stop</div>
+  <div id="pretend-pill" hidden><span class="wic" data-wicon="eyeOff"></span> Pretending to be a visitor — tap to stop</div>
   <div id="palette" hidden></div>
   <div id="sel-pop" hidden></div>
   <div id="move-bar" hidden></div>
@@ -383,12 +403,12 @@ body.pretending #hud-top{filter:saturate(.7)}
   <div id="map-wrap" hidden>
     <canvas id="map-cv"></canvas>
     <div id="map-tools">
-      <button data-mtool="inspect" class="on" title="Inspect">🖐</button>
-      <button data-mtool="path" title="Draw path">🛤️</button>
-      <button data-mtool="claim" title="Claim land">🛡️</button>
-      <button data-mtool="waypoint" title="Drop waypoint">📍</button>
-      <button data-mtool="terraform" title="Terraform">⛰️</button>
-      <button data-mtool="measure" title="Measure distance">📏</button>
+      <button data-mtool="inspect" class="on" title="Inspect"><span class="wic" data-wicon="hand"></span></button>
+      <button data-mtool="path" title="Draw path"><span class="wic" data-wicon="path"></span></button>
+      <button data-mtool="claim" title="Claim land"><span class="wic" data-wicon="shield"></span></button>
+      <button data-mtool="waypoint" title="Drop waypoint"><span class="wic" data-wicon="pin"></span></button>
+      <button data-mtool="terraform" title="Terraform"><span class="wic" data-wicon="mountain"></span></button>
+      <button data-mtool="measure" title="Measure distance"><span class="wic" data-wicon="ruler"></span></button>
       <button id="map-terr-sign" hidden title="Raise / lower">＋</button>
       <button id="map-layers-btn" title="Layers">▤</button>
       <button id="map-north-btn" title="North up">N</button>
@@ -398,46 +418,46 @@ body.pretending #hud-top{filter:saturate(.7)}
     <div id="verse-label" hidden></div>
     <div id="verse-here" hidden></div>
     <div id="verse-head" hidden>
-      <div class="vh-title">✨ VERSE</div>
+      <div class="vh-title"><span class="wic" data-wicon="sparkle"></span> VERSE</div>
       <div class="vh-sub">Every glowing sphere is a planet you can visit — tap one to travel there</div>
-      <div class="vh-legend"><span>🪐 planet · a visitable world</span><span>⭐ star · a system sun</span><span class="vh-me">◉ you are here</span></div>
+      <div class="vh-legend"><span><span class="wic" data-wicon="planet"></span> planet · a visitable world</span><span><span class="wic" data-wicon="star"></span> star · a system sun</span><span class="vh-me">◉ you are here</span></div>
     </div>
     <div id="map-tiers">
-      <button data-tier="surface" class="on">🌍 Surface</button>
-      <button data-tier="planet">🪐 Planet</button>
-      <button data-tier="verse">✨ Verse</button>
+      <button data-tier="surface" class="on"><span class="wic" data-wicon="globe"></span> Surface</button>
+      <button data-tier="planet"><span class="wic" data-wicon="planet"></span> Planet</button>
+      <button data-tier="verse"><span class="wic" data-wicon="sparkle"></span> Verse</button>
     </div>
     <div id="map-read">Tap the map to read coordinates</div>
-    <button id="map-close" aria-label="Close map">✕</button>
+    <button id="map-close" aria-label="Close map"><span class="wic" data-wicon="x"></span></button>
   </div>
   <div id="wp-pop" hidden></div>
   <div id="npc-pop" hidden></div>
   <div id="issue-pop" hidden></div>
   <div id="tool-pop" hidden></div>
   <div id="verse-pop" hidden></div>
-  <button id="jump" hidden aria-label="Jump">⬆</button>
-  <button id="fly" hidden aria-label="Fly">🕊</button>
-  <button id="zoomout" hidden aria-label="Zoom out to orbit">⤢</button>
+  <button id="jump" hidden aria-label="Jump"><span class="wic" data-wicon="arrowUp"></span></button>
+  <button id="fly" hidden aria-label="Fly"><span class="wic" data-wicon="feather"></span></button>
+  <button id="zoomout" hidden aria-label="Zoom out to orbit"><span class="wic" data-wicon="expand"></span></button>
   <div id="travel-wrap" hidden>
     <div id="travel-panel">
-      <h3>🧭 Travel</h3>
+      <h3><span class="wic" data-wicon="compass"></span> Travel</h3>
       <input id="travel-search" placeholder="Search 254 planets…" autocomplete="off">
       <div id="travel-sectors"></div>
       <div id="travel-list"></div>
-      <button id="travel-close" aria-label="Close">✕</button>
+      <button id="travel-close" aria-label="Close"><span class="wic" data-wicon="x"></span></button>
     </div>
   </div>
   <div id="modebar">
-    <button data-mode="build"><span class="mi">🏠</span><span class="ml">Build</span></button>
-    <button data-mode="items"><span class="mi">🪑</span><span class="ml">Items</span></button>
-    <button data-mode="paths"><span class="mi">🛤️</span><span class="ml">Paths</span></button>
-    <button data-mode="claims"><span class="mi">🛡️</span><span class="ml">Claim</span></button>
-    <button data-mode="city"><span class="mi">🏙️</span><span class="ml">City</span></button>
-    <button data-mode="paint" id="paint-btn"><span class="mi">🎨</span><span class="ml">Paint</span></button>
-    <button data-mode="life" id="life-btn"><span class="mi">🦴</span><span class="ml">Life</span></button>
-    <button data-mode="tools" id="tools-btn"><span class="mi">🧰</span><span class="ml">Tools</span></button>
-    <button data-mode="walk"><span class="mi">🚶</span><span class="ml">Walk</span></button>
-    <button data-mode="orbit" class="on"><span class="mi">👁</span><span class="ml">Orbit</span></button>
+    <button data-mode="build"><span class="mi wic" data-wicon="home"></span><span class="ml">Build</span></button>
+    <button data-mode="items"><span class="mi wic" data-wicon="chair"></span><span class="ml">Items</span></button>
+    <button data-mode="paths"><span class="mi wic" data-wicon="path"></span><span class="ml">Paths</span></button>
+    <button data-mode="claims"><span class="mi wic" data-wicon="shield"></span><span class="ml">Claim</span></button>
+    <button data-mode="city"><span class="mi wic" data-wicon="city"></span><span class="ml">City</span></button>
+    <button data-mode="paint" id="paint-btn"><span class="mi wic" data-wicon="brush"></span><span class="ml">Paint</span></button>
+    <button data-mode="life" id="life-btn"><span class="mi wic" data-wicon="paw"></span><span class="ml">Life</span></button>
+    <button data-mode="tools" id="tools-btn"><span class="mi wic" data-wicon="toolbox"></span><span class="ml">Tools</span></button>
+    <button data-mode="walk"><span class="mi wic" data-wicon="walk"></span><span class="ml">Walk</span></button>
+    <button data-mode="orbit" class="on"><span class="mi wic" data-wicon="eye"></span><span class="ml">Orbit</span></button>
   </div>
   <div id="joy" hidden><div id="joy-knob"></div></div>
   <div id="sheet" hidden></div>
@@ -1854,6 +1874,15 @@ var WALL_H = 2.7;           // default story height
 var SLAB_T = 0.12;          // floor slab thickness
 var JUNCTION_TOL = 0.08;    // endpoint clustering distance
 var PERIM_TOL = 0.01;       // room perimeter membership tolerance
+/* rendering robustness (no visual change to dimensions that matter):
+ * skins embed slightly into the wall core so no two faces are ever exactly
+ * coplanar (the classic z-fighting shimmer); trim sits slightly proud of the
+ * skins for the same reason; the smooth roof skin floats just above the
+ * stepped boxes; ceilings sit a hair below wall tops. */
+var SKIN_EMBED = 0.025;     // skin overlap into the frame core
+var TRIM_PROUD = 0.015;     // trim standoff beyond the skin face
+var ROOF_LIFT = 0.08;       // smooth roof skin lift above the steps
+var CEIL_DROP = 0.02;       // ceiling recess below wall tops
 var MIN_WALL_LEN = 1.0;
 
 /* ---------------- seeded RNG (mulberry32 + FNV-1a) ---------------- */
@@ -2087,15 +2116,19 @@ function emitRun(mesh, wall, t0, t1, yLo, yHi, n) {
   if (xWall) {
     var xa = Math.min(p0.x, p1.x), len = Math.abs(p1.x - p0.x), zc = (p0.z + p1.z) / 2;
     var s = n.z >= 0 ? 1 : -1; // interior side sign along z
+    /* skins overlap SKIN_EMBED into the core: the visible faces stay exactly
+     * where they were, but no two faces are coplanar anymore (z-fighting fix) */
+    var skT = SKIN_T + SKIN_EMBED;
     mesh.box(xa, yLo, zc - WALL_T / 2, len, h, WALL_T, frameC);
-    mesh.box(xa, yLo, s > 0 ? zc + WALL_T / 2 : zc - WALL_T / 2 - SKIN_T, len, h, SKIN_T, innerC);
-    mesh.box(xa, yLo, s > 0 ? zc - WALL_T / 2 - SKIN_T : zc + WALL_T / 2, len, h, SKIN_T, outerC);
+    mesh.box(xa, yLo, s > 0 ? zc + WALL_T / 2 - SKIN_EMBED : zc - WALL_T / 2 - SKIN_T, len, h, skT, innerC);
+    mesh.box(xa, yLo, s > 0 ? zc - WALL_T / 2 - SKIN_T : zc + WALL_T / 2 - SKIN_EMBED, len, h, skT, outerC);
   } else {
     var za = Math.min(p0.z, p1.z), len2 = Math.abs(p1.z - p0.z), xc = (p0.x + p1.x) / 2;
     var s2 = n.x >= 0 ? 1 : -1;
+    var skT2 = SKIN_T + SKIN_EMBED;
     mesh.box(xc - WALL_T / 2, yLo, za, WALL_T, h, len2, frameC);
-    mesh.box(s2 > 0 ? xc + WALL_T / 2 : xc - WALL_T / 2 - SKIN_T, yLo, za, SKIN_T, h, len2, innerC);
-    mesh.box(s2 > 0 ? xc - WALL_T / 2 - SKIN_T : xc + WALL_T / 2, yLo, za, SKIN_T, h, len2, outerC);
+    mesh.box(s2 > 0 ? xc + WALL_T / 2 - SKIN_EMBED : xc - WALL_T / 2 - SKIN_T, yLo, za, skT2, h, len2, innerC);
+    mesh.box(s2 > 0 ? xc - WALL_T / 2 - SKIN_T : xc + WALL_T / 2 - SKIN_EMBED, yLo, za, skT2, h, len2, outerC);
   }
 }
 
@@ -2134,7 +2167,7 @@ function emitOpening(mesh, wall, o, y0, n) {
   function hbox(cx, cz, w, d, yA, yB) { mesh.box(cx - w / 2, yA, cz - d / 2, w, yB - yA, d, frameC); }
   if (xWall) {
     var zc = (c0.z + c1.z) / 2, xa = Math.min(c0.x, c1.x), xb = Math.max(c0.x, c1.x);
-    var td = WALL_T + 0.04;
+    var td = WALL_T + 2 * SKIN_T + 2 * TRIM_PROUD; // trim faces sit proud of the skins: never coplanar
     hbox(xa, zc, tw, td, base, top);            // jamb L
     hbox(xb, zc, tw, td, base, top);            // jamb R
     hbox((xa + xb) / 2, zc, (xb - xa) + tw, td, top, top + tw); // head
@@ -2146,7 +2179,7 @@ function emitOpening(mesh, wall, o, y0, n) {
       mesh.box(xa, base, zc - 0.01, xb - xa, o.h, 0.02, matColor('glass-pane', 'socket'));
   } else {
     var xc = (c0.x + c1.x) / 2, za = Math.min(c0.z, c1.z), zb = Math.max(c0.z, c1.z);
-    var td2 = WALL_T + 0.04;
+    var td2 = WALL_T + 2 * SKIN_T + 2 * TRIM_PROUD;
     hbox(xc, za, td2, tw, base, top);
     hbox(xc, zb, td2, tw, base, top);
     hbox(xc, (za + zb) / 2, td2, (zb - za) + tw, top, top + tw);
@@ -2182,9 +2215,11 @@ function emitSlab(mesh, room) {
     var p0 = room.polygon[0];
     for (var i = 1; i < room.polygon.length - 1; i++) {
       var p1 = room.polygon[i], p2 = room.polygon[i + 1];
-      // top face + bottom face + skirt via two tris each (fan)
-      tri(mesh, [p0.x, y0, p0.z], [p1.x, y0, p1.z], [p2.x, y0, p2.z], col);
-      tri(mesh, [p0.x, y0 - SLAB_T, p0.z], [p2.x, y0 - SLAB_T, p2.z], [p1.x, y0 - SLAB_T, p1.z], col);
+      /* double-sided top + bottom: the slab reads solid from above and below */
+      if (!mesh.solids) {
+        tri(mesh, [p0.x, y0, p0.z], [p1.x, y0, p1.z], [p2.x, y0, p2.z], col);
+        tri(mesh, [p0.x, y0 - SLAB_T, p0.z], [p1.x, y0 - SLAB_T, p1.z], [p2.x, y0 - SLAB_T, p2.z], col);
+      }
     }
     if (mesh.solids) {
       var bb = aabbOf(room.polygon.map(function (p) { return [p.x, y0 - SLAB_T, p.z]; }));
@@ -2194,6 +2229,13 @@ function emitSlab(mesh, room) {
   }
   var r = room.rect;
   mesh.box(r.x, y0 - SLAB_T, r.z, r.w, SLAB_T, r.d, matColor(room.floor, 'floor'));
+  if (!mesh.solids) {
+    /* box() is open at the bottom: add the underside explicitly so the room
+     * below gets a real ceiling instead of a see-through slab */
+    mesh.face([r.x, y0 - SLAB_T, r.z], [r.x + r.w, y0 - SLAB_T, r.z],
+              [r.x + r.w, y0 - SLAB_T, r.z + r.d], [r.x, y0 - SLAB_T, r.z + r.d],
+              matColor('drywall', 'inner'), [0, -1, 0]);
+  }
 }
 
 /* ---------------- roofs v1 ---------------- */
@@ -2203,15 +2245,27 @@ function pushAABB(mesh, lo, hi, c) {
 }
 /* Sloped quad via explicit corners (triangle mode). In collision mode the
  * caller pushes a manual AABB instead; face() writes only to mesh.data. */
-function quad(mesh, a, b, c, d, col) {
-  mesh.face(a, b, c, d, col, null);
+/* Sloped quad via explicit corners (triangle mode). In collision mode the
+ * caller pushes a manual AABB instead; face() writes only to mesh.data.
+ * Optional n overrides the winding target (outward roof skins). */
+function quad(mesh, a, b, c, d, col, n) {
+  mesh.face(a, b, c, d, col, n || null);
 }
+/* double-sided triangle with a true geometric normal per side: gable ends and
+ * polygon slabs read solid from inside and outside (no see-through walls). */
 function tri(mesh, a, b, c, col) {
-  var n = null, base = mesh.data.length / 23;
-  mesh.vertex(a, [0, 1, 0], col, [0, 0]);
-  mesh.vertex(b, [0, 1, 0], col, [1, 0]);
-  mesh.vertex(c, [0, 1, 0], col, [0, 1]);
-  mesh.indices.push(base, base + 1, base + 2);
+  var ab = [b[0]-a[0], b[1]-a[1], b[2]-a[2]], ac = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
+  var cr = [ab[1]*ac[2]-ab[2]*ac[1], ab[2]*ac[0]-ab[0]*ac[2], ab[0]*ac[1]-ab[1]*ac[0]];
+  var l = Math.hypot(cr[0], cr[1], cr[2]) || 1;
+  var n = [cr[0]/l, cr[1]/l, cr[2]/l], nb = [-n[0], -n[1], -n[2]];
+  var base = mesh.data.length / 23;
+  mesh.vertex(a, n, col, [0, 0]);
+  mesh.vertex(b, n, col, [1, 0]);
+  mesh.vertex(c, n, col, [0, 1]);
+  mesh.vertex(a, nb, col, [0, 0]);
+  mesh.vertex(c, nb, col, [0, 1]);
+  mesh.vertex(b, nb, col, [1, 0]);
+  mesh.indices.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
 }
 function aabbOf(points) {
   var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
@@ -2240,8 +2294,24 @@ function emitSlope(mesh, A, B, C, D, color) {
     if (z1 - z0 < 0.05) { var cz = (z0 + z1) / 2; z0 = cz - 0.025; z1 = cz + 0.025; }
     var yLo = Math.min(pA0[1], pB0[1]) - th, yHi = Math.max(pA1[1], pB1[1]);
     mesh.box(x0, yLo, z0, x1 - x0, yHi - yLo, z1 - z0, color);
+    if (!collision) {
+      /* close the step: its underside is the interior roof surface, so the
+       * roof reads solid from inside (no see-through slopes) */
+      mesh.face([x0, yLo, z0], [x1, yLo, z0], [x1, yLo, z1], [x0, yLo, z1], color, [0, -1, 0]);
+    }
   }
-  if (!collision) quad(mesh, A, B, C, D, color);
+  if (!collision) {
+    /* the smooth outer skin floats ROOF_LIFT above the steps along the slope
+     * normal: crisp roof plane outside, never coplanar with a step (no shimmer) */
+    var ab = [B[0]-A[0], B[1]-A[1], B[2]-A[2]], ad = [D[0]-A[0], D[1]-A[1], D[2]-A[2]];
+    var cr = [ab[1]*ad[2]-ab[2]*ad[1], ab[2]*ad[0]-ab[0]*ad[2], ab[0]*ad[1]-ab[1]*ad[0]];
+    var l = Math.hypot(cr[0], cr[1], cr[2]) || 1, nx = cr[0]/l, ny = cr[1]/l, nz = cr[2]/l;
+    if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; } /* outward = up */
+    function lift(p) { return [p[0] + nx * ROOF_LIFT, p[1] + ny * ROOF_LIFT, p[2] + nz * ROOF_LIFT]; }
+    /* wound to face outward: the smooth skin is the roof you see from outside
+     * (it used to face inward — invisible outside, a ghost plane inside) */
+    quad(mesh, lift(A), lift(B), lift(C), lift(D), color, [nx, ny, nz]);
+  }
 }
 
 function emitRoof(mesh, building) {
@@ -2252,6 +2322,13 @@ function emitRoof(mesh, building) {
   var type = building.roof.type;
   if (type === 'flat') {
     mesh.box(x0 - oh, top, z0 - oh, fp.w + 2 * oh, 0.15, fp.d + 2 * oh, col);
+    if (!collision) {
+      /* ceiling for the top story + solid soffit under the overhang:
+       * box() has no bottom, so the underside is added explicitly */
+      var cc = matColor('drywall', 'inner'), cy = top - CEIL_DROP;
+      mesh.face([x0 - oh, cy, z0 - oh], [x1 + oh, cy, z0 - oh],
+                [x1 + oh, cy, z1 + oh], [x0 - oh, cy, z1 + oh], cc, [0, -1, 0]);
+    }
     var ph = 0.4, pt = 0.12, py = top + 0.15; // parapet
     mesh.box(x0 - oh, py, z0 - oh, fp.w + 2 * oh, ph, pt, col);
     mesh.box(x0 - oh, py, z1 + oh - pt, fp.w + 2 * oh, ph, pt, col);
@@ -2848,10 +2925,13 @@ function emitDiagRun(mesh, wall, t0, t1, yLo, yHi, n) {
   // interior side sign: project n onto left normal
   var s = (n.x * -uz + n.z * ux) >= 0 ? 1 : -1;
   obox(mesh, cx, cz, yLo, yHi, ux, uz, L / 2, WALL_T / 2, frameC);
-  obox(mesh, cx + s * -uz * (WALL_T / 2 + SKIN_T / 2), cz + s * ux * (WALL_T / 2 + SKIN_T / 2),
-       yLo, yHi, ux, uz, L / 2, SKIN_T / 2, innerC);
-  obox(mesh, cx - s * -uz * (WALL_T / 2 + SKIN_T / 2), cz - s * ux * (WALL_T / 2 + SKIN_T / 2),
-       yLo, yHi, ux, uz, L / 2, SKIN_T / 2, outerC);
+  /* skins overlap into the core (same anti-coplanar embed as emitRun):
+   * outer face stays exactly at WALL_T/2+SKIN_T, inner edge sinks SKIN_EMBED in */
+  var skH = (SKIN_T + SKIN_EMBED) / 2, skC = WALL_T / 2 + SKIN_T - skH;
+  obox(mesh, cx + s * -uz * skC, cz + s * ux * skC,
+       yLo, yHi, ux, uz, L / 2, skH, innerC);
+  obox(mesh, cx - s * -uz * skC, cz - s * ux * skC,
+       yLo, yHi, ux, uz, L / 2, skH, outerC);
 }
 /* Diagonal opening: oriented trim + glazing along the wall direction. */
 function emitDiagOpening(mesh, wall, o, y0, n) {
@@ -2861,7 +2941,8 @@ function emitDiagOpening(mesh, wall, o, y0, n) {
   if (L < 1e-6) return;
   var ux = dx / L, uz = dz / L;
   var cx = (c0.x + c1.x) / 2, cz = (c0.z + c1.z) / 2;
-  var base = y0 + o.sill, top = y0 + o.sill + o.h, tw = 0.08, td = WALL_T + 0.04;
+  var base = y0 + o.sill, top = y0 + o.sill + o.h, tw = 0.08;
+  var td = WALL_T + 2 * SKIN_T + 2 * TRIM_PROUD; // trim faces sit proud of the skins: never coplanar
   function hbox(du, w, d, yA, yB) {
     obox(mesh, cx + ux * du, cz + uz * du, yA, yB, ux, uz, w / 2, d / 2, frameC);
   }
@@ -3012,7 +3093,7 @@ function takeoff(building) {
       surfaceM2 += 2 * l * h;
     });
     cut.openings.forEach(function (o) {
-      var trimV = 2 * (o.w + o.h) * 0.08 * (WALL_T + 0.04);
+      var trimV = 2 * (o.w + o.h) * 0.08 * (WALL_T + 2 * SKIN_T + 2 * TRIM_PROUD);
       add(fb, trimV, 'openings');
       if (o.kind === 'window') add('glass', o.w * o.h * 0.02, 'openings');
       surfaceM2 -= o.w * o.h;
@@ -4088,10 +4169,11 @@ var POINT_VS=[
 ' gl_PointSize=uPtScale*uPtSize/max(1.0,mv.w); vC=c; }'].join('\n');
 var POINT_FS=[
 'precision mediump float; varying vec4 vC;',
+'uniform float uAlpha;',
 'void main(){ vec2 q=gl_PointCoord-0.5; float d=length(q);',
 ' if(d>0.5) discard;',
 ' float a=smoothstep(0.5,0.08,d);',
-' gl_FragColor=vec4(vC.rgb*1.4, vC.a*a); }'].join('\n');
+' gl_FragColor=vec4(vC.rgb*1.4, vC.a*a*uAlpha); }'].join('\n');
 
 function sh(gl,type,src){
   var s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -4167,7 +4249,7 @@ function create(cv,hooks){
   A.lp_eye=gl.getUniformLocation(lineP,'uEye'); A.lp_depth=gl.getUniformLocation(lineP,'uDepth');
   A.pp_p=gl.getAttribLocation(pointP,'p'); A.pp_c=gl.getAttribLocation(pointP,'c');
   A.pp_mvp=gl.getUniformLocation(pointP,'uMVP'); A.pp_scale=gl.getUniformLocation(pointP,'uPtScale');
-  A.pp_sz=gl.getUniformLocation(pointP,'uPtSize');
+  A.pp_sz=gl.getUniformLocation(pointP,'uPtSize'); A.pp_alpha=gl.getUniformLocation(pointP,'uAlpha');
 
   function mkBuf(pos,nrm,col,idx,stride){
     var vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
@@ -4818,12 +4900,15 @@ function create(cv,hooks){
       gl.disable(gl.BLEND); gl.depthMask(true);
       gl.deleteBuffer(rb.vb);
     }
-    /* starfield + (far view only) */
+    /* starfield (far view only) — dimmed + smaller in the verse (#20: declutter the dot field) */
     gl.useProgram(pointP);
     gl.uniformMatrix4fv(A.pp_mvp,false,mvp);
     gl.uniform1f(A.pp_scale, cv.height/(2*Math.tan(FOV/2)));
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE); gl.depthMask(false);
-    if(V.field){ bindPoints(V.field); gl.uniform1f(A.pp_sz,2.6);
+    if(V.field){ bindPoints(V.field);
+      var verseDim=dist>30000;
+      gl.uniform1f(A.pp_sz,verseDim?1.9:2.6);
+      gl.uniform1f(A.pp_alpha,verseDim?0.45:1.0);
       gl.drawArrays(gl.POINTS,0,V.field.count); }
     gl.disable(gl.BLEND); gl.depthMask(true);
 
@@ -4849,7 +4934,7 @@ function create(cv,hooks){
       gl.useProgram(pointP); bindPoints(S.nodes);
       gl.uniformMatrix4fv(A.pp_mvp,false,mvp);
       gl.uniform1f(A.pp_scale, cv.height/(2*Math.tan(FOV/2)));
-      gl.uniform1f(A.pp_sz,4.2);
+      gl.uniform1f(A.pp_sz,4.2); gl.uniform1f(A.pp_alpha,1.0);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
       gl.depthMask(false);
       gl.drawArrays(gl.POINTS,0,S.nodes.count);
@@ -4948,6 +5033,177 @@ Object.assign(PTEX.CRYSTAL,{sky:['#3a2a7a','#a88ae8'],tree:'#4a3a8a'});
 Object.assign(PTEX.TOXIC,{sky:['#2a3a0e','#9abe5a'],tree:'#5a7a1e'});
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { PTEX, MAT };
+
+</script>
+<script>
+/* ===== widgets.js (verbatim, custom laser-grid icon system) ===== */
+/* ============================================================
+ * MOOR Beta — Widget icon system (widgets.js)
+ *
+ * Replaces emoji UI with custom laser-grid SVG widgets.
+ * One consistent stroke style (1.7px, round caps, currentColor)
+ * so every icon inherits its button's color and glow.
+ *
+ * Usage in JS-generated HTML:
+ *   Widget.icon('home')            -> inline SVG string (inherits size/color)
+ *   Widget.icon('sword', 20)       -> fixed 20px
+ *
+ * Usage in static HTML (template.html):
+ *   <span class="wic" data-wicon="home"></span>
+ * widgets.js self-hydrates every [data-wicon] on load.
+ *
+ * To convert a new emoji spot: find the icon's widget name in the
+ * table below (or add one in the same stroke style), then replace
+ * the emoji literal with Widget.icon('name') — or a data-wicon
+ * span in static markup. Never put raw emoji in new UI.
+ * ============================================================ */
+(function(){
+'use strict';
+
+/* 24x24 grid, stroke-based. Keep shapes geometric, open, thin. */
+var ICONS = {
+/* ---- modes ---- */
+home:'<path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/><path d="M10.5 20v-5h3v5"/>',
+chair:'<path d="M7 3v9h10v9"/><path d="M7 12h10"/><path d="M7 12v9"/>',
+path:'<path d="M5 19.5c3.5-5 1.5-7.5 5-9.5s3-3.5 5-5.5" stroke-dasharray="2.6 2.2"/><circle cx="18.5" cy="4" r="1.5"/>',
+shield:'<path d="M12 3l7 2.8v6.1c0 4.4-2.9 7.3-7 8.6-4.1-1.3-7-4.2-7-8.6V5.8z"/>',
+city:'<rect x="3.5" y="11" width="5.5" height="10"/><rect x="10" y="4" width="6" height="17"/><path d="M17.5 12.5 21 11v10h-3.5"/><path d="M12 8h2M12 11.5h2M12 15h2"/>',
+brush:'<path d="M18.5 3.5l2 2L11 15l-2.8.8.8-2.8z"/><path d="M16.5 5.5l2 2"/><path d="M8.2 13 4 20l7-4.2"/>',
+paw:'<ellipse cx="12" cy="15.2" rx="4.2" ry="3.4"/><circle cx="6.4" cy="10" r="1.5"/><circle cx="12" cy="7.8" r="1.5"/><circle cx="17.6" cy="10" r="1.5"/>',
+toolbox:'<rect x="3" y="8" width="18" height="12.5" rx="1.8"/><path d="M9 8V6.2A1.7 1.7 0 0 1 10.7 4.5h2.6a1.7 1.7 0 0 1 1.7 1.7V8"/><path d="M3 13h18"/><path d="M12 13v3.5"/>',
+walk:'<circle cx="13" cy="4.6" r="2.1"/><path d="M12.5 8.5 12 14"/><path d="M12.3 10.5 8 13.5M12.3 10.5l4.5 2"/><path d="M12 14l-3.2 7M12 14l3.8 5.5"/>',
+eye:'<path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/>',
+eyeOff:'<path d="M4 4l16 16"/><path d="M10 6A9.6 9.6 0 0 1 12 5.8c6 0 9.5 6.2 9.5 6.2a16.6 16.6 0 0 1-3.3 4M6.6 7.2A16 16 0 0 0 2.5 12S6 18.2 12 18.2c1.4 0 2.7-.3 3.9-.8"/>',
+/* ---- HUD / chrome ---- */
+globe:'<circle cx="12" cy="12" r="8.8"/><path d="M3.2 12h17.6"/><path d="M12 3.2c3.2 3.6 3.2 14 0 17.6M12 3.2c-3.2 3.6-3.2 14 0 17.6"/>',
+person:'<circle cx="12" cy="7.4" r="3.4"/><path d="M5 20.5c1.2-4.3 3.9-6.5 7-6.5s5.8 2.2 7 6.5"/>',
+undo:'<path d="M8.5 5.5 3.5 10.5l5 5"/><path d="M4 10.5h9.5a6.5 6.5 0 0 1 0 13H10"/>',
+map:'<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+bug:'<ellipse cx="12" cy="13.5" rx="4.8" ry="5.8"/><path d="M12 7.7V4M9.2 4.5 12 7.2l2.8-2.7"/><path d="M7.2 13.5H3M7.4 16.5l-3.2 2M16.8 13.5H21M16.6 16.5l3.2 2"/><path d="M12 19.3V22"/>',
+reset:'<path d="M4.5 12a7.5 7.5 0 1 1 2.2 5.3"/><path d="M4.5 17.5v-5h5"/>',
+check:'<path d="M4.5 12.5l5 5L19.5 7"/>',
+hand:'<path d="M8 12.5V6a1.5 1.5 0 0 1 3 0v5.5m0-6a1.5 1.5 0 0 1 3 0V11m0-4.5a1.5 1.5 0 0 1 3 0V13"/><path d="M8 12.5l-2.6-3.4a1.6 1.6 0 0 1 2.5-1.9L8 8.5"/><path d="M17 13.5v2a6.5 6.5 0 0 1-6.5 6.5h-.8a6.5 6.5 0 0 1-5.4-3L3 16.6"/>',
+pin:'<path d="M12 21.5s6.8-6.1 6.8-10.8a6.8 6.8 0 1 0-13.6 0c0 4.7 6.8 10.8 6.8 10.8z"/><circle cx="12" cy="10.5" r="2.4"/>',
+mountain:'<path d="M3 20 10 6.5l4.2 7 2.8-3.8L21 20z"/><path d="M10 6.5 11.6 9l-1.6 1.6-1.7-1.4z"/>',
+ruler:'<g transform="rotate(-18 12 12)"><rect x="2.5" y="9" width="19" height="6" rx="1"/><path d="M7.5 9v3M11.5 9v3M15.5 9v3"/></g>',
+layers:'<path d="M12 3l9 4.8-9 4.8-9-4.8z"/><path d="M3.5 12.7 12 17.2l8.5-4.5"/><path d="M3.5 16.7 12 21.2l8.5-4.5"/>',
+plus:'<path d="M12 5.5v13M5.5 12h13"/>',
+x:'<path d="M6 6l12 12M18 6 6 18"/>',
+sparkle:'<path d="M12 3.5 13.8 10 20.5 12 13.8 14 12 20.5 10.2 14 3.5 12l6.7-2z"/>',
+planet:'<circle cx="12" cy="12" r="5.8"/><ellipse cx="12" cy="12" rx="10" ry="3.4" transform="rotate(-18 12 12)"/>',
+star:'<path d="M12 3.5 14.6 9l6 .9-4.4 4.2 1.1 5.9-5.3-2.9-5.3 2.9 1.1-5.9L3 9.9l6-.9z"/>',
+compass:'<circle cx="12" cy="12" r="8.8"/><path d="M15.5 8.5 13.5 13.5 8.5 15.5l2-5z"/>',
+arrowUp:'<path d="M12 20V5.5M5.5 12 12 5.5 18.5 12"/>',
+expand:'<path d="M9.5 4.5H4.5v5M14.5 4.5h5v5M9.5 19.5H4.5v-5M14.5 19.5h5v-5"/>',
+feather:'<path d="M19.5 4.5c-5.5 0-11.5 5-13.5 13.5L4.5 19.5l1.5-1.5C14 16 19.5 10 19.5 4.5z"/><path d="M6 18 16 8"/>',
+/* ---- materials ---- */
+log:'<path d="M3 9.5h13.5a3 3 0 0 1 0 6H3z"/><circle cx="18.6" cy="12.5" r="2.7"/><circle cx="18.6" cy="12.5" r="1.1"/>',
+rock:'<path d="M7.5 4.5 15 6l5.5 7-4.5 6.5H8.5L3.5 13z"/>',
+gear:'<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/>',
+amphora:'<path d="M9.5 3.5h5"/><path d="M10.5 3.5c0 3.8-3.2 4.8-3.2 8.7a4.7 4.7 0 0 0 9.4 0c0-3.9-3.2-4.9-3.2-8.7"/><path d="M7.3 8.5c-1.9 1-1.9 3.7-.2 4.8M16.7 8.5c1.9 1 1.9 3.7.2 4.8"/>',
+thread:'<rect x="8.5" y="6.5" width="7" height="11" rx="1"/><path d="M6 6.5h12M6 17.5h12"/><path d="M12 3v3.5M12 17.5V21"/>',
+cloth:'<path d="M4 7.5 12 4.5l8 3-8 3z"/><path d="M4 7.5V13l8 3 8-3V7.5"/><path d="M4 13v5.5l8 3 8-3V13"/>',
+gem:'<path d="M7 4h10l4 5.2L12 20 3 9.2z"/><path d="M3 9.2h18M12 20 8.7 9.2 12 4l3.3 5.2z"/>',
+coin:'<circle cx="12" cy="12" r="8.2"/><path d="M9.2 8.5h5.6M12 8.5v8.5"/>',
+box:'<path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16z"/><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8"/>',
+/* ---- paint brushes ---- */
+sprout:'<path d="M12 21v-8.5"/><path d="M12 12.5C12 8.8 14.8 6.5 20 6.5c0 4.8-2.8 7.3-8 6z"/><path d="M12 12.5C12 8.8 9.2 6.5 4 6.5c0 4.8 2.8 7.3 8 6z"/>',
+wheat:'<path d="M12 21V8.5"/><path d="M12 8.5 8.5 5M12 8.5l3.5-3.5M12 12.5l-3.5-3.5M12 12.5l3.5-3.5M12 16.5 8.5 13M12 16.5l3.5-3.5"/>',
+flower:'<circle cx="12" cy="12" r="2.3"/><circle cx="12" cy="6.8" r="1.9"/><circle cx="12" cy="17.2" r="1.9"/><circle cx="6.8" cy="12" r="1.9"/><circle cx="17.2" cy="12" r="1.9"/>',
+broom:'<path d="M15 3.5l5.5 5.5"/><path d="M13.5 7 17 10.5 11 16.5 7.5 13z"/><path d="M7.5 13 4.5 21l8-3"/>',
+/* ---- life stages ---- */
+egg:'<path d="M12 3.5c3.4 0 5.8 4.8 5.8 9.6a5.8 5.8 0 0 1-11.6 0c0-4.8 2.4-9.6 5.8-9.6z"/>',
+leg:'<path d="M9.5 3h5v7.5L19 13v8h-5.5v-6L9.5 13z"/><path d="M9.5 13H6"/>',
+/* ---- build themes ---- */
+building:'<rect x="5.5" y="3.5" width="13" height="17"/><path d="M9 7.5h2M13 7.5h2M9 11h2M13 11h2M9 14.5h2M13 14.5h2"/>',
+bricks:'<path d="M3.5 6.5h17v11h-17z"/><path d="M3.5 12h17M12 6.5V12M7.5 12v5.5M16.5 12v5.5"/>',
+landmark:'<path d="M4 10 12 4.5 20 10"/><path d="M5.5 10v7.5M9.7 10v7.5M14.3 10v7.5M18.5 10v7.5"/><path d="M3.5 20.5h17"/>',
+hut:'<path d="M12 4.5 20.5 12h-17z"/><path d="M6.5 12v8.5h11V12"/>',
+houses:'<path d="M3 12l4.5-4L12 12"/><path d="M4.5 11v7h6v-7"/><path d="M12 12l4.5-4L21 12"/><path d="M13.5 11v7h6v-7"/>',
+house:'<path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/><path d="M10.5 20v-5h3v5"/>',
+/* ---- paths ---- */
+leaf:'<path d="M5.5 18.5C5.5 10.5 10.5 5.5 20 4.5c-1 9.5-6 14.5-14.5 14z"/><path d="M5.5 18.5c3-5 6.5-8.5 11-10.5"/>',
+/* ---- items ---- */
+sofa:'<path d="M6.5 12.5V8h11v4.5"/><path d="M4 12.5h16V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M6.5 19v1.5M17.5 19v1.5"/>',
+table:'<path d="M3.5 9.5h17"/><path d="M6 9.5V20M18 9.5V20"/><path d="M6 14.5h12"/>',
+cup:'<path d="M6.5 4.5h11V13a5.5 5.5 0 0 1-11 0z"/><path d="M17.5 8.5h1.8a2.6 2.6 0 0 1 0 5.2h-1.8"/>',
+bed:'<path d="M3.5 18.5V9"/><path d="M3.5 14.5h17V18.5"/><path d="M3.5 11.5h6V14"/><circle cx="6.5" cy="9.8" r="1.4"/>',
+candle:'<path d="M10 11h4v9.5h-4z"/><path d="M12 11V8"/><path d="M12 4.5c1 1.4 1 2.3 0 3.2-1-.9-1-1.8 0-3.2z"/>',
+dresser:'<rect x="5" y="6.5" width="14" height="13.5"/><path d="M5 11.5h14M12 6.5v13"/><circle cx="9.8" cy="9" r=".9"/><circle cx="14.2" cy="9" r=".9"/>',
+books:'<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 12.5h16"/><path d="M8.5 4v8.5M12.5 4v6M16 12.5V20M11 12.5V20"/>',
+stool:'<path d="M7 4.5h10"/><path d="M8.2 4.5 6 20M15.8 4.5 18 20"/><path d="M7.2 12.5h9.6"/>',
+lamp:'<path d="M9 21h6"/><path d="M12 13v8"/><path d="M8.5 3.5h7L13.8 13H10.2z"/>',
+torch:'<rect x="9.8" y="8" width="5" height="11" rx="2" transform="rotate(28 12 13)"/><circle cx="16.6" cy="6.2" r="2.1"/><path d="M19.5 9.5l1.5-1"/>',
+sword:'<path d="M12 2.5 13.7 5.5v9.8h-3.4V5.5z"/><path d="M7.5 16.5h9"/><path d="M12 16.5v4"/><circle cx="12" cy="21.6" r="1"/>',
+/* ---- NPCs ---- */
+wizard:'<path d="M12 3.5 16.5 16.5h-9z"/><path d="M9 13.5h6"/><path d="M4.5 20c2-1.8 4.8-1.8 7.5 0 2.7-1.8 5.5-1.8 7.5 0"/>',
+joker:'<path d="M12 21v-7.5"/><path d="M12 13.5c-4.2 0-6.4-3-7.4-8.2l4.2 1.2L12 10.5l3.2-4 4.2-1.2c-1 5.2-3.2 8.2-7.4 8.2z"/><circle cx="4.6" cy="5.3" r="1.2"/><circle cx="19.4" cy="5.3" r="1.2"/>',
+/* ---- actions ---- */
+gift:'<rect x="4" y="9" width="16" height="3.6"/><path d="M6 12.6V20.5h12v-7.9"/><path d="M12 9v11.5"/><path d="M12 9C8.5 9 7 7.2 8 5.4c.9-1.4 3 .2 4 3.6zm0 0c3.5 0 5-1.8 4-3.6-.9-1.4-3 .2-4 3.6z"/>',
+hammer:'<path d="M12.8 5.2l5.6 5.6"/><path d="M8.6 3.4l7.6 7.6-2.4 2.4-7.6-7.6z"/><path d="M11.2 12.6 4.5 19.3"/>',
+wrench:'<path d="M20.5 6.5a5.2 5.2 0 0 1-7 7L6 21l-2.5-2.5L11 11a5.2 5.2 0 0 1 7-7l-2.6 2.6 2.5 2.5z"/>',
+pickaxe:'<path d="M4.5 20 14 10.5"/><path d="M5.5 5.5c4.5-.5 9 1.5 11.5 6-3.5-1.2-7.5-1-11 .8.8-2.8.6-5-.5-6.8z"/>',
+bulb:'<path d="M9.5 18h5"/><path d="M10.5 21h3"/><path d="M12 3.5a5.8 5.8 0 0 0-3.4 10.5c.8.6 1.4 1.4 1.4 2.5h4c0-1.1.6-1.9 1.4-2.5A5.8 5.8 0 0 0 12 3.5z"/>',
+trash:'<path d="M4.5 7h15"/><path d="M9.5 7V4.5h5V7"/><path d="M6.5 7l.9 13.5h9.2L17.5 7"/><path d="M10.2 11v5.5M13.8 11v5.5"/>',
+chat:'<path d="M4 5.5h16V15H9.5L4 19.5z"/>',
+flame:'<path d="M12 3.5c1.8 3.8 5.8 5.8 5.8 10.3a5.8 5.8 0 0 1-11.6 0c0-2 1-3.8 2-4.8.4 1.4 1.3 2 2.3 2C10.8 8.5 11 5.8 12 3.5z"/>',
+snow:'<path d="M12 3.5v17M4.8 7.8l14.4 8.4M19.2 7.8 4.8 16.2"/>',
+moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+bolt:'<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>',
+die:'<rect x="4.5" y="4.5" width="15" height="15" rx="3"/><circle cx="9.2" cy="9.2" r="1.1"/><circle cx="14.8" cy="14.8" r="1.1"/><circle cx="14.8" cy="9.2" r="1.1"/><circle cx="9.2" cy="14.8" r="1.1"/>',
+search:'<circle cx="11" cy="11" r="6"/><path d="M15.8 15.8 20.5 20.5"/>'
+};
+
+var FALLBACK = 'box';
+
+function svgFor(name, size){
+  var inner = ICONS[name] || ICONS[FALLBACK];
+  if(!ICONS[name] && window.console) console.warn('[widgets] unknown icon "'+name+'"');
+  var s = size ? ' width="'+size+'" height="'+size+'"' : '';
+  return '<svg class="wsvg" viewBox="0 0 24 24"'+s+' fill="none" stroke="currentColor"'+
+    ' stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+inner+'</svg>';
+}
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+var Widget = {
+  /* inline SVG string for an icon name; inherits button color/size by default.
+     Unknown names (e.g. emoji stored by older custom tools) pass through
+     escaped so nothing ever renders as raw markup. */
+  icon: function(name, size){
+    if(!ICONS[name]) return escHtml(name);
+    return svgFor(name, size);
+  },
+  /* every name the library knows */
+  names: function(){ return Object.keys(ICONS); },
+  /* fill all [data-wicon] placeholders under root (default: whole document) */
+  hydrate: function(root){
+    root = root || document;
+    var els = root.querySelectorAll('[data-wicon]');
+    for(var i=0;i<els.length;i++){
+      var n = els[i].getAttribute('data-wicon');
+      if(!els[i].getAttribute('data-whyd')){
+        els[i].innerHTML = svgFor(n);
+        els[i].setAttribute('data-whyd','1');
+      }
+    }
+  }
+};
+
+window.Widget = Widget;
+
+/* self-hydrate: script sits at end of body, so static markup is parsed.
+   DOMContentLoaded is a backstop for anything injected early. */
+try{
+  Widget.hydrate(document);
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', function(){ Widget.hydrate(document); });
+  }
+}catch(e){ if(window.console) console.warn('[widgets] hydrate failed', e); }
+
+})();
 
 </script>
 <script>
@@ -5214,15 +5470,21 @@ function coreH(x,z){
   else if(preset==='flat') h=6;
   else if(preset==='rolling'){
     /* vast, calm, rolling: gentle swells as the baseline; dramatic cliffs,
-     * hills and ridges appear only inside seeded accent zones (biome mask),
-     * never as the default look. All pure noise of (x,z): deterministic. */
+     * hills and ridges rise along tectonic plate boundaries (workshop pull:
+     * convergent boundaries push up ranges, divergent ones carve rifts),
+     * with a reduced noise accent so the local walk still has variety.
+     * All pure noise/plates of (x,z): deterministic. */
     var base=(f-0.45)*9;
-    var m=vnoise(x*0.0038+31.7, z*0.0038+17.3);
-    var acc=Math.max(0,m-0.55)/0.45; acc=acc*acc;
+    var tc=tectAt(x,z);
+    var m2=vnoise(x*0.0038+31.7, z*0.0038+17.3);
+    var localAcc=Math.max(0,m2-0.55)/0.45; localAcc*=localAcc;
+    var acc=Math.max(Math.pow(tc.edge,1.25),localAcc*0.45);
+    var convB=tc.conv>0.18?1.3:tc.conv<-0.18?0.3:0.65;
     var rg=Math.abs(vnoise(x*0.016+91.2, z*0.016+44.8)-0.5)*2;
-    var cliff=Math.pow(rg,1.4)*44*acc; /* sharp ridges in accent zones */
+    var cliff=Math.pow(rg,1.4)*44*acc*convB; /* sharp ridges at boundaries */
     var dome=Math.max(0,vnoise(x*0.006+7.7, z*0.006+3.1)-0.55)/0.45;
-    h=base+cliff+dome*dome*18*acc; /* + smooth hill domes */
+    var rift=tc.conv<-0.18?-7*Math.pow(tc.edge,1.25):0; /* divergent rifts */
+    h=base+cliff+dome*dome*18*acc*convB+rift;
   }
   else h=Math.abs(f-0.3)*R*2.5-8; /* mountains */
   return h;
@@ -5257,18 +5519,152 @@ function slopeAt(x,z){
   var dx=heightAt(x+e,z)-heightAt(x-e,z), dz=heightAt(x,z+e)-heightAt(x,z-e);
   return Math.sqrt(dx*dx+dz*dz)/(2*e);
 }
-/* vertex colors: sand / grass / rock / snow by height + slope */
+function clamp01(v){ return v<0?0:v>1?1:v; }
+function sstep(a,b,x){ var t=clamp01((x-a)/(b-a)); return t*t*(3-2*t); }
+/* ---- planet-workshop pull: PTEX material table (adopted) ----
+ * The workshop's per-planet-type material params (atmo/land/water/snow/rain/
+ * warmth). The beta's worldTypeKey already returns these exact type keys —
+ * the table was meant to be shared. Sea level stays fixed (spawn safety). */
+var PTX={
+  TERRAN:{atmo:[0.53,0.73,1.00],water:[[0.04,0.16,0.37],[0.12,0.44,0.64]],snowK:0.55,rain:0.65,warmth:0.50},
+  OCEAN:{atmo:[0.40,0.67,1.00],water:[[0.04,0.16,0.44],[0.18,0.54,0.76]],snowK:0.40,rain:0.90,warmth:0.55},
+  DESERT:{atmo:[1.00,0.85,0.63],water:[[0.10,0.10,0.10],[0.10,0.10,0.10]],snowK:0.02,rain:0.12,warmth:0.85},
+  ICE:{atmo:[0.67,0.87,1.00],water:[[0.09,0.20,0.31],[0.23,0.42,0.55]],snowK:1.00,rain:0.40,warmth:0.15},
+  LAVA:{atmo:[1.00,0.48,0.29],water:[[0.10,0.05,0.02],[0.34,0.14,0.05]],snowK:0.00,rain:0.05,warmth:1.00},
+  JUNGLE:{atmo:[0.53,1.00,0.67],water:[[0.04,0.23,0.31],[0.12,0.42,0.49]],snowK:0.25,rain:1.00,warmth:0.70},
+  BARREN:{atmo:[0.60,0.60,0.60],water:[[0.10,0.10,0.10],[0.10,0.10,0.10]],snowK:0.25,rain:0.20,warmth:0.50},
+  GAS:{atmo:[1.00,0.85,0.69],water:[[0.10,0.10,0.10],[0.10,0.10,0.10]],snowK:0.00,rain:0.00,warmth:0.50},
+  CRYSTAL:{atmo:[0.73,0.60,1.00],water:[[0.16,0.10,0.37],[0.49,0.35,0.91]],snowK:0.40,rain:0.30,warmth:0.45},
+  TOXIC:{atmo:[0.60,0.80,0.30],water:[[0.09,0.16,0.05],[0.23,0.42,0.11]],snowK:0.30,rain:0.50,warmth:0.60}
+};
+function ptx(){ var k=worldTypeKey(); return PTX[k]||PTX.TERRAN; }
+/* ---------- color vibrance ----------
+ * The world map's look comes from rich height/noise-driven color banding.
+ * The same idea, applied to the ground you walk on: large-scale regional
+ * tints drawn from the planet palette, plus per-instance jitter on plants.
+ * All luminance-preserving and deterministic (position-hash noise — zero
+ * impact on the chunk RNG stream, planet palettes always respected). */
+function palBlend(arr,t){ /* smooth blend across a palette array, t in 0..1 */
+  var n=arr.length; if(!n) return [0.5,0.5,0.5]; if(n===1) return arr[0];
+  var x=clamp01(t)*(n-1), i=Math.floor(x), f=x-i;
+  var a=arr[i], b=arr[Math.min(n-1,i+1)];
+  return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+}
+function tintToward(c,target,amt){ /* hue shift toward target, luminance kept */
+  var l=(c[0]+c[1]+c[2])/3, tl=(target[0]+target[1]+target[2])/3||1, k=l/tl;
+  return [c[0]+(target[0]*k-c[0])*amt, c[1]+(target[1]*k-c[1])*amt, c[2]+(target[2]*k-c[2])*amt];
+}
+function vibJit(c,x,z,amt){ /* per-instance jitter from position hash */
+  amt=amt||0.14;
+  return [clamp01(c[0]+(vnoise(x*0.37+11.3,z*0.37+5.1)-0.5)*amt),
+          clamp01(c[1]+(vnoise(x*0.41+3.7,z*0.41+17.9)-0.5)*amt),
+          clamp01(c[2]+(vnoise(x*0.33+23.1,z*0.33+9.4)-0.5)*amt)];
+}
+function satLift(c,amt){
+  var l=(c[0]+c[1]+c[2])/3;
+  return [clamp01(c[0]+(c[0]-l)*amt),clamp01(c[1]+(c[1]-l)*amt),clamp01(c[2]+(c[2]-l)*amt)];
+}
+var _tintPal=null, _tintKey='';
+function tintPal(){ var w=activeWorld(), k=w?(w.seed+'|'+worldTypeKey(w)):'?';
+  if(k!==_tintKey){ _tintKey=k; _tintPal=planetPal(w); } return _tintPal; }
+/* ---- planet-workshop pull: climate from latitude + altitude ----
+ * The workshop's climateAt drives everything from temperature:
+ *   T = base - |latitude|*k - altitude*lapseRate
+ * |latitude| is anchored so the play area sits in the temperate belt and the
+ * far side of the planet runs to ice. The snow line EMERGES from temperature
+ * instead of a hard height cut, and grass tints shift tropical->tundra.
+ * Pure math of (x,z,h): deterministic, planet palettes still respected. */
+function climLat(x,z){
+  var l=Math.abs(z)/(PLANET_R*1.35);
+  return l>1?1:l;
+}
+function climTemp(x,z,h,lat){
+  return clamp01(0.86 - lat*0.85 - Math.max(h,0)*0.012);
+}
+/* ---- planet-workshop pull: plate tectonics (adapted) ----
+ * The workshop's bakeWorld seeds plates and raises ranges along convergent
+ * boundaries. The beta has no bake grid (its terrain is a local procedural
+ * field), so it ports the PLATE LOGIC directly: seeded plates, boundary edge
+ * exp(-((b0-b1)/0.055)^2), convergence from drift vectors. More, smaller
+ * plates than the workshop's 8 so boundaries fall within walking distance,
+ * and one forced convergent boundary near spawn so the ranges are visible
+ * instead of theoretical. Pure function of direction: deterministic. */
+var TECT_N=36, tectPlates=null, tectKey='', _tectOut=[];
+function tectEnsure(){
+  var w=activeWorld(), k=w?w.seed:'?';
+  if(k===tectKey&&tectPlates) return tectPlates;
+  var R=mulberry32(strHash('plates|'+k)^0x72574), ps=[], i;
+  function nm(v){ var l=Math.hypot(v[0],v[1],v[2])||1; return [v[0]/l,v[1]/l,v[2]/l]; }
+  for(i=0;i<TECT_N;i++){
+    var y=1-2*(i+0.3+R()*0.4)/TECT_N, a=i*2.399963+R()*0.5,
+        q=Math.sqrt(Math.max(0,1-y*y)), c=[Math.cos(a)*q,y,Math.sin(a)*q];
+    var v=[R()-0.5,R()-0.5,R()-0.5], dot=v[0]*c[0]+v[1]*c[1]+v[2]*c[2];
+    v=nm([v[0]-dot*c[0],v[1]-dot*c[1],v[2]-dot*c[2]]);
+    ps.push({c:c,d:v});
+  }
+  /* forced convergent boundary ~1.8km out along a seeded azimuth */
+  var az=R()*Math.PI*2, mx=Math.cos(az)*0.15, mz=Math.sin(az)*0.15,
+      px=-Math.sin(az)*0.06, pz=Math.cos(az)*0.06;
+  ps[0].c=nm([mx+px,1,mz+pz]); ps[1].c=nm([mx-px,1,mz-pz]);
+  ps[0].d=nm([-Math.cos(az),0,-Math.sin(az)]);
+  ps[1].d=nm([Math.cos(az),0,Math.sin(az)]);
+  tectPlates=ps; tectKey=k; return ps;
+}
+function tectAt(x,z){
+  var ps=tectEnsure(), up=planetUp(x,z,_tectOut);
+  var b0=-2,b1=-2,p0=0,p1=1,i,d;
+  for(i=0;i<ps.length;i++){
+    d=ps[i].c[0]*up[0]+ps[i].c[1]*up[1]+ps[i].c[2]*up[2];
+    if(d>b0){b1=b0;p1=p0;b0=d;p0=i;}else if(d>b1){b1=d;p1=i;}
+  }
+  var edge=Math.exp(-Math.pow((b0-b1)/0.055,2));
+  var nx=ps[p1].c[0]-ps[p0].c[0], ny=ps[p1].c[1]-ps[p0].c[1], nz=ps[p1].c[2]-ps[p0].c[2];
+  var nl=Math.hypot(nx,ny,nz)||1; nx/=nl; ny/=nl; nz/=nl;
+  var conv=(ps[p0].d[0]-ps[p1].d[0])*nx+(ps[p0].d[1]-ps[p1].d[1])*ny+(ps[p0].d[2]-ps[p1].d[2])*nz;
+  return {edge:edge,conv:conv};
+}
+/* vertex colors: workshop stageBiome, adapted.
+ * Temperature (climateAt) from |latitude| + altitude lapse; moisture from
+ * latitude-banded rainfall; sedimentary strata on slopes; snow from BOTH
+ * temperature and altitude; crisp darkened coastline. Planet palettes still
+ * respected throughout; pure math of (x,z,h): deterministic. */
 function groundColor(x,z,h){
   var s=slopeAt(x,z);
   var sand=[0.72,0.63,0.42], grass=[0.32,0.47,0.27], grass2=[0.25,0.40,0.24],
       rock=[0.52,0.49,0.44], snow=[0.87,0.90,0.94], deep=[0.45,0.42,0.30];
   function mix(a,b,t){ return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+  var px=ptx(), tp=tintPal();
+  /* workshop climateAt: T = .84 + (warmth-.5)*.9 - |lat|*.9 - h*lapse.
+   * |lat| anchored so the play area sits in the temperate belt. */
+  var lat=climLat(x,z);
+  var T=clamp01(0.84+(px.warmth-0.5)*0.9-lat*0.9-Math.max(h,0)*0.012);
+  var detV=vnoise(x*0.0042+3.1,z*0.0042+9.7);
   var c;
-  if(h<0.8) c=mix(deep,sand,Math.max(0,Math.min(1,(h+4)/4.8)));
-  else if(h<7) c=mix(sand,mix(grass,grass2,Math.min(1,(h-0.8)/6)),Math.min(1,(h-0.8)/2.2));
-  else if(h<12) c=mix(grass2,rock,Math.min(1,(h-7)/5));
-  else c=mix(rock,snow,Math.min(1,(h-12)/4));
-  if(s>0.55) c=mix(c,rock,Math.min(1,(s-0.55)*1.6));
+  if(h<0.8) c=mix(deep,sand,clamp01((h+4)/4.8));
+  else if(h<7) c=mix(sand,mix(grass,grass2,clamp01((h-0.8)/6)),clamp01((h-0.8)/2.2));
+  else c=mix(grass2,rock,clamp01((h-7)/5));
+  /* workshop moisture: latitude-banded rainfall + detail variation.
+   * Dry<->lush rides ACROSS the planet grass palette. */
+  if(h>=0.8){
+    var moist=clamp01(px.rain*(0.38+0.62*(0.5+0.5*Math.cos(lat*9.0)))+0.13*detV);
+    c=tintToward(c,palBlend(tp.grass,moist),0.38);
+  }
+  /* workshop strata: sedimentary layering, exposed on slopes */
+  var layers=0.5+0.5*Math.sin(h*0.30+detV*1.5);
+  c=mix(c,palBlend(tp.rock,layers),sstep(0.07,0.38,s)*0.75);
+  /* workshop snow: temperature-driven AND altitude-driven, scaled by snowK */
+  var snowF=Math.max(clamp01((0.24-T)/0.16),sstep(11,20,h))*px.snowK;
+  if(snowF>0) c=mix(c,snow,Math.min(1,snowF));
+  /* steep slopes expose rock, softened under snow */
+  if(s>0.55) c=mix(c,rock,Math.min(1,(s-0.55)*1.6)*(1-snowF*0.5));
+  /* workshop coastline: crisp dark waterline */
+  if(h<2.5){ var cw=sstep(0,0.6,Math.abs(h-0.8)), dk=0.82+0.18*cw;
+    c=[c[0]*dk,c[1]*dk,c[2]*dk]; }
+  /* vibrance: large-scale regional tints from the planet palette — the same
+   * banding idea as the world map, applied to the walkable ground */
+  if(h<0.8) c=tintToward(c,tp.soil,0.30);
+  else if(snowF<0.5) c=tintToward(c,palBlend(tp.grass,detV),0.42*(1-snowF));
+  else c=tintToward(c,palBlend(tp.rock,vnoise(x*0.0031+51.2,z*0.0031+17.9)),0.38);
   var v=0.94+0.06*vnoise(x*0.11,z*0.11); /* grain */
   return [c[0]*v,c[1]*v,c[2]*v];
 }
@@ -5309,7 +5705,7 @@ function drapeGlowRange(){
 /* push a mesh onto the sphere: yaw `rot` in the local tangent plane,
  * standing on the radial up. Replaces the old flat Y-rotation placement. */
 var _pf={};
-function pushMesh(mesh,rot,mx,mz,yOff){
+function pushMesh(mesh,rot,mx,mz,yOff,tint){
   var base=objPos.length/3, d=mesh.data, n=d.length/23;
   var c=Math.cos(rot), s=Math.sin(rot);
   wrapXZ(mx,mz,_wx);
@@ -5326,7 +5722,9 @@ function pushMesh(mesh,rot,mx,mz,yOff){
     objNrm.push(lnx*t1[0]+ny*up[0]+lnz*t2[0],
                 lnx*t1[1]+ny*up[1]+lnz*t2[1],
                 lnx*t1[2]+ny*up[2]+lnz*t2[2]);
-    objCol.push(d[o+6],d[o+7],d[o+8]);
+    var cr=d[o+6], cg=d[o+7], cb=d[o+8];
+    if(tint){ var tc=tintToward([cr,cg,cb],tint.c,tint.amt); cr=tc[0]; cg=tc[1]; cb=tc[2]; }
+    objCol.push(cr,cg,cb);
   }
   var ix=mesh.indices;
   for(var j=0;j<ix.length;j++) objIdx.push(base+ix[j]);
@@ -5335,7 +5733,10 @@ function emitBuilding(b){
   var mesh=new CityMesh();
   var bd=Struct.makeBuilding(b.seed,b.theme,{w:b.w,d:b.d},b.stories);
   Struct.emit(mesh,bd);
-  pushMesh(mesh,b.rot,b.x,b.z,-0.15);
+  /* vibrance: per-building tint toward the planet's rock palette, from the
+   * building seed — subtle, deterministic, keeps every street varied */
+  var tp=tintPal(), tc=palBlend(tp.rock,(strHash(b.seed||'b')%1000)/1000);
+  pushMesh(mesh,b.rot,b.x,b.z,-0.15,{c:tc,amt:0.22});
 }
 function emitItem(it){
   if(it.type==='sword'){ swordMesh(it.x,it.z,it.rot||0); return; } /* P3: first procedural item */
@@ -5346,19 +5747,35 @@ function emitItem(it){
 }
 
 /* ---------------- WebGL ---------------- */
-var gl=null, prog=null, aPos, aNrm, aCol, uMVP, uSun, uFog, uCam, uFogK, uReveal, uPlanetC, uPlanetR;
+var gl=null, prog=null, aPos, aNrm, aCol, uMVP, uSun, uFog, uCam, uFogK, uReveal, uPlanetC, uPlanetR, uHoleC, uHoleR, uSpaceL;
 var terrainBuf=null, terrainCount=0, objBuf=null, objCount=0, waterBuf=null, farBuf=null;
 var VSH='attribute vec3 p;attribute vec3 n;attribute vec3 c;'+
-'uniform mat4 mvp;uniform vec3 planetC;uniform float planetR;varying vec3 vN;varying vec3 vC;varying float vD;varying float vY;'+
-'void main(){vN=n;vC=c;vY=length(p-planetC)-planetR;vec4 wp=mvp*vec4(p,1.0);vD=-wp.z;gl_Position=wp;}';
-var FSH='precision mediump float;varying vec3 vN;varying vec3 vC;varying float vD;varying float vY;'+
-'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;uniform float fogK;uniform float uReveal;'+
-'void main(){vec3 N=normalize(vN);float dif=max(dot(N,normalize(sun)),0.0);'+
+'uniform mat4 mvp;uniform vec3 planetC;uniform float planetR;varying vec3 vN;varying vec3 vC;varying float vD;varying float vY;varying vec2 vMXZ;'+
+'void main(){vN=n;vC=c;vec3 dv=p-planetC;float rl=length(dv);vY=rl-planetR;'+
+'float ang=acos(clamp(dv.y/max(rl,1e-6),-1.0,1.0));float az=atan(dv.z,dv.x);'+
+'vMXZ=vec2(planetR*ang*cos(az),planetR*ang*sin(az));'+
+'vec4 wp=mvp*vec4(p,1.0);vD=-wp.z;gl_Position=wp;}';
+var FSH='precision mediump float;varying vec3 vN;varying vec3 vC;varying float vD;varying float vY;varying vec2 vMXZ;'+
+'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;uniform float fogK;uniform float uReveal;uniform vec2 holeC;uniform float holeR;uniform float uSpace;'+
+'void main(){if(holeR>0.0&&abs(vMXZ.x-holeC.x)<holeR&&abs(vMXZ.y-holeC.y)<holeR) discard;'+
+'vec3 N=normalize(vN);vec3 sunD=normalize(sun);float ndl=dot(N,sunD);float dif=max(ndl,0.0);'+
 'float amb=0.42+0.18*N.y;vec3 col=vC*(amb+dif*vec3(1.0,0.96,0.88));'+
 'float rl=uReveal*48.0-6.0;float rt=clamp((rl-vY)/3.0,0.0,1.0);'+
 'vec3 hcol=mix(col,vec3(0.25,0.85,1.0),0.8);'+
 'float band=1.0-smoothstep(0.0,2.0,abs(vY-rl));'+
 'col=mix(hcol+band*vec3(0.45,0.95,1.0),col,rt);'+
+/* space view (#21): the planet must read as a real planet — sharp day/night
+ * terminator with a warm ember band, dark night side, polar ice caps, and
+ * clean saturated colors instead of the washed-out haze. Gated on uSpace so
+ * the ground-level look is untouched. */
+'float day=smoothstep(-0.10,0.22,ndl);'+
+'vec3 nightC=vC*vec3(0.020,0.030,0.065)+vec3(0.004,0.008,0.022);'+
+'col=mix(col,mix(nightC,col,day),uSpace);'+
+'col+=vec3(1.0,0.40,0.16)*exp(-pow(ndl*4.5,2.0))*0.12*uSpace;'+
+'float polar=smoothstep(0.90,0.975,abs(N.y))*uSpace;'+
+'col=mix(col,vec3(0.80,0.87,0.93)*(0.22+0.78*day),polar*0.9);'+
+'float lum=dot(col,vec3(0.299,0.587,0.114));'+
+'col=mix(vec3(lum),col,1.0+0.38*uSpace);'+
 'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+
 'gl_FragColor=vec4(col,1.0);}';
 var FSH_WATER='precision mediump float;varying vec3 vN;varying vec3 vC;varying float vD;'+
@@ -5381,6 +5798,8 @@ function initGL(){
   uFogK=gl.getUniformLocation(prog,'fogK');
   uReveal=gl.getUniformLocation(prog,'uReveal');
   uPlanetC=gl.getUniformLocation(prog,'planetC'); uPlanetR=gl.getUniformLocation(prog,'planetR');
+  uHoleC=gl.getUniformLocation(prog,'holeC'); uHoleR=gl.getUniformLocation(prog,'holeR');
+  uSpaceL=gl.getUniformLocation(prog,'uSpace');
   gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
   initSkyGL();
   return true;
@@ -5414,24 +5833,98 @@ function bindBuf(b){
 var VSH_SKY='attribute vec3 p;uniform mat4 mvp;varying vec3 vD;'+
 'void main(){vD=p;vec4 wp=mvp*vec4(p,1.0);gl_Position=wp.xyww;}';
 var FSH_SKY='precision mediump float;varying vec3 vD;uniform float uSpace;'+
+'uniform vec3 uNebD[3];uniform vec3 uNebC[3];uniform vec3 uNebB;'+
 'void main(){vec3 d=normalize(vD);float h=d.y;'+
 'vec3 zen=mix(vec3(0.10,0.30,0.72),vec3(0.004,0.006,0.025),uSpace);'+
 'vec3 hor=mix(vec3(0.60,0.78,0.94),vec3(0.015,0.025,0.07),uSpace);'+
 'vec3 col=mix(hor,zen,pow(clamp(h,0.0,1.0),0.5));'+
 'col=mix(vec3(0.42,0.52,0.60),col,clamp(h*4.0+1.0,0.0,1.0));'+
+/* #22: deep-space depth — three seeded nebula veils plus a faint galactic
+ * band, visible only in space. Deep indigo/teal/magenta, kept dim so the
+ * planet stays the hero. Deterministic per world seed. */
+'for(int i=0;i<3;i++){float g=pow(max(dot(d,normalize(uNebD[i])),0.0),7.0);col+=uNebC[i]*g*uSpace;}'+
+'float gb=exp(-pow(dot(d,normalize(uNebB))*5.0,2.0));col+=vec3(0.05,0.07,0.14)*gb*uSpace*0.5;'+
 'gl_FragColor=vec4(col,1.0);}';
 var VSH_ATMO='attribute vec3 p;attribute vec3 n;uniform mat4 mvp;varying vec3 vN;varying vec3 vW;'+
 'void main(){vN=n;vW=p;gl_Position=mvp*vec4(p,1.0);}';
-var FSH_ATMO='precision mediump float;varying vec3 vN;varying vec3 vW;uniform vec3 uCam;'+
+var FSH_ATMO='precision mediump float;varying vec3 vN;varying vec3 vW;uniform vec3 uCam;uniform vec3 uAtmo;'+
 'void main(){vec3 V=normalize(uCam-vW);float f=pow(1.0-abs(dot(normalize(vN),V)),3.5);'+
-'gl_FragColor=vec4(vec3(0.30,0.60,1.0)*f*1.7,1.0);}';
-var VSH_CLD='attribute vec3 p;attribute vec3 n;attribute vec2 t;uniform mat4 mvp;varying vec2 vT;varying vec3 vN;'+
-'void main(){vT=t;vN=n;gl_Position=mvp*vec4(p,1.0);}';
-var FSH_CLD='precision mediump float;varying vec2 vT;varying vec3 vN;uniform sampler2D uTex;uniform vec3 uSun;'+
-'void main(){vec4 tx=texture2D(uTex,vT);float a=smoothstep(0.40,0.72,tx.a);if(a<0.012) discard;'+
+'gl_FragColor=vec4(uAtmo*f*1.7,1.0);}'; /* uAtmo: workshop PTEX atmo color */
+var VSH_CLD='attribute vec3 p;attribute vec3 n;uniform mat4 mvp;varying vec3 vW;varying vec3 vN;'+
+'void main(){vW=p;vN=n;gl_Position=mvp*vec4(p,1.0);}';
+/* #21: clouds sample the baked density texture with triplanar mapping from
+ * the planet-center direction — the old lat/lon UVs pinched into radial
+ * streaks at the poles. Same baked texture, same seed, no pole artifacts. */
+var FSH_CLD='precision mediump float;varying vec3 vW;varying vec3 vN;uniform sampler2D uTex;uniform vec3 uSun;uniform vec3 uPC;'+
+'void main(){'+
+'vec3 ld=normalize(vW-uPC);'+
+'vec3 aw=pow(abs(ld),vec3(3.0));aw/=aw.x+aw.y+aw.z;'+
+'float a=texture2D(uTex,ld.zy*0.18).a*aw.x+texture2D(uTex,ld.xz*0.18).a*aw.y+texture2D(uTex,ld.xy*0.18).a*aw.z;'+
+'a=smoothstep(0.40,0.72,a);if(a<0.012) discard;'+
 'float dif=max(dot(normalize(vN),normalize(uSun)),0.0);'+
 'vec3 col=vec3(1.0,0.985,0.96)*(0.52+0.48*dif);'+
 'gl_FragColor=vec4(col,a*0.94);}';
+/* #22: deep-space starfield (seeded, deterministic) + nebula veils.
+ * Stars live on a camera-locked shell like the sky dome: infinitely far,
+ * one draw call, no depth. Nebula blobs are seeded directions/colors baked
+ * per world seed and uploaded as uniforms — the sky shader stays cheap. */
+var VSH_STAR='attribute vec3 p;attribute vec3 c;attribute float s;uniform mat4 mvp;uniform float uPx;varying vec3 vC;'+
+'void main(){vC=c;vec4 wp=mvp*vec4(p,1.0);gl_Position=wp;gl_PointSize=s*uPx;}';
+var FSH_STAR='precision mediump float;varying vec3 vC;'+
+'void main(){vec2 q=gl_PointCoord-0.5;float d=length(q);if(d>0.5) discard;'+
+'float a=smoothstep(0.5,0.05,d);gl_FragColor=vec4(vC*a,a);}';
+var starProg=null, starBuf=null, ST={}, starKey='\0';
+function ensureStars(seedStr){
+  if(starBuf&&starKey===seedStr) return;
+  starKey=seedStr;
+  if(starBuf){ gl.deleteBuffer(starBuf.vb); starBuf=null; }
+  var rng=mulberry32(strHash('stars|'+seedStr)), N=1400, R=70000;
+  var data=new Float32Array(N*7), i, th, ph, x, y, z, b, tint, cr, cg, cb, hero;
+  for(i=0;i<N;i++){
+    th=rng()*Math.PI*2; ph=Math.acos(2*rng()-1);
+    x=R*Math.sin(ph)*Math.cos(th); y=R*Math.cos(ph); z=R*Math.sin(ph)*Math.sin(th);
+    b=0.30+Math.pow(rng(),2.2)*0.70; /* most dim, a few bright */
+    tint=rng();
+    if(tint<0.60){ cr=0.72; cg=0.84; cb=1.0; }        /* blue-white */
+    else if(tint<0.85){ cr=1.0; cg=0.97; cb=0.90; }    /* warm white */
+    else { cr=1.0; cg=0.80; cb=0.62; }                 /* amber giant */
+    hero=rng()<0.04?1.9:1.0;
+    data[i*7]=x; data[i*7+1]=y; data[i*7+2]=z;
+    data[i*7+3]=cr*b*hero; data[i*7+4]=cg*b*hero; data[i*7+5]=cb*b*hero;
+    data[i*7+6]=(0.8+rng()*2.2)*hero;
+  }
+  var vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+  gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+  starBuf={vb:vb,count:N};
+}
+function drawStars(mvp,px){
+  if(!starBuf) return;
+  gl.useProgram(starProg);
+  gl.bindBuffer(gl.ARRAY_BUFFER,starBuf.vb);
+  gl.vertexAttribPointer(ST.aP,3,gl.FLOAT,false,28,0); gl.enableVertexAttribArray(ST.aP);
+  gl.vertexAttribPointer(ST.aC,3,gl.FLOAT,false,28,12); gl.enableVertexAttribArray(ST.aC);
+  gl.vertexAttribPointer(ST.aS,1,gl.FLOAT,false,28,24); gl.enableVertexAttribArray(ST.aS);
+  gl.uniformMatrix4fv(ST.uMVP,false,mvp);
+  gl.uniform1f(ST.uPx,px);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE); gl.depthMask(false);
+  gl.drawArrays(gl.POINTS,0,starBuf.count);
+  gl.depthMask(true); gl.disable(gl.BLEND);
+  gl.disableVertexAttribArray(ST.aP); gl.disableVertexAttribArray(ST.aC); gl.disableVertexAttribArray(ST.aS);
+}
+var nebKey='\0', nebFlatD=null, nebFlatC=null, nebFlatB=null;
+function nebulaParams(seedStr){
+  var rng=mulberry32(strHash('nebula|'+seedStr));
+  var pal=[[0.10,0.075,0.20],[0.045,0.13,0.18],[0.15,0.055,0.15]]; /* indigo, teal, magenta — deep & dim */
+  var d=[], c=[], i, th, ph, it;
+  for(i=0;i<3;i++){
+    th=rng()*Math.PI*2; ph=Math.acos(2*rng()-1);
+    d.push(Math.sin(ph)*Math.cos(th),Math.cos(ph)*0.7,Math.sin(ph)*Math.sin(th));
+    it=0.45+rng()*0.55;
+    c.push(pal[i][0]*it,pal[i][1]*it,pal[i][2]*it);
+  }
+  th=rng()*Math.PI*2; ph=Math.acos(2*rng()-1);
+  return {d:d,c:c,b:[Math.sin(ph)*Math.cos(th),Math.cos(ph),Math.sin(ph)*Math.sin(th)]};
+}
 var skyProg=null, atmoProg=null, cldProg=null, SKY={}, ATMO={}, CLD={};
 var skyMesh=null, atmoMesh=null, cldMesh=null, atmoKey='\0', cldTex=null, cldKey='\0';
 function shProg(vs,fs){
@@ -5476,14 +5969,20 @@ function initSkyGL(){
   skyProg=shProg(VSH_SKY,FSH_SKY);
   SKY.aP=gl.getAttribLocation(skyProg,'p');
   SKY.uMVP=gl.getUniformLocation(skyProg,'mvp'); SKY.uSpace=gl.getUniformLocation(skyProg,'uSpace');
+  SKY.uNebD=gl.getUniformLocation(skyProg,'uNebD'); SKY.uNebC=gl.getUniformLocation(skyProg,'uNebC');
+  SKY.uNebB=gl.getUniformLocation(skyProg,'uNebB');
+  /* #22: seeded deep-space starfield — one static point draw, rotation-locked like the sky dome */
+  starProg=shProg(VSH_STAR,FSH_STAR);
+  ST.aP=gl.getAttribLocation(starProg,'p'); ST.aC=gl.getAttribLocation(starProg,'c'); ST.aS=gl.getAttribLocation(starProg,'s');
+  ST.uMVP=gl.getUniformLocation(starProg,'mvp'); ST.uPx=gl.getUniformLocation(starProg,'uPx');
   atmoProg=shProg(VSH_ATMO,FSH_ATMO);
   ATMO.aP=gl.getAttribLocation(atmoProg,'p'); ATMO.aN=gl.getAttribLocation(atmoProg,'n');
   ATMO.uMVP=gl.getUniformLocation(atmoProg,'mvp'); ATMO.uCam=gl.getUniformLocation(atmoProg,'uCam');
+  ATMO.uAtmo=gl.getUniformLocation(atmoProg,'uAtmo');
   cldProg=shProg(VSH_CLD,FSH_CLD);
   CLD.aP=gl.getAttribLocation(cldProg,'p'); CLD.aN=gl.getAttribLocation(cldProg,'n');
-  CLD.aT=gl.getAttribLocation(cldProg,'t');
   CLD.uMVP=gl.getUniformLocation(cldProg,'mvp'); CLD.uSun=gl.getUniformLocation(cldProg,'uSun');
-  CLD.uTex=gl.getUniformLocation(cldProg,'uTex');
+  CLD.uTex=gl.getUniformLocation(cldProg,'uTex'); CLD.uPC=gl.getUniformLocation(cldProg,'uPC');
   var sm=sphereMesh(60000,24,16,false);
   skyMesh=mkSimple(sm.pos,sm.nrm,null,sm.idx);
 }
@@ -5507,7 +6006,7 @@ function bakeCloudTexture(seedStr){
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT); /* triplanar samples outside [0,1] */
   return tex;
 }
 function ensureAtmo(){
@@ -5535,9 +6034,18 @@ function drawSky(space){
   gl.vertexAttribPointer(SKY.aP,3,gl.FLOAT,false,skyMesh.stride,0); gl.enableVertexAttribArray(SKY.aP);
   gl.uniformMatrix4fv(SKY.uMVP,false,mvp);
   gl.uniform1f(SKY.uSpace,space);
+  /* seeded nebula veils, uploaded once per world seed */
+  var w=activeWorld(), sk=w?w.seed:'?';
+  if(nebKey!==sk){ nebKey=sk; var np=nebulaParams(sk); nebFlatD=np.d; nebFlatC=np.c; nebFlatB=np.b; }
+  if(SKY.uNebD){ gl.uniform3fv(SKY.uNebD,nebFlatD); gl.uniform3fv(SKY.uNebC,nebFlatC); gl.uniform3fv(SKY.uNebB,nebFlatB); }
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,skyMesh.ib);
   gl.drawElements(gl.TRIANGLES,skyMesh.count,gl.UNSIGNED_INT,0);
   gl.disableVertexAttribArray(SKY.aP);
+  if(space>0.02){ /* stars fade in with altitude, on the same rotation-locked shell */
+    ensureStars(sk);
+    var cv=$('gl'), px=cv.width/Math.max(1,cv.clientWidth);
+    drawStars(mvp,px);
+  }
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
 }
 function drawAtmo(){
@@ -5548,6 +6056,7 @@ function drawAtmo(){
   gl.vertexAttribPointer(ATMO.aN,3,gl.FLOAT,false,atmoMesh.stride,12); gl.enableVertexAttribArray(ATMO.aN);
   gl.uniformMatrix4fv(ATMO.uMVP,false,vpMat);
   gl.uniform3f(ATMO.uCam,e[0],e[1],e[2]);
+  var ac=ptx().atmo; gl.uniform3f(ATMO.uAtmo,ac[0],ac[1],ac[2]);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,atmoMesh.ib);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE);
   gl.depthMask(false); gl.cullFace(gl.FRONT); /* back faces: the halo */
@@ -5562,9 +6071,9 @@ function drawClouds(t){
   gl.bindBuffer(gl.ARRAY_BUFFER,cldMesh.vb);
   gl.vertexAttribPointer(CLD.aP,3,gl.FLOAT,false,cldMesh.stride,0); gl.enableVertexAttribArray(CLD.aP);
   gl.vertexAttribPointer(CLD.aN,3,gl.FLOAT,false,cldMesh.stride,12); gl.enableVertexAttribArray(CLD.aN);
-  gl.vertexAttribPointer(CLD.aT,2,gl.FLOAT,false,cldMesh.stride,24); gl.enableVertexAttribArray(CLD.aT);
   gl.uniformMatrix4fv(CLD.uMVP,false,mvp);
   gl.uniform3f(CLD.uSun,-0.45,0.8,0.35);
+  gl.uniform3f(CLD.uPC,PLANET_C[0],PLANET_C[1],PLANET_C[2]);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,cldTex);
   gl.uniform1i(CLD.uTex,0);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
@@ -5572,7 +6081,7 @@ function drawClouds(t){
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,cldMesh.ib);
   gl.drawElements(gl.TRIANGLES,cldMesh.count,gl.UNSIGNED_INT,0);
   gl.depthMask(true); gl.disable(gl.BLEND);
-  gl.disableVertexAttribArray(CLD.aP); gl.disableVertexAttribArray(CLD.aN); gl.disableVertexAttribArray(CLD.aT);
+  gl.disableVertexAttribArray(CLD.aP); gl.disableVertexAttribArray(CLD.aN);
 }
 /* ---------------- streamed terrain (v0.11: the world is not a tile) ----------------
  * High-detail terrain streams in 100m chunks around the player (5x5 window,
@@ -5581,7 +6090,8 @@ function drawClouds(t){
  * scale. One chunk builds per frame — crossing a chunk border is invisible.
  * Chunk validity is keyed on world seed + terrain-edit count, so terraform
  * undo, reseed, and planet travel all invalidate correctly. */
-var CH=100, CHW=2, CHN=26;
+var CH=100, CHW=4, CHN=26; /* 9x9 detail window: the LOD hole always has exact coverage */
+var SKIRT_D=60; /* boundary skirt drop: deeper than the far sphere's worst interpolation error */
 var terrChunks={}, terrChunkList=[], terrQueue=[];
 var lastPCX=1e9, lastPCZ=1e9, terrSeedKey='\0';
 var farCX=1e9, farCZ=1e9, farBuild=null;
@@ -5623,6 +6133,39 @@ function buildTerrainChunk(cx,cz){
     var a=jj*(N+1)+ii, b=a+1, c2=a+N+1, d=c2+1;
     idx.push(a,c2,b, b,c2,d);
   }
+  /* LOD#15: skirts on all four edges — a vertical wall dropping SKIRT_D below
+   * each boundary vertex. Hides the crack between exact detail chunks and the
+   * coarse far sphere at the window edge, and between fresh/stale chunks
+   * during terraform rebuilds. Interior shared edges get coincident skirts,
+   * which are sealed between the two top surfaces and never visible. */
+  function skirtTop(k){ return k; }
+  var base=pos.length/3;
+  function skirtVert(vi){
+    pos.push(pos[vi*3]-nrm[vi*3]*SKIRT_D, pos[vi*3+1]-nrm[vi*3+1]*SKIRT_D, pos[vi*3+2]-nrm[vi*3+2]*SKIRT_D);
+    nrm.push(nrm[vi*3],nrm[vi*3+1],nrm[vi*3+2]);
+    col.push(col[vi*3],col[vi*3+1],col[vi*3+2]);
+    return base++;
+  }
+  /* edge j=0 (-z): (t[k],t[k+1],s[k]), (t[k+1],s[k+1],s[k]) */
+  var s0=[];
+  for(var e0=0;e0<=N;e0++) s0.push(skirtVert(skirtTop(e0)));
+  for(var f0=0;f0<N;f0++){ var t0a=f0, t0b=f0+1;
+    idx.push(t0a,t0b,s0[f0], t0b,s0[f0+1],s0[f0]); }
+  /* edge j=N (+z): (t[k],s[k],t[k+1]), (t[k+1],s[k],s[k+1]) */
+  var s1=[];
+  for(var e1=0;e1<=N;e1++) s1.push(skirtVert(N*(N+1)+e1));
+  for(var f1=0;f1<N;f1++){ var t1a=N*(N+1)+f1, t1b=t1a+1;
+    idx.push(t1a,s1[f1],t1b, t1b,s1[f1],s1[f1+1]); }
+  /* edge i=0 (-x): (t[k],s[k],t[k+1]), (t[k+1],s[k],s[k+1]) */
+  var s2=[];
+  for(var e2=0;e2<=N;e2++) s2.push(skirtVert(e2*(N+1)));
+  for(var f2=0;f2<N;f2++){ var t2a=f2*(N+1), t2b=(f2+1)*(N+1);
+    idx.push(t2a,s2[f2],t2b, t2b,s2[f2],s2[f2+1]); }
+  /* edge i=N (+x): (t[k],t[k+1],s[k]), (t[k+1],s[k+1],s[k]) */
+  var s3=[];
+  for(var e3=0;e3<=N;e3++) s3.push(skirtVert(e3*(N+1)+N));
+  for(var f3=0;f3<N;f3++){ var t3a=f3*(N+1)+N, t3b=(f3+1)*(N+1)+N;
+    idx.push(t3a,t3b,s3[f3], t3b,s3[f3+1],s3[f3]); }
   return makeBuf(pos,nrm,col,idx);
 }
 function refreshTerrList(){ terrChunkList=[]; for(var k in terrChunks) terrChunkList.push(terrChunks[k]); }
@@ -5692,8 +6235,10 @@ function pumpFar(){
   }
 }
 /* per-frame streamer: call with the player position */
+var streamPCX=0, streamPCZ=0; /* chunk coords the detail window is centered on (LOD hole anchor) */
 function streamWorld(px,pz,sync){
   var pcx=Math.floor(px/CH), pcz=Math.floor(pz/CH);
+  streamPCX=pcx; streamPCZ=pcz;
   if(pcx!==lastPCX||pcz!==lastPCZ||terrSeedKey!==worldTerrainKey()||scatSeedKey!==worldScatterKey()){
     lastPCX=pcx; lastPCZ=pcz;
     updateTerrainChunks(pcx,pcz);
@@ -5703,7 +6248,7 @@ function streamWorld(px,pz,sync){
   if(sync){ var g=0; while(terrQueue.length&&g++<60) pumpTerrain();
     g=0; while(scatQueue.length&&g++<60) pumpScatter();
     g=0; while(farBuild&&g++<200) pumpFar();
-  } else { pumpTerrain(); pumpScatter(); pumpFar(); pumpFar(); }
+  } else { pumpTerrain(); pumpTerrain(); pumpScatter(); pumpFar(); pumpFar(); }
 }
 /* terraform / undo: invalidate cached chunks; they rebuild in the background */
 function dirtyTerrain(){ terrSeedKey='\0'; }
@@ -5716,8 +6261,11 @@ function buildTerrainBuffers(){
   terrSeedKey='\0'; scatSeedKey='\0'; lastPCX=1e9; lastPCZ=1e9;
   farCX=1e9; farCZ=1e9; farBuild=null;
   if(farBuf){ gl.deleteBuffer(farBuf.vb); gl.deleteBuffer(farBuf.ib); farBuf=null; }
-  /* water: a sphere hugging the planet at water level (oceans where terrain < wl) */
+  /* water: a sphere hugging the planet at water level (oceans where terrain < wl).
+   * Workshop pull: color graded by depth — shallow shelf vs deep water from
+   * the planet type's water palette (PTEX water colors). */
   var WL=0.8, WSEG=48, WHST=28, wpos=[], wnrm=[], wcol=[];
+  var pw=ptx().water;
   for(var wj=0;wj<=WHST;wj++){
     var wph=wj/WHST*Math.PI, ws=Math.sin(wph), wc=Math.cos(wph);
     for(var wi=0;wi<=WSEG;wi++){
@@ -5725,7 +6273,13 @@ function buildTerrainBuffers(){
       var wr=PLANET_R+WL;
       wpos.push(PLANET_C[0]+ws*wct*wr, PLANET_C[1]+wc*wr, PLANET_C[2]+ws*wst*wr);
       wnrm.push(ws*wct, wc, ws*wst);
-      wcol.push(0.25,0.45,0.62);
+      /* depth below the waterline at this planet position */
+      var wmx=PLANET_R*wph*wct, wmz=PLANET_R*wph*wst;
+      var wdepth=clamp01((WL-heightAt(wmx,wmz))/7);
+      var wsh=pw[1], wdp=pw[0];
+      wcol.push(wsh[0]+(wdp[0]-wsh[0])*wdepth,
+                wsh[1]+(wdp[1]-wsh[1])*wdepth,
+                wsh[2]+(wdp[2]-wsh[2])*wdepth);
     }
   }
   var widx=[];
@@ -5749,6 +6303,7 @@ function rebuildObjects(){
   dirtyTerrain(); /* scatter chunks near new buildings re-place around them */
   if(objBuf){ gl.deleteBuffer(objBuf.vb); gl.deleteBuffer(objBuf.ib); objBuf=null; }
   if(objIdx.length) objBuf=makeBuf(objPos,objNrm,objCol,objIdx);
+  buildClaimBuf(); /* transparent claim/ghost pass follows the same rebuild */
 }
 /* ---------------- undo: Ctrl+Z ----------------
  * Every mutation snapshots {buildings,items,paths} first. */
@@ -5878,10 +6433,10 @@ function planetPal(w){
  * the world's own info (MoorWorld.materials: signature resource, tiers, exotics).
  * getMaterials(pid) is the accessor later phases (economy, building) will use. */
 var BASE_MATS=[
-  {id:'wood', name:'Wood', icon:'🪵'}, {id:'stone',name:'Stone',icon:'🪨'},
-  {id:'metal',name:'Metal',icon:'⚙️'}, {id:'clay', name:'Clay', icon:'🏺'},
-  {id:'fiber',name:'Fiber',icon:'🧵'}, {id:'cloth',name:'Cloth',icon:'🧶'},
-  {id:'glass',name:'Glass',icon:'💎'}
+  {id:'wood', name:'Wood', icon:'log'}, {id:'stone',name:'Stone',icon:'rock'},
+  {id:'metal',name:'Metal',icon:'gear'}, {id:'clay', name:'Clay', icon:'amphora'},
+  {id:'fiber',name:'Fiber',icon:'thread'}, {id:'cloth',name:'Cloth',icon:'cloth'},
+  {id:'glass',name:'Glass',icon:'gem'}
 ];
 var MAT_TIER_NAMES=['trace','scarce','common','rich'];
 function getMaterials(pid){
@@ -5930,7 +6485,7 @@ function rockOct(x,y,z,s,sy,R,c){
     rockTri(top,A,B,c); rockTri(bot,B,A,[c[0]*0.88,c[1]*0.88,c[2]*0.88]); }
 }
 function rockGen(x,y,z,s,R,pal,variant){
-  var c=pal.rock[Math.floor(R()*pal.rock.length)];
+  var c=vibJit(pal.rock[Math.floor(R()*pal.rock.length)],x,z,0.12); /* vibrance */
   if(variant==='slab') rockOct(x,y,z,s*1.6,0.35,R,c);
   else if(variant==='spire'){
     coneY(x,y,z,0.5*s,2.6*s,5,c[0],c[1],c[2]);
@@ -5946,46 +6501,66 @@ function rockGen(x,y,z,s,R,pal,variant){
  * Layered canopies with real silhouettes: stacked puffs for the tall kind,
  * a sprawling 5-puff crown for spread, bud-lit flowering bushes, and a full
  * 3-puff round bush. Leaf color breathes around the planet tint. */
-function bushLeaf(pal,R,sh){
+function bushLeaf(pal,R,sh,x,z){
   var g=pal.leaf[Math.floor(R()*pal.leaf.length)];
+  g=vibJit(satLift(g,0.22),x,z,0.15); /* vibrance: per-bush hue breathing */
+  sh=sh||1;
+  return [Math.min(1,g[0]*sh),Math.min(1,g[1]*sh),Math.min(1,g[2]*sh)];
+}
+/* Living Garden Lab canonical family hues (moor-ecology.js FAMILIES): the
+ * Lab's look blended 50/50 with the planet palette, then vibrance — the
+ * planet keeps its identity, the plants keep the Lab's quality bar. */
+var FAM_COL={oak:[0.42,0.57,0.25],birch:[0.56,0.67,0.32],willow:[0.47,0.59,0.33],
+  cedar:[0.24,0.43,0.35],shrub:[0.38,0.51,0.25],fern:[0.30,0.53,0.29],
+  flower:[0.43,0.59,0.30],grass:[0.54,0.61,0.30]};
+function famLeaf(pal,R,fam,x,z,sh){
+  var g=pal.leaf[Math.floor(R()*pal.leaf.length)], fc=FAM_COL[fam]||g;
+  g=[(g[0]+fc[0])/2,(g[1]+fc[1])/2,(g[2]+fc[2])/2];
+  g=vibJit(satLift(g,0.22),x,z,0.15);
   sh=sh||1;
   return [Math.min(1,g[0]*sh),Math.min(1,g[1]*sh),Math.min(1,g[2]*sh)];
 }
 function bushGen(x,y,z,s,R,pal,type){
-  var k, a, fc;
-  if(type==='tall'){
-    /* layered spire: trunk + stacked puffs tapering upward */
-    cylY(x,y,z,0.15*s,1.2*s,5, 0.36,0.26,0.17);
-    var lw=[0.62,0.50,0.36], lh=[0.35,0.85,1.28];
-    for(k=0;k<3;k++){ var g=bushLeaf(pal,R,1+k*0.06);
-      blobY(x+(R()-0.5)*0.2*s, y+lh[k]*s, z+(R()-0.5)*0.2*s, lw[k]*s, g[0],g[1],g[2], R); }
-    if(R()<0.45){ /* glowing crown bud */
-      fc=pal.flower[Math.floor(R()*pal.flower.length)];
-      glowDot(x, y+1.75*s, z, 0.10*s, Math.min(1.4,fc[0]+0.5), Math.min(1.4,fc[1]+0.5), Math.min(1.4,fc[2]+0.5));
+  /* Lab wild shrub: low multistem crown; leaves ride twig arcs, never tips.
+   * Tall = upright spire form, spread = wide low form, flower/round = full. */
+  var n=type==='spread'?5:3+Math.floor(R()*2), st, twI, l, b;
+  var up=type==='tall'?1.5:1.0, wide=type==='spread'?1.5:1.0;
+  for(st=0;st<n;st++){
+    var a=st/n*Math.PI*2+R()*0.9;
+    var lean=(0.30+R()*0.35)*wide, hl=(0.55+R()*0.45)*s*up;
+    var tx=x+Math.cos(a)*lean*s, tz=z+Math.sin(a)*lean*s, ty=y+hl;
+    var g=famLeaf(pal,R,'shrub',x,z,0.95+R()*0.15);
+    var sdx=tx-x, sdy=ty-y, sdz=tz-z, sdl=Math.hypot(sdx,sdy,sdz)||1;
+    twig(x,y,z, sdx/sdl,sdy/sdl,sdz/sdl, sdl, 0.045*s, 0.36,0.26,0.17);
+    for(twI=0;twI<2;twI++){
+      var ta=a+(twI%2?1:-1)*(0.7+R()*0.5), tt=0.5+(twI/2)*0.45;
+      var px=x+sdx*tt, py=y+sdy*tt, pz=z+sdz*tt;
+      var tdx=Math.cos(ta), tdy=0.4+R()*0.4, tdz=Math.sin(ta);
+      var tlen=(0.30+R()*0.25)*s, nl=3+Math.floor(R()*2);
+      for(l=0;l<nl;l++){
+        var lt=0.25+(l/nl)*0.75;
+        var la2=ta+(l%2?1:-1)*(0.9+R()*0.6), bs=0.85+R()*0.35;
+        leafBlade(px+tdx*tlen*lt, py+tdy*tlen*lt, pz+tdz*tlen*lt,
+          Math.cos(la2), 0.3+R()*0.4, Math.sin(la2),
+          (0.36+R()*0.28)*s, 0.085*s*bs, 0.20+R()*0.2, g[0]*bs,g[1]*bs,g[2]*bs);
+      }
     }
-  }else if(type==='spread'){
-    /* sprawling crown: five puffs at varied heights, wide stance */
-    var offs=[[-0.55,0.30,0], [0.55,0.34,0.15], [0,0.42,-0.5], [-0.15,0.62,0.35], [0.3,0.72,-0.2]];
-    for(k=0;k<offs.length;k++){ var g2=bushLeaf(pal,R,0.95+R()*0.15), o=offs[k];
-      blobY(x+o[0]*s, y+o[1]*s, z+o[2]*s, (0.34+R()*0.14)*s, g2[0],g2[1],g2[2], R); }
-  }else if(type==='flower'){
-    /* flowering bush: full round canopy studded with glowing buds */
-    var g3=bushLeaf(pal,R,1);
-    blobY(x, y+0.42*s, z, 0.58*s, g3[0],g3[1],g3[2], R);
-    blobY(x+0.3*s, y+0.60*s, z-0.2*s, 0.38*s, g3[0]*1.06,g3[1]*1.06,g3[2], R);
-    fc=pal.flower[Math.floor(R()*pal.flower.length)];
-    var nb=4+Math.floor(R()*3);
-    for(k=0;k<nb;k++){ a=R()*Math.PI*2;
-      var rr=(0.3+R()*0.35)*s, bx=x+Math.cos(a)*rr, bz=z+Math.sin(a)*rr;
-      var by=y+0.55*s+R()*0.35*s;
-      coneY(bx,by,bz, 0.07*s,0.10*s,5, fc[0],fc[1],fc[2]);
-      glowDot(bx,by+0.09*s,bz, 0.055*s, Math.min(1.5,fc[0]+0.6),Math.min(1.5,fc[1]+0.6),Math.min(1.5,fc[2]+0.6));
+  }
+  if(type==='flower'||R()<0.35){
+    /* flowering: glowing buds ringed with petal blades */
+    var fc=vibJit(satLift(pal.flower[Math.floor(R()*pal.flower.length)],0.25),x,z,0.13);
+    var nbb=4+Math.floor(R()*3);
+    for(b=0;b<nbb;b++){
+      var ba2=R()*Math.PI*2, rr=(0.25+R()*0.45)*s*wide;
+      var bx2=x+Math.cos(ba2)*rr, bz2=z+Math.sin(ba2)*rr, by2=y+(0.5+R()*0.5)*s*up;
+      for(var pt=0;pt<5;pt++){
+        var pa=pt/5*Math.PI*2+R()*0.4;
+        leafBlade(bx2,by2-0.02*s,bz2, Math.cos(pa)*0.75,0.5,Math.sin(pa)*0.75,
+          0.17*s,0.05*s,0.12, fc[0],fc[1],fc[2]);
+      }
+      glowDot(bx2,by2+0.03*s,bz2, 0.06*s,
+        Math.min(1.5,fc[0]+0.6),Math.min(1.5,fc[1]+0.6),Math.min(1.5,fc[2]+0.6));
     }
-  }else{ /* round: full 3-puff cluster, the workhorse shrub */
-    var g4=bushLeaf(pal,R,1);
-    blobY(x, y+0.40*s, z, 0.58*s, g4[0],g4[1],g4[2], R);
-    blobY(x-0.42*s, y+0.30*s, z+0.18*s, 0.40*s, g4[0]*0.94,g4[1]*0.94,g4[2], R);
-    blobY(x+0.38*s, y+0.52*s, z-0.22*s, 0.34*s, g4[0]*1.07,g4[1]*1.07,g4[2], R);
   }
 }
 /* ---------------- flower generator (rework) ----------------
@@ -5996,31 +6571,38 @@ function flowerStem(x,y,z,h){
   cylY(x,y,z,0.025,h,4, 0.25,0.45,0.22);
 }
 function flowerHead(x,y,z,s,R,pc,kind){
+  /* Lab meadow flowers: radial petal blades around a glowing pollen heart */
   var k, a;
   if(kind==='spike'){
-    coneY(x,y-0.28*s,z,0.055*s,0.62*s,5, pc[0],pc[1],pc[2]);
+    twig(x,y-0.3*s,z, 0,1,0, 0.62*s, 0.03*s, pc[0]*0.7,pc[1]*0.7,pc[2]*0.7);
+    for(k=0;k<6;k++){ a=k/6*Math.PI*2+R()*0.4;
+      leafBlade(x,y-0.28*s,z, Math.cos(a)*0.9,0.35,Math.sin(a)*0.9,
+        0.14*s,0.045*s,0.1, pc[0],pc[1],pc[2]); }
     glowDot(x,y+0.06*s,z, 0.06*s, Math.min(1.5,pc[0]+0.6),Math.min(1.5,pc[1]+0.6),Math.min(1.5,pc[2]+0.6));
     return;
   }
   if(kind==='tuft'){
-    for(k=0;k<3;k++){ a=k/3*Math.PI*2+R();
-      coneY(x+Math.cos(a)*0.09*s, y-0.05*s, z+Math.sin(a)*0.09*s,
-        0.05*s, 0.16*s, 4, pc[0],pc[1],pc[2]); }
+    for(k=0;k<5;k++){ a=k/5*Math.PI*2+R();
+      var bx=x+Math.cos(a)*0.09*s, bz=z+Math.sin(a)*0.09*s;
+      leafBlade(bx,y-0.06*s,bz, Math.cos(a)*0.5,1,Math.sin(a)*0.5,
+        0.2*s,0.05*s,0.15, pc[0],pc[1],pc[2]); }
     glowDot(x,y+0.05*s,z, 0.055*s, Math.min(1.5,pc[0]+0.6),Math.min(1.5,pc[1]+0.6),Math.min(1.5,pc[2]+0.6));
     return;
   }
   /* cup + daisy: petal ring around a glowing heart */
   var np=kind==='daisy'?7:6, pr=kind==='daisy'?0.13*s:0.10*s;
   for(k=0;k<np;k++){ a=k/np*Math.PI*2+R()*0.3;
-    var px=x+Math.cos(a)*pr*0.8, pz=z+Math.sin(a)*pr*0.8;
-    coneY(px,y-0.03*s,pz, 0.045*s,0.10*s,4, pc[0]*0.96,pc[1]*0.96,pc[2]*0.96);
+    var bs=0.9+R()*0.25;
+    leafBlade(x+Math.cos(a)*pr*0.5, y-0.02*s, z+Math.sin(a)*pr*0.5,
+      Math.cos(a), 0.42, Math.sin(a),
+      pr*1.15, 0.05*s*bs, 0.18, pc[0]*bs,pc[1]*bs,pc[2]*bs);
   }
-  if(kind==='daisy') coneY(x,y+0.015*s,z, 0.05*s,0.05*s,6, 1.0,0.85,0.30);
-  glowDot(x,y+0.045*s,z, 0.05*s, Math.min(1.6,pc[0]+0.7),Math.min(1.6,pc[1]+0.7),Math.min(1.6,pc[2]+0.7));
+  if(kind==='daisy') glowDot(x,y+0.02*s,z, 0.045*s, 1.0,0.85,0.30);
+  glowDot(x,y+0.05*s,z, 0.05*s, Math.min(1.6,pc[0]+0.7),Math.min(1.6,pc[1]+0.7),Math.min(1.6,pc[2]+0.7));
 }
 function flowerGen(x,y,z,s,R,pal,type){
-  var pc=pal.flower[Math.floor(R()*pal.flower.length)];
-  var n=5+Math.floor(R()*3), k, ox, oz, sh;
+  var pc=vibJit(satLift(pal.flower[Math.floor(R()*pal.flower.length)],0.25),x,z,0.13); /* vibrance */
+  var n=3+Math.floor(R()*2), k, ox, oz, sh;
   for(k=0;k<n;k++){
     ox=(R()-0.5)*1.7*s; oz=(R()-0.5)*1.7*s; sh=(0.35+R()*0.4)*s;
     flowerStem(x+ox,y,z+oz,sh);
@@ -6031,15 +6613,15 @@ function flowerGen(x,y,z,s,R,pal,type){
 }
 /* scatter kind weights per planet type: [tree, bush, flower, grass, rock] */
 var SCAT_BIAS={
-  TERRAN:[3,4,4,6,1.5], OCEAN:[2,3,3,5,1.5], DESERT:[0.4,1.5,1.5,4,3],
-  ICE:[0.6,1.2,1.2,2.5,2.5], LAVA:[0,0.5,0.5,1,5], JUNGLE:[5,5,4,5,1],
-  BARREN:[0,0.4,0.2,1,5], GAS:[0,0,0,0,3], CRYSTAL:[1,2.5,4,3,3], TOXIC:[2,4,3.5,5,1.5]
+  TERRAN:[2.5,3,1.5,2.5,8,1.5], OCEAN:[2,2.5,2,3,5,1.5], DESERT:[0.4,1.5,0.3,1.5,4,3],
+  ICE:[0.6,1.2,0.8,1.2,2.5,2.5], LAVA:[0,0.5,0,0.5,1,5], JUNGLE:[4,4,3,3,7,1],
+  BARREN:[0,0.4,0,0.2,1,5], GAS:[0,0,0,0,0,3], CRYSTAL:[1,2.5,1,4,3,3], TOXIC:[2,4,2,3.5,5,1.5]
 };
 function pickKind(R,tk){
   var b=SCAT_BIAS[tk]||SCAT_BIAS.TERRAN, tot=0, i, r;
   for(i=0;i<b.length;i++) tot+=b[i];
   r=R()*tot;
-  var kinds=['tree','bush','flower','grass','rock'];
+  var kinds=['tree','bush','fern','flower','grass','rock'];
   for(i=0;i<b.length;i++){ r-=b[i]; if(r<=0) return kinds[i]; }
   return 'grass';
 }
@@ -6086,67 +6668,208 @@ function cylY(x,y,z,r,h,seg,cr,cg,cb){
     objIdx.push(b0,t0,b1, b1,t0,t1);
   }
 }
-function blobY(x,y,z,r,cr,cg,cb,R){
-  var la=4, lo=6;
-  for(var j=0;j<la;j++) for(var i=0;i<lo;i++){
-    var t0=j/la*Math.PI, t1=(j+1)/la*Math.PI, p0=i/lo*Math.PI*2, p1=(i+1)/lo*Math.PI*2;
-    function P(t,p,rr){ return [x+rr*Math.sin(t)*Math.cos(p), y+rr*Math.cos(t)*0.75, z+rr*Math.sin(t)*Math.sin(p)]; }
-    var jr=1+(R()-0.5)*0.3;
-    var A=P(t0,p0,r*jr), B=P(t0,p1,r*jr), C=P(t1,p1,r*jr), D=P(t1,p0,r*jr);
-    var ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2],vx=D[0]-A[0],vy=D[1]-A[1],vz=D[2]-A[2];
-    var nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx, l=Math.hypot(nx,ny,nz)||1;
-    var b0=pushV(A[0],A[1],A[2],nx/l,ny/l,nz/l,cr,cg,cb), b1=pushV(B[0],B[1],B[2],nx/l,ny/l,nz/l,cr,cg,cb);
-    var c0=pushV(C[0],C[1],C[2],nx/l,ny/l,nz/l,cr,cg,cb), d0=pushV(D[0],D[1],D[2],nx/l,ny/l,nz/l,cr,cg,cb);
-    objIdx.push(b0,d0,b1, b1,d0,c0);
+/* ---------------- Living-Garden-Lab foliage primitives ----------------
+ * The Lab is the canonical reference: leaves are individual tapered, curled,
+ * creased blades (never blobs), branches are tapered tubes, every blade gets
+ * its own brightness. Ported here to the beta's raw-WebGL emitters. */
+function leafBlade(bx,by,bz,dx,dy,dz,len,wid,curl,cr,cg,cb,segs){
+  var dl=Math.hypot(dx,dy,dz)||1; dx/=dl; dy/=dl; dz/=dl;
+  /* Lab-canonical per-leaf brightness: 0.76 + 0.44 * hash — every blade of
+   * grass, every leaf reads as an individual, no RNG-stream impact */
+  var bj=0.76+0.44*vnoise(bx*1.71+3.1,by*2.33+bz*1.93+7.7);
+  cr=Math.min(1,cr*bj); cg=Math.min(1,cg*bj); cb=Math.min(1,cb*bj);
+  var sx=-dz, sy=0, sz=dx, sl=Math.hypot(sx,sz);
+  if(sl<1e-4){ sx=1; sz=0; } else { sx/=sl; sz/=sl; }
+  var nx=dy*sz-dz*sy, ny=dz*sx-dx*sz, nz=dx*sy-dy*sx;
+  var SEG=segs||3, v0=objPos.length/3, i, sgn, k;
+  for(sgn=0;sgn<2;sgn++){
+    for(i=0;i<=SEG;i++){
+      var t=i/SEG, prof=Math.sin(t*Math.PI);
+      var lift=Math.sin(t*Math.PI)*curl*len;
+      var cxp=bx+dx*len*t, cyp=by+dy*len*t+lift*0.4, czp=bz+dz*len*t;
+      for(k=-1;k<=1;k+=2){
+        var off=k*wid*prof, crease=Math.abs(off)*0.14;
+        var bsh=0.80+0.38*t; /* darker base, lighter tip */
+        pushV(cxp+sx*off+nx*(lift+crease), cyp+sy*off+ny*(lift+crease), czp+sz*off+nz*(lift+crease),
+          nx,ny,nz, Math.min(1,cr*bsh),Math.min(1,cg*bsh),Math.min(1,cb*bsh));
+      }
+    }
+  }
+  for(sgn=0;sgn<2;sgn++){
+    var b=v0+sgn*(SEG+1)*2;
+    for(i=0;i<SEG;i++){
+      var a0=b+i*2, b0=a0+1, c0=a0+2, d0=a0+3;
+      if(sgn===0) objIdx.push(a0,c0,b0, b0,c0,d0);
+      else objIdx.push(a0,b0,c0, b0,d0,c0);
+    }
   }
 }
-/* ---- vegetation builders (native, no deps) ----
- * Rework: real silhouettes. Conifers get a tapered 4-tier crown with a
- * leader spike; broadleafs get an offset 4-puff canopy on visible branches;
- * grass grows in fuller 5-blade tufts, one tuft in three with a glowing
- * seed tip (the LED cheat). */
-function treeConifer(x,y,z,s,R,pal){
-  var g=pal?pal.leaf[Math.floor(R()*pal.leaf.length)]:[0.15+R()*0.07, 0.35+R()*0.09, 0.17];
-  cylY(x,y,z,0.20*s,1.7*s,6, 0.38,0.27,0.18);
-  var tiers=[[2.9,3.0,1.9],[2.25,2.5,3.1],[1.6,2.0,4.2],[0.95,1.5,5.2]], i, L, sh;
-  for(i=0;i<4;i++){ L=tiers[i]; sh=1+i*0.06;
-    coneY(x+(R()-0.5)*0.15*s, y+L[2]*s, z+(R()-0.5)*0.15*s, L[0]*s, L[1]*s, 7,
-      Math.min(1,g[0]*sh),Math.min(1,g[1]*sh),g[2]);
+function grassBlade(bx,by,bz,dx,dz,len,wid,cr,cg,cb){
+  /* cheap 2-segment blade for grass tufts: 8 tris */
+  var dl=Math.hypot(dx,dz)||1; dx/=dl; dz/=dl;
+  var sx=-dz, sz=dx;
+  var v0=objPos.length/3, i, sgn, k;
+  for(sgn=0;sgn<2;sgn++){
+    for(i=0;i<=2;i++){
+      var t=i/2, prof=Math.sin(t*Math.PI*0.5)+0.15, bend=t*t*len*0.45;
+      var cxp=bx+dx*(bend+len*t*0.3), cyp=by+len*t, czp=bz+dz*(bend+len*t*0.3);
+      for(k=-1;k<=1;k+=2){
+        var off=k*wid*prof*(1-t*0.7), bsh=0.75+0.45*t;
+        pushV(cxp+sx*off,cyp,czp+sz*off, sx,0,sz,
+          Math.min(1,cr*bsh),Math.min(1,cg*bsh),Math.min(1,cb*bsh));
+      }
+    }
   }
-  coneY(x, y+6.1*s, z, 0.28*s, 0.9*s, 6, g[0]*1.1,g[1]*1.1,g[2]); /* leader */
+  for(sgn=0;sgn<2;sgn++){
+    var b=v0+sgn*3*2;
+    for(i=0;i<2;i++){
+      var a0=b+i*2, b0=a0+1, c0=a0+2, d0=a0+3;
+      if(sgn===0) objIdx.push(a0,c0,b0, b0,c0,d0);
+      else objIdx.push(a0,b0,c0, b0,d0,c0);
+    }
+  }
+}
+function twig(x,y,z,dx,dy,dz,len,r0,cr,cg,cb,bend){
+  /* Lab-canonical tapered tube: 6-sided, 92% taper to the tip, optional
+   * mid-arc bend [bx,by,bz] for arching branches and fern fronds. 24 tris. */
+  var dl=Math.hypot(dx,dy,dz)||1; dx/=dl; dy/=dl; dz/=dl;
+  var sx=-dz, sy=0, sz=dx, sl=Math.hypot(sx,sz);
+  if(sl<1e-4){ sx=1; sz=0; } else { sx/=sl; sz/=sl; }
+  var ux=dy*sz-dz*sy, uy=dz*sx-dx*sz, uz=dx*sy-dy*sx;
+  var SIDES=6, SEG=2, v0=objPos.length/3, j, k;
+  for(j=0;j<=SEG;j++){
+    var t=j/SEG, rr=r0*(1-t*0.92), bow=bend?Math.sin(t*Math.PI):0;
+    var cxp=x+dx*len*t+(bend?bend[0]*bow:0),
+        cyp=y+dy*len*t+(bend?bend[1]*bow:0),
+        czp=z+dz*len*t+(bend?bend[2]*bow:0);
+    for(k=0;k<SIDES;k++){
+      var a=k/SIDES*Math.PI*2, ca=Math.cos(a), sa=Math.sin(a);
+      var ox=(sx*ca+ux*sa)*rr, oy=(sy*ca+uy*sa)*rr, oz=(sz*ca+uz*sa)*rr;
+      var nl=Math.hypot(ox,oy,oz)||1;
+      pushV(cxp+ox,cyp+oy,czp+oz, ox/nl,oy/nl,oz/nl, cr,cg,cb);
+    }
+  }
+  for(j=0;j<SEG;j++) for(k=0;k<SIDES;k++){
+    var a0=v0+j*SIDES+k, b0=v0+j*SIDES+(k+1)%SIDES;
+    var c0=v0+(j+1)*SIDES+k, d0=v0+(j+1)*SIDES+(k+1)%SIDES;
+    objIdx.push(a0,c0,b0, b0,c0,d0);
+  }
+}
+/* ---- vegetation builders: Living Garden Lab canonicals ----
+ * Lab language throughout: tapered/curled/creased blade leaves, tapered tube
+ * branches, per-blade brightness. No blob canopies, no cone trees. */
+function treeConifer(x,y,z,s,R,pal){
+  /* Lab mountain cedar: trunk + layered whorls of needle-bearing branchlets
+   * tapering toward the light, needles riding each branchlet + leader. */
+  var g=famLeaf(pal,R,'cedar',x,z);
+  var h=(2.0+R()*0.4)*s;
+  twig(x,y,z, 0,1,0, h, 0.15*s, 0.36,0.26,0.17);
+  var layers=3, wI, k, l;
+  for(wI=0;wI<layers;wI++){
+    var t=0.28+(wI/layers)*0.64;
+    var wy=y+h*t, wr=(1.05-t*0.75)*s, nn=5+Math.floor(R()*2);
+    for(k=0;k<nn;k++){
+      var a=k/nn*Math.PI*2+R()*0.4;
+      var bdx=Math.cos(a), bdz=Math.sin(a), blen=wr*(0.8+R()*0.4);
+      var bx0=x+bdx*0.08*s, bz0=z+bdz*0.08*s;
+      twig(bx0,wy,bz0, bdx,0.12,bdz, blen, 0.035*s, 0.36,0.26,0.17);
+      var nl=4;
+      for(l=0;l<nl;l++){
+        var lt=0.2+(l/nl)*0.8, bs=0.8+R()*0.35;
+        var la2=a+(l%2?1:-1)*(0.7+R()*0.5);
+        leafBlade(bx0+bdx*blen*lt, wy+0.12*blen*lt, bz0+bdz*blen*lt,
+          Math.cos(la2), 0.15+R()*0.2, Math.sin(la2),
+          0.30*s*bs, 0.035*s*bs, 0.10, g[0]*bs,g[1]*bs,g[2]*bs);
+      }
+    }
+  }
+  var gl=famLeaf(pal,R,'cedar',x+3.1,z+7.7);
+  leafBlade(x, y+h, z, 0,1,0, 0.7*s, 0.05*s, 0.1, gl[0],gl[1],gl[2]); /* leader */
 }
 function treeBroad(x,y,z,s,R,pal){
-  cylY(x,y,z,0.24*s,2.2*s,6, 0.40,0.29,0.19);
-  var g=pal?pal.leaf[Math.floor(R()*pal.leaf.length)]:[0.24+R()*0.12, 0.46+R()*0.10, 0.22];
-  var b, a;
-  for(b=0;b<3;b++){ a=b/3*Math.PI*2+R();
-    var bx=x+Math.cos(a)*1.1*s, bz=z+Math.sin(a)*1.1*s;
-    coneY((x+bx)/2, y+2.6*s, (z+bz)/2, 0.09*s, 1.4*s, 5, 0.40,0.29,0.19);
+  /* Lab meadow oak: trunk -> open golden-angle branches -> twig arcs with
+   * blades riding along them (never pom-pom tips). Birch-pale bark variant. */
+  var g=famLeaf(pal,R,R()<0.25?'birch':'oak',x,z);
+  var pale=R()<0.3, bark=pale?[0.74,0.76,0.69]:[0.40,0.29,0.19];
+  var h=(2.2+R()*0.5)*s;
+  twig(x,y,z, 0,1,0, h, 0.20*s, bark[0],bark[1],bark[2]);
+  var nb=6+Math.floor(R()*2), b, twI, l; // 6-7 branches
+  for(b=0;b<nb;b++){
+    var t=0.25+(b/nb)*0.65, ang=b*2.399+R()*0.7; // golden-angle phyllotaxis, low limbs
+    var bx0=x, by0=y+h*t*0.92, bz0=z;
+    var blen=(0.9+R()*0.7)*s;
+    var bdx=Math.cos(ang), bdy=0.45+R()*0.4, bdz=Math.sin(ang);
+    twig(bx0,by0,bz0, bdx,bdy,bdz, blen, 0.07*s, bark[0],bark[1],bark[2]);
+    var ntw=3; // twig arcs per branch
+    for(twI=0;twI<ntw;twI++){
+      var tt=0.35+(twI/ntw)*0.6;
+      var px=bx0+bdx*blen*tt, py=by0+bdy*blen*tt, pz=bz0+bdz*blen*tt;
+      var ta=ang+(twI%2?1:-1)*(0.6+R()*0.5);
+      var tdx=Math.cos(ta), tdy=0.35+R()*0.45, tdz=Math.sin(ta);
+      var tlen=blen*(0.35+R()*0.25), nl=4;
+      for(l=0;l<nl;l++){
+        var lt=0.25+(l/nl)*0.75;
+        var la2=ta+(l%2?1:-1)*(0.9+R()*0.6), bs=0.8+R()*0.4;
+        leafBlade(px+tdx*tlen*lt, py+tdy*tlen*lt, pz+tdz*tlen*lt,
+          Math.cos(la2), 0.25+R()*0.5, Math.sin(la2),
+          (0.42+R()*0.3)*s, 0.10*s*bs, 0.16+R()*0.12, g[0]*bs,g[1]*bs,g[2]*bs);
+      }
+    }
   }
-  var puffs=[[0,3.9,0,2.6],[1.5,3.1,0.6,1.7],[-1.4,3.2,-0.5,1.6],[0.3,4.7,-0.3,1.5]], i, P;
-  for(i=0;i<puffs.length;i++){ P=puffs[i];
-    var sh2=0.96+R()*0.14;
-    blobY(x+P[0]*s, y+P[1]*s, z+P[2]*s, P[3]*s,
-      Math.min(1,g[0]*sh2),Math.min(1,g[1]*sh2),g[2], R);
+}
+/* Lab woodland fern: unfurling curved fronds with paired tapering leaflets. */
+function fernGen(x,y,z,s,R,pal){
+  var g=famLeaf(pal,R,'fern',x,z);
+  var nf=6+Math.floor(R()*2), f, l, sgn; // 6-7 fronds
+  for(f=0;f<nf;f++){
+    var a=f/nf*Math.PI*2+R()*0.5;
+    var span=(0.55+R()*0.45)*s;
+    var dx=Math.cos(a), dz=Math.sin(a);
+    twig(x,y,z, dx,0.5,dz, span, 0.02*s, 0.30,0.42,0.22, [0,span*0.35,0]); /* rachis arcs up */
+    var nl=4;
+    for(l=0;l<nl;l++){
+      var t=0.15+(l/nl)*0.75;
+      var px=x+dx*span*t, pz=z+dz*span*t;
+      var py=y+0.5*span*t+span*0.35*Math.sin(t*Math.PI);
+      var ls=span*0.30*Math.sin(t*Math.PI)+0.03*s; /* tapering leaflets */
+      for(sgn=-1;sgn<=1;sgn+=2){
+        var la2=a+sgn*1.1, bs=0.8+R()*0.4;
+        leafBlade(px,py,pz, Math.cos(la2),0.08,Math.sin(la2),
+          ls, ls*0.16, 0.10, g[0]*bs,g[1]*bs,g[2]*bs);
+      }
+    }
   }
 }
 function grassTuft(x,y,z,s,R,tint){
-  var wdt=0.15*s, g=tint||[0.45+R()*0.15,0.60,0.24], k, a, dx, dz;
-  for(k=0;k<5;k++){
-    var h=(0.5+R()*0.45)*s;
-    a=k/5*Math.PI*2+R()*0.6; dx=Math.cos(a); dz=Math.sin(a);
-    var ox=(R()-0.5)*0.5*s, oz=(R()-0.5)*0.5*s, lean=(R()-0.5)*0.35*s;
-    var nx=-dz, nz=dx, sh=0.9+R()*0.25;
-    var cr=Math.min(1,g[0]*sh), cg=Math.min(1,g[1]*sh), cb=g[2];
-    /* both windings: grass is seen from all sides */
-    pushTri(x-wdt*dx+ox,y,z-wdt*dz+oz, x+wdt*dx+ox,y,z+wdt*dz+oz,
-            x-wdt*dx+ox+lean,y+h,z-wdt*dz+oz, nx,0,nz, cr,cg,cb);
-    pushTri(x+wdt*dx+ox,y,z+wdt*dz+oz, x+wdt*dx+ox+lean,y+h,z+wdt*dz+oz,
-            x-wdt*dx+ox+lean,y+h,z+wdt*dz+oz, nx,0,nz, cr,cg,cb);
-    pushTri(x+wdt*dx+ox,y,z-wdt*dz+oz, x+wdt*dx+ox,y,z-wdt*dz+oz,
-            x-wdt*dx+ox+lean,y+h,z+wdt*dz+oz, -nx,0,-nz, cr,cg,cb);
-    pushTri(x+wdt*dx+ox,y,z-wdt*dz+oz, x+wdt*dx+ox+lean,y+h,z+wdt*dz+oz,
-            x-wdt*dx+ox+lean,y+h,z+wdt*dz+oz, -nx,0,-nz, cr,cg,cb);
+  /* Painterly meadow grass (reference: dense tall flowing blades, seed stalks
+   * rising above, light/shadow drifting through). Coherent wind-lean per tuft
+   * so blades comb in waves; understory dark, sunlit blades bright. */
+  var g=tint||[0.45+R()*0.15,0.60,0.24], k, a;
+  var wa=R()*Math.PI*2, wl=0.25+R()*0.35; /* the wind combing this tuft */
+  var lx=Math.cos(wa)*wl, lz=Math.sin(wa)*wl;
+  var n=24;
+  for(k=0;k<n;k++){
+    a=k/n*Math.PI*2+R()*0.5;
+    var rr=Math.sqrt(R())*0.55*s; /* filled disc, dense heart */
+    var h=(0.55+R()*0.65)*s, bs=0.75+R()*0.5;
+    var sun=R()<0.45?1.18:0.78; /* sunlit vs shadowed blades */
+    grassBlade(x+Math.cos(a)*rr+lx*0.3*s, y, z+Math.sin(a)*rr+lz*0.3*s,
+      Math.cos(a)+lx*2.2, Math.sin(a)+lz*2.2, h, 0.035*s*bs,
+      Math.min(1,g[0]*bs*sun),Math.min(1,g[1]*bs*sun),Math.min(1,g[2]*bs*sun));
+  }
+  /* tall seed stalks rising above the blades, plumes nodding at their tips */
+  var ns=3;
+  for(k=0;k<ns;k++){
+    a=R()*Math.PI*2;
+    var sx=x+Math.cos(a)*0.3*s, sz=z+Math.sin(a)*0.3*s;
+    var sh=(1.1+R()*0.5)*s;
+    grassBlade(sx,y,sz, lx*3, lz*3, sh, 0.02*s, 0.55,0.58,0.32);
+    for(var p=0;p<3;p++){
+      var pa=p/3*Math.PI*2+R();
+      leafBlade(sx+lx*sh*0.35, y+sh*0.92, sz+lz*sh*0.35,
+        Math.cos(pa)*0.8, 0.9, Math.sin(pa)*0.8,
+        0.16*s, 0.018*s, 0.05, 0.72,0.68,0.42);
+    }
   }
   if(R()<0.35){ /* one tuft in three carries a glowing seed tip */
     glowDot(x+(R()-0.5)*0.4*s, y+(0.6+R()*0.3)*s, z+(R()-0.5)*0.4*s,
@@ -6246,18 +6969,18 @@ function buildScatterChunk(cx,cz){
      * ops override (later ops win). Deterministic: same seed + pid + ops
      * always grows the same chunk. */
     var i, q, s2, kind;
-    for(i=0;i<110;i++){ /* rework: lush, not sparse */
+    for(i=0;i<44;i++){ /* Lab-canonical foliage: fewer, better plants + cheap grass cover */
       kind=pickKind(R,tk);
-      var rad=kind==='tree'?2.2:kind==='rock'?0.7:kind==='bush'?0.9:kind==='flower'?0.8:0.4;
+      var rad=kind==='tree'?2.2:kind==='rock'?0.7:kind==='bush'?0.9:kind==='flower'?0.8:kind==='fern'?0.7:0.4;
       q=spot(rad); if(!q) continue;
       var paint=paintOpAt(w,q.x,q.z);
       if(paint&&paint.kind==='clear') continue;
       if(paint){
         var PR=mulberry32(strHash(w.seed+'|paint|'+paint.seed)), pv=PR();
-        if(paint.kind==='prairie') kind=pv<0.62?'grass':(pv<0.85?'flower':'bush');
+        if(paint.kind==='prairie') kind=pv<0.62?'grass':(pv<0.80?'flower':(pv<0.90?'fern':'bush'));
         else if(paint.kind==='flowers') kind=pv<0.68?'flower':(pv<0.85?'grass':'bush');
         else if(paint.kind==='garden')
-          kind=pv<0.3?'bush':pv<0.55?'flower':pv<0.75?'grass':'tree';
+          kind=pv<0.25?'bush':pv<0.45?'flower':pv<0.60?'grass':pv<0.72?'fern':'tree';
       }
       var y0=heightAt(q.x,q.z);
       if(kind==='tree'){
@@ -6267,12 +6990,15 @@ function buildScatterChunk(cx,cz){
       }else if(kind==='bush'){
         s2=0.7+R()*0.8;
         bushGen(q.x,y0,q.z,s2,R,pal,BUSH_TYPES[Math.floor(R()*BUSH_TYPES.length)]);
+      }else if(kind==='fern'){
+        s2=0.7+R()*0.8;
+        fernGen(q.x,y0,q.z,s2,R,pal);
       }else if(kind==='flower'){
         s2=0.8+R()*0.6;
         flowerGen(q.x,y0,q.z,s2,R,pal,FLOWER_TYPES[Math.floor(R()*FLOWER_TYPES.length)]);
       }else if(kind==='grass'){
         s2=0.7+R()*0.9;
-        grassTuft(q.x,y0,q.z,s2,R,pal.grass[Math.floor(R()*pal.grass.length)]);
+        grassTuft(q.x,y0,q.z,s2,R,vibJit(pal.grass[Math.floor(R()*pal.grass.length)],q.x,q.z,0.15)); /* vibrance */
       }else{
         s2=0.5+R()*1.1;
         rockGen(q.x,y0,q.z,s2,R,pal,ROCK_VARS[Math.floor(R()*ROCK_VARS.length)]);
@@ -6357,23 +7083,129 @@ function claimRect(cl){
           z0:Math.min(cl.z0,cl.z1),z1:Math.max(cl.z0,cl.z1)};
 }
 function emitClaim(cl){
-  var r=claimRect(cl), col=claimColor(cl), N=6;
+  /* corner stakes (opaque pass). The fill + laser grid render in the dedicated
+   * transparent claim pass (buildClaimBuf/drawClaims): draped tight to the
+   * terrain, subtle fill, crisp grid lines. */
+  var r=claimRect(cl), col=claimColor(cl);
   var base=objPos.length/3;
-  for(var j=0;j<=N;j++) for(var i=0;i<=N;i++){
-    var x=r.x0+(r.x1-r.x0)*i/N, z=r.z0+(r.z1-r.z0)*j/N;
-    pushV(x,heightAt(x,z)+0.09,z, 0,1,0, col[0]*0.55,col[1]*0.55,col[2]*0.55);
-  }
-  for(var jj=0;jj<N;jj++) for(var ii=0;ii<N;ii++){
-    var a=base+jj*(N+1)+ii, b=a+1, c=base+(jj+1)*(N+1)+ii, d=c+1;
-    objIdx.push(a,c,b, b,c,d);
-  }
-  /* corner stakes */
   var pts=[[r.x0,r.z0],[r.x1,r.z0],[r.x1,r.z1],[r.x0,r.z1]];
   for(var k=0;k<4;k++){
     var px=pts[k][0], pz=pts[k][1];
     cylY(px,heightAt(px,pz)+0.05,pz,0.12,1.3,5, col[0],col[1],col[2]);
   }
   drapeObjRange(base);
+}
+/* ---------------- claim selection plane: transparent + laser grid ----------------
+ * The land-claim selection hugs the terrain: a fine adaptive grid (2.5m
+ * cells) draped at heightAt+0.12 across the whole rect, so it follows every
+ * bump instead of clipping through hills. Rendered in its own transparent
+ * pass (alpha blend, no depth write): subtle tinted fill, crisp draped laser
+ * grid lines, brighter border. 12cm+ separations = no z-fighting. */
+var VSH_CLAIM='attribute vec3 p;attribute vec4 c;uniform mat4 mvp;varying vec4 vC;varying float vD;'+
+'void main(){vC=c;vec4 wp=mvp*vec4(p,1.0);vD=-wp.z;gl_Position=wp;}';
+var FSH_CLAIM='precision mediump float;varying vec4 vC;varying float vD;uniform vec3 fog;uniform float fogK;'+
+'void main(){float f=1.0-exp(-vD*fogK);vec3 col=mix(vC.rgb,fog,clamp(f,0.0,1.0));gl_FragColor=vec4(col,vC.a);}';
+var claimProg=null, claimBuf=null, CLA_aP, CLA_aC, CLA_uMVP, CLA_uFog, CLA_uFogK;
+var lastFog=[0.74,0.82,0.90], lastFogK=0.0035; /* frame's fog, reused by the claim pass */
+function initClaimGL(){
+  if(claimProg||!gl) return;
+  claimProg=gl.createProgram();
+  gl.attachShader(claimProg,sh(gl.VERTEX_SHADER,VSH_CLAIM));
+  gl.attachShader(claimProg,sh(gl.FRAGMENT_SHADER,FSH_CLAIM));
+  gl.linkProgram(claimProg);
+  CLA_aP=gl.getAttribLocation(claimProg,'p'); CLA_aC=gl.getAttribLocation(claimProg,'c');
+  CLA_uMVP=gl.getUniformLocation(claimProg,'mvp'); CLA_uFog=gl.getUniformLocation(claimProg,'fog');
+  CLA_uFogK=gl.getUniformLocation(claimProg,'fogK');
+}
+var cPos=[], cIdx=[];
+function claimVert(x,z,h,r,g,b,a){
+  var p=planetXYZ(x,z,h,[]);
+  cPos.push(p[0],p[1],p[2],r,g,b,a);
+  return cPos.length/7-1;
+}
+/* draped ribbon of width w along pts (tangent-plane offsets, sphere-draped) */
+function claimRibbon(pts,w,hOff,col,a){
+  var base=cPos.length/7, n=pts.length, i;
+  for(i=0;i<n;i++){
+    var p0=pts[Math.max(0,i-1)], p1=pts[Math.min(n-1,i+1)];
+    var dx=p1[0]-p0[0], dz=p1[1]-p0[1], l=Math.hypot(dx,dz)||1; dx/=l; dz/=l;
+    var ox=-dz*w/2, oz=dx*w/2;
+    var ax=pts[i][0]+ox, az=pts[i][1]+oz, bx=pts[i][0]-ox, bz=pts[i][1]-oz;
+    var pa=planetXYZ(ax,az,heightAt(ax,az)+hOff,[]), pb=planetXYZ(bx,bz,heightAt(bx,bz)+hOff,[]);
+    cPos.push(pa[0],pa[1],pa[2],col[0],col[1],col[2],a);
+    cPos.push(pb[0],pb[1],pb[2],col[0],col[1],col[2],a);
+    if(i>0){ var v0=base+(i-1)*2, v1=v0+1, v2=base+i*2, v3=v2+1; cIdx.push(v0,v2,v1, v1,v2,v3); }
+  }
+}
+function buildClaimBuf(){
+  initClaimGL();
+  cPos=[]; cIdx=[];
+  if(claimBuf){ gl.deleteBuffer(claimBuf.vb); gl.deleteBuffer(claimBuf.ib); claimBuf=null; }
+  var w=activeWorld(); if(!w||!gl) return;
+  var list=(w.claims||[]).slice();
+  if(typeof previewClaim!=='undefined'&&previewClaim) list.push(previewClaim);
+  for(var li=0;li<list.length;li++){
+    var cl=list[li], r=claimRect(cl);
+    claimRectVisual(r.x0,r.z0,r.x1,r.z1,claimColor(cl));
+  }
+  /* city placement ghost: same transparent draped treatment, amber */
+  if(typeof cityGhost!=='undefined'&&cityGhost){
+    var gs={hamlet:120,village:140,town:150}[cityGhost.layout]||140;
+    claimRectVisual(cityGhost.x-gs/2,cityGhost.z-gs/2,cityGhost.x+gs/2,cityGhost.z+gs/2,[1.0,0.72,0.25]);
+  }
+  if(!cPos.length) return;
+  var vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(cPos),gl.STATIC_DRAW);
+  var ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(cIdx),gl.STATIC_DRAW);
+  gl.getExtension('OES_element_index_uint');
+  claimBuf={vb:vb,ib:ib,count:cIdx.length};
+}
+/* one draped transparent rect: fine fill + laser grid + bright border */
+function claimRectVisual(x0,z0,x1,z1,col){
+  var cw=x1-x0, cd=z1-z0;
+  if(cw<1||cd<1) return;
+  var N=Math.max(8,Math.min(48,Math.ceil(Math.max(cw,cd)/2.5)));
+  var base=cPos.length/7, i, j;
+  for(j=0;j<=N;j++) for(i=0;i<=N;i++){
+    var x=x0+cw*i/N, z=z0+cd*j/N;
+    claimVert(x,z,heightAt(x,z)+0.12, col[0],col[1],col[2],0.16);
+  }
+  for(var jj=0;jj<N;jj++) for(var ii=0;ii<N;ii++){
+    var a=base+jj*(N+1)+ii, b=a+1, c2=a+N+1, d=c2+1;
+    cIdx.push(a,c2,b, b,c2,d);
+  }
+  /* laser grid: draped ribbons every ~1/14th of the rect */
+  var step=Math.max(1,Math.round(N/14));
+  var lc=[Math.min(1,col[0]*1.6+0.25),Math.min(1,col[1]*1.6+0.25),Math.min(1,col[2]*1.6+0.25)];
+  for(var k=0;k<=N;k+=step){
+    var pts=[];
+    for(var gi=0;gi<=N;gi++) pts.push([x0+cw*gi/N, z0+cd*k/N]);
+    claimRibbon(pts,0.18,0.17,lc,0.8);
+    var pts2=[];
+    for(var gj=0;gj<=N;gj++) pts2.push([x0+cw*k/N, z0+cd*gj/N]);
+    claimRibbon(pts2,0.18,0.17,lc,0.8);
+  }
+  /* border: brighter draped perimeter */
+  var bc=[Math.min(1,col[0]*1.8+0.35),Math.min(1,col[1]*1.8+0.35),Math.min(1,col[2]*1.8+0.35)];
+  claimRibbon([[x0,z0],[x1,z0],[x1,z1],[x0,z1],[x0,z0]],0.34,0.22,bc,0.95);
+}
+function drawClaims(){
+  if(!claimBuf||!claimProg) return;
+  gl.useProgram(claimProg);
+  gl.uniformMatrix4fv(CLA_uMVP,false,vpMat);
+  gl.uniform3f(CLA_uFog,lastFog[0],lastFog[1],lastFog[2]);
+  gl.uniform1f(CLA_uFogK,lastFogK);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  gl.bindBuffer(gl.ARRAY_BUFFER,claimBuf.vb);
+  gl.vertexAttribPointer(CLA_aP,3,gl.FLOAT,false,28,0); gl.enableVertexAttribArray(CLA_aP);
+  gl.vertexAttribPointer(CLA_aC,4,gl.FLOAT,false,28,12); gl.enableVertexAttribArray(CLA_aC);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,claimBuf.ib);
+  gl.drawElements(gl.TRIANGLES,claimBuf.count,gl.UNSIGNED_INT,0);
+  gl.depthMask(true); gl.disable(gl.BLEND);
+  gl.disableVertexAttribArray(CLA_aP); gl.disableVertexAttribArray(CLA_aC);
+  gl.useProgram(prog);
 }
 function inClaim(x,z,m){
   var w=activeWorld(); if(!w) return false;
@@ -6623,11 +7455,11 @@ function kickGroupMember(gid,acctId){
  * A city stamps its buildings (and street paths) into the world doc.
  * Same world seed + same placement = identical city, always. */
 var CITY_LAYOUTS=[
-  {id:'hamlet', icon:'🏘️', label:'Hamlet', houses:5, civic:0, streets:1,
+  {id:'hamlet', icon:'houses', label:'Hamlet', houses:5, civic:0, streets:1,
    blurb:'A few houses around a green'},
-  {id:'village',icon:'🏡', label:'Village', houses:9, civic:1, streets:2,
+  {id:'village',icon:'house', label:'Village', houses:9, civic:1, streets:2,
    blurb:'Houses, a civic hall, crossing streets'},
-  {id:'town',   icon:'🏙️', label:'Town', houses:14, civic:2, streets:2, market:true,
+  {id:'town',   icon:'city', label:'Town', houses:14, civic:2, streets:2, market:true,
    blurb:'A small town with a market square'}
 ];
 var CITY_THEMES=['craftsman','craftsman','brick-row','modern','adobe'];
@@ -6707,7 +7539,7 @@ function flattenClaim(idx){
         dh:Math.round(dh*4)/4});
     }
   });
-  toast('⛰ Flattened for '+cost+' tokens');
+  toast('Flattened for '+cost+' tokens');
   return true;
 }
 
@@ -6873,11 +7705,12 @@ function creatureParams(seedStr,tk,pal){
   else if(tk==='GAS'||tk==='CRYSTAL') move=R()<0.4?'wings':'legs4';
   else if(tk==='DESERT'||tk==='BARREN'||tk==='LAVA') move=R()<0.5?'legs6':'legs4';
   var skin;
+  var sj=(strHash(String(seedStr||'s'))%1000); /* vibrance jitter coord from seed */
   if(tk==='OCEAN'||tk==='JUNGLE'||tk==='TOXIC'||tk==='TERRAN')
-    skin=pal.leaf[Math.floor(R()*pal.leaf.length)];
+    skin=vibJit(pal.leaf[Math.floor(R()*pal.leaf.length)],sj,7.7,0.13);
   else if(tk==='LAVA') skin=[0.28+R()*0.1,0.14,0.10];
   else if(tk==='ICE') skin=[0.82,0.88,0.93];
-  else skin=pal.rock[Math.floor(R()*pal.rock.length)];
+  else skin=vibJit(pal.rock[Math.floor(R()*pal.rock.length)],sj,3.1,0.12);
   return {body:body, s:s, move:move, skin:skin,
     belly:[skin[0]*0.92,skin[1]*0.88,skin[2]*0.85],
     phase:R()*Math.PI*2, wR:6+R()*7, wSp:0.10+R()*0.10};
@@ -7023,16 +7856,16 @@ function spawnCreature(x,z,stage){
  * They buy resources for tokens — the economy's earning loop. */
 var NPC_TPL_IDS=['trader','elder','scout','jester'];
 var NPC_TEMPLATES=[
- {id:'trader', icon:'🧑‍🌾', label:'Trader',
+ {id:'trader', icon:'wheat', label:'Trader',
   greets:['Psst — got goods? I pay fair.','Looking to sell? I\u2019m buying.','Show me what you\u2019ve gathered.'],
   lines:['The cities always need materials.','I\u2019ve walked every road on this world.','Tokens spend anywhere, friend.']},
- {id:'elder', icon:'🧙', label:'Elder',
+ {id:'elder', icon:'wizard', label:'Elder',
   greets:['Ah, a traveler. Sit a moment.','The land remembers every seed.'],
   lines:['We built this town one stone at a time.','Patience grows taller than towers.']},
- {id:'scout', icon:'🧭', label:'Scout',
+ {id:'scout', icon:'compass', label:'Scout',
   greets:['Seen anything strange out there?','I map the wild places.'],
   lines:['Follow the rivers to find the good soil.','The far side of the world is wilder.']},
- {id:'jester', icon:'🃏', label:'Jester',
+ {id:'jester', icon:'joker', label:'Jester',
   greets:['Knock knock. Who\u2019s there? Tokens.','I\u2019d tell you a joke about rocks, but it\u2019s too sedimentary.'],
   lines:['Why did the creature cross the road? Nobody knows. It wanders.','I once sold a sword to a bush. Best trade ever.']}
 ];
@@ -7178,7 +8011,12 @@ function spaceMaxDist(){ return can('spaceZoom')?PLANET_R*3.2:1600; }
 var ctrl=MoorController.create({heightAt:heightAt, collideXZ:collideXZ, cam:cam,
   surfacePoint:planetXYZ, surfaceUp:planetUp, wrapXZ:wrapXZ});
 function camEye(){
-  if(cam.mode==='walk') return ctrl.eye([]);
+  if(cam.mode==='walk'){ var e=ctrl.eye([]);
+    /* LOD#15: the camera can never sink beneath the rendered terrain surface */
+    planetInv(e[0],e[1],e[2],_ri);
+    var minH=heightAt(_ri[0],_ri[1])+0.35;
+    if(_ri[2]<minH){ var cp2=planetXYZ(_ri[0],_ri[1],minH,[]); e[0]=cp2[0]; e[1]=cp2[1]; e[2]=cp2[2]; }
+    return e; }
   /* orbit the planet: target on the sphere, offset in the local tangent frame */
   var t=planetXYZ(cam.tx,cam.tz,heightAt(cam.tx,cam.tz)+2,[0,0,0]);
   var F=planetFrame(cam.tx,cam.tz,{});
@@ -7285,15 +8123,15 @@ function pickObject(r){
 
 /* ---------------- modes / palettes ---------------- */
 var THEMES=[
-  {id:'craftsman',icon:'🏡',label:'Craftsman',w:8,d:7,stories:1},
-  {id:'modern',icon:'🏢',label:'Modern',w:9,d:8,stories:2},
-  {id:'brick-row',icon:'🧱',label:'Brick row',w:7,d:10,stories:2},
-  {id:'civic',icon:'🏛️',label:'Civic',w:12,d:10,stories:1},
-  {id:'adobe',icon:'🏜️',label:'Adobe',w:8,d:8,stories:1}
+  {id:'craftsman',icon:'house',label:'Craftsman',w:8,d:7,stories:1},
+  {id:'modern',icon:'building',label:'Modern',w:9,d:8,stories:2},
+  {id:'brick-row',icon:'bricks',label:'Brick row',w:7,d:10,stories:2},
+  {id:'civic',icon:'landmark',label:'Civic',w:12,d:10,stories:1},
+  {id:'adobe',icon:'hut',label:'Adobe',w:8,d:8,stories:1}
 ];
-var ITEM_ICONS={chair:'🪑',sofa:'🛋️',diningTable:'🍽️',coffeeTable:'☕',bed:'🛏️',nightstand:'🕯️',
-  dresser:'🗄️',bookshelf:'📚',stool:'🪑',floorLamp:'💡',tableLamp:'🔦',pendantLamp:'💡',deskLamp:'🔦',
-  sword:'🗡️'};
+var ITEM_ICONS={chair:'chair',sofa:'sofa',diningTable:'table',coffeeTable:'cup',bed:'bed',nightstand:'candle',
+  dresser:'dresser',bookshelf:'books',stool:'stool',floorLamp:'lamp',tableLamp:'torch',pendantLamp:'lamp',deskLamp:'torch',
+  sword:'sword'};
 /* P3: native procedural items appended after the Furnish types */
 var ITEMS_EXTRA=['sword'];
 function itemTypes(){ return Furnish.TYPES.concat(ITEMS_EXTRA); }
@@ -7301,24 +8139,29 @@ function itemLabel(t){ return t.replace(/([A-Z])/g,' $1').replace(/^./,function(
 var mode='orbit', palSel={build:0, items:0, paths:1, paint:0, city:0, life:3}, selected=null;
 /* P2: world-paint brushes (dev only). Plain language on purpose. */
 var PAINTS=[
-  {id:'garden', icon:'🌱', label:'Garden',  blurb:'Flowers, bushes and grass, planted thick'},
-  {id:'prairie',icon:'🌾', label:'Prairie', blurb:'Grasses and wildflowers, no trees'},
-  {id:'flowers',icon:'🌸', label:'Flowers', blurb:'A dense flower field'},
-  {id:'clear', icon:'🧹', label:'Clear',   blurb:'Take the plants back out'}
+  {id:'garden', icon:'sprout', label:'Garden',  blurb:'Flowers, bushes and grass, planted thick'},
+  {id:'prairie',icon:'wheat', label:'Prairie', blurb:'Grasses and wildflowers, no trees'},
+  {id:'flowers',icon:'flower', label:'Flowers', blurb:'A dense flower field'},
+  {id:'clear', icon:'broom', label:'Clear',   blurb:'Take the plants back out'}
 ];
 /* P4: life — creature generation stages A–D + townsfolk. Plain language. */
 var LIFE_PAL=[
-  {id:'a',  icon:'🥚', label:'Body',  blurb:'Stage A — the body takes shape'},
-  {id:'b',  icon:'🦵', label:'+Limbs', blurb:'Stage B — legs, fins or wings'},
-  {id:'c',  icon:'👁', label:'+Skin', blurb:'Stage C — skin, eyes, spikes'},
-  {id:'d',  icon:'✨', label:'+Life', blurb:'Stage D — it moves, breathes, wanders'},
-  {id:'npc',icon:'🧑', label:'Person', blurb:'A townsfolk who talks and trades'}
+  {id:'a',  icon:'egg', label:'Body',  blurb:'Stage A — the body takes shape'},
+  {id:'b',  icon:'leg', label:'+Limbs', blurb:'Stage B — legs, fins or wings'},
+  {id:'c',  icon:'eye', label:'+Skin', blurb:'Stage C — skin, eyes, spikes'},
+  {id:'d',  icon:'sparkle', label:'+Life', blurb:'Stage D — it moves, breathes, wanders'},
+  {id:'npc',icon:'person', label:'Person', blurb:'A townsfolk who talks and trades'}
 ];
 var LIFE_STAGE={a:1,b:2,c:3,d:4};
 
 function setMode(m){
+  var wasWalk=(mode==='walk');
   mode=m; cam.mode=(m==='walk')?'walk':'orbit'; selected=null; hideSel(); hideMoveBar();
   moveMode=null; drawing=null; previewPath=null; claiming=null; previewClaim=null;
+  cityGhost=null; needsClaimRebuild=true; /* city ghost follows the pointer only in city mode */
+  /* player presence: entering a tool from walk orbits the camera around his
+   * body, so tools operate from/around him instead of stranding the avatar */
+  if(m!=='walk'&&wasWalk){ cam.tx=cam.wx; cam.tz=cam.wz; }
   var btns=document.querySelectorAll('#modebar button');
   for(var i=0;i<btns.length;i++) btns[i].classList.toggle('on',btns[i].dataset.mode===m);
   $('joy').hidden=(m!=='walk');
@@ -7344,40 +8187,40 @@ function renderPalette(){
   if(mode==='build'){
     pal.hidden=false;
     pal.innerHTML=THEMES.map(function(t,i){
-      return '<button class="pal'+(i===palSel.build?' on':'')+'" data-pal="build:'+i+'">'+t.icon+'<small>'+esc(t.label)+'</small></button>';
+      return '<button class="pal'+(i===palSel.build?' on':'')+'" data-pal="build:'+i+'">'+Widget.icon(t.icon)+'<small>'+esc(t.label)+'</small></button>';
     }).join('');
   }else if(mode==='items'){
     pal.hidden=false;
     var its=itemTypes();
     pal.innerHTML=its.map(function(t,i){
-      return '<button class="pal'+(i===palSel.items?' on':'')+'" data-pal="items:'+i+'">'+(ITEM_ICONS[t]||'📦')+'<small>'+esc(itemLabel(t))+'</small></button>';
+      return '<button class="pal'+(i===palSel.items?' on':'')+'" data-pal="items:'+i+'">'+Widget.icon(ITEM_ICONS[t]||'box')+'<small>'+esc(itemLabel(t))+'</small></button>';
     }).join('');
   }else if(mode==='city'){
     pal.hidden=false;
     pal.innerHTML=CITY_LAYOUTS.map(function(t,i){
-      return '<button class="pal'+(i===palSel.city?' on':'')+'" data-pal="city:'+i+'" title="'+esc(t.blurb)+'">'+t.icon+'<small>'+esc(t.label)+'</small></button>';
+      return '<button class="pal'+(i===palSel.city?' on':'')+'" data-pal="city:'+i+'" title="'+esc(t.blurb)+'">'+Widget.icon(t.icon)+'<small>'+esc(t.label)+'</small></button>';
     }).join('');
   }else if(mode==='paths'){
     pal.hidden=false;
     pal.innerHTML=PATH_WIDTHS.map(function(p,i){
-      return '<button class="pal'+(i===palSel.paths?' on':'')+'" data-pal="paths:'+i+'">'+p.icon+'<small>'+esc(p.label)+'</small></button>';
+      return '<button class="pal'+(i===palSel.paths?' on':'')+'" data-pal="paths:'+i+'">'+Widget.icon(p.icon)+'<small>'+esc(p.label)+'</small></button>';
     }).join('');
   }else if(mode==='paint'){
     pal.hidden=false;
     pal.innerHTML=PAINTS.map(function(t,i){
-      return '<button class="pal'+(i===palSel.paint?' on':'')+'" data-pal="paint:'+i+'" title="'+esc(t.blurb)+'">'+t.icon+'<small>'+esc(t.label)+'</small></button>';
+      return '<button class="pal'+(i===palSel.paint?' on':'')+'" data-pal="paint:'+i+'" title="'+esc(t.blurb)+'">'+Widget.icon(t.icon)+'<small>'+esc(t.label)+'</small></button>';
     }).join('');
   }else if(mode==='life'){
     pal.hidden=false;
     pal.innerHTML=LIFE_PAL.map(function(t,i){
-      return '<button class="pal'+(i===palSel.life?' on':'')+'" data-pal="life:'+i+'" title="'+esc(t.blurb)+'">'+t.icon+'<small>'+esc(t.label)+'</small></button>';
+      return '<button class="pal'+(i===palSel.life?' on':'')+'" data-pal="life:'+i+'" title="'+esc(t.blurb)+'">'+Widget.icon(t.icon)+'<small>'+esc(t.label)+'</small></button>';
     }).join('');
   }else if(mode==='tools'){
     pal.hidden=false;
     var ts=customTools();
     pal.innerHTML=ts.map(function(t,i){
-      return '<button class="pal'+(i===toolSel?' on':'')+'" data-pal="tools:'+i+'" title="'+esc(toolKindDef(t.kind).blurb)+'">'+esc(t.icon)+'<small>'+esc(t.name)+'</small></button>';
-    }).join('')+'<button class="pal make" data-pal="tools:make">＋<small>Make</small></button>';
+      return '<button class="pal'+(i===toolSel?' on':'')+'" data-pal="tools:'+i+'" title="'+esc(toolKindDef(t.kind).blurb)+'">'+Widget.icon(t.icon)+'<small>'+esc(t.name)+'</small></button>';
+    }).join('')+'<button class="pal make" data-pal="tools:make">'+Widget.icon('plus')+'<small>Make</small></button>';
   }else pal.hidden=true;
 }
 
@@ -7385,7 +8228,7 @@ function renderPalette(){
 var saveTimer=null;
 function markSaved(ok){
   var el=$('save-state');
-  el.textContent=ok?'✓':'…'; el.classList.toggle('dirty',!ok);
+  el.innerHTML=ok?Widget.icon('check'):'…'; el.classList.toggle('dirty',!ok);
 }
 function changed(){
   markSaved(false);
@@ -7421,20 +8264,20 @@ function placeAt(x,z){
     var sel=LIFE_PAL[palSel.life]||LIFE_PAL[3];
     if(sel.id==='npc'){
       var n=spawnNpc(x,z);
-      if(n) toast('🧑 '+n.name+' moved in');
+      if(n) toast(n.name+' moved in');
       return;
     }
     var w0=activeWorld();
     if(w0&&(w0.creatures||[]).length>=24){ toast('The land is full of creatures'); return; }
     var c=spawnCreature(x,z,LIFE_STAGE[sel.id]||4);
-    if(c) toast('✨ A stage-'+sel.id.toUpperCase()+' creature stirs');
+    if(c) toast('A stage-'+sel.id.toUpperCase()+' creature stirs');
     return;
   }
   /* P3: prefab cities stamp deterministic struct-v2 layouts */
   if(mode==='city'){
     var L=CITY_LAYOUTS[palSel.city]||CITY_LAYOUTS[0];
     var c=placeCity(L.id,x,z);
-    if(c) toast('🏙️ Placed '+c.name);
+    if(c){ toast('Placed '+c.name); cityGhost=null; needsClaimRebuild=true; }
     return;
   }
   if(mode==='build'){
@@ -7443,7 +8286,7 @@ function placeAt(x,z){
     var cost=inClaim(x,z,0)?buildCost(th.stories):null;
     if(cost){
       var miss=canAfford(cost);
-      if(miss){ toast('Need more '+miss+' — check your inventory 🎒'); return; }
+      if(miss){ toast('Need more '+miss+' — check your inventory'); return; }
     }
     mutate(function(){
       if(cost) spendMats(cost);
@@ -7452,21 +8295,21 @@ function placeAt(x,z){
       w.buildings.push({theme:th.id,seed:w.seed+'|b'+w.seq,x:Math.round(x*2)/2,z:Math.round(z*2)/2,
         rot:0,w:th.w,d:th.d,stories:th.stories});
     });
-    toast(cost?'Placed '+th.label+' (−'+cost.wood+'🪵 −'+cost.stone+'🪨)':'Placed '+th.label);
+    toast(cost?'Placed '+th.label+' (−'+cost.wood+' wood −'+cost.stone+' stone)':'Placed '+th.label);
     return;
   }
   /* items mode: the sword is crafted (costs materials); furniture stays free */
   var tp=itemTypes()[palSel.items];
   if(tp==='sword'){
     var miss2=canAfford(SWORD_COST);
-    if(miss2){ toast('A sword needs '+miss2+' — check your inventory 🎒'); return; }
+    if(miss2){ toast('A sword needs '+miss2+' — check your inventory'); return; }
     mutate(function(){
       spendMats(SWORD_COST);
       var w=activeWorld(); if(!w) return;
       w.seq=(w.seq||0)+1;
       w.items.push({type:'sword',seed:w.seed+'|i'+w.seq,x:Math.round(x*2)/2,z:Math.round(z*2)/2,rot:0});
     });
-    toast('🗡️ Sword crafted (−2⚙️ −1🪵)');
+    toast('Sword crafted (−2 metal −1 wood)');
     return;
   }
   mutate(function(){
@@ -7489,17 +8332,17 @@ function showSel(){
   var p=$('sel-pop'); p.hidden=false;
   var btns='';
   if(selected.kind==='n'){ /* P4: talk to townsfolk */
-    btns+='<button data-sel="talk">💬 Talk</button>';
-    btns+='<button data-sel="move">✥ Move</button><button data-sel="rot">⟳</button>';
+    btns+='<button data-sel="talk">'+Widget.icon('chat')+' Talk</button>';
+    btns+='<button data-sel="move">'+Widget.icon('expand')+' Move</button><button data-sel="rot">⟳</button>';
   }
-  if(selected.kind==='b') btns+='<button data-sel="edit">🔧 Edit</button>';
-  if(selected.kind==='b'||selected.kind==='i') btns+='<button data-sel="move">✥ Move</button>';
+  if(selected.kind==='b') btns+='<button data-sel="edit">'+Widget.icon('wrench')+' Edit</button>';
+  if(selected.kind==='b'||selected.kind==='i') btns+='<button data-sel="move">'+Widget.icon('expand')+' Move</button>';
   if(selected.kind==='b'||selected.kind==='i') btns+='<button data-sel="rot">⟳</button>';
   if(selected.kind==='c'){ /* P3: pay tokens to flatten a claim */
     var w=activeWorld(), cl=w&&w.claims? w.claims[selected.idx]:null;
-    if(cl) btns+='<button data-sel="flat">⛰ Flatten ('+flattenCost(cl)+'🪙)</button>';
+    if(cl) btns+='<button data-sel="flat">'+Widget.icon('mountain')+' Flatten ('+flattenCost(cl)+Widget.icon('coin')+')'+'</button>';
   }
-  btns+='<button data-sel="del" class="danger">🗑</button><button data-sel="done">✓</button>';
+  btns+='<button data-sel="del" class="danger">'+Widget.icon('trash')+'</button><button data-sel="done">'+Widget.icon('check')+'</button>';
   p.innerHTML='<strong>'+esc(selLabel())+'</strong>'+btns;
 }
 function hideSel(){ $('sel-pop').hidden=true; }
@@ -7554,6 +8397,7 @@ function bindInput(){
     var dx=e.clientX-p.x, dy=e.clientY-p.y;
     p.x=e.clientX; p.y=e.clientY;
     var n=Object.keys(pointers).length;
+    if(mode==='city'&&n===1){ ghostPointer=e; ghostDirty=true; } /* city ghost follows the pointer */
     if(drawing&&n===1){
       var g=terrainPoint(e);
       if(g) extendStroke(g.mx,g.mz);
@@ -7622,7 +8466,7 @@ function bindInput(){
       if(e.deltaY>0&&ed>44){
         cam.tx=cam.wx; cam.tz=cam.wz; cam.dist=70;
         ctrl.tune.eyeDist=6.5; setMode('orbit');
-        toast('👁 Orbit — scroll to zoom the planet');
+        toast('Orbit — scroll to zoom the planet');
       } else ctrl.tune.eyeDist=Math.max(6.5,Math.min(44,ed));
     }
     else cam.dist=Math.max(12,Math.min(spaceMaxDist(),cam.dist*(1+e.deltaY*0.001)));
@@ -7652,12 +8496,12 @@ function bindInput(){
 /* ---------------- people & permissions UI (P1 v0.13) ---------------- */
 var sheetView='worlds';
 function sheetTabs(){
-  return '<div class="tabs"><button data-tab="worlds" class="'+(sheetView==='worlds'?'on':'')+'">🌍 Worlds</button>'+
-    '<button data-tab="mats" class="'+(sheetView==='mats'?'on':'')+'">⛏ Materials</button>'+
-    '<button data-tab="groups" class="'+(sheetView==='groups'?'on':'')+'">👥 Groups</button>'+
-    '<button data-tab="inv" class="'+(sheetView==='inv'?'on':'')+'">🎒 Inventory</button>'+
-    '<button data-tab="accts" class="'+(sheetView==='accts'?'on':'')+'">👤 People</button>'+
-    (can('reportIssues')?'<button data-tab="issues" class="'+(sheetView==='issues'?'on':'')+'">🐛 Issues</button>':'')+'</div>';
+  return '<div class="tabs"><button data-tab="worlds" class="'+(sheetView==='worlds'?'on':'')+'">'+Widget.icon('globe')+' Worlds</button>'+
+    '<button data-tab="mats" class="'+(sheetView==='mats'?'on':'')+'">'+Widget.icon('pickaxe')+' Materials</button>'+
+    '<button data-tab="groups" class="'+(sheetView==='groups'?'on':'')+'">'+Widget.icon('person')+' Groups</button>'+
+    '<button data-tab="inv" class="'+(sheetView==='inv'?'on':'')+'">'+Widget.icon('toolbox')+' Inventory</button>'+
+    '<button data-tab="accts" class="'+(sheetView==='accts'?'on':'')+'">'+Widget.icon('person')+' People</button>'+
+    (can('reportIssues')?'<button data-tab="issues" class="'+(sheetView==='issues'?'on':'')+'">'+Widget.icon('bug')+' Issues</button>':'')+'</div>';
 }
 /* deterministic planet metadata for instance labels (cached; moorworld is static) */
 var _pmeta=null;
@@ -7674,17 +8518,17 @@ function renderWorlds(){
   var canDel=can('deleteWorld');
   store.worlds.forEach(function(x){
     var t=terrainOf(x), pid=worldPid(x), meta=pid?planetMeta(pid):null;
-    var sub=meta?('🪐 '+(meta.sec||'verse')):('seed '+x.seed);
+    var sub=meta?(Widget.icon('planet')+' '+(meta.sec||'verse')):('seed '+x.seed);
     html+='<div class="wrow'+(w&&x.id===w.id?' on':'')+'" data-world="'+x.id+'">'+
       '<span><span class="wn">'+esc(x.name)+'</span><br><span class="ws">'+esc(sub)+
       ' · '+x.buildings.length+' buildings · '+x.items.length+' items</span></span>'+
-      '<button class="terr" data-terr="'+x.id+'" title="Terrain: '+t.preset+' (tap to change)">⛰</button>'+
-      (canDel?'<button class="del" data-delworld="'+x.id+'" title="Delete">🗑</button>':'')+'</div>';
+      '<button class="terr" data-terr="'+x.id+'" title="Terrain: '+t.preset+' (tap to change)">'+Widget.icon('mountain')+'</button>'+
+      (canDel?'<button class="del" data-delworld="'+x.id+'" title="Delete">'+Widget.icon('trash')+'</button>':'')+'</div>';
   });
   html+='<div class="newrow"><input id="new-name" placeholder="World name" maxlength="24">'+
     '<input id="new-seed" placeholder="seed (optional)" maxlength="12" style="max-width:110px">'+
     '<button class="go" id="new-go">New</button></div>';
-  html+='<div class="newrow"><button class="go" id="travel-go" style="width:100%">🧭 Travel to another planet…</button></div>';
+  html+='<div class="newrow"><button class="go" id="travel-go" style="width:100%">'+Widget.icon('compass')+' Travel to another planet…</button></div>';
   sh.innerHTML=html;
   sh.querySelectorAll('[data-terr]').forEach(function(b){
     b.addEventListener('click',function(e){
@@ -7694,7 +8538,7 @@ function renderWorlds(){
       var t=terrainOf(wx), i=(PRESETS.indexOf(t.preset)+1)%PRESETS.length;
       mutate(function(){ t.preset=PRESETS[i]; });
       buildTerrainBuffers(); renderWorlds();
-      toast('⛰ Terrain: '+PRESETS[i]);
+      toast('Terrain: '+PRESETS[i]);
     });
   });
   var tv=$('travel-go');
@@ -7706,17 +8550,17 @@ function renderAccounts(){
   var html=sheetTabs()+'<h3>Who is playing?</h3>';
   accts.accounts.forEach(function(x){
     html+='<div class="wrow'+(a&&x.id===a.id?' on':'')+'" data-acct="'+x.id+'">'+
-      '<span><span class="wn">'+(x.role==='dev'?'🛠 ':'')+esc(x.name)+'</span><br><span class="ws">'+
+      '<span><span class="wn">'+(x.role==='dev'?Widget.icon('wrench')+' ':'')+esc(x.name)+'</span><br><span class="ws">'+
       (x.role==='dev'?'Developer — can do anything':'Visitor — normal access')+'</span></span>'+
-      (a&&x.id===a.id?'<span class="ws">✓ playing</span>':'')+'</div>';
+      (a&&x.id===a.id?'<span class="ws">'+Widget.icon('check')+' playing</span>':'')+'</div>';
   });
   html+='<div class="newrow"><input id="new-acct-name" placeholder="Name" maxlength="24" autocomplete="off">'+
     '<button class="go" id="new-acct-go">Add person</button></div>';
   if(isPretending())
-    html+='<div class="newrow"><button class="go" id="pretend-stop" style="width:100%">👀 Stop pretending</button></div>'+
+    html+='<div class="newrow"><button class="go" id="pretend-stop" style="width:100%">'+Widget.icon('eyeOff')+' Stop pretending</button></div>'+
       '<p class="fine">Right now everything looks and works exactly like a visitor sees it.</p>';
   else if(canPretend())
-    html+='<div class="newrow"><button class="go" id="pretend-go" style="width:100%">👀 Pretend to be a visitor</button></div>'+
+    html+='<div class="newrow"><button class="go" id="pretend-go" style="width:100%">'+Widget.icon('eyeOff')+' Pretend to be a visitor</button></div>'+
       '<p class="fine">Test mode: the app behaves exactly like a visitor sees it. Nothing is hidden from you permanently.</p>';
   else
     html+='<p class="fine">You are a visitor — this is exactly what visitors see. No test mode needed.</p>';
@@ -7728,14 +8572,14 @@ function renderMaterials(){
   sheetView='mats';
   var sh=$('sheet'), w=activeWorld();
   var M=getMaterials(currentPid());
-  var html=sheetTabs()+'<h3>⛏ Materials on this world</h3>';
+  var html=sheetTabs()+'<h3>'+Widget.icon('pickaxe')+' Materials on this world</h3>';
   html+='<p class="fine">'+esc(w?w.name:'World')+' is a '+
     esc(String(M.type).toLowerCase().replace('_',' '))+' world.'+
     (M.signature?' Its signature resource is <b>'+esc(M.signature.name)+
     '</b> ('+M.tiers[M.signature.tier]+').':'')+
     (M.exotic?' Exotic find: <b>'+esc(M.exotic.name)+'</b>.':'')+'</p>';
   M.base.forEach(function(b){
-    html+='<div class="wrow"><span><span class="wn">'+b.icon+' '+esc(b.name)+'</span><br><span class="ws">'+
+    html+='<div class="wrow"><span><span class="wn">'+Widget.icon(b.icon)+' '+esc(b.name)+'</span><br><span class="ws">'+
       esc(b.variant)+' · '+M.tiers[b.tier]+' here</span></span></div>';
   });
   html+='<p class="fine">Variants are endless and named by the world itself — every material has as many as you\u2019ll ever need.</p>';
@@ -7750,7 +8594,7 @@ function acctById(id){
 function renderGroups(){
   sheetView='groups';
   var sh=$('sheet'), me=currentAccount();
-  var html=sheetTabs()+'<h3>👥 Groups</h3>';
+  var html=sheetTabs()+'<h3>'+Widget.icon('person')+' Groups</h3>';
   var gs=ensureGroups(), i;
   if(!groupView){
     gs.forEach(function(g){
@@ -7778,7 +8622,7 @@ function renderGroups(){
         html+='<button class="go" data-cyclerole="'+m.acctId+'" style="background:rgba(255,255,255,.08);color:#e8ecf5">'+esc(r?r.name:'?')+'</button>';
       else html+='<span class="ws">'+esc(r?r.name:'?')+'</span>';
       if(canKick&&m.acctId!==g.createdBy&&(!me||m.acctId!==me.id))
-        html+='<button class="del" data-kick="'+m.acctId+'" title="Kick">✕</button>';
+        html+='<button class="del" data-kick="'+m.acctId+'" title="Kick">'+Widget.icon('x')+'</button>';
       html+='</div>';
     });
     html+='<p class="fine">Roles — name them anything, tick what each can do</p>';
@@ -7812,7 +8656,7 @@ function groupCreate(){
   if(!nm){ toast('Give the group a name first'); return; }
   mutate(function(){
     var g=createGroup(nm);
-    if(g){ groupView=g.id; toast('👥 Started "'+g.name+'"'); }
+    if(g){ groupView=g.id; toast('Started "'+g.name+'"'); }
   });
   renderGroups();
 }
@@ -7826,14 +8670,14 @@ function groupAddRole(){
 function renderInventory(){
   sheetView='inv';
   var sh=$('sheet'), M=getMaterials(currentPid()), inv=invOf(), bal=tokenBalance();
-  var html=sheetTabs()+'<h3>🎒 Inventory</h3>';
-  html+='<div class="wrow on"><span><span class="wn">🪙 '+bal+' tokens</span><br><span class="ws">'+
-    'spend on flattening claimed land · earn more by trading with 🧑 townsfolk</span></span>';
+  var html=sheetTabs()+'<h3>'+Widget.icon('toolbox')+' Inventory</h3>';
+  html+='<div class="wrow on"><span><span class="wn">'+Widget.icon('coin')+' '+bal+' tokens</span><br><span class="ws">'+
+    'spend on flattening claimed land · earn more by trading with townsfolk</span></span>';
   if(can('grantTokens')) html+='<button class="go" id="grant-tok">+50</button>';
   html+='</div>';
   M.base.forEach(function(b){
     var n=inv[b.id]||0;
-    html+='<div class="wrow"><span><span class="wn">'+b.icon+' '+esc(b.name)+'</span><br><span class="ws">'+
+    html+='<div class="wrow"><span><span class="wn">'+Widget.icon(b.icon)+' '+esc(b.name)+'</span><br><span class="ws">'+
       esc(b.variant)+'</span></span>'+
       '<span class="wn" style="margin-left:auto">×'+n+'</span></div>';
   });
@@ -7858,7 +8702,7 @@ function refreshPermUI(){
   if(tb) tb.style.display=can('makeTools')?'':'none';
   if(!can('makeTools')&&mode==='tools') setMode('orbit');
   var ab=$('acct-btn');
-  if(ab){ var a=currentAccount(); ab.innerHTML=a?(a.role==='dev'?'🛠':'👤'):''; 
+  if(ab){ var a=currentAccount(); ab.innerHTML=a?(a.role==='dev'?Widget.icon('wrench'):Widget.icon('person')):''; 
     ab.title=a?('Playing as '+a.name+(a.role==='dev'?' (developer)':' (visitor)')):'People'; }
 }
 function bindUI(){
@@ -7895,7 +8739,7 @@ function bindUI(){
   $('fly').addEventListener('click',function(){
     if(cam.mode!=='walk') return;
     var on=!ctrl.noclip(); ctrl.setNoclip(on);
-    toast(on?'🕊 Fly — drag to look · WASD/stick to fly · Space rises · 🕊 lands':'🚶 Walk mode');
+    toast(on?'Fly — drag to look · WASD/stick to fly · Space rises':'Walk mode');
   });
   $('zoomout').addEventListener('click',function(){
     if(cam.mode!=='walk') return;
@@ -7903,7 +8747,7 @@ function bindUI(){
   });
   ctrl.on('modeChange',function(d){
     var on=(d.mode==='noclip'), f=$('fly');
-    if(f){ f.classList.toggle('on',on); f.textContent=on?'🚶':'🕊'; }
+    if(f){ f.classList.toggle('on',on); f.innerHTML=Widget.icon(on?'walk':'feather'); }
   });
   $('move-bar').addEventListener('click',function(e){
     var b=e.target.closest('[data-mv]'); if(!b) return;
@@ -7916,7 +8760,7 @@ function bindUI(){
     var sb=e.target.closest('[data-sell]');
     if(sb&&npcTalkIdx>=0){
       var r=sellToNpc(npcTalkIdx,sb.dataset.sell);
-      if(r.ok){ toast('+'+r.got+'🪙 — pleasure doing business'); talkToNpc(npcTalkIdx); }
+      if(r.ok){ toast('+'+r.got+' tokens — pleasure doing business'); talkToNpc(npcTalkIdx); }
       else toast(r.why==='not buying'?'They don\u2019t buy that':'You need 5 to sell');
     }
   });
@@ -7932,7 +8776,7 @@ function bindUI(){
       if(idx===toolSel){ openToolEditor(customTools()[idx]); }
       else { toolSel=idx; renderPalette();
         var t=customTools()[idx];
-        if(t) hint(t.icon+' '+t.name+' — tap the world to use it · tap again to edit'); }
+        if(t) hint(t.name+' — tap the world to use it · tap again to edit'); }
       return;
     }
     palSel[k[0]]=+k[1]; renderPalette();
@@ -7956,7 +8800,7 @@ function bindUI(){
       });
     }else if(a==='del'){
       if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Sure?';
-        setTimeout(function(){ if(b.isConnected){ b.classList.remove('armed'); b.innerHTML='🗑'; } },3000); }
+        setTimeout(function(){ if(b.isConnected){ b.classList.remove('armed'); b.innerHTML=Widget.icon('trash'); } },3000); }
       else{
         (function(sel){
           mutate(function(){
@@ -8061,7 +8905,7 @@ function bindUI(){
     }
     if(e.target.id==='pretend-go'){
       if(setPretend(true)){ refreshPermUI(); renderAccounts();
-        toast('👀 Pretending to be a visitor'); }
+        toast('Pretending to be a visitor'); }
       return;
     }
     if(e.target.id==='pretend-stop'){
@@ -8077,7 +8921,7 @@ function bindUI(){
     var del=e.target.closest('[data-delworld]');
     if(del){
       if(!del.classList.contains('armed')){ del.classList.add('armed'); del.textContent='Sure?';
-        setTimeout(function(){ if(del.isConnected){ del.classList.remove('armed'); del.textContent='🗑'; } },3000); return; }
+        setTimeout(function(){ if(del.isConnected){ del.classList.remove('armed'); del.innerHTML=Widget.icon('trash'); } },3000); return; }
       var id=del.dataset.delworld;
       store.worlds=store.worlds.filter(function(x){ return x.id!==id; });
       if(store.active===id) store.active=store.worlds.length?store.worlds[0].id:null;
@@ -8129,8 +8973,8 @@ function talkToNpc(idx){
   var w=activeWorld(); var npc=(w&&w.npcs||[])[idx]; if(!npc) return;
   npcTalkIdx=idx; selected=null; hideSel();
   var d=npcDialogue(npc), inv=invOf(), M=getMaterials(currentPid());
-  function matIcon(id){ for(var i=0;i<M.base.length;i++) if(M.base[i].id===id) return M.base[i].icon; return '📦'; }
-  var html='<div class="nname">'+d.icon+' '+esc(d.name)+
+  function matIcon(id){ for(var i=0;i<M.base.length;i++) if(M.base[i].id===id) return Widget.icon(M.base[i].icon); return Widget.icon('box'); }
+  var html='<div class="nname">'+Widget.icon(d.icon)+' '+esc(d.name)+
     (d.group?' <span class="nsub">of '+esc(d.group)+'</span>':'')+
     ' <span class="nsub">· '+esc(d.label)+'</span></div>'+
     '<div class="nline">“'+esc(d.greet)+'”</div>'+
@@ -8139,7 +8983,7 @@ function talkToNpc(idx){
   d.buys.forEach(function(b){
     var have=inv[b.mat]||0;
     html+='<button data-sell="'+b.mat+'"'+(have<5?' disabled':'')+'>'+
-      matIcon(b.mat)+' Sell 5 → +'+(5*b.price)+'🪙 <small>(you have '+have+')</small></button>';
+      matIcon(b.mat)+' Sell 5 → +'+(5*b.price)+' '+Widget.icon('coin')+' <small>(you have '+have+')</small></button>';
   });
   html+='</div><div class="prow"><button data-npc="leave" class="go">Leave</button></div>';
   var p=$('npc-pop'); p.innerHTML=html; p.hidden=false;
@@ -8155,15 +8999,15 @@ function hideNpcPop(){ $('npc-pop').hidden=true; npcTalkIdx=-1; }
  * A tool is a tiny named op record {id,name,icon,kind,params} in the world
  * doc. Arm it, tap the world, the op runs. Devs make tools without code. */
 var TOOL_KINDS=[
-  {id:'paint',    icon:'🎨', label:'Paint brush',    blurb:'Paint a patch of the world'},
-  {id:'creature', icon:'🦴', label:'Creature drop',  blurb:'Drop a creature here'},
-  {id:'npc',      icon:'🧑', label:'Townsfolk drop', blurb:'A townsfolk moves in here'},
-  {id:'gift',     icon:'🎁', label:'Gift materials', blurb:'Give yourself materials'},
-  {id:'terraform',icon:'⛰️', label:'Terrain bump',   blurb:'Raise or lower the ground'}
+  {id:'paint',    icon:'brush', label:'Paint brush',    blurb:'Paint a patch of the world'},
+  {id:'creature', icon:'paw', label:'Creature drop',  blurb:'Drop a creature here'},
+  {id:'npc',      icon:'person', label:'Townsfolk drop', blurb:'A townsfolk moves in here'},
+  {id:'gift',     icon:'gift', label:'Gift materials', blurb:'Give yourself materials'},
+  {id:'terraform',icon:'mountain', label:'Terrain bump',   blurb:'Raise or lower the ground'}
 ];
-var TOOL_ICONS=['🛠️','🎨','🦴','🧑','🎁','⛰️','🌱','🌾','🌸','🧹','🗡️','🏠','💎','🔥','❄️','⭐','🌙','⚡'];
+var TOOL_ICONS=['hammer','brush','paw','person','gift','mountain','sprout','wheat','flower','broom','sword','home','gem','flame','snow','star','moon','bolt'];
 var toolSel=-1, toolEditId=null;
-var teName='', teIcon='🛠️', teKind='paint';
+var teName='', teIcon='hammer', teKind='paint';
 function customTools(){ var w=activeWorld(); if(w) ensureWorldShape(w); return w?(w.customTools||[]):[]; }
 function findTool(id){ var ts=customTools(); for(var i=0;i<ts.length;i++) if(ts[i].id===id) return ts[i]; return null; }
 function toolKindDef(id){ for(var i=0;i<TOOL_KINDS.length;i++) if(TOOL_KINDS[i].id===id) return TOOL_KINDS[i]; return TOOL_KINDS[0]; }
@@ -8176,29 +9020,29 @@ function applyTool(tool,x,z){
     var pk=pr.paintKind||'garden', prr=Math.max(4,Math.min(60,+pr.radius||14));
     mutate(function(){ w.seq=(w.seq||0)+1; w.paintOps=w.paintOps||[];
       w.paintOps.push({kind:pk,x:Math.round(x*2)/2,z:Math.round(z*2)/2,r:prr,seed:w.seed+'|toolpaint'+w.seq}); });
-    toast(tool.icon+' Painted '+pk); return true;
+    toast('Painted '+pk); return true;
   }
   if(tool.kind==='creature'){
     if(!can('spawnLife')){ toast('Only the developer can bring life here'); return false; }
     var c=spawnCreature(x,z,Math.max(1,Math.min(4,+pr.stage||4)));
-    if(c) toast(tool.icon+' A creature stirs'); return !!c;
+    if(c) toast('A creature stirs'); return !!c;
   }
   if(tool.kind==='npc'){
     if(!can('spawnLife')){ toast('Only the developer can bring life here'); return false; }
     var n=spawnNpc(x,z,{template:pr.template||'trader'});
-    if(n) toast(tool.icon+' '+n.name+' moved in'); return !!n;
+    if(n) toast(n.name+' moved in'); return !!n;
   }
   if(tool.kind==='gift'){
     if(!can('grantTokens')){ toast('Only the developer can gift'); return false; }
     var m=pr.material||'wood', amt=Math.max(1,Math.min(200,+pr.amount||10));
     mutate(function(){ var inv=invOf(); inv[m]=(inv[m]||0)+amt; });
-    toast(tool.icon+' +'+amt+' '+m); return true;
+    toast('+'+amt+' '+m); return true;
   }
   if(tool.kind==='terraform'){
     var up=(pr.dir||'up')!=='down', tr=Math.max(4,Math.min(40,+pr.radius||9));
     mutate(function(){ w.terrainEdits=w.terrainEdits||[];
       w.terrainEdits.push({x:Math.round(x*2)/2,z:Math.round(z*2)/2,r:tr,dh:up?0.5:-0.5}); });
-    toast(tool.icon+' Ground '+(up?'raised':'lowered')); return true;
+    toast('Ground '+(up?'raised':'lowered')); return true;
   }
   return false;
 }
@@ -8208,14 +9052,14 @@ function toolParamsHtml(kind,pr){
   function sel(id,opts,cur){ return '<select id="'+id+'">'+opts.map(function(o){
     return '<option value="'+o[0]+'"'+(o[0]===cur?' selected':'')+'>'+o[1]+'</option>'; }).join('')+'</select>'; }
   if(kind==='paint')
-    return '<label>Brush '+sel('te-paintkind',PAINTS.map(function(p){return [p.id,p.icon+' '+p.label];}),pr.paintKind||'garden')+'</label>'+
+    return '<label>Brush '+sel('te-paintkind',PAINTS.map(function(p){return [p.id,p.label];}),pr.paintKind||'garden')+'</label>'+
       '<label>Size <input type="range" id="te-radius" min="4" max="60" value="'+(pr.radius||14)+'"> <b id="te-radius-v">'+(pr.radius||14)+'</b>m</label>';
   if(kind==='creature')
     return '<label>Stage '+sel('te-stage',[['1','A — Body'],['2','B — +Limbs'],['3','C — +Skin'],['4','D — +Life']],String(pr.stage||4))+'</label>';
   if(kind==='npc')
-    return '<label>Who '+sel('te-template',NPC_TEMPLATES.map(function(t){return [t.id,t.icon+' '+t.label];}),pr.template||'trader')+'</label>';
+    return '<label>Who '+sel('te-template',NPC_TEMPLATES.map(function(t){return [t.id,t.label];}),pr.template||'trader')+'</label>';
   if(kind==='gift')
-    return '<label>Material '+sel('te-material',BASE_MATS.map(function(b){return [b.id,b.icon+' '+b.name];}),pr.material||'wood')+'</label>'+
+    return '<label>Material '+sel('te-material',BASE_MATS.map(function(b){return [b.id,b.name];}),pr.material||'wood')+'</label>'+
       '<label>Amount <input type="range" id="te-amount" min="1" max="200" value="'+(pr.amount||10)+'"> <b id="te-amount-v">'+(pr.amount||10)+'</b></label>';
   if(kind==='terraform')
     return '<label>Direction '+sel('te-dir',[['up','＋ Raise'],['down','－ Lower']],pr.dir||'up')+'</label>'+
@@ -8232,12 +9076,12 @@ function renderToolEditor(){
   var t=toolEditId?findTool(toolEditId):null;
   var pr=t?t.params:null;
   var p=$('tool-pop');
-  p.innerHTML='<div class="tname">🧰 '+(t?'Edit tool':'Make a tool')+'</div>'+
+  p.innerHTML='<div class="tname">'+Widget.icon('toolbox')+' '+(t?'Edit tool':'Make a tool')+'</div>'+
     '<input id="te-name" placeholder="Tool name" maxlength="24" value="'+esc(teName)+'">'+
     '<div class="trow-icons">'+TOOL_ICONS.map(function(ic){
-      return '<button data-tei="'+ic+'" class="'+(ic===teIcon?'on':'')+'">'+ic+'</button>'; }).join('')+'</div>'+
+      return '<button data-tei="'+ic+'" class="'+(ic===teIcon?'on':'')+'">'+Widget.icon(ic)+'</button>'; }).join('')+'</div>'+
     '<div class="tkinds">'+TOOL_KINDS.map(function(k){
-      return '<button data-tek="'+k.id+'" class="'+(k.id===teKind?'on':'')+'" title="'+esc(k.blurb)+'">'+k.icon+'<small>'+esc(k.label)+'</small></button>'; }).join('')+'</div>'+
+      return '<button data-tek="'+k.id+'" class="'+(k.id===teKind?'on':'')+'" title="'+esc(k.blurb)+'">'+Widget.icon(k.icon)+'<small>'+esc(k.label)+'</small></button>'; }).join('')+'</div>'+
     '<div id="te-params">'+toolParamsHtml(teKind,pr)+'</div>'+
     '<div class="prow"><button data-te="save" class="go">Save</button>'+
     (t?'<button data-te="del" class="danger">Delete</button>':'')+
@@ -8259,7 +9103,7 @@ function renderToolEditor(){
 }
 function openToolEditor(tool){
   toolEditId=tool?tool.id:null;
-  teName=tool?tool.name:''; teIcon=tool?tool.icon:'🛠️'; teKind=tool?tool.kind:'paint';
+  teName=tool?tool.name:''; teIcon=tool?tool.icon:'hammer'; teKind=tool?tool.kind:'paint';
   renderToolEditor(); $('tool-pop').hidden=false;
   setTimeout(function(){ var i=$('te-name'); if(i) i.focus(); },60);
 }
@@ -8281,7 +9125,7 @@ function toolEditorSave(){
     tools.push({id:'t'+w.seq.toString(36)+Date.now().toString(36).slice(-4),
       name:teName, icon:teIcon, kind:teKind, params:params}); }
   changed(); hideToolPop(); renderPalette();
-  toast('🧰 Tool saved — tap it, then tap the world');
+  toast('Tool saved — tap it, then tap the world');
 }
 function toolEditorDelete(){
   if(!toolEditId) return;
@@ -8296,12 +9140,25 @@ function toolEditorDelete(){
  * Heading-up 2D radar that follows the player: the real terrain in the same
  * hologram colors as the big map, laser grid, claims, buildings, waypoints,
  * and life dots. North is -z, matching the map's North-up button. */
-var mmCv=null, mmCtx=null, mmLast=0, MM_R=70, MM_N=104;
+var mmCv=null, mmCtx=null, MM_R=70, MM_N=104;
+/* ---- buttery minimap: cached terrain + eased follow ----
+ * The expensive terrain (11k height samples + contours + grid) renders
+ * NORTH-UP into an offscreen canvas, re-rendered only when the quantized
+ * view cell changes. Every rAF the main canvas composites it (rotated to
+ * heading-up with a fractional-pixel glide offset) and draws markers at
+ * eased positions. The map glides; it never snaps or rebuilds per frame. */
+var mmTerr=null, mmTerrCtx=null, mmTerrKey='', mmTerrT=0;
+var mmSmX=0, mmSmZ=0, mmSmYaw=0, mmSmInit=false, mmSmT=0;
+var MM_CELL=8; /* terrain cache quantization, meters */
 function mmInit(){
   mmCv=$('minimap'); if(!mmCv) return;
   var dpr=Math.min(2,window.devicePixelRatio||1);
   mmCv.width=168*dpr; mmCv.height=168*dpr;
   mmCtx=mmCv.getContext('2d');
+  mmTerr=document.createElement('canvas');
+  mmTerr.width=mmCv.width; mmTerr.height=mmCv.height;
+  mmTerrCtx=mmTerr.getContext('2d');
+  mmTerrKey='';
 }
 function mmTint(x,z,h){
   /* same hologram bands as mapTint; the slope term is skipped for speed */
@@ -8316,34 +9173,14 @@ function mmTint(x,z,h){
   }
   return [r,g,b];
 }
-function drawMinimap(tms){
-  if(!mmCtx) return;
-  if(mapOpen){ mmCv.style.display='none'; return; }
-  mmCv.style.display='';
-  if(tms-mmLast<300) return; mmLast=tms;
-  var w=activeWorld(); if(!w) return;
-  var px=(cam.mode==='walk')?cam.wx:cam.tx, pz=(cam.mode==='walk')?cam.wz:cam.tz;
-  var fx,fz,rx,rz;
-  if(cam.mode==='walk'){ var s=Math.sin(cam.wyaw||0), c=Math.cos(cam.wyaw||0); fx=s; fz=c; rx=-c; rz=s; }
-  else { var s2=Math.sin(cam.yaw), c2=Math.cos(cam.yaw); fx=-s2; fz=-c2; rx=c2; rz=-s2; }
-  var W=mmCv.width, cx=W/2, k=(W/2-3)/MM_R, ctx=mmCtx, i, j;
+function mmRenderTerrain(qx,qz){
+  /* north-up terrain for the cache window (radius MM_R*1.5, survives rotation) */
+  var c2=mmTerrCtx; if(!c2) return;
+  var W=mmCv.width, cx=W/2, kc=(W/2-3)/(MM_R*1.5);
   var dpr=Math.min(2,window.devicePixelRatio||1);
-  ctx.clearRect(0,0,W,W);
-  /* glass layers: translucent panels + top sheen. No border, no outline. */
-  ctx.fillStyle='rgba(6,10,18,0.78)'; ctx.fillRect(0,0,W,W);
-  var sheen=ctx.createLinearGradient(0,0,0,W*0.4);
-  sheen.addColorStop(0,'rgba(140,210,255,0.10)'); sheen.addColorStop(1,'rgba(140,210,255,0)');
-  ctx.fillStyle=sheen; ctx.fillRect(0,0,W,W*0.4);
-  function w2s(wx,wz){
-    wrapXZ(wx,wz,_wx);
-    var dx=_wx[0]-px, dz=_wx[1]-pz;
-    return [cx+(dx*rx+dz*rz)*k, cx-(dx*fx+dz*fz)*k];
-  }
-  /* corner height grid: terrain fill from it, laser contours via marching squares */
-  var N=MM_N, cell=W/N, H=new Float32Array((N+1)*(N+1)), mnH=1e9, mxH=-1e9;
+  var N=MM_N, cell=W/N, H=new Float32Array((N+1)*(N+1)), mnH=1e9, mxH=-1e9, i, j;
   for(j=0;j<=N;j++) for(i=0;i<=N;i++){
-    var dR=(i*cell-cx)/k, dF=-((j*cell-cx))/k;
-    var wx=px+dR*rx+dF*fx, wz=pz+dR*rz+dF*fz;
+    var wx=qx+(i*cell-cx)/kc, wz=qz+(j*cell-cx)/kc;
     wrapXZ(wx,wz,_wx);
     var h=heightAt(_wx[0],_wx[1]);
     H[j*(N+1)+i]=h; if(h<mnH)mnH=h; if(h>mxH)mxH=h;
@@ -8352,16 +9189,16 @@ function drawMinimap(tms){
   for(j=0;j<N;j++) for(i=0;i<N;i++){
     var hc=(H[j*(N+1)+i]+H[j*(N+1)+i+1]+H[(j+1)*(N+1)+i]+H[(j+1)*(N+1)+i+1])/4;
     var cc=mmTint(0,0,hc);
-    ctx.fillStyle='rgb('+((cc[0]*255)|0)+','+((cc[1]*255)|0)+','+((cc[2]*255)|0)+')';
-    ctx.fillRect(i*cell,j*cell,cell+1,cell+1);
+    c2.fillStyle='rgb('+((cc[0]*255)|0)+','+((cc[1]*255)|0)+','+((cc[2]*255)|0)+')';
+    c2.fillRect(i*cell,j*cell,cell+1,cell+1);
   }
   /* laser topology: glowing contour lines draped over the terrain fill */
   if(mxH-mnH>1.5){
     var lo=Math.floor(mnH), hi=Math.ceil(mxH), NL=6;
-    ctx.save();
-    ctx.strokeStyle='rgba(120,225,255,0.8)'; ctx.lineWidth=Math.max(1,dpr*0.5);
-    ctx.shadowColor='rgba(110,220,255,0.7)'; ctx.shadowBlur=2*dpr;
-    ctx.beginPath();
+    c2.save();
+    c2.strokeStyle='rgba(120,225,255,0.8)'; c2.lineWidth=Math.max(1,dpr*0.5);
+    c2.shadowColor='rgba(110,220,255,0.7)'; c2.shadowBlur=2*dpr;
+    c2.beginPath();
     for(var li=0;li<NL;li++){
       var L=lo+(hi-lo)*(li+0.5)/NL;
       for(j=0;j<N;j++) for(i=0;i<N;i++){
@@ -8371,32 +9208,80 @@ function drawMinimap(tms){
         if(h0>L)idx|=8; if(h1>L)idx|=4; if(h2>L)idx|=2; if(h3>L)idx|=1;
         if(idx===0||idx===15) continue;
         var x0=i*cell, y0=j*cell;
-        function ept(ax,ay,bx,by,ha,hb){
-          var t=(hb===ha)?0.5:(L-ha)/(hb-ha); return [ax+(bx-ax)*t, ay+(by-ay)*t]; }
-        var T=ept(x0,y0,x0+cell,y0,h0,h1), Rr=ept(x0+cell,y0,x0+cell,y0+cell,h1,h2),
-            B=ept(x0,y0+cell,x0+cell,y0+cell,h3,h2), Lp=ept(x0,y0,x0,y0+cell,h0,h3);
-        function seg(a,b){ ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); }
+        var T=[x0+cell*(L-h0)/(h1-h0||1e-6),y0], Rr=[x0+cell,y0+cell*(L-h1)/(h2-h1||1e-6)],
+            B=[x0+cell*(L-h3)/(h2-h3||1e-6),y0+cell], Lp=[x0,y0+cell*(L-h0)/(h3-h0||1e-6)];
         switch(idx){
-          case 1: case 14: seg(Lp,B); break;
-          case 2: case 13: seg(B,Rr); break;
-          case 3: case 12: seg(Lp,Rr); break;
-          case 4: case 11: seg(T,Rr); break;
-          case 5: seg(T,Lp); seg(B,Rr); break;
-          case 6: case 9: seg(T,B); break;
-          case 7: case 8: seg(T,Lp); break;
-          case 10: seg(T,Rr); seg(Lp,B); break;
+          case 1: case 14: c2.moveTo(Lp[0],Lp[1]); c2.lineTo(B[0],B[1]); break;
+          case 2: case 13: c2.moveTo(B[0],B[1]); c2.lineTo(Rr[0],Rr[1]); break;
+          case 3: case 12: c2.moveTo(Lp[0],Lp[1]); c2.lineTo(Rr[0],Rr[1]); break;
+          case 4: case 11: c2.moveTo(T[0],T[1]); c2.lineTo(Rr[0],Rr[1]); break;
+          case 5: c2.moveTo(T[0],T[1]); c2.lineTo(Lp[0],Lp[1]); c2.moveTo(B[0],B[1]); c2.lineTo(Rr[0],Rr[1]); break;
+          case 6: case 9: c2.moveTo(T[0],T[1]); c2.lineTo(B[0],B[1]); break;
+          case 7: case 8: c2.moveTo(T[0],T[1]); c2.lineTo(Lp[0],Lp[1]); break;
+          case 10: c2.moveTo(T[0],T[1]); c2.lineTo(Rr[0],Rr[1]); c2.moveTo(Lp[0],Lp[1]); c2.lineTo(B[0],B[1]); break;
         }
       }
     }
-    ctx.stroke(); ctx.restore();
+    c2.stroke(); c2.restore();
   }
   /* laser grid, world-aligned every 20m: hairline crisp on any dpr */
-  ctx.strokeStyle='rgba(80,200,255,0.16)'; ctx.lineWidth=Math.max(1,dpr/2)*0.8;
-  var g0x=Math.floor((px-MM_R*1.5)/20)*20, g0z=Math.floor((pz-MM_R*1.5)/20)*20, gx, gz, a, b;
-  ctx.beginPath();
-  for(gx=g0x;gx<px+MM_R*1.5;gx+=20){ a=w2s(gx,pz-MM_R*1.5); b=w2s(gx,pz+MM_R*1.5); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); }
-  for(gz=g0z;gz<pz+MM_R*1.5;gz+=20){ a=w2s(px-MM_R*1.5,gz); b=w2s(px+MM_R*1.5,gz); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); }
-  ctx.stroke();
+  c2.strokeStyle='rgba(80,200,255,0.16)'; c2.lineWidth=Math.max(1,dpr/2)*0.8;
+  var RR=MM_R*1.5, gx, gz;
+  c2.beginPath();
+  for(gx=Math.floor((qx-RR)/20)*20;gx<qx+RR;gx+=20){
+    var u=cx+(gx-qx)*kc; c2.moveTo(u,0); c2.lineTo(u,W); }
+  for(gz=Math.floor((qz-RR)/20)*20;gz<qz+RR;gz+=20){
+    var v=cx+(gz-qz)*kc; c2.moveTo(0,v); c2.lineTo(W,v); }
+  c2.stroke();
+}
+function drawMinimap(tms){
+  if(!mmCtx) return;
+  if(mapOpen){ mmCv.style.display='none'; return; }
+  mmCv.style.display='';
+  var w=activeWorld(); if(!w) return;
+  var px=(cam.mode==='walk')?cam.wx:cam.tx, pz=(cam.mode==='walk')?cam.wz:cam.tz;
+  var yaw=(cam.mode==='walk')?(cam.wyaw||0):cam.yaw;
+  /* eased follow: time-based exponential, frame-rate independent.
+   * Markers and terrain both ride the eased frame, so motion is continuous. */
+  var dt=Math.min(0.1,(tms-mmSmT)/1000||0.016); mmSmT=tms;
+  if(!mmSmInit){ mmSmX=px; mmSmZ=pz; mmSmYaw=yaw; mmSmInit=true; }
+  var djx=px-mmSmX, djz=pz-mmSmZ;
+  if(djx*djx+djz*djz>90000){ mmSmX=px; mmSmZ=pz; } /* teleport: snap */
+  else { var ek=1-Math.pow(0.002,dt); mmSmX+=djx*ek; mmSmZ+=djz*ek; }
+  var dyw=yaw-mmSmYaw;
+  while(dyw>Math.PI)dyw-=Math.PI*2; while(dyw<-Math.PI)dyw+=Math.PI*2;
+  if(Math.abs(dyw)>1.2) mmSmYaw=yaw;
+  else mmSmYaw+=dyw*(1-Math.pow(0.002,dt));
+  var s=Math.sin(mmSmYaw), c=Math.cos(mmSmYaw), fx,fz,rx,rz;
+  if(cam.mode==='walk'){ fx=s; fz=c; rx=-c; rz=s; }
+  else { fx=-s; fz=-c; rx=c; rz=-s; }
+  var ra=Math.atan2(-fx,rx); /* north-up cache -> heading-up */
+  /* terrain cache: re-render only on quantized cell change, throttled */
+  var qx=Math.round(mmSmX/MM_CELL)*MM_CELL, qz=Math.round(mmSmZ/MM_CELL)*MM_CELL;
+  var key=qx+','+qz+'|'+(w?w.seed:'?');
+  if(key!==mmTerrKey&&tms-mmTerrT>150){ mmRenderTerrain(qx,qz); mmTerrKey=key; mmTerrT=tms; }
+  var W=mmCv.width, cx=W/2, kk=(W/2-3)/MM_R, kc=(W/2-3)/(MM_R*1.5);
+  var ctx=mmCtx, dpr=Math.min(2,window.devicePixelRatio||1);
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,W,W);
+  /* glass layers: translucent panels + top sheen. No border, no outline. */
+  ctx.fillStyle='rgba(6,10,18,0.78)'; ctx.fillRect(0,0,W,W);
+  var sheen=ctx.createLinearGradient(0,0,0,W*0.4);
+  sheen.addColorStop(0,'rgba(140,210,255,0.10)'); sheen.addColorStop(1,'rgba(140,210,255,0)');
+  ctx.fillStyle=sheen; ctx.fillRect(0,0,W,W*0.4);
+  /* composite: the quantized cache, rotated heading-up, with the fractional
+   * glide offset — re-renders never cause a visible jump */
+  ctx.translate(cx+kk*(rx*(qx-mmSmX)+rz*(qz-mmSmZ)), cx-kk*(fx*(qx-mmSmX)+fz*(qz-mmSmZ)));
+  ctx.rotate(ra);
+  ctx.scale(kk/kc,kk/kc);
+  ctx.translate(-cx,-cx);
+  if(mmTerrKey) ctx.drawImage(mmTerr,0,0);
+  ctx.setTransform(1,0,0,1,0,0);
+  function w2s(wx,wz){
+    wrapXZ(wx,wz,_wx);
+    var dx=_wx[0]-mmSmX, dz=_wx[1]-mmSmZ;
+    return [cx+(dx*rx+dz*rz)*kk, cx-(dx*fx+dz*fz)*kk];
+  }
   /* claims */
   (w.claims||[]).forEach(function(cl){
     var rc=claimRect(cl), col=claimColor(cl);
@@ -8497,7 +9382,7 @@ function travelToPlanet(pid){
   $('travel-wrap').hidden=true; $('sheet').hidden=true;
   bootWorld(); renderWorlds();
   try{ MoorWorld.logEvent('user','visit',pid,{world:w.id}); }catch(_){}
-  toast('🧭 '+p.name);
+  toast(p.name);
   if(mapOpen){ mapFedPid='__unfed__'; mapDirty=true;
     setTimeout(function(){ if(mapOpen) mapFlyTo('planet',true); },400); }
 }
@@ -8529,6 +9414,8 @@ function frame(t){
   requestAnimationFrame(frame);
   var dt=Math.min(0.05,(t-lastT)/1000||0.016); lastT=t;
   if(needsRebuild){ needsRebuild=false; rebuildObjects(); }
+  if(ghostDirty){ ghostDirty=false; updateCityGhost(); }
+  if(needsClaimRebuild){ needsClaimRebuild=false; buildClaimBuf(); }
   if(cam.mode==='walk'){
     ctrl.step(dt);
     tickAvatar(dt);
@@ -8547,17 +9434,33 @@ function frame(t){
   drawSky(space); /* gradient dome: blue sky near ground, black in space */
   gl.useProgram(prog);
   gl.uniform3f(uSun,-0.45,0.8,0.35);
+  if(typeof uSpaceL!=='undefined'&&uSpaceL) gl.uniform1f(uSpaceL,space); /* #21: space-view planet shading */
   gl.uniform3f(uFog,0.74*(1-space)+0.02*space,0.82*(1-space)+0.02*space,0.90*(1-space)+0.05*space);
   gl.uniform1f(uFogK,(cam.mode==='walk'?0.0035:0.25/Math.max(cam.dist,40))*(1-space*0.9));
+  lastFog=[0.74*(1-space)+0.02*space,0.82*(1-space)+0.02*space,0.90*(1-space)+0.05*space];
+  lastFogK=(cam.mode==='walk'?0.0035:0.25/Math.max(cam.dist,40))*(1-space*0.9);
   gl.uniform3f(uPlanetC,PLANET_C[0],PLANET_C[1],PLANET_C[2]); gl.uniform1f(uPlanetR,PLANET_R);
   if(revealT<1) revealT=Math.min(1,revealT+dt/2.4);
   var rse=revealT*revealT*(3-2*revealT);
   gl.uniform1f(uReveal,rse);
   var e=camEye(); gl.uniform3f(uCam,e[0],e[1],e[2]);
   gl.uniformMatrix4fv(uMVP,false,vpMat);
-  for(var ci=0;ci<terrChunkList.length;ci++){ var ch=terrChunkList[ci];
+  var deepSpace=space>0.5; /* zoomed right out: detail chunks are sub-pixel, far sphere carries the planet */
+  if(!deepSpace) for(var ci=0;ci<terrChunkList.length;ci++){ var ch=terrChunkList[ci];
     bindBuf(ch.buf); gl.drawElements(gl.TRIANGLES,ch.buf.count,gl.UNSIGNED_INT,0); }
-  if(typeof farBuf!=='undefined'&&farBuf){ bindBuf(farBuf); gl.drawElements(gl.TRIANGLES,farBuf.count,gl.UNSIGNED_INT,0); }
+  if(typeof farBuf!=='undefined'&&farBuf){
+    /* LOD#15: the coarse far sphere must never overlap the detail window —
+     * its 785m triangles deviate from the true surface by tens of meters,
+     * so it used to poke through as ghost terrain. A rect hole exactly the
+     * streamed window is discarded in-shader: the two LOD layers are now
+     * disjoint (chunk skirts seal the boundary). Hole off while the window
+     * is still building, or in deep space where detail chunks are hidden. */
+    var holeOK=!deepSpace&&terrQueue.length===0;
+    gl.uniform2f(uHoleC,streamPCX*CH,streamPCZ*CH);
+    gl.uniform1f(uHoleR,holeOK?CH*(CHW+0.5):0);
+    bindBuf(farBuf); gl.drawElements(gl.TRIANGLES,farBuf.count,gl.UNSIGNED_INT,0);
+    gl.uniform1f(uHoleR,0);
+  }
   bindBuf(waterBuf); gl.drawElements(gl.TRIANGLES,waterBuf.count,gl.UNSIGNED_INT,0);
   if(objBuf){ bindBuf(objBuf); gl.drawElements(gl.TRIANGLES,objBuf.count,gl.UNSIGNED_INT,0); }
   if(crBuf){ bindBuf(crBuf); gl.drawElements(gl.TRIANGLES,crBuf.count,gl.UNSIGNED_INT,0); } /* P4 */
@@ -8571,8 +9474,13 @@ function frame(t){
   gl.depthMask(true); gl.disable(gl.BLEND);
   drawAtmo(); /* fresnel shell: the glowing rim, near and far */
   drawClouds(t/1000); /* seeded procedural clouds, slow drift */
+  drawClaims(); /* transparent claim planes + city ghost, draped on the terrain */
   gl.useProgram(prog);
-  if(cam.mode==='walk'&&avBuf&&ctrl.camMode()==='follow'){
+  /* player presence: the avatar stays rendered in every mode, planted where he
+   * stands — tools never turn him into a disembodied camera. Hidden only in
+   * walk first-person (you'd see the inside of your own head). */
+  var hideAvatar=(cam.mode==='walk'&&ctrl.camMode()!=='follow');
+  if(avBuf&&!hideAvatar){
     gl.disable(gl.CULL_FACE);
     bindBuf(avBuf); gl.drawElements(gl.TRIANGLES,avBuf.count,gl.UNSIGNED_INT,0);
     gl.enable(gl.CULL_FACE);
@@ -8594,7 +9502,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-0103';
+var BETA_VERSION='20261005-0203';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
@@ -8635,7 +9543,7 @@ function startMove(){
   moveMode={kind:selected.kind,idx:selected.idx};
   moveBackup=snapshot(activeWorld());
   hideSel(); showMoveBar();
-  hint('Drag to move · ✓ when done');
+  hint('Drag to move · tap Done when finished');
 }
 function endMove(commit){
   if(!moveMode) return;
@@ -8650,15 +9558,15 @@ function endMove(commit){
 }
 function showMoveBar(){
   var m=$('move-bar'); m.hidden=false;
-  m.innerHTML='<button data-mv="ok">✓ Done</button><button data-mv="cancel">✕</button>';
+  m.innerHTML='<button data-mv="ok">'+Widget.icon('check')+' Done</button><button data-mv="cancel">'+Widget.icon('x')+'</button>';
 }
 function hideMoveBar(){ $('move-bar').hidden=true; }
 
 /* ---------------- path drawing ---------------- */
 var PATH_WIDTHS=[
-  {w:1.6,icon:'🌿',label:'Trail'},
-  {w:2.2,icon:'🛤️',label:'Path'},
-  {w:3.2,icon:'🌆',label:'Sidewalk'}
+  {w:1.6,icon:'leaf',label:'Trail'},
+  {w:2.2,icon:'path',label:'Path'},
+  {w:3.2,icon:'city',label:'Sidewalk'}
 ];
 var drawing=null, previewPath=null;
 function startStroke(x,z){
@@ -8691,9 +9599,9 @@ function editBuilding(){ var w=activeWorld(); return w?w.buildings[selected.idx]
 function renderEditSheet(){
   var b=editBuilding(); if(!b) return;
   var sh=$('edit-sheet');
-  sh.innerHTML='<h3>🔧 '+esc(selLabel())+'</h3>'+
+  sh.innerHTML='<h3>'+Widget.icon('wrench')+' '+esc(selLabel())+'</h3>'+
     '<div class="erow">'+THEMES.map(function(t){
-      return '<button class="pal'+(t.id===b.theme?' on':'')+'" data-etheme="'+t.id+'">'+t.icon+'<small>'+esc(t.label)+'</small></button>';
+      return '<button class="pal'+(t.id===b.theme?' on':'')+'" data-etheme="'+t.id+'">'+Widget.icon(t.icon)+'<small>'+esc(t.label)+'</small></button>';
     }).join('')+'</div>'+
     '<div class="erow"><span class="elab">Stories</span>'+
       '<button data-estories="1" class="'+(b.stories===1?'on':'')+'">1</button>'+
@@ -8701,9 +9609,9 @@ function renderEditSheet(){
     '<div class="erow"><span class="elab">Size</span>'+
       '<button data-esize="w-">W−</button><button data-esize="w+">W+</button>'+
       '<button data-esize="d-">D−</button><button data-esize="d+">D+</button></div>'+
-    '<div class="erow"><button data-eregen="1">🎲 Regenerate</button></div>'+
-    '<div class="erow"><button data-eedit="done" class="go">✓ Done</button>'+
-    '<button data-eedit="cancel">✕ Cancel</button></div>';
+    '<div class="erow"><button data-eregen="1">'+Widget.icon('die')+' Regenerate</button></div>'+
+    '<div class="erow"><button data-eedit="done" class="go">'+Widget.icon('check')+' Done</button>'+
+    '<button data-eedit="cancel">'+Widget.icon('x')+' Cancel</button></div>';
 }
 function closeEdit(commit){
   var w=activeWorld();
@@ -8736,8 +9644,22 @@ function bindEditSheet(){
   });
 }
 
+/* city placement ghost: draped transparent footprint follows the pointer.
+ * Same visual language as the land-claim plane (fill + laser grid + border),
+ * rendered through the transparent claim pass. */
+function updateCityGhost(){
+  if(mode!=='city'||!ghostPointer){ if(cityGhost){ cityGhost=null; needsClaimRebuild=true; } return; }
+  var g=terrainPoint(ghostPointer);
+  if(!g){ if(cityGhost){ cityGhost=null; needsClaimRebuild=true; } return; }
+  var L=CITY_LAYOUTS[palSel.city]||CITY_LAYOUTS[0];
+  if(!cityGhost||Math.abs(cityGhost.x-g.mx)>1.5||Math.abs(cityGhost.z-g.mz)>1.5||cityGhost.layout!==L.id){
+    cityGhost={x:g.mx,z:g.mz,layout:L.id}; needsClaimRebuild=true;
+  }
+}
 /* ---------------- land claim mode ---------------- */
 var claiming=null, previewClaim=null, pendingClaim=null;
+/* city placement ghost: draped transparent footprint following the pointer */
+var cityGhost=null, ghostPointer=null, ghostDirty=false, needsClaimRebuild=false;
 function startClaim(x,z){
   claiming={x0:Math.round(x*2)/2,z0:Math.round(z*2)/2,x1:Math.round(x*2)/2,z1:Math.round(z*2)/2};
   previewClaim=claiming; needsRebuild=true;
@@ -8798,7 +9720,7 @@ function bindClaimPop(){
         if(d.wp) d.wp.name=nm;
         else w.waypoints.push({x:Math.round(d.x*2)/2,z:Math.round(d.z*2)/2,name:nm});
       });
-      toast('📍 '+nm);
+      toast(nm);
     }else if(act==='go'&&d.wp){
       if(cam.mode==='walk') ctrl.teleport(d.wp.x,d.wp.z);
       else { cam.tx=d.wp.x; cam.tz=d.wp.z; }
@@ -8831,11 +9753,11 @@ function endPaint(){
     var w=activeWorld(); w.paintOps=w.paintOps||[]; w.seq=(w.seq||0)+1;
     w.paintOps.push({kind:kind,x:p.cx,z:p.cz,r:Math.round(p.r),seed:w.seed+'|paint'+w.seq});
   });
-  toast(kind==='clear'?'🧹 Cleared the plants':'🎨 Painted '+PAINTS[palSel.paint].label.toLowerCase()+' ('+Math.round(p.r)+'m)');
+  toast(kind==='clear'?'Cleared the plants':'Painted '+PAINTS[palSel.paint].label.toLowerCase()+' ('+Math.round(p.r)+'m)');
 }
 
 /* ---------------- world map: holographic 3D tactical table ---------------- */
-var mapOpen=false, map3d=null, mapDirty=true, mapInit=false;
+var mapOpen=false, map3d=null, mapDirty=true, mapInit=false, mapLastT=0;
 var mapTool='inspect', terrSign=1, mapStroke=null, mapClaimRect=null, wpPopWp=null;
 var mapCursor=null, mapMeasure=null, mapReadXY=null, mapLens='normal';
 var mapMeasureM0=null; /* persistent measure anchor across taps */
@@ -9051,17 +9973,29 @@ function mapFeed(){
   });
   map3d.setLayers(mapLayers);
 }
+var mapLabelRect=null, mapLabelRectT=0;
 function mapLabels(){
   var layer=$('map-labels'); if(!layer||!map3d) return;
-  var r=$('map-cv').getBoundingClientRect();
+  var nowT=performance.now();
+  if(!mapLabelRect||mapDirty||nowT-mapLabelRectT>500){
+    mapLabelRect=$('map-cv').getBoundingClientRect(); mapLabelRectT=nowT; }
+  var r=mapLabelRect;
   var dist=map3d.getView().dist, vl=$('verse-label');
   var tagN=0;
+  /* write-through cache: the DOM is touched only when a value changes,
+   * and positions snap to integer pixels (sub-pixel text jitter is gone) */
+  function setTag(d,txt,lx,ly,cls){
+    var L=Math.round(lx), T=Math.round(ly);
+    if(d._t!==txt){ d.textContent=txt; d._t=txt; }
+    if(cls&&d._c!==cls){ d.className=cls; d._c=cls; }
+    if(d._x!==L||d._y!==T){ d.style.left=L+'px'; d.style.top=T+'px'; d._x=L; d._y=T; }
+    if(d._v!==1){ d.style.display='block'; d._v=1; }
+  }
   function tag(txt,x,y){
     var d=layer.children[tagN];
-    if(!d){ d=document.createElement('div'); d.className='map-wp'; layer.appendChild(d); }
+    if(!d){ d=document.createElement('div'); d.className='map-wp'; d._c='map-wp'; layer.appendChild(d); }
     tagN++;
-    d.textContent=txt; d.style.display='block';
-    d.style.left=(x-r.left)+'px'; d.style.top=(y-r.top)+'px';
+    setTag(d,txt,x-r.left,y-r.top,'map-wp');
   }
   /* you-are-here on the hero planet (once it reads as a world, not a table) */
   if(vl){
@@ -9085,13 +10019,28 @@ function mapLabels(){
       } else vhr.hidden=true;
     } else vhr.hidden=true;
   }
-  function tagV(txt,x,y){
+  /* #20: label declutter — greedy, priority-ordered, zero overlaps. Planet
+   * labels sit below their disc; a label that would collide with one already
+   * placed is dropped. Biggest readable planets first, so the verse keeps a
+   * clear visual hierarchy instead of a pile of colliding names. */
+  var placedRects=[];
+  function rectFree(x0,y0,x1,y1){
+    for(var ri=0;ri<placedRects.length;ri++){ var o=placedRects[ri];
+      if(x0<o.x1+4&&x1+4>o.x0&&y0<o.y1+3&&y1+3>o.y0) return false; }
+    return true;
+  }
+  function tagP(txt,x,y,pr,cls){
+    var w=txt.length*6.4+16, h=18;
+    var lx=x-r.left-w/2, ly=y-r.top+Math.min(pr,60)*0.55+8;
+    if(!rectFree(lx,ly,lx+w,ly+h)) return false;
+    placedRects.push({x0:lx,y0:ly,x1:lx+w,y1:ly+h});
     var d=layer.children[tagN];
     if(!d){ d=document.createElement('div'); layer.appendChild(d); }
     tagN++;
-    d.className='map-planet'; d.textContent=txt; d.style.display='block';
-    d.style.left=(x-r.left)+'px'; d.style.top=(y-r.top)+'px';
+    setTag(d,txt,lx,ly,cls);
+    return true;
   }
+  /* waypoint tagger (surface mode) */
   if(dist<3000){
     /* waypoint labels near the surface */
     var w=activeWorld(), wps=w?(w.waypoints||[] ):[];
@@ -9100,8 +10049,8 @@ function mapLabels(){
       if(q2[2]) tag('\uD83D\uDCCD '+(wp.name||''),q2[0],q2[1]);
     });
   } else if(inVerse){
-    /* the verse, readable: every planet gets its name (largest 36 on
-     * screen), sectors stay as dim group headers */
+    /* the verse, readable: the biggest readable planets get names (decluttered,
+     * never overlapping), sectors stay as dim group headers */
     var bs=verseCache.bodies||[], scored=[], bi, b, q4, edge, pr2;
     for(bi=0;bi<bs.length;bi++){ b=bs[bi];
       q4=map3d.projectRaw(b.x,b.y,b.z); if(!q4[2]) continue;
@@ -9110,13 +10059,16 @@ function mapLabels(){
       scored.push({b:b,x:q4[0],y:q4[1],pr:pr2});
     }
     scored.sort(function(a,c){ return c.pr-a.pr; });
-    for(var ti=0;ti<scored.length&&ti<36;ti++){ var s2=scored[ti];
+    var labeled=0;
+    for(var ti=0;ti<scored.length&&labeled<16;ti++){ var s2=scored[ti];
       if(s2.pr<7) continue; /* too small to read: skip the clutter */
-      tagV('\uD83E\uDE90 '+s2.b.name,s2.x,s2.y);
+      if(tagP('\uD83E\uDE90 '+s2.b.name,s2.x,s2.y,s2.pr,'map-planet')) labeled++;
     }
-    verseCache.sectors.forEach(function(s){
+    var secLabeled=0;
+    (verseCache.sectors||[]).forEach(function(s){
+      if(secLabeled>=5) return;
       var q3=map3d.projectRaw(s.x,s.y,s.z);
-      if(q3[2]) tagV('\u2728 '+s.name,q3[0],q3[1]);
+      if(q3[2]&&tagP('\u2728 '+s.name,q3[0],q3[1],0,'map-sector')) secLabeled++;
     });
   } else if(dist>20000){
     /* sector names between planet and verse */
@@ -9136,7 +10088,10 @@ function mapFrame(t){
     var st=window.__beta.ctrl().state(), v=map3d.getView();
     var air=st.air||0;
     var px=(cam.mode==='walk')?cam.wx:cam.tx, pz=(cam.mode==='walk')?cam.wz:cam.tz;
-    map3d.setView({tx:v.tx+(px-v.tx)*0.08, tz:v.tz+(pz-v.tz)*0.08});
+    /* time-based easing: same glide on any frame rate (was 0.08/frame) */
+    var mdt=Math.min(0.1,(t-mapLastT)/1000||0.016); mapLastT=t;
+    var mek=1-Math.pow(0.004,mdt);
+    map3d.setView({tx:v.tx+(px-v.tx)*mek, tz:v.tz+(pz-v.tz)*mek});
     if(mapLastAir<0) mapLastAir=air;
     /* zoom follows real altitude CHANGES (flying), never yanks an explorer */
     if(Math.abs(air-mapLastAir)>40&&performance.now()-mapLastZoomT>3000){
@@ -9207,7 +10162,7 @@ function toggleLayers(){
         mapLens=b.dataset.lens;
         if(map3d) map3d.setLens(mapLens);
         p.querySelectorAll('[data-lens]').forEach(function(x){ x.classList.toggle('on',x===b); });
-        toast('🔍 '+lenses[mapLens]+' lens');
+        toast(lenses[mapLens]+' lens');
       });
     });
     p.hidden=false;
@@ -9223,7 +10178,7 @@ function bindMap(){
   document.querySelectorAll('#map-tiers [data-tier]').forEach(function(b){
     b.addEventListener('click',function(){ mapFlyTo(b.dataset.tier,false); });
   });
-  $('map-north-btn').addEventListener('click',function(){ if(map3d){ map3d.setView({yaw:0}); toast('🧭 North up'); } });
+  $('map-north-btn').addEventListener('click',function(){ if(map3d){ map3d.setView({yaw:0}); toast('North up'); } });
   $('map-terr-sign').addEventListener('click',function(){
     terrSign=-terrSign; this.textContent=terrSign>0?'＋':'－';
     setMapTool('terraform');
@@ -9232,7 +10187,7 @@ function bindMap(){
     if(!mapReadXY||!e.target.classList||!e.target.classList.contains('map-copy')) return;
     var s=Math.round(mapReadXY[0])+', '+Math.round(mapReadXY[1]);
     if(navigator.clipboard&&navigator.clipboard.writeText)
-      navigator.clipboard.writeText(s).then(function(){ toast('📋 Copied '+s); },function(){ toast(s); });
+      navigator.clipboard.writeText(s).then(function(){ toast('Copied '+s); },function(){ toast(s); });
     else toast(s);
   });
   var cv=$('map-cv'), mapPD=null, pointers={};
@@ -9300,7 +10255,7 @@ function bindMap(){
       if(pts.length>=2){
         mutate(function(){ var w=activeWorld(); w.paths=(w.paths||[]);
           w.paths.push({pts:pts,w:PATH_WIDTHS[palSel.paths].w}); });
-        toast('🛤️ Path placed');
+        toast('Path placed');
       }
       mapDirty=true;
     }else if(mapTool==='claim'&&mapClaimRect){
@@ -9318,7 +10273,7 @@ function bindMap(){
       if(pd.m0&&wp){
         var dd=Math.hypot(wp[0]-pd.m0[0],wp[1]-pd.m0[1]);
         var dh=heightAt(wp[0],wp[1])-heightAt(pd.m0[0],pd.m0[1]);
-        $('map-read').textContent='📏 '+dd.toFixed(1)+'m'+(Math.abs(dh)>0.5?' · Δh '+dh.toFixed(1)+'m':'');
+        $('map-read').textContent=dd.toFixed(1)+'m'+(Math.abs(dh)>0.5?' · Δh '+dh.toFixed(1)+'m':'');
         mapMeasure=[pd.m0,[wp[0],wp[1]]]; mapMeasureM0=[wp[0],wp[1]]; mapDirty=true;
       }
     }else if(mapTool==='inspect'&&pd.moved<14){
@@ -9329,7 +10284,7 @@ function bindMap(){
       });
       if(hit) showWpPop(e.clientX,e.clientY,hit.x,hit.z,hit);
       else if(wp){ var hh=heightAt(wp[0],wp[1]); mapReadXY=wp;
-        $('map-read').innerHTML='📍 '+wp[0].toFixed(0)+', '+wp[1].toFixed(0)+' · ⛰ '+hh.toFixed(1)+'m <span class="map-copy">📋 copy</span>'; }
+        $('map-read').innerHTML=Widget.icon('pin')+wp[0].toFixed(0)+', '+wp[1].toFixed(0)+' · '+Widget.icon('mountain')+hh.toFixed(1)+'m <span class="map-copy">'+Widget.icon('search')+' copy</span>'; }
     }
   }
   cv.addEventListener('pointerup',mapUp);
@@ -9379,7 +10334,7 @@ function commitTerraform(samples){
     });
   });
   dirtyTerrain(); mapDirty=true;
-  toast('⛰️ Terrain '+(terrSign>0?'raised':'lowered'));
+  toast('Terrain '+(terrSign>0?'raised':'lowered'));
 }
 /* waypoint popup */
 var wpPopData=null;
@@ -9389,8 +10344,8 @@ function showWpPop(cx,cy,x,z,wp){
   p.innerHTML='<input id="wp-name" placeholder="Waypoint name" maxlength="24" value="'+esc(wp?(wp.name||''):'')+'">'+
     '<div class="prow">'+
     (wp?'<button data-wp="go">Go →</button>':'')+
-    '<button data-wp="save" class="go">'+(wp?'Save':'Drop 📍')+'</button>'+
-    (wp?'<button data-wp="del" class="danger">✕</button>':'')+'</div>';
+    '<button data-wp="save" class="go">'+(wp?'Save':'Drop '+Widget.icon('pin')+'')+'</button>'+
+    (wp?'<button data-wp="del" class="danger">'+Widget.icon('x')+'</button>':'')+'</div>';
   p.hidden=false;
   p.style.left=Math.max(8,Math.min(window.innerWidth-230,cx-105))+'px';
   p.style.top=Math.max(8,Math.min(window.innerHeight-160,cy+12))+'px';
@@ -9417,6 +10372,8 @@ window.__beta.reveal=function(){ return revealT; };
 window.__beta.scatterPts=function(){ return scatterPlaced; };
 window.__beta.h=function(x,z){ return heightAt(x,z); };
 window.__beta.ctrl=function(){ return ctrl; };
+window.__beta.camSet=function(p){ for(var k in p){ try{ cam[k]=p[k]; }catch(_){} } return {mode:cam.mode,dist:cam.dist,tx:cam.tx,tz:cam.tz}; };
+window.__beta.camGet=function(){ return {mode:cam.mode,dist:cam.dist,tx:cam.tx,tz:cam.tz,yaw:cam.yaw,pitch:cam.pitch}; };
 window.__beta.map3d=function(){ return map3d; };
 window.__beta.verseBodies=verseBodies;
 window.__beta.setMapTier=function(t){ mapFlyTo(t,false); };
@@ -9599,6 +10556,10 @@ window.__beta.cloudsOn=function(){ return !!(cldMesh&&cldTex); };
 window.__beta.scatTris=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++) if(scatChunkList[i].buf) t+=scatChunkList[i].buf.count; return t; };
 window.__beta.glowTris=function(){ var t=0,i; for(i=0;i<scatChunkList.length;i++) if(scatChunkList[i].buf&&scatChunkList[i].buf.gbuf) t+=scatChunkList[i].buf.gbuf.count; return t; };
 window.__beta.scatChunks=function(){ return scatChunkList.length; };
+window.__beta.terrChunkCount=function(){ return terrChunkList.length; };
+window.__beta.terrIdx=function(){ var t=0,i; for(i=0;i<terrChunkList.length;i++) t+=terrChunkList[i].buf.count; return t; };
+window.__beta.terrKeys=function(){ var k=[]; for(var key in terrChunks) k.push(key); return k; };
+window.__beta.holeRect=function(){ return {cx:streamPCX*CH, cz:streamPCZ*CH, half:CH*(CHW+0.5), queued:terrQueue.length}; };
 window.__beta.terrainStats=function(){
   /* relief + slope over a 61x61 grid around spawn: calm-by-default check */
   var mn=1e9,mx=-1e9,sl=0,n=0,i,j,h;
