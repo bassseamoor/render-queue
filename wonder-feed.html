@@ -2909,6 +2909,10 @@ function genomeKey(g){
 
 /* ================= STORE (localStorage, local-first) ================= */
 var LS_TASTE='moor-wonder-taste-v1', LS_LIB='moor-wonder-library-v1';
+function emitMoorOutput(detail){
+  try{ window.dispatchEvent(new CustomEvent('moor:output',{detail:detail})); }catch(e){}
+  try{ if(parent&&parent!==window) parent.postMessage({type:'moor:output',detail:detail},'*'); }catch(e){}
+}
 function lsGet(k){
   try{ var v = JSON.parse(localStorage.getItem(k)); return v||[]; }catch(e){ return []; }
 }
@@ -2945,6 +2949,15 @@ var Library = {
     else l.unshift({genome:sanitizeGenome(genome), title:title||genome.type,
                     sub:sub||'', comment:'', savedAt:Date.now()});
     lsSet(LS_LIB, l.slice(0,200));
+    var saved=l.find(function(e){return genomeKey(e.genome)===k;});
+    emitMoorOutput({
+      id:'artifact:wonder:'+genomeKey(genome),kind:'artifact',
+      title:(saved&&saved.title)||title||typeLabel(genome.type),
+      summary:(saved&&saved.sub)||sub||'Saved Wonder Feed procedural output.',
+      source:{app:'wonder-feed',component:'wonder-feed'},concepts:[genome.type],
+      recipe:sanitizeGenome(genome),payload:saved||{genome:sanitizeGenome(genome)},
+      status:'generated',provenance:'procedural'
+    });
   },
   remove: function(genome){
     var k = genomeKey(genome);
