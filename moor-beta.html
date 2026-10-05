@@ -5463,6 +5463,30 @@ function terrainOf(w){
     if(w.terrain.preset==='mountains'){ w.terrain.preset='rolling'; w.terrain.relief=10; } }
   return w.terrain;
 }
+/* ---- high-quality terrain: ridged multifractal + domain warp ----
+ * What makes game terrain look real: (1) ridged noise (1-|n|) for mountain
+ * crests instead of blobby fBm, (2) domain warping to kill the grid look,
+ * (3) drainage-carved valleys (analytic hydraulic erosion: carve along a
+ * ridged-noise skeleton + grade the banks), (4) gullies on slopes,
+ * (5) thermal talus (steep slopes relax toward angle of repose).
+ * All pure functions of (x,z): deterministic, continuous, chunk-seamless. */
+function rnoise(x,z){ /* ridged noise 0..1, sharp crests at 1 */
+  var n=vnoise(x,z); return 1-Math.abs(2*n-1);
+}
+function rfbm(x,z,oct){ /* ridged multifractal */
+  var v=0,amp=0.55,f=1,tot=0,i;
+  for(i=0;i<oct;i++){ var r=rnoise(x*f,z*f); v+=r*r*amp; tot+=amp; amp*=0.5; f*=2.13; }
+  return v/tot;
+}
+function dwarpX(x,z){ return x+260*(vnoise(x*0.0011+7.7,z*0.0011+3.3)-0.5)*2; }
+function dwarpZ(x,z){ return z+260*(vnoise(x*0.0013+1.2,z*0.0013+9.1)-0.5)*2; }
+/* drainage field: low where water would collect. Carving along its skeleton
+ * reads as hydraulic erosion — branching valleys no layered noise gives. */
+function drainF(x,z){
+  var wx=x+140*(vnoise(x*0.0021+51.3,z*0.0021+17.7)-0.5)*2;
+  var wz=z+140*(vnoise(x*0.0023+13.9,z*0.0023+71.2)-0.5)*2;
+  return rfbm(wx*0.0016+3.7,wz*0.0016+9.2,3);
+}
 function coreH(x,z){
   var w=activeWorld(), t=w?terrainOf(w):{preset:'mountains',relief:36};
   var R=t.relief, preset=t.preset;
@@ -5472,28 +5496,45 @@ function coreH(x,z){
   else if(preset==='valley') h=(f-0.38)*R*2+(Math.abs(x/200)-0.45)*R;
   else if(preset==='flat') h=6;
   else if(preset==='rolling'){
-    /* vast, calm, rolling: gentle swells as the baseline; dramatic cliffs,
-     * hills and ridges rise along tectonic plate boundaries (workshop pull:
-     * convergent boundaries push up ranges, divergent ones carve rifts),
-     * with a reduced noise accent so the local walk still has variety.
-     * All pure noise/plates of (x,z): deterministic. */
-    var base=(f-0.45)*9;
+    /* vast, calm, rolling — but now with real geomorphology:
+     * gentle swells as the baseline; domain-warped ridged ranges along
+     * tectonic boundaries (convergent pushes up, divergent carves rifts);
+     * drainage-carved valleys (analytic hydraulic erosion); gullies on
+     * slopes; thermal talus softening. All pure noise/plates of (x,z). */
+    var base=(f-0.38)*10;
     var tc=tectAt(x,z);
     var m2=vnoise(x*0.0038+31.7, z*0.0038+17.3);
     var localAcc=Math.max(0,m2-0.55)/0.45; localAcc*=localAcc;
     var acc=Math.max(Math.pow(tc.edge,1.25),localAcc*0.45);
     var convB=tc.conv>0.18?1.3:tc.conv<-0.18?0.3:0.65;
-    var rg=Math.abs(vnoise(x*0.016+91.2, z*0.016+44.8)-0.5)*2;
-    var cliff=Math.pow(rg,1.4)*44*acc*convB; /* sharp ridges at boundaries */
+    /* ridged ranges: domain-warped so crests wander naturally, sharpened
+     * so they read as mountains, not melted wax */
+    var wx=dwarpX(x,z), wz=dwarpZ(x,z);
+    var rg=rfbm(wx*0.0042+91.2,wz*0.0042+44.8,3);
+    var cliff=Math.pow(rg,2.6)*58*acc*convB;
+    /* drainage valleys: carve where the drainage field runs low, grade banks */
+    var dr=drainF(x,z);
+    var vmask=sstep(0.42,0.10,dr); /* 1 in valley floors */
+    var valley=-vmask*vmask*(3+5*acc);
+    /* gullies: high-freq ridged channels, only on slopes, fade in valleys */
+    var g=rnoise(x*0.075+3.3,z*0.075+8.8);
+    var gully=-Math.max(0,g-0.68)/0.32*1.6*(1-vmask);
     var dome=Math.max(0,vnoise(x*0.006+7.7, z*0.006+3.1)-0.55)/0.45;
     var rift=tc.conv<-0.18?-7*Math.pow(tc.edge,1.25):0; /* divergent rifts */
-    h=base+cliff+dome*dome*18*acc*convB+rift;
+    h=base+cliff+dome*dome*18*acc*convB+rift+valley+gully;
   }
   else h=Math.abs(f-0.3)*R*2.5-8; /* mountains */
   return h;
 }
 function heightAt(x,z){
   var h=coreH(x,z)+(vnoise(x*0.05,z*0.05)-0.5)*2.2; /* micro grain */
+  /* micro relief: two more octaves so close-up ground isn't flat-shaded mush */
+  h+=(vnoise(x*0.15+7.7,z*0.15+3.3)-0.5)*0.9+(vnoise(x*0.45+1.2,z*0.45+9.4)-0.5)*0.35;
+  /* thermal talus: where the pre-talus gradient is extreme, relax toward the
+   * angle of repose — cliff faces shed into scree instead of standing vertical */
+  var e2=5, hx=(coreH(x+e2,z)-coreH(x-e2,z))/(2*e2), hz=(coreH(x,z+e2)-coreH(x,z-e2))/(2*e2);
+  var tsl=Math.hypot(hx,hz);
+  if(tsl>1.1){ h-=(tsl-1.1)*1.4; }
   var w=activeWorld(), eds=w&&w.terrainEdits, i, e, dx, dz, d2;
   if(eds) for(i=0;i<eds.length;i++){ e=eds[i];
     dx=x-e.x; dz=z-e.z; d2=(dx*dx+dz*dz)/(e.r*e.r);
@@ -5655,17 +5696,33 @@ function groundColor(x,z,h){
   /* workshop snow: temperature-driven AND altitude-driven, scaled by snowK */
   var snowF=Math.max(clamp01((0.24-T)/0.16),sstep(11,20,h))*px.snowK;
   if(snowF>0) c=mix(c,snow,Math.min(1,snowF));
+  /* curvature: concave collects sediment (darker, richer soil), convex
+   * sheds to rock. Cheap laplacian from the height field. */
+  var ce=2.5, curv=(heightAt(x+ce,z)+heightAt(x-ce,z)+heightAt(x,z+ce)+heightAt(x,z-ce)-4*h)/(ce*ce);
+  var concave=sstep(0.02,0.25,-curv), convex=sstep(0.02,0.25,curv);
+  if(concave>0&&h>=0.8) c=mix(c,[0.23,0.20,0.14],concave*0.45*(1-snowF*0.7));
+  /* talus/scree: at cliff bases (steep + concave) show broken rock fans */
+  var scree=sstep(0.55,1.0,s)*concave;
+  if(scree>0){ var scr=palBlend(tp.rock,0.5+0.5*vnoise(x*0.09+4.4,z*0.09+8.8));
+    c=mix(c,scr,Math.min(1,scree*0.85)); }
+  if(convex>0&&s>0.3) c=mix(c,rock,convex*0.25);
   /* steep slopes expose rock, softened under snow */
   if(s>0.55) c=mix(c,rock,Math.min(1,(s-0.55)*1.6)*(1-snowF*0.5));
-  /* workshop coastline: crisp dark waterline */
+  /* shoreline: wet band — darkened, saturated sand/rock right at the waterline,
+   * drying out with height. Sells the water like nothing else. */
   if(h<2.5){ var cw=sstep(0,0.6,Math.abs(h-0.8)), dk=0.82+0.18*cw;
     c=[c[0]*dk,c[1]*dk,c[2]*dk]; }
+  if(h>=0.8&&h<2.2){ var wet=sstep(2.2,0.9,h);
+    var wdk=1-0.28*wet;
+    c=[c[0]*wdk,c[1]*wdk*0.97,c[2]*wdk*0.94]; /* wet darkening, slight cool shift */ }
   /* vibrance: large-scale regional tints from the planet palette — the same
    * banding idea as the world map, applied to the walkable ground */
   if(h<0.8) c=tintToward(c,tp.soil,0.30);
   else if(snowF<0.5) c=tintToward(c,palBlend(tp.grass,detV),0.42*(1-snowF));
   else c=tintToward(c,palBlend(tp.rock,vnoise(x*0.0031+51.2,z*0.0031+17.9)),0.38);
   var v=0.94+0.06*vnoise(x*0.11,z*0.11); /* grain */
+  v*=0.97+0.06*vnoise(x*0.53+9.1,z*0.53+4.7); /* fine grain: close-up isn't mush */
+  v*=0.98+0.04*vnoise(x*0.021+31.7,z*0.021+17.3); /* patchiness */
   return [c[0]*v,c[1]*v,c[2]*v];
 }
 
@@ -5778,10 +5835,48 @@ var FSH='precision mediump float;varying vec3 vN;varying vec3 vC;varying float v
 'col=mix(vec3(lum),col,1.0+0.38*uSpace);'+
 'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+
 'gl_FragColor=vec4(col,1.0);}';
-var FSH_WATER='precision mediump float;varying vec3 vN;varying vec3 vC;varying float vD;'+
-'uniform vec3 sun;uniform vec3 fog;uniform vec3 cam;uniform float fogK;uniform float uReveal;'+
-'void main(){float f=1.0-exp(-vD*fogK);vec3 col=mix(vC,fog,clamp(f,0.0,1.0));'+
-'gl_FragColor=vec4(col,0.82);}';
+/* ---- water: dedicated program. Real water, not a flat blue plane ----
+ * GPU wave displacement (3 directional sines, analytic normals), animated
+ * shoreline foam, sun specular glint, fresnel to sky color. The vertex colors
+ * baked at build time carry the depth grade (shallow->deep); the shader
+ * derives shallowness from them for foam placement. uTime drives it all. */
+var VSH_WATER='attribute vec3 p;attribute vec3 n;attribute vec3 c;'+
+'uniform mat4 mvp;uniform float uTime;'+
+'varying vec3 vC;varying vec3 vN;varying vec3 vW;varying float vD;'+
+'void main(){vC=c;vW=p;'+
+'float t=uTime;'+
+'vec2 d1=normalize(vec2(1.0,0.3));vec2 d2=normalize(vec2(-0.7,1.0));vec2 d3=normalize(vec2(0.4,-1.0));'+
+'vec2 xz=p.xz;'+
+'float p1=dot(xz,d1)*0.11+t*1.1;float p2=dot(xz,d2)*0.23+t*1.7;float p3=dot(xz,d3)*0.53+t*2.6;'+
+'float h=sin(p1)*0.22+sin(p2)*0.10+sin(p3)*0.045;'+
+'vec3 dp=p+n*h;'+
+'float dx=cos(p1)*0.11*0.22*d1.x+cos(p2)*0.23*0.10*d2.x+cos(p3)*0.53*0.045*d3.x;'+
+'float dz=cos(p1)*0.11*0.22*d1.y+cos(p2)*0.23*0.10*d2.y+cos(p3)*0.53*0.045*d3.y;'+
+'vec3 t1=normalize(cross(n,vec3(0.0,1.0,0.001)));vec3 t2=normalize(cross(n,t1));'+
+'vN=normalize(n-t1*dx-t2*dz);'+
+'vec4 wp=mvp*vec4(dp,1.0);vD=-wp.z;gl_Position=wp;}';
+var FSH_WATER='precision mediump float;varying vec3 vC;varying vec3 vN;varying vec3 vW;varying float vD;'+
+'uniform vec3 sun;uniform vec3 cam;uniform vec3 fog;uniform float fogK;uniform float uTime;'+
+'uniform vec3 uShallow;uniform vec3 uDeep;uniform vec3 uSky;'+
+'void main(){'+
+'vec3 N=normalize(vN);vec3 V=normalize(cam-vW);'+
+'float shD=distance(vC,uShallow);float dpD=distance(vC,uDeep);'+
+'float shallow=clamp(1.0-shD/max(dpD+shD,1e-4),0.0,1.0);'+
+'vec3 col=vC;'+
+'float foamBand=smoothstep(0.55,0.92,shallow+0.10*sin(uTime*1.4+vW.x*0.35+vW.z*0.27));'+
+'float fleck=step(0.985,sin(vW.x*2.1+uTime*2.0)*sin(vW.z*1.7-uTime*1.3));'+
+'vec3 foamC=vec3(0.92,0.97,1.0);'+
+'col=mix(col,foamC,clamp(foamBand*0.85+fleck*shallow*0.5,0.0,1.0));'+
+'vec3 sunD=normalize(sun);vec3 H=normalize(sunD+V);'+
+'float spec=pow(max(dot(N,H),0.0),90.0);'+
+'col+=vec3(1.0,0.95,0.85)*spec*0.9;'+
+'float fres=pow(1.0-max(dot(N,V),0.0),3.0);'+
+'col=mix(col,uSky,clamp(fres*0.65,0.0,1.0));'+
+'col*=0.94+0.06*sin(vW.x*0.05+uTime*0.7)*sin(vW.z*0.06-uTime*0.5);'+
+'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+
+'gl_FragColor=vec4(col,0.86);}';
+var wprog=null, wAPos, wANrm, wACol, wUMVP, wUTime, wUSun, wUCam, wUFog, wUFogK,
+    wUShallow, wUDeep, wUSky;
 
 function sh(t,s){ var h=gl.createShader(t); gl.shaderSource(h,s); gl.compileShader(h);
   if(!gl.getShaderParameter(h,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(h)); return h; }
@@ -5801,6 +5896,16 @@ function initGL(){
   uHoleC=gl.getUniformLocation(prog,'holeC'); uHoleR=gl.getUniformLocation(prog,'holeR');
   uSpaceL=gl.getUniformLocation(prog,'uSpace');
   gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
+  /* dedicated water program (waves, foam, glint, fresnel) */
+  wprog=gl.createProgram();
+  gl.attachShader(wprog,sh(gl.VERTEX_SHADER,VSH_WATER)); gl.attachShader(wprog,sh(gl.FRAGMENT_SHADER,FSH_WATER));
+  gl.linkProgram(wprog);
+  wAPos=gl.getAttribLocation(wprog,'p'); wANrm=gl.getAttribLocation(wprog,'n'); wACol=gl.getAttribLocation(wprog,'c');
+  wUMVP=gl.getUniformLocation(wprog,'mvp'); wUTime=gl.getUniformLocation(wprog,'uTime');
+  wUSun=gl.getUniformLocation(wprog,'sun'); wUCam=gl.getUniformLocation(wprog,'cam');
+  wUFog=gl.getUniformLocation(wprog,'fog'); wUFogK=gl.getUniformLocation(wprog,'fogK');
+  wUShallow=gl.getUniformLocation(wprog,'uShallow'); wUDeep=gl.getUniformLocation(wprog,'uDeep');
+  wUSky=gl.getUniformLocation(wprog,'uSky');
   initSkyGL();
   return true;
 }
@@ -5822,6 +5927,33 @@ function bindBuf(b){
   gl.vertexAttribPointer(aNrm,3,gl.FLOAT,false,36,12); gl.enableVertexAttribArray(aNrm);
   gl.vertexAttribPointer(aCol,3,gl.FLOAT,false,36,24); gl.enableVertexAttribArray(aCol);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b.ib);
+}
+/* water draw: switches to the dedicated water program, sets its uniforms,
+ * draws, then restores the main program. Blending on for the alpha. */
+function drawWater(t, mvpMat, eye, sunV, fogV, fogKV){
+  if(!waterBuf||!wprog) return;
+  gl.useProgram(wprog);
+  gl.bindBuffer(gl.ARRAY_BUFFER,waterBuf.vb);
+  gl.vertexAttribPointer(wAPos,3,gl.FLOAT,false,36,0); gl.enableVertexAttribArray(wAPos);
+  gl.vertexAttribPointer(wANrm,3,gl.FLOAT,false,36,12); gl.enableVertexAttribArray(wANrm);
+  gl.vertexAttribPointer(wACol,3,gl.FLOAT,false,36,24); gl.enableVertexAttribArray(wACol);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,waterBuf.ib);
+  gl.uniformMatrix4fv(wUMVP,false,mvpMat);
+  gl.uniform1f(wUTime,t);
+  gl.uniform3f(wUSun,sunV[0],sunV[1],sunV[2]);
+  gl.uniform3f(wUCam,eye[0],eye[1],eye[2]);
+  gl.uniform3f(wUFog,fogV[0],fogV[1],fogV[2]);
+  gl.uniform1f(wUFogK,fogKV);
+  var pw=ptx().water, pa=ptx().atmo;
+  gl.uniform3f(wUShallow,pw[1][0],pw[1][1],pw[1][2]);
+  gl.uniform3f(wUDeep,pw[0][0],pw[0][1],pw[0][2]);
+  gl.uniform3f(wUSky,pa[0]*0.75,pa[1]*0.82,pa[2]*0.95);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawElements(gl.TRIANGLES,waterBuf.count,gl.UNSIGNED_INT,0);
+  gl.disable(gl.BLEND);
+  gl.useProgram(prog);
+  /* re-enable main attribs (program switch may disturb state) */
+  gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aNrm); gl.enableVertexAttribArray(aCol);
 }
 
 /* ---------------- sky, atmosphere, clouds (rework) ----------------
@@ -6914,6 +7046,135 @@ function updateScatterChunks(pcx,pcz){
       disposeChunk(c); delete scatChunks[k]; delete scatterPlacedMap[k]; } }
   refreshScatList();
 }
+/* ---------------- world life: cheap carpet + things ----------------
+ * Sebastian: WAY more density, WAY more things — the world must feel alive.
+ * These are ultra-cheap emitters for the carpet pass: grass sprigs (4 tris),
+ * pebble clusters (~24 tris), mushrooms (~20), crystal shards (~24),
+ * fallen logs (~48). All deterministic via the passed RNG. */
+function grassSprig(x,y,z,s,R,tint){
+  /* 2 crossed quads leaning with the wind — reads as grass at 4 triangles */
+  var wa=R()*Math.PI, wl=0.15+R()*0.25, h=(0.5+R()*0.5)*s, w2=0.09*s;
+  var c=tint||[0.42,0.58,0.24];
+  var bj=0.8+0.4*R();
+  var cr=Math.min(1,c[0]*bj), cg=Math.min(1,c[1]*bj), cb=Math.min(1,c[2]*bj);
+  for(var q=0;q<2;q++){
+    var a=wa+q*Math.PI/2, dx=Math.cos(a), dz=Math.sin(a);
+    var lx=Math.cos(wa)*wl, lz=Math.sin(wa)*wl;
+    var v0=pushV(x-dx*w2,y,z-dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8);
+    var v1=pushV(x+dx*w2,y,z+dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8);
+    var v2=pushV(x+dx*w2+lx,y+h,z+dz*w2+lz, 0,1,0, cr,cg,cb);
+    var v3=pushV(x-dx*w2+lx,y+h,z-dz*w2+lz, 0,1,0, cr,cg,cb);
+    objIdx.push(v0,v1,v2, v0,v2,v3);
+  }
+}
+function pebbleCluster(x,y,z,s,R,pal){
+  var n=5+Math.floor(R()*4), k;
+  var rc=pal.rock&&pal.rock.length?pal.rock[Math.floor(R()*pal.rock.length)]:[0.5,0.5,0.5];
+  for(k=0;k<n;k++){
+    var a=R()*Math.PI*2, rr=Math.sqrt(R())*0.9*s;
+    var px=x+Math.cos(a)*rr, pz=z+Math.sin(a)*rr, py=y;
+    var sz=(0.06+R()*0.12)*s, hh=sz*(0.5+R()*0.5);
+    var bj=0.75+0.5*R();
+    /* tiny tetrahedron */
+    var v0=pushV(px-sz,py,pz, 0,1,0, rc[0]*bj,rc[1]*bj,rc[2]*bj);
+    var v1=pushV(px+sz,py,pz, 0,1,0, rc[0]*bj,rc[1]*bj,rc[2]*bj);
+    var v2=pushV(px,py,pz+sz, 0,1,0, rc[0]*bj,rc[1]*bj,rc[2]*bj);
+    var v3=pushV(px,py+hh,pz, 0,1,0, Math.min(1,rc[0]*bj*1.15),Math.min(1,rc[1]*bj*1.15),Math.min(1,rc[2]*bj*1.15));
+    objIdx.push(v0,v1,v3, v1,v2,v3, v2,v0,v3);
+  }
+}
+function mushroom(x,y,z,s,R,pal){
+  var n=2+Math.floor(R()*3), k;
+  for(k=0;k<n;k++){
+    var a=R()*Math.PI*2, rr=Math.sqrt(R())*0.5*s;
+    var px=x+Math.cos(a)*rr, pz=z+Math.sin(a)*rr;
+    var sth=(0.25+R()*0.2)*s, str=0.05*s, capr=(0.16+R()*0.12)*s;
+    var stemC=[0.82,0.78,0.70], capC;
+    var tk2=worldTypeKey();
+    if(tk2==='TOXIC') capC=[0.45,0.85,0.3]; else if(tk2==='CRYSTAL') capC=[0.6,0.5,0.95];
+    else capC=R()<0.3?[0.85,0.25,0.2]:[0.75,0.6,0.45];
+    var seg=5, i, a0;
+    /* stem: tapered cylinder */
+    for(i=0;i<seg;i++){
+      a0=i/seg*Math.PI*2; var a1=(i+1)/seg*Math.PI*2;
+      var x0=px+Math.cos(a0)*str, z0=pz+Math.sin(a0)*str, x1=px+Math.cos(a1)*str, z1=pz+Math.sin(a1)*str;
+      var v0=pushV(x0,z,z0, Math.cos(a0),0,Math.sin(a0), stemC[0],stemC[1],stemC[2]);
+      var v1=pushV(x1,z,z1, Math.cos(a1),0,Math.sin(a1), stemC[0],stemC[1],stemC[2]);
+      var v2=pushV(x0,z+sth,z0, Math.cos(a0),0,Math.sin(a0), stemC[0],stemC[1],stemC[2]);
+      var v3=pushV(x1,z+sth,z1, Math.cos(a1),0,Math.sin(a1), stemC[0],stemC[1],stemC[2]);
+      objIdx.push(v0,v1,v2, v1,v3,v2);
+    }
+    /* cap: squashed hemisphere-ish cone */
+    var ch=capr*0.55;
+    var vc=pushV(px,z+sth+ch,pz, 0,1,0, capC[0],capC[1],capC[2]);
+    for(i=0;i<seg;i++){
+      a0=i/seg*Math.PI*2; a1=(i+1)/seg*Math.PI*2;
+      var ex0=px+Math.cos(a0)*capr, ez0=pz+Math.sin(a0)*capr;
+      var ex1=px+Math.cos(a1)*capr, ez1=pz+Math.sin(a1)*capr;
+      var r0=pushV(ex0,z+sth,ez0, 0,-1,0, capC[0]*0.7,capC[1]*0.7,capC[2]*0.7);
+      var r1=pushV(ex1,z+sth,ez1, 0,-1,0, capC[0]*0.7,capC[1]*0.7,capC[2]*0.7);
+      var t0=pushV(ex0,z+sth,ez0, Math.cos(a0)*0.7,0.7,Math.sin(a0)*0.7, capC[0],capC[1],capC[2]);
+      var t1=pushV(ex1,z+sth,ez1, Math.cos(a1)*0.7,0.7,Math.sin(a1)*0.7, capC[0],capC[1],capC[2]);
+      objIdx.push(vc,t0,t1, r0,r1,vc);
+    }
+    /* glow dots on toxic/crystal caps */
+    if(tk2==='TOXIC'||tk2==='CRYSTAL') pushGlow(px,z+sth+ch*0.6,pz, px+0.05,z+sth+ch*0.6,pz, px,z+sth+ch*0.6,pz+0.05, capC[0],capC[1],capC[2]);
+  }
+}
+function crystalShard(x,y,z,s,R,pal){
+  var n=2+Math.floor(R()*2), k, i;
+  var cc=pal.crystal&&pal.crystal.length?pal.crystal[0]:[0.6,0.5,0.95];
+  if(worldTypeKey()==='CRYSTAL'&&pal.rock.length) cc=pal.rock[Math.floor(R()*pal.rock.length)];
+  for(k=0;k<n;k++){
+    var a=R()*Math.PI*2, rr=Math.sqrt(R())*0.7*s;
+    var px=x+Math.cos(a)*rr, pz=z+Math.sin(a)*rr;
+    var hh=(0.8+R()*1.2)*s, wr=(0.12+R()*0.1)*s;
+    var tilt=(R()-0.5)*0.5, tx=Math.cos(a)*tilt, tz=Math.sin(a)*tilt;
+    var bj=0.85+0.3*R();
+    /* elongated octahedron, leaning */
+    var vb=pushV(px,z,pz, 0,-1,0, cc[0]*bj*0.7,cc[1]*bj*0.7,cc[2]*bj*0.7);
+    var vt=pushV(px+tx*hh,z+hh,pz+tz*hh, 0,1,0, Math.min(1,cc[0]*bj*1.2),Math.min(1,cc[1]*bj*1.2),Math.min(1,cc[2]*bj*1.2));
+    var ring=[];
+    for(i=0;i<4;i++){
+      var ra=i/4*Math.PI*2;
+      ring.push(pushV(px+Math.cos(ra)*wr,z+hh*0.35,pz+Math.sin(ra)*wr, Math.cos(ra),0,Math.sin(ra), cc[0]*bj,cc[1]*bj,cc[2]*bj));
+    }
+    for(i=0;i<4;i++){
+      var i2=(i+1)%4;
+      objIdx.push(vb,ring[i],ring[i2], vt,ring[i2],ring[i]);
+    }
+    pushGlow(px+tx*hh,z+hh,pz+tz*hh, px+tx*hh+0.05,z+hh,pz+tz*hh, px+tx*hh,z+hh,pz+tz*hh+0.05, cc[0],cc[1],cc[2]);
+  }
+}
+function fallenLog(x,y,z,s,R,pal){
+  var a=R()*Math.PI*2, len=(2+R()*2)*s, r0=(0.18+R()*0.12)*s;
+  var dx=Math.cos(a), dz=Math.sin(a);
+  var bark=pal.bark&&pal.bark.length?pal.bark[0]:[0.35,0.25,0.18];
+  var seg=6, i;
+  for(i=0;i<seg;i++){
+    var t0=i/seg, t1=(i+1)/seg;
+    var c0x=x+dx*len*(t0-0.5), c0z=z+dz*len*(t0-0.5), c1x=x+dx*len*(t1-0.5), c1z=z+dz*len*(t1-0.5);
+    var rr0=r0*(1-t0*0.4), rr1=r0*(1-t1*0.4);
+    var y0=y+rr0*0.7, y1=y+rr1*0.7;
+    for(var sg=0;sg<5;sg++){
+      var ga0=sg/5*Math.PI*2, ga1=(sg+1)/5*Math.PI*2;
+      var nx0=-dz*Math.cos(ga0), nz0=dx*Math.cos(ga0), ny0=Math.sin(ga0);
+      var nx1=-dz*Math.cos(ga1), nz1=dx*Math.cos(ga1), ny1=Math.sin(ga1);
+      var v0=pushV(c0x+nx0*rr0,y0+ny0*rr0,c0z+nz0*rr0, nx0,ny0,nz0, bark[0],bark[1],bark[2]);
+      var v1=pushV(c0x+nx1*rr0,y0+ny1*rr0,c0z+nz1*rr0, nx1,ny1,nz1, bark[0],bark[1],bark[2]);
+      var v2=pushV(c1x+nx0*rr1,y1+ny0*rr1,c1z+nz0*rr1, nx0,ny0,nz0, bark[0]*0.9,bark[1]*0.9,bark[2]*0.9);
+      var v3=pushV(c1x+nx1*rr1,y1+ny1*rr1,c1z+nz1*rr1, nx1,ny1,nz1, bark[0]*0.9,bark[1]*0.9,bark[2]*0.9);
+      objIdx.push(v0,v1,v2, v1,v3,v2);
+    }
+  }
+  /* moss patches on top */
+  var mg=[0.3,0.5,0.22];
+  for(i=0;i<4;i++){
+    var mt=R(), mx=x+dx*len*(mt-0.5), mz=z+dz*len*(mt-0.5);
+    var mr=r0*(1-mt*0.4);
+    grassSprig(mx,y+mr*1.4,mz,0.5,R,mg);
+  }
+}
 function pumpScatter(){
   if(!scatQueue.length) return;
   var kk=scatQueue.shift(), p=kk.split(','), cx=+p[0], cz=+p[1], key=worldScatterKey();
@@ -6969,7 +7230,7 @@ function buildScatterChunk(cx,cz){
      * ops override (later ops win). Deterministic: same seed + pid + ops
      * always grows the same chunk. */
     var i, q, s2, kind;
-    for(i=0;i<44;i++){ /* Lab-canonical foliage: fewer, better plants + cheap grass cover */
+    for(i=0;i<110;i++){ /* WAY more: hero plants at high density */
       kind=pickKind(R,tk);
       var rad=kind==='tree'?2.2:kind==='rock'?0.7:kind==='bush'?0.9:kind==='flower'?0.8:kind==='fern'?0.7:0.4;
       q=spot(rad); if(!q) continue;
@@ -7003,6 +7264,50 @@ function buildScatterChunk(cx,cz){
         s2=0.5+R()*1.1;
         rockGen(q.x,y0,q.z,s2,R,pal,ROCK_VARS[Math.floor(R()*ROCK_VARS.length)]);
       }
+    }
+    /* ---- carpet pass: WAY more life. Ultra-cheap grass sprigs blanket the
+     * ground, pebble clusters, and planet-appropriate accents (mushrooms in
+     * wet biomes, crystals on crystal/barren worlds, fallen logs in forests).
+     * Cheap placement (no neighbor checks for the tiny stuff) keeps chunk
+     * builds fast. All from the same chunk RNG stream: deterministic. */
+    function carpetBlocked(x,z){
+      if(heightAt(x,z)<1.15||slopeAt(x,z)>0.75) return true;
+      if(inClaim(x,z,0.5)) return true;
+      return false;
+    }
+    var CN=170, ck, cx2, cz2, cy2;
+    for(ck=0;ck<CN;ck++){
+      cx2=ccx+(R()*2-1)*CH/2; cz2=ccz+(R()*2-1)*CH/2;
+      wrapXZ(cx2,cz2,_wx); cx2=_wx[0]; cz2=_wx[1];
+      if(carpetBlocked(cx2,cz2)) continue;
+      cy2=heightAt(cx2,cz2);
+      var gr=pal.grass&&pal.grass.length?pal.grass[Math.floor(R()*pal.grass.length)]:[0.42,0.58,0.24];
+      grassSprig(cx2,cy2,cz2,0.8+R()*0.9,R,vibJit(gr,cx2,cz2,0.18));
+    }
+    var PN=46;
+    for(ck=0;ck<PN;ck++){
+      cx2=ccx+(R()*2-1)*CH/2; cz2=ccz+(R()*2-1)*CH/2;
+      wrapXZ(cx2,cz2,_wx); cx2=_wx[0]; cz2=_wx[1];
+      if(carpetBlocked(cx2,cz2)) continue;
+      cy2=heightAt(cx2,cz2);
+      pebbleCluster(cx2,cy2,cz2,0.9+R()*0.8,R,pal);
+    }
+    /* planet-appropriate accents */
+    var AN=14, ak;
+    for(ak=0;ak<AN;ak++){
+      cx2=ccx+(R()*2-1)*CH/2; cz2=ccz+(R()*2-1)*CH/2;
+      wrapXZ(cx2,cz2,_wx); cx2=_wx[0]; cz2=_wx[1];
+      if(carpetBlocked(cx2,cz2)) continue;
+      cy2=heightAt(cx2,cz2);
+      var ar=R();
+      if(tk==='CRYSTAL'||tk==='BARREN'){ crystalShard(cx2,cy2,cz2,0.9+R()*0.7,R,pal); }
+      else if(tk==='JUNGLE'||tk==='TOXIC'||tk==='TERRAN'||tk==='OCEAN'){
+        if(ar<0.45) mushroom(cx2,cy2,cz2,0.9+R()*0.6,R,pal);
+        else if(ar<0.7) fallenLog(cx2,cy2,cz2,0.8+R()*0.5,R,pal);
+        else pebbleCluster(cx2,cy2,cz2,1.4,R,pal);
+      }
+      else if(ar<0.5) fallenLog(cx2,cy2,cz2,0.8+R()*0.5,R,pal);
+      else pebbleCluster(cx2,cy2,cz2,1.4,R,pal);
     }
     scatterPlacedMap[cx+','+cz]=placed;
     drapeObjRange(0); /* flat emission -> planet sphere */
@@ -9461,7 +9766,7 @@ function frame(t){
     bindBuf(farBuf); gl.drawElements(gl.TRIANGLES,farBuf.count,gl.UNSIGNED_INT,0);
     gl.uniform1f(uHoleR,0);
   }
-  bindBuf(waterBuf); gl.drawElements(gl.TRIANGLES,waterBuf.count,gl.UNSIGNED_INT,0);
+  drawWater(t/1000, vpMat, e, [-0.45,0.8,0.35], lastFog, lastFogK); /* dedicated water program */
   if(objBuf){ bindBuf(objBuf); gl.drawElements(gl.TRIANGLES,objBuf.count,gl.UNSIGNED_INT,0); }
   if(crBuf){ bindBuf(crBuf); gl.drawElements(gl.TRIANGLES,crBuf.count,gl.UNSIGNED_INT,0); } /* P4 */
   for(var si=0;si<scatChunkList.length;si++){ var sh=scatChunkList[si]; if(!sh.buf) continue;
@@ -9502,7 +9807,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-0259';
+var BETA_VERSION='20261005-0317';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
