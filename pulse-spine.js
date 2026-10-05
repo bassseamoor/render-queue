@@ -84,6 +84,21 @@ var BLUEPRINTS=[
  {id:'funnel',name:'Funnel',summary:'Canonical v43 two-sided resolver. User or system answers the same questions; locked pages precede building.'}
 ];
 
+function ensureFunnelProject(){
+  try{
+    if(!window.PulseFunnel||!PulseFunnel.state||!Array.isArray(PulseFunnel.state.projects))return;
+    var fs=PulseFunnel.state, exists=fs.projects.some(function(p){return p.id==='learning-spine';});
+    if(exists)return;
+    var now=new Date().toISOString();
+    var members=BLUEPRINTS.map(function(b){return {kind:'architecture',ref:'spine-'+b.id,label:b.name,sourceVersion:b.id==='funnel'?'v43':'v1',source:'pulse-learning-spine-blueprints.json',detail:b.summary};});
+    fs.projects.push({id:'learning-spine',name:'Pulse Learning Spine',icon:'◇',
+      description:'Input → Stream → Discover → Bin → Funnel. Frozen from the conversation Funnel run; existing Pulse data remains intact.',
+      members:members,page:'pulse-dashboard.html',queued:false,versions:[{id:'spine-v1',number:'v1',title:'Funnel blueprint build',state:'locked-import',createdAt:now,parentId:null,revision:'',
+        items:members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='baseline';return y;})}]});
+    try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
+  }catch(e){}
+}
+
 function allVisibleComps(){
   return COMPS.filter(function(c){return typeof shownComp==='function'?shownComp(c):true;});
 }
@@ -289,6 +304,7 @@ window.PulseSpine={
 };
 
 harvest();
+ensureFunnelProject();
 ensureTabbar();
 if(typeof renderStage==='function')renderStage();
 decorateFunnel();
