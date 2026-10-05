@@ -924,6 +924,10 @@ async function reviseJob(jid){
   job.status="planned"; H.stage="build"; render(); await executeJob(job,H.spec);
   H.stage="review"; render();
 }
+function emitMoorOutput(detail){
+  try{window.dispatchEvent(new CustomEvent("moor:output",{detail}));}catch(e){}
+  try{if(parent&&parent!==window)parent.postMessage({type:"moor:output",detail},"*");}catch(e){}
+}
 function doPromote(){
   const integ=H.jobs.find(j=>j.kind==="integration");
   if(!integ||integ.status!=="approved"||!integ.appHtml){ log("<b>promotion refused</b> — integration not verified"); return; }
@@ -942,6 +946,18 @@ function doPromote(){
   store.set("moor-harness",JSON.stringify({canon:H.canon,versions:H.versions.map(v=>({v:v.v,note:v.note}))}));
   let bank=[]; try{bank=JSON.parse(store.get("moor-harness-training")||"[]");if(!Array.isArray(bank))bank=[];}catch(e){}
   bank.push(evidence); if(bank.length>200)bank=bank.slice(-200); store.set("moor-harness-training",JSON.stringify(bank));
+  emitMoorOutput({
+    id:"implementation:harness:"+next,kind:"implementation",title:H.spec.app_type+" v"+next,
+    summary:"Harness-promoted application that passed syntax, boot, behavior, integration, and regression gates.",
+    source:{app:"app-compiler-harness",component:"app-compiler-harness",project:"harness"},
+    concepts:[H.spec.app_type],status:"machine-verified",provenance:"verified",
+    intent:H.spec.raw||H.spec.effective_input||"",intent_status:H.auto?"unjudged":"user-reviewed",
+    intent_provenance:H.spec.input_was_empty?"fallback":"explicit",
+    recipe:{spec:H.spec,parts:H.jobs.filter(j=>j.part_id).map(j=>({job:j.id,part:j.part_id,feature:j.feature,resolution:j.resolution||"resolved"}))},
+    implementation_ref:"moor-harness-runtime-v1.html#v"+next,
+    payload:{version:next,canon:H.canon,jobs:H.jobs.map(j=>({id:j.id,kind:j.kind,status:j.status,part_id:j.part_id||null}))},
+    evidence:evidence
+  });
   H.stage="deliver"; render();
 }
 async function runMod(){
@@ -969,6 +985,11 @@ async function runMod(){
     H.versions.push({v:next,jobs:jobs.length,note:"mod: "+r.slice(0,50)});
     const nm=jobs.map(j=>j.feature).join(", ")||"mod";
     H.mods.push({name:nm,v:next});
+    emitMoorOutput({id:"implementation:harness:"+next,kind:"implementation",title:"Modified app v"+next,
+      summary:"Harness modification promoted after integration and regression gates.",source:{app:"app-compiler-harness",component:"app-compiler-harness",project:"harness"},
+      concepts:[H.spec.app_type],status:"machine-verified",provenance:"verified",intent:r,intent_status:"user-reviewed",
+      intent_provenance:"explicit",recipe:{base_spec:H.spec,delta:mspec,parts:jobs.map(j=>j.part_id)},implementation_ref:"moor-harness-runtime-v1.html#v"+next,
+      payload:{version:next,mod:nm},evidence:{logic:{status:"verified-working",gates:"integration+regression"},intent:{status:"user-reviewed"}}});
     log("<b>Mod promoted ★</b> → v"+next);
   } else log("mod integration failed — held, not promoted");
   render();
