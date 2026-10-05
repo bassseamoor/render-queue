@@ -1,223 +1,307 @@
-/* Pulse component workspaces. Tool runtimes are isolated so duplicate instances do not share DOM IDs. */
+/* Pulse Funnel project/version surface. Replaces the old component canvas without deleting legacy project data. */
 (function(){
 'use strict';
-const params=new URLSearchParams(location.search), child=params.get('workspace-tool');
-const css=document.createElement('style');css.id='pulse-workspace-style';
-css.textContent=`
-/* Desktop shell: retired category nav must never determine stage placement. */
-.tabs-on #main{min-height:0}
-.tabs-on #windows:empty{display:none}
-@media(min-width:761px){
-  body.tabs-on{height:100dvh;overflow:hidden}
-  body.tabs-on>header{position:fixed;inset:0 0 auto;height:66px;transform:none!important}
-  body.tabs-on #app,
-  body.tabs-on.chrome-hidden #app,
-  body.tabs-on #app.independent-focus{
-    margin-top:66px;height:calc(100dvh - 66px);
-    display:grid;grid-template-columns:210px minmax(0,1fr)!important;
-    grid-template-rows:minmax(0,1fr);gap:14px;padding:14px;
-    transition:none;
-  }
-  body.tabs-on #main{
-    grid-column:2;grid-row:1;width:100%;height:100%;min-width:0;
-    padding:24px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
-    backdrop-filter:none;-webkit-backdrop-filter:none;
-    background:rgba(12,14,28,.88)!important;
-  }
-  body.tabs-on #tabbar{
-    display:flex!important;position:fixed;left:14px;top:80px;bottom:14px;
-    right:auto;width:210px;flex-direction:column;justify-content:flex-start;
-    align-items:stretch;gap:8px;padding:14px 10px;
-    border:1px solid var(--line);border-radius:18px;background:rgba(20,15,36,.94);
-  }
-  body.tabs-on #tabbar button{
-    flex:0 0 auto;max-width:none;min-height:52px;flex-direction:row;
-    justify-content:flex-start;gap:14px;padding:12px 16px;
-    font-size:.95rem;letter-spacing:0;text-align:left;
-  }
-  body.tabs-on #tabbar button.on{background:rgba(127,212,255,.12);box-shadow:inset 3px 0 var(--cyan)}
-  body.tabs-on #tabbar button:hover{background:rgba(255,255,255,.07)}
-  body.tabs-on #tabview{padding:0 0 24px}
-  body.tabs-on #tabview.focus-mode{padding:0}
-  body.tabs-on #chrome-pull{display:none}
-  body.tabs-on #bin-results .trows{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:10px}
-  body.tabs-on .trow{min-height:76px;align-items:flex-start}
-  body.tabs-on .trow-ic{padding-top:4px}
-  body.tabs-on .trow-tx strong{font-size:.95rem;line-height:1.4}
-  body.tabs-on .trow-tx span{font-size:.875rem;line-height:1.45;white-space:normal;overflow-wrap:anywhere}
-  body.tabs-on .bin-sec>p{font-size:.875rem}
-  body.tabs-on .focus-nav{position:sticky;top:-24px;z-index:4;padding:4px 0 8px;background:#0c0e1c}
-  body.tabs-on .tool-host.bare{padding:0!important;border:0!important;box-shadow:none!important;background:transparent!important;backdrop-filter:none;-webkit-backdrop-filter:none}
-  body.tabs-on .focus-about{max-width:none}
-  body.tabs-on .vault-grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
-  body.tabs-on .app:not(.activity-hidden) aside.activity{top:80px;right:14px;bottom:14px;width:min(380px,calc(100vw - 28px))}
-}
-@media(min-width:761px) and (max-width:1000px){
-  body.tabs-on #app, body.tabs-on.chrome-hidden #app, body.tabs-on #app.independent-focus{grid-template-columns:160px minmax(0,1fr)!important;gap:10px;padding:10px}
-  body.tabs-on #tabbar{left:10px;top:76px;bottom:10px;width:160px}
-  body.tabs-on #tabbar button{padding:12px 10px;gap:10px}
-  body.tabs-on #main{padding:18px}
-}
 
+const params=new URLSearchParams(location.search);
+const child=params.get('workspace-tool');
 
-body.pw-child{overflow:hidden!important;height:100dvh!important}
-body.pw-child>header,body.pw-child #tabbar,body.pw-child #chrome-pull,body.pw-child #activity,body.pw-child .focus-nav,body.pw-child .focus-about{display:none!important}
-body.pw-child #app,body.pw-child #app.independent-focus,body.pw-child.chrome-hidden #app{display:block!important;margin:0!important;padding:0!important;height:100dvh!important}
-body.pw-child #main{display:block!important;width:100%!important;height:100%!important;padding:0!important;border:0!important;border-radius:0!important;overflow:auto!important}
-body.pw-child #tabview,body.pw-child .tool-host{padding:0!important;margin:0!important;width:100%!important}
-body.pw-child #tabview>.tool-host{border:0!important;border-radius:0!important;box-shadow:none!important}
-body.pw-child .tool-host>iframe{height:100dvh!important;min-height:0!important;border-radius:0!important}
-.pw-shell{display:none;height:100%;min-height:0;flex-direction:column;gap:10px}
-body.pw-active #main{padding:12px!important;overflow:hidden!important}
-body.pw-active #main>.pw-shell{display:flex}
-body.pw-active #main>#tabview,body.pw-active #main>#windows{display:none!important}
-.pw-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:none;position:relative;z-index:5}
-.pw-name{flex:1;min-width:120px;color:var(--text);font:inherit;font-weight:600;font-size:16px;line-height:1.4;background:transparent;border:1px solid var(--line);padding:9px 12px;border-radius:10px}
-.pw-toolbar .btn{font-size:14px;min-height:40px;padding:8px 12px}
-.pw-area{display:flex;flex:1;min-height:0;gap:10px}
-.pw-bin{flex:0 0 260px;min-width:0;display:flex;flex-direction:column;gap:10px;padding:12px;background:#121324;border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.pw-bin[hidden]{display:none}.pw-bin input{width:100%;min-width:0;padding:10px;font:inherit;font-size:14px;background:#090e1b;color:var(--text);border:1px solid var(--line);border-radius:9px}
-.pw-list{overflow:auto;flex:1;min-height:0;scrollbar-gutter:stable}
-.pw-bin-group{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:14px 4px 8px}
-.pw-part{display:flex;align-items:center;gap:9px;width:100%;padding:11px 9px;margin-bottom:6px;border:1px solid var(--line);border-radius:9px;background:#1a1b2d;text-align:left;font:inherit;color:var(--text);cursor:grab}
-.pw-part:hover{border-color:var(--cyan)}.pw-part strong{font-size:14px;line-height:1.35;font-weight:500}.pw-part small{display:block;font-size:12px;margin-top:3px}.pw-part .pw-part-text{flex:1;min-width:0}.pw-part .pw-grip{color:var(--muted);font-size:16px}
-.pw-viewport{flex:1;min-width:0;min-height:0;overflow:auto;position:relative;border:1px solid var(--line);border-radius:12px;background:#090c16;overscroll-behavior:contain}
-.pw-board{position:relative;width:1800px;height:1200px;min-width:100%;min-height:100%;background-image:radial-gradient(#a2aace25 1px,transparent 1px);background-size:24px 24px}
-.pw-empty{position:absolute;left:28px;top:26px;max-width:380px;color:var(--muted);font-size:14px;line-height:1.6;pointer-events:none}.pw-empty strong{display:block;color:var(--text);font-size:18px;margin-bottom:7px}
-.pw-window{position:absolute;display:flex;flex-direction:column;min-width:280px;min-height:240px;border:1px solid #777294;border-radius:12px;background:#111422;box-shadow:0 16px 36px #0005;overflow:hidden}
-.pw-window.is-selected{border-color:var(--cyan);box-shadow:0 0 0 1px #7fd4ff55,0 16px 36px #0005}
-.pw-window.drop-target{outline:3px solid var(--cyan);outline-offset:3px}
-.pw-window-head{display:flex;align-items:center;gap:8px;padding:7px 9px;min-height:44px;flex:none;background:#252139;border-bottom:1px solid var(--line);cursor:move;touch-action:none;user-select:none}
-.pw-window-title{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;font-weight:600}
-.pw-window-head button{height:30px;min-width:30px;border:1px solid var(--line);border-radius:7px;background:#ffffff08;color:var(--text);cursor:pointer;font-size:16px}
-.pw-window-head button:hover{background:#ffffff18}.pw-window-body{flex:1;min-height:0;position:relative;overflow:hidden}
-.pw-window-body>iframe{width:100%;height:100%;min-width:0;min-height:0;border:0;display:block;background:#0b101b}
-.pw-resize{position:absolute;bottom:0;right:0;width:24px;height:24px;z-index:10;border:0!important;background:linear-gradient(135deg,transparent 48%,#7fd4ff88 49%,#7fd4ff88 55%,transparent 56%,transparent 65%,#7fd4ff 66%,#7fd4ff 72%,transparent 73%)!important;cursor:nwse-resize;touch-action:none}
-.pw-project-body{display:flex;flex-direction:column;height:100%;min-height:0}
-.pw-project-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:9px 12px;background:#101523;border-bottom:1px solid var(--line);font-size:13px;flex:none}
-.pw-project-bar span{flex:1 1 150px;min-width:0;overflow-wrap:anywhere;color:var(--muted)}.pw-project-bar .btn{min-height:32px;font-size:13px;padding:5px 9px}
-.pw-project-viewport{flex:1;overflow:auto;min-height:0;position:relative}.pw-project-board{position:relative;min-width:100%;min-height:100%;width:1600px;height:1000px;background-image:radial-gradient(#a2aace20 1px,transparent 1px);background-size:24px 24px}
-body.pw-dragging iframe,body.pw-part-drag iframe{pointer-events:none!important}body.pw-dragging{user-select:none!important}
-.pw-status{font-size:12px;color:var(--muted);flex:none;padding:0 3px;min-height:18px}
-.pw-dialog{width:min(640px,92vw);max-height:88dvh;overflow:auto;background:#121525;color:var(--text);border:1px solid #615777;border-radius:16px;padding:22px;box-shadow:0 30px 100px #000a}.pw-dialog::backdrop{background:#0009}
-.pw-dialog h2{margin-bottom:12px}.pw-dialog label{display:block;font-size:14px;margin:14px 0 6px;color:var(--muted)}.pw-dialog input,.pw-dialog textarea{width:100%;font:inherit;padding:10px}.pw-dialog textarea{min-height:130px;font-size:14px}.pw-dialog-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.pw-saved{display:flex;gap:8px;margin:10px 0;align-items:center}.pw-saved .btn:first-child{flex:1;justify-content:flex-start;text-align:left}.pw-dialog p{font-size:14px;line-height:1.55;color:var(--muted)}
-@media(max-width:1000px){.pw-bin{flex-basis:210px}.pw-toolbar .btn{padding:7px 9px}.pw-toolbar{gap:6px}}
-@media(max-width:760px){body.pw-active #main{padding:6px!important}body.pw-active .pw-shell{padding-bottom:78px}.pw-bin{position:absolute;left:6px;top:100px;bottom:84px;width:min(280px,82vw);z-index:50;box-shadow:20px 0 50px #0008}.pw-window{min-width:280px}.pw-toolbar .pw-name{flex-basis:100%}.pw-toolbar .btn{font-size:13px;min-height:36px}.pw-status{font-size:11px}.pw-board{width:1500px}.pw-dialog{padding:16px}}
-`;document.head.appendChild(css);
+const style=document.createElement('style');
+style.id='pulse-funnel-style';
+style.textContent=[
+'@media(min-width:761px){',
+' body.tabs-on{height:100dvh;overflow:hidden}',
+' body.tabs-on>header{position:fixed;inset:0 0 auto;height:66px;transform:none!important}',
+' body.tabs-on #app,body.tabs-on.chrome-hidden #app,body.tabs-on #app.independent-focus{margin-top:66px;height:calc(100dvh - 66px);display:grid;grid-template-columns:210px minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr);gap:14px;padding:14px;transition:none}',
+' body.tabs-on #main{grid-column:2;grid-row:1;width:100%;height:100%;min-width:0;padding:24px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(12,14,28,.88)!important}',
+' body.tabs-on #tabbar{display:flex!important;position:fixed;left:14px;top:80px;bottom:14px;right:auto;width:210px;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:8px;padding:14px 10px;border:1px solid var(--line);border-radius:18px;background:rgba(20,15,36,.94)}',
+' body.tabs-on #tabbar button{flex:0 0 auto;max-width:none;min-height:52px;flex-direction:row;justify-content:flex-start;gap:14px;padding:12px 16px;font-size:.95rem;letter-spacing:0;text-align:left}',
+' body.tabs-on #tabbar button.on{background:rgba(127,212,255,.12);box-shadow:inset 3px 0 var(--cyan)}',
+' body.tabs-on #tabbar button:hover{background:rgba(255,255,255,.07)}',
+' body.tabs-on #tabview{padding:0 0 24px}',
+' body.tabs-on #chrome-pull{display:none}',
+'}',
+'@media(min-width:761px) and (max-width:1000px){body.tabs-on #app,body.tabs-on.chrome-hidden #app,body.tabs-on #app.independent-focus{grid-template-columns:160px minmax(0,1fr)!important;gap:10px;padding:10px}body.tabs-on #tabbar{left:10px;top:76px;bottom:10px;width:160px}body.tabs-on #tabbar button{padding:12px 10px;gap:10px}body.tabs-on #main{padding:18px}}',
+'body.pw-child{overflow:hidden!important;height:100dvh!important}',
+'body.pw-child>header,body.pw-child #tabbar,body.pw-child #chrome-pull,body.pw-child #activity,body.pw-child .focus-nav,body.pw-child .focus-about{display:none!important}',
+'body.pw-child #app,body.pw-child #app.independent-focus,body.pw-child.chrome-hidden #app{display:block!important;margin:0!important;padding:0!important;height:100dvh!important}',
+'body.pw-child #main{display:block!important;width:100%!important;height:100%!important;padding:0!important;border:0!important;border-radius:0!important;overflow:auto!important}',
+'body.pw-child #tabview,body.pw-child .tool-host{padding:0!important;margin:0!important;width:100%!important}',
+'body.pw-child #tabview>.tool-host{border:0!important;border-radius:0!important;box-shadow:none!important}',
+'body.pw-child .tool-host>iframe{height:100dvh!important;min-height:0!important;border-radius:0!important}',
+'.pf-shell{display:none;height:100%;min-height:0;flex-direction:column;gap:10px}',
+'body.pw-active #main{padding:12px!important;overflow:hidden!important}',
+'body.pw-active #main>.pf-shell{display:flex}',
+'body.pw-active #main>#tabview,body.pw-active #main>#windows{display:none!important}',
+'.pf-top{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:5px 4px 3px}',
+'.pf-top-copy{flex:1;min-width:220px}.pf-top h2{font-size:1.25rem}.pf-top p{font-size:.82rem;color:var(--muted);margin-top:4px;max-width:760px}',
+'.pf-top .pill{font-size:11px}',
+'.pf-layout{display:grid;grid-template-columns:245px minmax(0,1fr);gap:12px;flex:1;min-height:0}',
+'.pf-bin,.pf-stage{border:1px solid var(--line);border-radius:16px;background:rgba(13,16,31,.80);min-height:0}',
+'.pf-bin{display:flex;flex-direction:column;padding:10px;overflow:hidden}',
+'.pf-bin input{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#090d19;color:var(--text);font:inherit}',
+'.pf-list{overflow:auto;min-height:0;margin-top:8px;padding-right:2px}',
+'.pf-project{width:100%;display:flex;align-items:center;gap:10px;text-align:left;border:1px solid transparent;background:transparent;color:var(--text);padding:10px;border-radius:11px;margin:2px 0}',
+'.pf-project:hover{background:#ffffff08;border-color:var(--line)}.pf-project.on{background:#7fd4ff12;border-color:#7fd4ff55}',
+'.pf-project-icon{font-size:18px;width:24px;text-align:center}.pf-project-copy{flex:1;min-width:0}.pf-project-copy strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pf-project-copy small{display:block;margin-top:3px;font-size:11px;color:var(--muted)}',
+'.pf-q{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #f4cb7766;color:var(--amber);border-radius:999px;padding:3px 6px}',
+'.pf-stage{overflow:auto;padding:18px 18px 40px}',
+'.pf-empty{display:grid;place-items:center;min-height:50%;color:var(--muted);text-align:center}.pf-empty strong{display:block;color:var(--text);font-size:18px;margin-bottom:6px}',
+'.pf-project-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px}.pf-project-head>div:first-child{flex:1}.pf-project-head h2{font-size:1.45rem}.pf-project-head p{margin-top:5px;color:var(--muted);font-size:.86rem;max-width:760px}.pf-head-actions{display:flex;gap:8px;flex-wrap:wrap}.pf-head-actions .btn{min-height:36px;font-size:12px;padding:7px 10px}',
+'.pf-queue{border:1px solid #806b3b;background:#2d26142e;border-radius:14px;padding:16px}.pf-queue strong{color:var(--amber)}.pf-queue p{margin-top:6px;color:var(--muted);font-size:.86rem}',
+'.pf-line{position:relative;padding-left:38px}.pf-line:before{content:"";position:absolute;left:13px;top:10px;bottom:10px;width:1px;background:linear-gradient(#7fd4ff66,#7fd4ff12)}',
+'.pf-version{position:relative;border:1px solid #3a435c;border-radius:15px;background:#101522;margin:0 0 18px;padding:14px;box-shadow:0 12px 36px #0003}.pf-version:before{content:"";position:absolute;left:-32px;top:23px;width:11px;height:11px;border-radius:50%;background:#0b101b;border:2px solid var(--cyan);box-shadow:0 0 14px #7fd4ff55}.pf-version.working{border-color:#f4cb7766}.pf-version.working:before{border-color:var(--amber);box-shadow:0 0 14px #f4cb7755}',
+'.pf-vhead{display:flex;align-items:flex-start;gap:10px}.pf-vcopy{flex:1;min-width:0}.pf-vtitle{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.pf-vtitle strong{font-size:15px}.pf-state{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:var(--muted)}.pf-state.locked{color:var(--cyan);border-color:#7fd4ff55}.pf-state.working{color:var(--amber);border-color:#f4cb7766}.pf-vmeta{font-size:11px;color:var(--muted);margin-top:4px}.pf-vactions{display:flex;gap:7px;flex-wrap:wrap}.pf-vactions .btn{min-height:34px;padding:6px 9px;font-size:12px}',
+'.pf-components{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px;padding-top:12px;border-top:1px solid #ffffff0b}.pf-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #454e66;border-radius:9px;background:#171d2b;color:var(--text);padding:7px 9px;font-size:12px;max-width:280px}.pf-chip.inherited{opacity:.28}.pf-chip.changed{border-color:#7fd4ff88;background:#7fd4ff10}.pf-chip small{font-size:10px;color:var(--muted)}',
+'.pf-detail{margin-top:12px;border-top:1px solid #ffffff0d;padding-top:10px}.pf-detail summary{color:var(--muted);font-size:12px}.pf-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px}.pf-card{border:1px solid #30394f;border-radius:10px;padding:10px;background:#0d1220}.pf-card strong{display:block;font-size:12px}.pf-card p{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45}',
+'.pf-ramble{margin-top:13px;padding-top:12px;border-top:1px solid #ffffff0d}.pf-ramble label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.pf-ramble textarea{width:100%;min-height:92px;resize:vertical}.pf-ramble .pf-note{font-size:11px;color:var(--muted);margin-top:6px}.pf-ramble-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.pf-ramble-actions .btn{min-height:34px;padding:6px 9px;font-size:12px}',
+'.pf-status{font-size:11px;color:var(--muted);padding:0 4px;min-height:16px}',
+'@media(max-width:900px){.pf-layout{grid-template-columns:190px minmax(0,1fr)}}',
+'@media(max-width:760px){body.pw-active #main{padding:6px!important}.pf-layout{display:block;overflow:auto}.pf-bin{max-height:210px;margin-bottom:8px}.pf-stage{overflow:visible;padding:14px}.pf-project-head{display:block}.pf-head-actions{margin-top:10px}.pf-line{padding-left:27px}.pf-line:before{left:9px}.pf-version:before{left:-23px}.pf-components{gap:5px}.pf-chip{font-size:11px;padding:6px 7px}}'
+].join('\n');
+document.head.appendChild(style);
+
 if(child)document.body.classList.add('pw-child');
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else queueMicrotask(init);
+
 function init(){
  if(typeof COMPS==='undefined'||typeof openComponent!=='function')return;
+
  if(child){
   if(typeof unmountFocus==='function')unmountFocus();
-  UI.focus=null;UI.open=[];persist=function(){};
-  const c=COMPS.find(c=>c.id===child);
-  if(c){openComponent(child);document.title=c.label+' · Pulse panel';const fit=document.createElement('script');fit.src='pulse-panel-fit.js?v=20261004-1';document.body.append(fit);}
-  else document.querySelector('#tabview').textContent='This component is unavailable: '+child;
+  if(typeof UI!=='undefined'){UI.focus=null;UI.open=[];}
+  try{persist=function(){};}catch(_){}
+  const c=COMPS.find(x=>x.id===child);
+  if(c){
+   openComponent(child);
+   document.title=(c.label||child)+' · Pulse panel';
+   const fit=document.createElement('script');fit.src='pulse-panel-fit.js?v=20261005-funnel';document.body.appendChild(fit);
+  }else{
+   const tv=document.querySelector('#tabview');if(tv)tv.textContent='This component is unavailable: '+child;
+  }
   return;
  }
- const pendingComponent=params.get('component')||UI.focus;
- const KEY='moor-pulse-component-projects-v1',DRAFT='moor-pulse-workspace-v1';
- document.getElementById('app').classList.add('activity-hidden');
- document.getElementById('activity').style.display='none';
- document.getElementById('activity-toggle').setAttribute('aria-expanded','false');
- const main=document.getElementById('main');let z=10,selected=null,manifest=null;
+
+ const STORE='moor-pulse-funnel-projects-v1';
+ const LEGACY='moor-pulse-component-projects-v1';
  const originalOpen=openComponent,originalTab=selectTab,originalBar=ensureTabbar,originalBin=binView;
+ const main=document.getElementById('main');
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const uid=()=>crypto.randomUUID?crypto.randomUUID():'pw-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
- const read=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
- let workspace={id:uid(),name:'Untitled component project',intent:'',nodes:[],connections:[]};
- const shell=document.createElement('section');shell.className='pw-shell';shell.setAttribute('aria-label','Component workspace');
- shell.innerHTML='<div class="pw-toolbar"><button class="btn" data-pw="bin">Bin</button><input class="pw-name" aria-label="Component project name" value="Untitled component project"><button class="btn" data-pw="project">New project</button><button class="btn" data-pw="save">Save</button><button class="btn" data-pw="saved">Projects</button><button class="btn" data-pw="handoff">Chat handoff</button><button class="btn" data-pw="import">Import</button></div><div class="pw-area"><aside class="pw-bin" aria-label="Parts bin"><input type="search" placeholder="Search parts…" aria-label="Search workspace parts"><div class="pw-list"></div></aside><div class="pw-viewport"><div class="pw-board" aria-label="Workspace canvas"></div></div></div><div class="pw-status" role="status">Open parts or drag them onto the canvas. Drop onto a tool to create a project.</div>';
- main.prepend(shell);const board=shell.querySelector('.pw-board'),viewport=shell.querySelector('.pw-viewport'),bin=shell.querySelector('.pw-bin'),name=shell.querySelector('.pw-name');
- const dialog=document.createElement('dialog');dialog.className='pw-dialog';document.body.append(dialog);
- const status=t=>{shell.querySelector('.pw-status').textContent=t;};
- function persistDraft(){workspace.name=name.value.trim()||'Untitled component project';try{localStorage.setItem(DRAFT,JSON.stringify(workspace))}catch(e){status('Storage is full. Export this project to keep it.')}}
- function comp(id){return COMPS.find(c=>c.id===id)}
- function clone(n){const c=JSON.parse(JSON.stringify(n));function ids(x){x.instanceId=uid();if(x.nodes)x.nodes.forEach(ids)}ids(c);return c}
- function tool(id,x,y){return {instanceId:uid(),kind:'component',componentId:id,title:comp(id)?.label||id,layout:{x:x??30,y:y??30,width:640,height:470}}}
- function project(nodes,x,y){return {instanceId:uid(),kind:'component-project',title:'New component project',intent:'',connections:[],nodes:nodes||[],layout:{x:x??40,y:y??40,width:960,height:650}}}
- function show(){document.body.classList.add('pw-active');ensureTabbar();}
- function renderBin(){
-  const q=bin.querySelector('input').value.toLowerCase();
-  const cs=COMPS.filter(c=>!q||[c.label,c.short,c.id].join(' ').toLowerCase().includes(q));
-  const saved=read(KEY,[]).filter(p=>!q||p.name.toLowerCase().includes(q));
-  shell.querySelector('.pw-list').innerHTML=(saved.length?'<div class="pw-bin-group">Component projects</div>'+saved.map(p=>'<button class="pw-part" draggable="true" data-project-id="'+esc(p.id)+'"><span>▧</span><span class="pw-part-text"><strong>'+esc(p.name)+'</strong><small>'+p.nodes.length+' parts · wiring draft</small></span><span class="pw-grip">⠿</span></button>').join(''):'')+'<div class="pw-bin-group">Parts · '+cs.length+'</div>'+cs.map(c=>'<button class="pw-part" draggable="true" data-component-id="'+esc(c.id)+'"><span>'+esc(c.icon||'◇')+'</span><span class="pw-part-text"><strong>'+esc(c.label)+'</strong></span><span class="pw-grip">⠿</span></button>').join('');
+ const uid=()=>crypto.randomUUID?crypto.randomUUID():'pf-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+ const read=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch(e){return d}};
+ const write=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}};
+ const now=()=>new Date().toISOString();
+ const comp=id=>COMPS.find(c=>c.id===id);
+
+ function componentItem(id){
+  const c=comp(id);
+  if(!c)return {kind:'component',ref:id,label:id,sourceVersion:'current',source:'Pulse manifest'};
+  return {kind:'component',ref:id,label:c.label||id,sourceVersion:c.version||'current',source:c.source||c.page||c.toolSrc||'Pulse manifest'};
  }
- bin.querySelector('input').addEventListener('input',renderBin);
- function savedNode(id){const p=read(KEY,[]).find(p=>p.id===id);if(!p)return null;const n=project(p.nodes.map(clone),40,40);n.title=p.name;n.intent=p.intent;n.connections=p.connections||[];return n}
- function payload(e){try{return JSON.parse(e.dataTransfer.getData('application/x-pulse-component'))}catch(_){return null}}
- bin.addEventListener('dragstart',e=>{const part=e.target.closest('.pw-part');if(!part)return;e.dataTransfer.setData('application/x-pulse-component',JSON.stringify(part.dataset.projectId?{projectId:part.dataset.projectId}:{componentId:part.dataset.componentId}));e.dataTransfer.effectAllowed='copy';document.body.classList.add('pw-part-drag');});
- bin.addEventListener('click',e=>{const p=e.target.closest('.pw-part');if(!p)return;if(p.dataset.componentId)addTool(p.dataset.componentId);else{const n=savedNode(p.dataset.projectId);if(n)add(n)}if(innerWidth<=760)bin.hidden=true});
- function add(n,container=workspace,targetBoard=board){if(container===workspace){n.layout.width=Math.min(n.layout.width,Math.max(280,viewport.clientWidth-48));n.layout.height=Math.min(n.layout.height,Math.max(240,viewport.clientHeight-48));}container.nodes.push(n);mount(n,container,targetBoard);sizeBoard(targetBoard,container);persistDraft();return n}
- function addTool(id){if(!comp(id))return;show();const offset=(workspace.nodes.length%6)*28;const n=tool(id,viewport.scrollLeft+24+offset,viewport.scrollTop+24+offset);add(n);if(innerWidth<=760)bin.hidden=true;status('Opened '+n.title+'. Drag its title bar or resize its bottom-right corner.');return n}
- function sizeBoard(b,c){const right=Math.max(b.parentElement.clientWidth,...c.nodes.map(n=>n.layout.x+n.layout.width+100));const bottom=Math.max(b.parentElement.clientHeight,...c.nodes.map(n=>n.layout.y+n.layout.height+100));b.style.width=right+'px';b.style.height=bottom+'px'}
- function activate(el){if(selected)selected.classList.remove('is-selected');selected=el;el.classList.add('is-selected');el.style.zIndex=++z}
- function mount(n,container,b){
-  const el=document.createElement('article');el.className='pw-window';el.dataset.instanceId=n.instanceId;el.setAttribute('aria-label',n.title);el.style.cssText='left:'+n.layout.x+'px;top:'+n.layout.y+'px;width:'+n.layout.width+'px;height:'+n.layout.height+'px;z-index:'+(++z);
-  el.innerHTML='<div class="pw-window-head"><span aria-hidden="true">'+(n.kind==='component-project'?'▧':'◇')+'</span><span class="pw-window-title">'+esc(n.title)+'</span>'+(n.kind==='component-project'?'<button data-win="rename" aria-label="Rename project" title="Rename project">✎</button>':'')+'<button data-win="maximize" aria-label="Fit panel to canvas" title="Fit to canvas">□</button><button data-win="close" aria-label="Close panel" title="Close panel">×</button></div><div class="pw-window-body"></div><button class="pw-resize" aria-label="Resize '+esc(n.title)+'" title="Drag to resize"></button>';
-  b.append(el);const body=el.querySelector('.pw-window-body');
-  if(n.kind==='component-project'){
-   body.innerHTML='<div class="pw-project-body"><div class="pw-project-bar"><span>Assembly draft · '+n.nodes.length+' parts · not connected</span><button class="btn" data-project="brief">Brief</button><button class="btn" data-project="save">Save project</button><button class="btn" data-project="handoff">Chat handoff</button></div><div class="pw-project-viewport"><div class="pw-project-board" aria-label="Project canvas"></div></div></div>';
-   const sub=body.querySelector('.pw-project-board');n.nodes.forEach(c=>mount(c,n,sub));sizeBoard(sub,n);dropBoard(sub,n);
-   body.querySelector('[data-project="brief"]').onclick=()=>briefDialog(n);
-   body.querySelector('[data-project="save"]').onclick=()=>saveDialog(n);
-   body.querySelector('[data-project="handoff"]').onclick=()=>handoffDialog(n);
-  }else{
-   const frame=document.createElement('iframe');frame.title=n.title;frame.loading='eager';frame.allow='autoplay; fullscreen';
-   const url=new URL(location.pathname,location.origin);url.searchParams.set('workspace-tool',n.componentId);frame.src=url.href;body.append(frame);
+ function pageItem(ref,label,page,detail){return {kind:'page',ref:ref,label:label,page:page,sourceVersion:'current',source:page,detail:detail||''};}
+ function virtualItem(ref,label,detail){return {kind:'system',ref:ref,label:label,sourceVersion:'v43',source:'The Moor Funnel Prompt — v43',detail:detail||''};}
+
+ function funnelMembers(){
+  return [
+   pageItem('funnel-app','The Funnel','quiz-funnel-v3.html','The existing full Funnel application in the repository.'),
+   virtualItem('ramble-blueprint','Ramble → Blueprint','Raw thought distillation and frozen Page 0.'),
+   virtualItem('quiz-resolver','Quiz resolver','Two-sided quiz; only valid answers; auto-fill unresolved pages.'),
+   virtualItem('paged-attention','Locked pages','Immutable answer pages with provenance and incremental recompute.'),
+   virtualItem('worker-bank','Worker bank','Domain-fit routing from proven worker philosophy, taste, and rules.'),
+   virtualItem('verdict-packet','Verdict packet','Builder receives only spec + destination + done-criteria.'),
+   virtualItem('verification','Verification gates','Workers build and prove through the real user path.'),
+   virtualItem('dogfood-engine','Dogfood Engine','Verified answers and negative results compound into reusable parts.'),
+   virtualItem('foundry','Foundry','The funnel builds and trials new workers.'),
+   virtualItem('versions','Versions','Locked, restorable, forkable outcomes are the verdict.')
+  ];
+ }
+ function generatorMembers(){
+  return COMPS.filter(c=>Array.isArray(c.cats)&&c.cats.includes('generators')).map(c=>componentItem(c.id));
+ }
+ function seedProject(id,name,icon,description,members,page,queued){
+  return {id:id,name:name,icon:icon,description:description,members:members||[],page:page||null,queued:!!queued,versions:queued?[]:[{
+   id:uid(),number:'v1',title:'Current import',state:'locked-import',createdAt:now(),parentId:null,revision:'',items:(members||[]).map(x=>Object.assign({},x,{inherited:false,change:'baseline'}))
+  }]};
+ }
+
+ function seeds(){
+  return [
+   seedProject('funnel','Funnel','🌀','The full v43 Funnel system itself: quiz resolver, pages, workers, verification, Engine, Foundry, and versions.',funnelMembers(),'quiz-funnel-v3.html',false),
+   seedProject('project-pulse','Project Pulse','◈','The Project Pulse environment itself — inventory, tools, projects, and the Funnel surface.',[componentItem('project-pulse')],'pulse-dashboard.html',false),
+   seedProject('procedural-generators','Procedural Generators','⚙','Every current Pulse component explicitly tagged as a generator, kept together as one heavyweight generator project.',generatorMembers(),null,false),
+   seedProject('render-studio','Render Studio','◫','The unified rendering/creative studio as a complete project.',[componentItem('render-studio')],comp('render-studio')?.page||null,false),
+   seedProject('moor-canvas','Moor Canvas','▧','Moor Canvas as a complete evolving project.',[componentItem('more-canvas')],comp('more-canvas')?.page||'more-canvas.html',false),
+   seedProject('moor-ultra-os','Moor Ultra OS','≋','Moor Ultra OS as a complete project.',[componentItem('stream')],comp('stream')?.page||null,false),
+   seedProject('wonder-feed','Wonder Feed','✨','Wonder Feed as a complete project.',[componentItem('wonder-feed')],comp('wonder-feed')?.page||'wonder-feed.html',false),
+   seedProject('moor-beta','Moor Beta','🌐','Queued for this Funnel/version system, but intentionally not imported or frozen while the Beta is actively being worked on.',[componentItem('moor-beta')],comp('moor-beta')?.page||'moor-beta.html',true)
+  ];
+ }
+
+ function loadState(){
+  const current=read(STORE,null);
+  if(!current||!Array.isArray(current.projects)){
+   const state={schema:'moor.funnel-projects',version:1,createdAt:now(),selected:'funnel',projects:seeds()};
+   write(STORE,state);return state;
   }
-  el.addEventListener('pointerdown',()=>activate(el));
-  el.querySelector('[data-win="close"]').onclick=()=>{container.nodes=container.nodes.filter(c=>c.instanceId!==n.instanceId);el.remove();sizeBoard(b,container);persistDraft();updateCount(b,container)};
-  el.querySelector('[data-win="maximize"]').onclick=()=>{if(n.restore){n.layout=n.restore;delete n.restore}else{n.restore={...n.layout};n.layout={x:b.parentElement.scrollLeft+8,y:b.parentElement.scrollTop+8,width:Math.max(300,b.parentElement.clientWidth-24),height:Math.max(240,b.parentElement.clientHeight-24)}}apply();persistDraft()};
-  if(n.kind==='component-project')el.querySelector('[data-win="rename"]').onclick=()=>briefDialog(n);
-  function apply(){el.style.left=n.layout.x+'px';el.style.top=n.layout.y+'px';el.style.width=n.layout.width+'px';el.style.height=n.layout.height+'px';sizeBoard(b,container)}
-  function gesture(handle,resize){handle.addEventListener('pointerdown',e=>{if(e.button!==0||(!resize&&e.target.closest('button')))return;e.preventDefault();e.stopPropagation();activate(el);delete n.restore;const start={...n.layout},sx=e.clientX,sy=e.clientY;handle.setPointerCapture(e.pointerId);document.body.classList.add('pw-dragging');
-   const move=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;n.layout=resize?{...start,width:Math.max(280,start.width+dx),height:Math.max(240,start.height+dy)}:{...start,x:Math.max(0,start.x+dx),y:Math.max(0,start.y+dy)};apply()};
-   const end=()=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',end);handle.removeEventListener('pointercancel',end);document.body.classList.remove('pw-dragging');persistDraft()};handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);
-  })}gesture(el.querySelector('.pw-window-head'),false);gesture(el.querySelector('.pw-resize'),true);
-  el.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('application/x-pulse-component')){e.preventDefault();e.stopPropagation();el.classList.add('drop-target');e.dataTransfer.dropEffect='copy'}});
-  el.addEventListener('dragleave',e=>{if(!el.contains(e.relatedTarget))el.classList.remove('drop-target')});
-  el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();el.classList.remove('drop-target');const p=payload(e);if(!p)return;const incoming=p.componentId?tool(p.componentId):savedNode(p.projectId);if(!incoming)return;
-   if(n.kind==='component-project'){const sub=body.querySelector('.pw-project-board');const offset=n.nodes.length*28;incoming.layout.x=24+offset;incoming.layout.y=24+offset;add(incoming,n,sub);updateCount(sub,n);status('Added to '+n.title+'. Wiring remains a draft.');}
-   else{const first=clone(n);first.layout={x:24,y:24,width:600,height:420};incoming.layout.x=650;incoming.layout.y=24;const group=project([first,incoming],n.layout.x+30,n.layout.y+35);group.title=n.title+' project';add(group,container,b);status('Created a new project with both parts. No connections were applied.');}
-  });return el;
+  const byId=new Map(current.projects.map(p=>[p.id,p]));
+  seeds().forEach(s=>{
+   if(!byId.has(s.id)){current.projects.push(s);return;}
+   const p=byId.get(s.id);
+   p.name=s.name;p.icon=s.icon;p.description=s.description;p.page=s.page;p.queued=s.queued;
+   if(p.queued){p.members=s.members;}
+   if(!Array.isArray(p.members)||!p.members.length)p.members=s.members;
+  });
+  if(!current.selected||!current.projects.some(p=>p.id===current.selected))current.selected='funnel';
+  write(STORE,current);return current;
  }
- function updateCount(b,c){const s=b.closest('.pw-project-body')?.querySelector('.pw-project-bar span');if(s)s.textContent='Assembly draft · '+c.nodes.length+' parts · not connected'}
- function dropBoard(b,c){b.addEventListener('dragover',e=>{if(e.dataTransfer.types.includes('application/x-pulse-component')){e.preventDefault();e.dataTransfer.dropEffect='copy'}});b.addEventListener('drop',e=>{const hit=e.target.closest('.pw-window');if(hit&&hit.parentElement===b)return;e.preventDefault();e.stopPropagation();const p=payload(e);if(!p)return;const n=p.componentId?tool(p.componentId):savedNode(p.projectId);if(!n)return;const r=b.getBoundingClientRect();n.layout.x=Math.max(0,e.clientX-r.left);n.layout.y=Math.max(0,e.clientY-r.top);add(n,c,b);updateCount(b,c);status('Part added. Arrange it here; connections are made later.');})}dropBoard(board,workspace);
- function displayDialog(html){dialog.innerHTML=html;dialog.showModal();dialog.querySelector('[data-dismiss]')?.addEventListener('click',()=>dialog.close())}
- function briefDialog(n){displayDialog('<h2>Component project brief</h2><label>Project name</label><input id="pw-edit-name" value="'+esc(n.title||workspace.name)+'"><label>What should these parts do together?</label><textarea id="pw-edit-intent" placeholder="Example: terrain provides slope and water to the plant generator; plants feed the creature habitat…">'+esc(n.intent)+'</textarea><div class="pw-dialog-actions"><button class="btn primary" id="pw-brief-save">Keep brief</button><button class="btn" data-dismiss>Close</button></div>');dialog.querySelector('#pw-brief-save').onclick=()=>{n.intent=dialog.querySelector('#pw-edit-intent').value;n.title=dialog.querySelector('#pw-edit-name').value.trim()||'Component project';const el=shell.querySelector('[data-instance-id="'+n.instanceId+'"]');if(el)el.querySelector('.pw-window-title').textContent=n.title;persistDraft();dialog.close()}}
- function sourceRecord(id){const c=comp(id)||{},m=manifest?.tools?.find(t=>t.id===id)||{};const source=m.component_source||c.source||null;return {id,label:c.label||id,tool:c.tool||null,description:m.what_it_does||c.job||c.short||'',source:source,panelSource:m.panel_source||null,panelSourceUrl:m.panel_source_url||null,standaloneUrl:c.toolSrc||c.page?new URL(c.toolSrc||c.page,location.href).href:null,dependencies:m.depends_on||[],limits:m.honest_limits||c.toolGap||''}}
- function documentOf(n){const nodes=n.nodes||[],ids=new Set();function walk(ns){ns.forEach(x=>{if(x.kind==='component')ids.add(x.componentId);if(x.nodes)walk(x.nodes)})}walk(nodes);return {schema:'moor.component-project',version:1,id:n.id||n.instanceId||uid(),name:n.title||n.name||'Component project',intent:n.intent||'',status:'assembly-draft',createdAt:new Date().toISOString(),dashboardUrl:new URL(location.pathname,location.origin).href,manifestUrl:new URL('pulse-manifest.json',location.href).href,repository:'https://github.com/bassseamoor/render-queue',components:[...ids].map(sourceRecord),nodes:JSON.parse(JSON.stringify(nodes)),connections:n.connections||[],runtimeState:'Layout and membership only. Tool recipes and internal state must be exported from each tool separately.',instructions:'Read the component sources and dependencies. Use the project intent to propose and implement explicit inputs/outputs and connections. Preserve standalone behavior. These parts are collected, not automatically connected. Verify the composed behavior and document limits.'}}
- function download(p){const blob=new Blob([JSON.stringify(p,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=(p.name||'component-project').replace(/[^a-z0-9_-]+/gi,'-')+'.component-project.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
- function saveDialog(n){displayDialog('<h2>Save component project</h2><label>Project name</label><input id="pw-save-name" value="'+esc(n.title||name.value)+'"><label>Connection brief</label><textarea id="pw-save-intent" placeholder="Describe what the assembled tools should do together.">'+esc(n.intent||'')+'</textarea><p>Stores the parts, layout, source references, and brief. Export individual tool recipes separately to preserve their internal settings.</p><div class="pw-dialog-actions"><button class="btn primary" id="pw-save-local">Save project</button><button class="btn" id="pw-save-export">Export JSON</button><button class="btn" data-dismiss>Close</button></div>');
-  function value(){const p=documentOf(n);p.name=dialog.querySelector('#pw-save-name').value.trim()||'Component project';p.intent=dialog.querySelector('#pw-save-intent').value;return p}
-  dialog.querySelector('#pw-save-local').onclick=()=>{const p=value(),list=read(KEY,[]),i=list.findIndex(x=>x.id===p.id);if(i>=0)list[i]=p;else list.unshift(p);try{localStorage.setItem(KEY,JSON.stringify(list));n.intent=p.intent;if(n===workspace){workspace.name=p.name;name.value=p.name}else{n.title=p.name;shell.querySelector('[data-instance-id="'+n.instanceId+'"] .pw-window-title').textContent=p.name}persistDraft();renderBin();dialog.close();status('Saved '+p.name+'. Use Chat handoff to share its sources and brief.')}catch(e){status('Could not save locally. Use Export JSON.')}};
-  dialog.querySelector('#pw-save-export').onclick=()=>download(value());
+
+ let state=loadState();
+ let selected=state.selected;
+
+ const shell=document.createElement('section');
+ shell.className='pf-shell';
+ shell.setAttribute('aria-label','Funnel project versions');
+ shell.innerHTML=
+  '<div class="pf-top"><div class="pf-top-copy"><h2>Funnel</h2><p>Projects are the visible unit. Locked versions are immutable; revisions duplicate the whole project and inherit unchanged answers by reference.</p></div>'+
+  '<span class="pill"><span id="pf-project-count"></span> projects</span><span class="pill amber"><span id="pf-queue-count"></span> queued</span></div>'+
+  '<div class="pf-layout"><aside class="pf-bin"><input id="pf-search" type="search" placeholder="Search projects…" aria-label="Search Funnel projects"><div id="pf-list" class="pf-list"></div></aside><section id="pf-stage" class="pf-stage"></section></div>'+
+  '<div id="pf-status" class="pf-status" role="status"></div>';
+ main.prepend(shell);
+
+ const listEl=shell.querySelector('#pf-list'),stage=shell.querySelector('#pf-stage'),search=shell.querySelector('#pf-search'),statusEl=shell.querySelector('#pf-status');
+ const status=t=>statusEl.textContent=t||'';
+ function save(){state.selected=selected;write(STORE,state);renderCounts();}
+ function renderCounts(){
+  shell.querySelector('#pf-project-count').textContent=state.projects.length;
+  shell.querySelector('#pf-queue-count').textContent=state.projects.filter(p=>p.queued).length;
  }
- function savedDialog(){const list=read(KEY,[]);displayDialog('<h2>Component projects</h2>'+(list.length?list.map(p=>'<div class="pw-saved"><button class="btn" data-load="'+esc(p.id)+'">'+esc(p.name)+'</button><button class="btn" data-export="'+esc(p.id)+'">Export</button></div>').join(''):'<p>No saved projects yet.</p>')+'<div class="pw-dialog-actions"><button class="btn" data-dismiss>Close</button></div>');dialog.querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>{const p=list.find(x=>x.id===b.dataset.load);const n=savedNode(p.id);n.title=p.name;n.intent=p.intent;n.connections=p.connections||[];show();add(n);dialog.close();status('Opened saved project '+p.name)});dialog.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>download(list.find(x=>x.id===b.dataset.export)))}
- function b64(s){const bytes=new TextEncoder().encode(s);let binary='';for(let i=0;i<bytes.length;i++)binary+=String.fromCharCode(bytes[i]);return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
- function unb64(s){return new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0)))}
- function brief(p){return 'MOOR COMPONENT PROJECT: '+p.name+'\n\nObjective: '+(p.intent||'Define the connections between these collected parts.')+'\nStatus: assembly draft; no connections applied.\n\nRead this project file and these sources, then connect the components and verify their behavior.\nManifest: '+p.manifestUrl+'\nRepository: '+p.repository+'\n\n'+p.components.map(c=>c.label+' ['+c.id+']\nSource: '+(c.source||'See manifest')+'\nPanel: '+(c.panelSourceUrl||c.standaloneUrl||'See dashboard')+'\nDependencies: '+c.dependencies.join(', ')+'\nLimits: '+c.limits).join('\n\n')+'\n\n'+p.instructions+'\n\nFull project document:\n'+JSON.stringify(p,null,2)}
- async function copy(s){try{await navigator.clipboard.writeText(s);status('Copied to clipboard.')}catch(e){displayDialog('<h2>Copy handoff</h2><textarea id="pw-copy-text"></textarea><div class="pw-dialog-actions"><button class="btn" data-dismiss>Close</button></div>');dialog.querySelector('textarea').value=s;dialog.querySelector('textarea').select()}}
- function handoffDialog(n){const p=documentOf(n);displayDialog('<h2>Point a chat at this project</h2><p>Attach the project JSON or paste the handoff brief into a chat. It includes the collected parts, layout, intent, source paths, and dependencies.</p><label>Connection brief</label><textarea id="pw-handoff-intent" placeholder="Describe what you want connected…">'+esc(p.intent)+'</textarea><div class="pw-dialog-actions"><button class="btn primary" id="pw-copy-brief">Copy brief</button><button class="btn" id="pw-json">Export JSON</button><button class="btn" id="pw-link">Copy workspace link</button><button class="btn" data-dismiss>Close</button></div><p style="margin-top:12px">The workspace link embeds the project; it does not publish a server file. For an LLM, attach JSON or paste the brief because many tools cannot read URL fragments.</p>');const value=()=>({...p,intent:dialog.querySelector('#pw-handoff-intent').value});dialog.querySelector('#pw-copy-brief').onclick=()=>copy(brief(value()));dialog.querySelector('#pw-json').onclick=()=>download(value());dialog.querySelector('#pw-link').onclick=()=>{const url=new URL(location.pathname,location.origin);url.hash='component-project='+b64(JSON.stringify(value()));copy(url.href)}}
- function validate(p){if(p?.schema!=='moor.component-project'||p.version!==1||!Array.isArray(p.nodes))throw Error('Choose a version 1 MOOR component-project JSON file.');let total=0;function walk(ns,depth){if(depth>8)throw Error('Project nesting is too deep.');ns.forEach(n=>{if(++total>100)throw Error('Import supports up to 100 panels.');if(!['component','component-project'].includes(n.kind))throw Error('Unknown panel kind.');if(n.kind==='component'&&!comp(n.componentId))throw Error('Unknown component: '+n.componentId);n.instanceId=uid();if(!n.layout)n.layout={x:30,y:30,width:640,height:470};for(const k of ['x','y','width','height'])if(!Number.isFinite(n.layout[k])||n.layout[k]<0||n.layout[k]>10000)throw Error('Invalid panel layout.');n.layout.width=Math.max(280,n.layout.width);n.layout.height=Math.max(240,n.layout.height);if(n.kind==='component-project'){if(!Array.isArray(n.nodes))throw Error('Project is missing its parts.');walk(n.nodes,depth+1)}})}walk(p.nodes,0);return p}
- function importProject(p){validate(p);show();const n=project(p.nodes,30,30);n.title=String(p.name||'Imported project');n.intent=String(p.intent||'');n.connections=p.connections||[];add(n);status('Imported '+n.title+'. Parts are collected; wiring remains a draft.');return n}
- function importFile(){const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.onchange=async()=>{try{const file=input.files[0];if(!file)return;if(file.size>2e6)throw Error('Project file exceeds 2 MB.');importProject(JSON.parse(await file.text()))}catch(e){status(e.message)}};input.click()}
- shell.querySelector('.pw-toolbar').addEventListener('click',e=>{const act=e.target.closest('[data-pw]')?.dataset.pw;if(!act)return;if(act==='bin')bin.hidden=!bin.hidden;if(act==='project'){show();add(project([],viewport.scrollLeft+35,viewport.scrollTop+35));status('New project. Drag parts from the Bin into its canvas.')}if(act==='save')saveDialog(workspace);if(act==='saved')savedDialog();if(act==='handoff')handoffDialog(workspace);if(act==='import')importFile()});name.addEventListener('change',persistDraft);
- openComponent=function(id){if(id.startsWith('component-project:')){const n=savedNode(id.slice(18));if(n){show();add(n)}return}if(!comp(id))return;addTool(id)};
- binView=function(){const saved=read(KEY,[]);return originalBin()+(saved.length?'<section class="bin-sec"><h3>Component projects</h3><p>Saved assemblies and connection briefs.</p><div class="trows">'+saved.map(p=>'<button class="trow" data-open="component-project:'+esc(p.id)+'"><span class="trow-ic">▧</span><span class="trow-tx"><strong>'+esc(p.name)+'</strong><span>'+p.nodes.length+' parts · assembly draft</span></span></button>').join('')+'</div></section>':'')};
- selectTab=function(id){if(id==='workspace'){show();return}document.body.classList.remove('pw-active');if(UI.focus){unmountFocus();UI.focus=null;UI.open=[]}originalTab(id)};
- ensureTabbar=function(){originalBar();const bar=document.getElementById('tabbar');if(!bar)return;if(!bar.querySelector('[data-tab="workspace"]')){const b=document.createElement('button');b.dataset.tab='workspace';b.innerHTML='<span class="tb-ic" aria-hidden="true">▧</span><span>Canvas</span>';bar.append(b)}if(document.body.classList.contains('pw-active')){bar.style.display='';bar.querySelectorAll('button').forEach(b=>{b.classList.toggle('on',b.dataset.tab==='workspace');b.setAttribute('aria-current',b.dataset.tab==='workspace'?'page':'false')})}};
- document.addEventListener('dragstart',e=>{const row=e.target.closest('[data-open]');if(!row)return;e.dataTransfer.setData('application/x-pulse-component',JSON.stringify(row.dataset.open.startsWith('component-project:')?{projectId:row.dataset.open.slice(18)}:{componentId:row.dataset.open}));e.dataTransfer.effectAllowed='copy';document.body.classList.add('pw-part-drag')});
- const draggable=()=>document.querySelectorAll('#tabview [data-open]').forEach(el=>el.draggable=true);new MutationObserver(draggable).observe(document.getElementById('tabview'),{childList:true,subtree:true});draggable();
- document.addEventListener('dragend',()=>document.body.classList.remove('pw-part-drag'));
- document.addEventListener('drop',()=>document.body.classList.remove('pw-part-drag'));
- renderBin();ensureTabbar();
- fetch('pulse-manifest.json').then(r=>{if(!r.ok)throw Error('manifest');return r.json()}).then(m=>manifest=m).catch(()=>{});
- const draft=read(DRAFT,null);if(draft?.nodes?.length){try{validate({...draft,schema:'moor.component-project',version:1});workspace.id=draft.id||uid();workspace.name=draft.name||workspace.name;workspace.intent=draft.intent||'';workspace.nodes=draft.nodes;workspace.connections=draft.connections||[];name.value=workspace.name;workspace.nodes.forEach(n=>mount(n,workspace,board));sizeBoard(board,workspace)}catch(e){status('Saved draft could not be restored. Import a project JSON instead.')}}
- if(location.hash.startsWith('#component-project=')){try{const raw=location.hash.slice(19);if(raw.length>2800000)throw Error('Workspace link is too large.');importProject(JSON.parse(unb64(raw)))}catch(e){show();status('Could not open workspace link: '+e.message)}}
- if(pendingComponent&&comp(pendingComponent)){unmountFocus();UI.focus=null;UI.open=[];persist();addTool(pendingComponent);}
- window.PulseWorkspace={open:addTool,project:()=>{show();return add(project([]))},export:()=>documentOf(workspace),import:importProject,get state(){return workspace},show};
+ function show(){document.body.classList.add('pw-active');ensureTabbar();render();}
+ function projectById(id){return state.projects.find(p=>p.id===id);}
+ function versionById(p,id){return (p.versions||[]).find(v=>v.id===id);}
+ function nextVersionNumber(p){
+  const nums=(p.versions||[]).map(v=>parseInt(String(v.number||'').replace(/\D/g,''),10)).filter(Number.isFinite);
+  return 'v'+((nums.length?Math.max.apply(null,nums):0)+1);
+ }
+ function duplicateVersion(p,v){
+  if(p.queued)return;
+  if((p.versions||[]).some(x=>x.state==='working')){status('This project already has a working revision.');return;}
+  const nv={id:uid(),number:nextVersionNumber(p),title:'Working revision',state:'working',createdAt:now(),parentId:v.id,revision:'',items:(v.items||[]).map(x=>Object.assign({},x,{inherited:true,change:'inherited'}))};
+  p.versions.push(nv);save();renderStage();status('Duplicated '+v.number+' into '+nv.number+'. Locked parent remains untouched.');
+ }
+ function queueRevision(p,v,text){
+  v.revision=String(text||'').trim();
+  v.queuedAt=now();
+  save();renderStage();
+  status(v.revision?'Revision request saved. Run it through the Funnel before any project code changes.':'Working revision saved with no request yet.');
+ }
+ function copyText(s){
+  if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(s).then(()=>status('Copied revision request.')).catch(()=>status('Copy failed — select the text manually.'));
+  status('Clipboard is unavailable here.');
+ }
+ function openPage(p){
+  if(!p.page){status('This project is an aggregate; expand the version to inspect its parts.');return;}
+  window.open(new URL(p.page,location.href).href,'_blank','noopener');
+ }
+
+ function renderList(){
+  const q=search.value.trim().toLowerCase();
+  const rows=state.projects.filter(p=>!q||[p.name,p.description].join(' ').toLowerCase().includes(q));
+  listEl.innerHTML=rows.map(p=>
+   '<button class="pf-project '+(p.id===selected?'on':'')+'" data-project="'+esc(p.id)+'">'+
+   '<span class="pf-project-icon">'+esc(p.icon||'◇')+'</span><span class="pf-project-copy"><strong>'+esc(p.name)+'</strong><small>'+
+   (p.queued?'Queued · no snapshot yet':((p.versions||[]).length+' version'+((p.versions||[]).length===1?'':'s')))+'</small></span>'+
+   (p.queued?'<span class="pf-q">Queued</span>':'')+'</button>'
+  ).join('');
+ }
+ function itemChip(i){
+  const cls=i.inherited?' inherited':(i.change&&i.change!=='baseline'?' changed':'');
+  return '<span class="pf-chip'+cls+'" title="'+esc(i.source||'')+'"><span>'+esc(i.label||i.ref)+'</span><small>'+esc(i.sourceVersion||'')+'</small></span>';
+ }
+ function detailCard(i){
+  return '<div class="pf-card"><strong>'+esc(i.label||i.ref)+'</strong><p>'+esc(i.kind||'part')+' · '+esc(i.source||'source unknown')+(i.detail?' · '+esc(i.detail):'')+'</p></div>';
+ }
+ function versionHtml(p,v){
+  const isWorking=v.state==='working';
+  const stateLabel=v.state==='locked-import'?'LOCKED IMPORT':(isWorking?'WORKING':'LOCKED');
+  const actions=isWorking
+   ? '<button class="btn" data-copy-revision="'+esc(v.id)+'">Copy request</button>'
+   : '<button class="btn" data-duplicate="'+esc(v.id)+'">Duplicate as new version</button>';
+  const ramble=isWorking
+   ? '<div class="pf-ramble"><label for="rev-'+esc(v.id)+'">What do you want to change in this version?</label><textarea id="rev-'+esc(v.id)+'" data-revision="'+esc(v.id)+'" placeholder="Ramble here. The locked parent stays untouched.">'+esc(v.revision||'')+'</textarea><div class="pf-ramble-actions"><button class="btn primary" data-save-revision="'+esc(v.id)+'">Save revision request</button>'+(p.id==='funnel'?'<button class="btn" data-open-project="'+esc(p.id)+'">Open actual Funnel</button>':'<button class="btn" data-open-funnel>Open Funnel resolver</button>')+'</div><div class="pf-note">No component parameters are edited here. The revision must resolve through the Funnel before any changed part receives a new version.</div></div>'
+   : '';
+  return '<article class="pf-version '+(isWorking?'working':'')+'" data-version-card="'+esc(v.id)+'">'+
+   '<div class="pf-vhead"><div class="pf-vcopy"><div class="pf-vtitle"><strong>'+esc(p.name)+' · '+esc(v.number)+'</strong><span class="pf-state '+(isWorking?'working':'locked')+'">'+stateLabel+'</span></div><div class="pf-vmeta">'+esc(v.title||'')+' · '+esc(new Date(v.createdAt).toLocaleString())+(v.parentId?' · from '+esc(versionById(p,v.parentId)?.number||'parent'):'')+'</div></div><div class="pf-vactions">'+actions+'</div></div>'+
+   '<div class="pf-components">'+(v.items||[]).map(itemChip).join('')+'</div>'+
+   '<details class="pf-detail"><summary>Expand version details</summary><div class="pf-detail-grid">'+(v.items||[]).map(detailCard).join('')+'</div></details>'+ramble+'</article>';
+ }
+ function renderStage(){
+  const p=projectById(selected);
+  if(!p){stage.innerHTML='<div class="pf-empty"><div><strong>Select a project</strong><span>Choose one from the project bin.</span></div></div>';return;}
+  const actions=(p.page?'<button class="btn" data-open-project="'+esc(p.id)+'">Open project</button>':'')+
+    '<button class="btn" data-export-project="'+esc(p.id)+'">Export manifest</button>';
+  let body='';
+  if(p.queued){
+   body='<div class="pf-queue"><strong>Queued — intentionally not imported yet.</strong><p>'+esc(p.description)+'</p><p>Nothing from the active Beta has been frozen, duplicated, or modified by this Funnel migration. When you are ready, this queue entry can become the first immutable Beta snapshot.</p></div>';
+  }else{
+   const versions=(p.versions||[]).slice().reverse();
+   body='<div class="pf-line">'+versions.map(v=>versionHtml(p,v)).join('')+'</div>';
+  }
+  stage.innerHTML='<header class="pf-project-head"><div><h2>'+esc(p.icon||'')+' '+esc(p.name)+'</h2><p>'+esc(p.description)+'</p></div><div class="pf-head-actions">'+actions+'</div></header>'+body;
+ }
+ function render(){renderCounts();renderList();renderStage();}
+ function exportProject(p){
+  const payload={schema:'moor.funnel-project',version:1,exportedAt:now(),project:JSON.parse(JSON.stringify(p))};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=p.id+'.funnel-project.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+ }
+ function openFunnel(){
+  window.open(new URL('quiz-funnel-v3.html',location.href).href,'_blank','noopener');
+ }
+
+ search.addEventListener('input',renderList);
+ listEl.addEventListener('click',e=>{
+  const b=e.target.closest('[data-project]');if(!b)return;
+  selected=b.dataset.project;save();render();
+ });
+ stage.addEventListener('click',e=>{
+  const p=projectById(selected);if(!p)return;
+  const dup=e.target.closest('[data-duplicate]');if(dup){const v=versionById(p,dup.dataset.duplicate);if(v)duplicateVersion(p,v);return;}
+  const saveBtn=e.target.closest('[data-save-revision]');if(saveBtn){const v=versionById(p,saveBtn.dataset.saveRevision),ta=stage.querySelector('[data-revision="'+CSS.escape(saveBtn.dataset.saveRevision)+'"]');if(v)queueRevision(p,v,ta?.value||'');return;}
+  const copyBtn=e.target.closest('[data-copy-revision]');if(copyBtn){const v=versionById(p,copyBtn.dataset.copyRevision);copyText(v?.revision||'');return;}
+  const openBtn=e.target.closest('[data-open-project]');if(openBtn){const target=projectById(openBtn.dataset.openProject);if(target)openPage(target);return;}
+  if(e.target.closest('[data-open-funnel]')){openFunnel();return;}
+  const exp=e.target.closest('[data-export-project]');if(exp){exportProject(p);return;}
+ });
+
+ openComponent=function(id){
+  if(id==='project-funnel'||id==='funnel'){selected='funnel';save();show();return;}
+  if(comp(id)){originalOpen(id);return;}
+ };
+ binView=function(){
+  const legacy=read(LEGACY,[]);
+  return originalBin()+(legacy.length?'<section class="bin-sec"><h3>Legacy Canvas projects</h3><p>'+legacy.length+' saved assemblies are preserved in local storage. Funnel does not mutate or delete them.</p></section>':'');
+ };
+ selectTab=function(id){
+  if(id==='workspace'){show();return;}
+  document.body.classList.remove('pw-active');
+  originalTab(id);
+ };
+ ensureTabbar=function(){
+  originalBar();
+  const bar=document.getElementById('tabbar');if(!bar)return;
+  let b=bar.querySelector('[data-tab="workspace"]');
+  if(!b){b=document.createElement('button');b.dataset.tab='workspace';bar.appendChild(b);}
+  b.innerHTML='<span class="tb-ic" aria-hidden="true">🌀</span><span>Funnel</span>';
+  if(document.body.classList.contains('pw-active')){
+   bar.style.display='';
+   bar.querySelectorAll('button').forEach(x=>{x.classList.toggle('on',x.dataset.tab==='workspace');x.setAttribute('aria-current',x.dataset.tab==='workspace'?'page':'false');});
+  }
+ };
+
+ render();
+ ensureTabbar();
+
+ const pending=params.get('component')||(typeof UI!=='undefined'?UI.focus:null);
+ if(pending&&comp(pending)){originalOpen(pending);}
+ window.PulseFunnel={show:show,get state(){return state},selectProject:id=>{if(projectById(id)){selected=id;save();show();}},queueBeta:()=>{selected='moor-beta';save();show();},duplicate:(projectId,versionId)=>{const p=projectById(projectId),v=p&&versionById(p,versionId);if(p&&v)duplicateVersion(p,v);}};
 }
 })();
