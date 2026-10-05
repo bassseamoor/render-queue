@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Stream openbmb/UltraFeedback into MOOR-native training metadata."""
+# Trigger revision: 2026-10-05 Pulse training import
 from __future__ import annotations
 import argparse, collections, gzip, heapq, json, math, statistics, time
 from pathlib import Path
