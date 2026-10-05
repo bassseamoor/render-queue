@@ -11,3 +11,5 @@ Generated reference code demonstrates a mechanism rather than the full productio
 Run `node blueprint/build.cjs` to rebuild after source/data changes. Run `node tests/blueprint-checks.cjs` and `node tests/pulse-checks.cjs` before release. Keep the independent registration, Funnel seed and manifest entry together. Never merge older dashboard snapshots over concurrent work.
 
 The proposed sequence is contracts → deterministic operations → local persistence/recovery → permissions/runtime → registry/shell → one proven save-and-return app → creation/verification → optional continuity, sharing, distribution and commerce. The complete map preserves later worlds/games and history without turning them into present production promises.
+
+Right-click a card (or use its expanded Color button) to assign one of 16 surface colors. The collapsible bottom-left color key has editable labels. Colors and key labels travel with full-context exports, imports, device drafts and Undo/Redo; older uncolored drafts remain valid. These annotations do not change build dependencies or domain accents.
