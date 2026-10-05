@@ -6300,9 +6300,22 @@ var FSH_WATER='precision mediump float;varying vec3 vC;varying vec3 vN;varying v
 /* BotW grass: per-blade wind. bend=0 at the root (stays planted), 1 at the
  * tip. Two wave trains + a slow traveling gust so waves roll across the
  * meadow. Tips lighten as they catch the light (fragment). */
-var VSH_GRASS='attribute vec3 p;attribute vec3 n;attribute vec3 c;attribute float bend;'+'uniform mat4 mvp;uniform float uTime;uniform float uWindK;'+'varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'void main(){vC=c;vN=n;vBend=bend;'+'float t=uTime;'+'float w1=sin(p.x*0.35+t*1.8)+sin(p.z*0.27-t*1.3)*0.7;'+'float w2=sin((p.x+p.z)*0.12+t*0.7);'+'vec3 dp=p+vec3(w1*0.08+w2*0.18,-abs(w1+w2)*0.03,w1*0.06-w2*0.12)*bend*uWindK;'+'vec4 wp=mvp*vec4(dp,1.0);vD=-wp.z;gl_Position=wp;}';
+var VSH_GRASS='attribute vec3 p;attribute vec3 n;attribute vec3 c;attribute float bend;'+'uniform mat4 mvp;uniform float uTime;uniform float uWindK;uniform vec3 uPlayer;'+'varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'void main(){'+'float b2=bend*bend;'+ /* quadratic: base stays rooted, tips do the dancing */
+'vC=c;vN=n;vBend=bend;'+
+'float t=uTime;'+
+'float w1=sin(p.x*0.35+t*1.8)+sin(p.z*0.27-t*1.3)*0.7;'+
+'float w2=sin((p.x+p.z)*0.12+t*0.7);'+
+'float w3=sin(p.x*0.05-p.z*0.04+t*0.45)+sin(p.z*0.06+p.x*0.03-t*0.3)*0.6;'+ /* slow traveling gust field */
+'vec3 dp=p+vec3(w1*0.08+w2*0.18+w3*0.22,-abs(w1+w2+w3)*0.02,w1*0.06-w2*0.12+w3*0.15)*b2*uWindK;'+
+'vec2 pd=p.xz-uPlayer.xy;float pdist=length(pd);'+ /* player/object disturbance */
+'float push=1.0-smoothstep(0.0,uPlayer.z,pdist);'+
+'dp.x+=(pd.x/(pdist+0.001))*push*push*0.45*b2;'+
+'dp.z+=(pd.y/(pdist+0.001))*push*push*0.45*b2;'+
+'float cv=fract(sin(dot(floor(p.xz*7.0),vec2(12.9898,78.233)))*43758.5453);'+ /* per-blade color variation */
+'vC*=0.85+0.3*cv;'+
+'vec4 wp=mvp*vec4(dp,1.0);vD=-wp.z;gl_Position=wp;}';
 var FSH_GRASS='precision mediump float;varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'uniform vec3 sun;uniform vec3 fog;uniform float fogK;uniform float uSunI;'+'void main(){'+'vec3 N=normalize(vN);'+'float lam=0.55+0.45*max(dot(N,normalize(sun)),0.0);'+'vec3 col=vC*lam*(0.55+0.45*uSunI);'+'col+=vec3(0.16,0.22,0.06)*vBend*vBend;'+'col=mix(col,col*vec3(0.9,1.05,0.75),vBend*0.5);'+'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+'gl_FragColor=vec4(col,1.0);}';
-var gprog=null, gAPos, gANrm, gACol, gABend, gUMVP, gUTime, gUSun, gUFog, gUFogK, gUSunI, gUWindK;
+var gprog=null, gAPos, gANrm, gACol, gABend, gUMVP, gUTime, gUSun, gUFog, gUFogK, gUSunI, gUWindK, gUPlayer;
 var wprog=null, wAPos, wANrm, wACol, wUMVP, wUTime, wUSun, wUCam, wUFog, wUFogK,
     wUShallow, wUDeep, wUSky, wUSkyZen, wUSkyHor, wUSunCol, wUSunI, wURain, wUGlint, wUCamP;
 
@@ -6354,6 +6367,7 @@ function initGL(){
   gUFogK=gl.getUniformLocation(gprog,'fogK');
   gUSunI=gl.getUniformLocation(gprog,'uSunI');
   gUWindK=gl.getUniformLocation(gprog,'uWindK');
+  gUPlayer=gl.getUniformLocation(gprog,'uPlayer');
   initSkyGL();
   initShaftBlobGL(); /* W1: volumetric shafts + blob AO programs */
   return true;
@@ -6448,6 +6462,10 @@ function drawGrass(t, mvpMat, sunV, fogV, fogKV){
   try{ if(typeof cam!=='undefined'&&cam.mode==='orbit'&&cam.dist>40)
     windK=Math.max(0.1,1-(cam.dist-40)/140); }catch(_wk){}
   gl.uniform1f(gUWindK,windK);
+  /* grass parts around the player as he walks through it */
+  var ppx=0, ppz=0;
+  try{ if(typeof playerXZ==='function'){ var _pp=playerXZ(); ppx=_pp.x; ppz=_pp.z; } }catch(_pe){}
+  gl.uniform3f(gUPlayer,ppx,ppz,2.5);
   gl.disable(gl.CULL_FACE); /* grass quads are single-sided; show both faces */
   for(var si=0;si<scatChunkList.length;si++){
     var gr=scatChunkList[si].buf&&scatChunkList[si].buf.grass;
@@ -13043,7 +13061,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-1538';
+var BETA_VERSION='20261005-1550';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
