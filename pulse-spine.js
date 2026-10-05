@@ -115,14 +115,23 @@ function outputSourceId(src){
   if(typeof src==='string')return src;
   return src.component||src.app||src.project||src.id||null;
 }
+function inferConcepts(text){
+  var hay=' '+String(text||'').toLowerCase().replace(/[^a-z0-9]+/g,' ')+' ', hits=[];
+  S.refs.filter(function(r){return r.kind==='concept';}).forEach(function(r){
+    var names=[r.title].concat(r.data&&Array.isArray(r.data.aliases)?r.data.aliases:[]);
+    if(names.some(function(n){n=' '+String(n||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()+' ';return n.trim()&&hay.indexOf(n)>=0;}))hits.push(r.id);
+  });
+  return hits;
+}
 function ingestOutput(d){
   d=d||{};
   var src=d.source||{}, sourceName=(typeof src==='string'?src:(src.app||src.project||src.component||'Application'));
   var srcId=outputSourceId(src);
+  var inferredConcepts=(d.concepts&&d.concepts.length)?d.concepts:inferConcepts([d.title,d.name,d.summary,textOf(d.payload),textOf(d.recipe)].join(' '));
   var output=addReference({
     id:d.id||null,kind:normalizeRefKind(d.kind||'artifact'),title:d.title||d.name||'Application output',summary:d.summary||'',
     status:d.status||'generated',source:sourceName,source_id:srcId,provenance:d.provenance||'procedural',
-    concepts:d.concepts||[],roles:d.roles||[],doc_ref:d.doc_ref||null,
+    concepts:inferredConcepts,roles:d.roles||[],doc_ref:d.doc_ref||null,
     implementation_ref:d.implementation_ref||(typeof d.implementation==='string'?d.implementation:null),
     data:d.payload!=null?d.payload:(d.data!=null?d.data:d)
   });
@@ -135,14 +144,14 @@ function ingestOutput(d){
     var rr=addReference({id:d.recipe_id||('recipe:'+slug(d.title||srcId||'output')+':'+hash(textOf(d.recipe))),kind:'recipe',
       title:(d.title||'Output')+' recipe',summary:'Reconstruction recipe for '+(d.title||'this output')+'.',
       status:(d.status==='machine-verified'||d.status==='human-approved')?d.status:'generated',source:sourceName,source_id:srcId,
-      provenance:d.provenance||'procedural',concepts:d.concepts||[],data:d.recipe});
+      provenance:d.provenance||'procedural',concepts:inferredConcepts,data:d.recipe});
     addEdge(output.id,rr.id,'derived_from','recipe');
     if(sourceRef)addEdge(rr.id,sourceRef.id,'generated_by','recipe-source');
   }
   if(d.intent){
     var ir=addReference({id:d.intent_id||('intent:'+hash(textOf(d.intent))),kind:'intent',title:'Intent · '+(d.title||sourceName),
       summary:typeof d.intent==='string'?d.intent:'Resolved intent record',status:d.intent_status||'observed',source:sourceName,
-      source_id:srcId,provenance:d.intent_provenance||'explicit',data:d.intent,concepts:d.concepts||[]});
+      source_id:srcId,provenance:d.intent_provenance||'explicit',data:d.intent,concepts:inferredConcepts});
     addEdge(output.id,ir.id,'answers','output-intent');
   }
   if(d.evidence){
@@ -250,9 +259,13 @@ function componentRecord(id){
 }
 
 function seedCoreConcepts(){
-  addReference({id:'concept:furniture',kind:'concept',title:'furniture',summary:'Objects designed to furnish inhabited spaces.',status:'observed',source:'User/example',provenance:'explicit'});
-  addReference({id:'concept:couch',kind:'concept',title:'couch',summary:'A loosely defined furniture concept that may have many recipes and implementations.',status:'observed',source:'User/example',provenance:'explicit',concepts:['concept:furniture']});
+  addReference({id:'concept:furniture',kind:'concept',title:'furniture',summary:'Objects designed to furnish inhabited spaces.',status:'observed',source:'User/example',provenance:'explicit',data:{aliases:['furnishing','furnishings']}});
+  addReference({id:'concept:couch',kind:'concept',title:'couch',summary:'A loosely defined furniture concept that may have many recipes and implementations.',status:'observed',source:'User/example',provenance:'explicit',concepts:['concept:furniture'],data:{aliases:['sofa','settee','sectional']}});
+  addReference({id:'concept:chair',kind:'concept',title:'chair',summary:'A furniture concept for a primarily single-person seat.',status:'observed',source:'User/example',provenance:'explicit',concepts:['concept:furniture'],data:{aliases:['armchair','seat']}});
+  addReference({id:'concept:lamp',kind:'concept',title:'lamp',summary:'A furniture/lighting concept with many procedural forms.',status:'observed',source:'User/example',provenance:'explicit',concepts:['concept:furniture'],data:{aliases:['table lamp','floor lamp','light fixture']}});
   addEdge('concept:couch','concept:furniture','instance_of','user-example');
+  addEdge('concept:chair','concept:furniture','instance_of','user-example');
+  addEdge('concept:lamp','concept:furniture','instance_of','user-example');
 }
 function syncReferenceGraph(){
   seedCoreConcepts();
@@ -262,6 +275,16 @@ function syncReferenceGraph(){
       status:c.inMoor||c.in_moor?'canonical':'observed',source:'Pulse Catalog',source_id:c.id,provenance:'imported',
       roles:roles,doc_ref:c.source||c.component_source||null,implementation_ref:c.toolSrc||c.panel_source||c.page||c.component_source||null,
       data:{id:c.id,cats:c.cats||[],job:c.job||'',why:c.why||'',technical:c.technical||'',limits:c.toolGap||c.honest_limits||''}});
+    if(cr.implementation_ref){
+      var impl=addReference({id:'implementation:'+c.id,kind:'implementation',title:(c.label||c.id)+' implementation',
+        summary:'Actual implementation reference for '+(c.label||c.id)+'.',status:cr.status,source:'Pulse Catalog',
+        source_id:c.id,provenance:'imported',implementation_ref:cr.implementation_ref,doc_ref:cr.doc_ref,
+        data:{component_ref:cr.id,implementation:cr.implementation_ref}});
+      addEdge(impl.id,cr.id,'implements','catalog');
+    }
+    if(c.id==='comp-furniture'||/furniture/i.test((c.label||'')+' '+(c.job||''))){
+      ['concept:furniture','concept:couch','concept:chair','concept:lamp'].forEach(function(cid){addEdge(cr.id,cid,'about','user-described-generator-territory');});
+    }
     if(roles.length){
       var gr=addReference({id:'generator:'+c.id,kind:'generator',title:(c.label||c.id)+' generator',summary:c.short||c.job||'Procedural generator capability.',
         status:cr.status,source:'Pulse Catalog',source_id:c.id,provenance:'imported',doc_ref:cr.doc_ref,implementation_ref:cr.implementation_ref,
@@ -733,6 +756,16 @@ window.PulseReferences={
   markdown:function(id){return refMarkdown(S.refs.find(function(r){return r.id===id;}));},
   related:function(id){return S.edges.filter(function(e){return e.from===id||e.to===id;});},
   sync:function(){harvest();return {references:S.refs.length,edges:S.edges.length};}
+};
+window.MoorOutput={
+  emit:function(detail){return ingestOutput(detail||{});},
+  reference:function(detail){var r=addReference(detail||{});save();return r;},
+  persist:function(key,detail){
+    var k='moor-output:'+slug(key||detail&&detail.id||detail&&detail.title||'output');
+    try{localStorage.setItem(k,JSON.stringify(detail));}catch(e){}
+    return ingestOutput(detail||{});
+  },
+  packet:referencePacket
 };
 
 harvest();
