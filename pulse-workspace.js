@@ -32,34 +32,35 @@ style.textContent=[
 'body.pw-active #main{padding:12px!important;overflow:hidden!important}',
 'body.pw-active #main>.pf-shell{display:flex}',
 'body.pw-active #main>#tabview,body.pw-active #main>#windows{display:none!important}',
-'.pf-top{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:5px 4px 3px}',
-'.pf-top-copy{flex:1;min-width:220px}.pf-top h2{font-size:1.25rem}.pf-top p{font-size:.82rem;color:var(--muted);margin-top:4px;max-width:760px}',
-'.pf-top .pill{font-size:11px}',
-'.pf-layout{display:grid;grid-template-columns:245px minmax(0,1fr);gap:12px;flex:1;min-height:0}',
-'.pf-bin,.pf-stage{border:1px solid var(--line);border-radius:16px;background:rgba(13,16,31,.80);min-height:0}',
-'.pf-bin{display:flex;flex-direction:column;padding:10px;overflow:hidden}',
-'.pf-bin input{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#090d19;color:var(--text);font:inherit}',
-'.pf-list{overflow:auto;min-height:0;margin-top:8px;padding-right:2px}',
-'.pf-project{width:100%;display:flex;align-items:center;gap:10px;text-align:left;border:1px solid transparent;background:transparent;color:var(--text);padding:10px;border-radius:11px;margin:2px 0}',
+'.pf-top{display:flex;align-items:center;gap:8px;padding:1px 2px 3px;min-height:32px}',
+'.pf-top-copy{flex:1;min-width:0}.pf-top h2{font-size:1rem;letter-spacing:.01em}.pf-top p{display:none}',
+'.pf-top .pill{display:none}',
+'.pf-layout{display:grid;grid-template-columns:178px minmax(0,1fr);gap:8px;flex:1;min-height:0}',
+'.pf-bin,.pf-stage{border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(10,11,20,.72);min-height:0}',
+'.pf-bin{display:flex;flex-direction:column;padding:7px;overflow:hidden}',
+'.pf-bin input{width:100%;height:30px;padding:5px 9px;border:1px solid rgba(255,255,255,.08);border-radius:9px;background:rgba(255,255,255,.035);color:var(--text);font:inherit;font-size:11px}',
+'.pf-list{overflow:auto;min-height:0;margin-top:4px;padding-right:1px}',
+'.pf-project{width:100%;display:flex;align-items:center;gap:8px;text-align:left;border:1px solid transparent;background:transparent;color:var(--text);padding:7px 8px;border-radius:9px;margin:1px 0}',
 '.pf-project:hover{background:#ffffff08;border-color:var(--line)}.pf-project.on{background:#7fd4ff12;border-color:#7fd4ff55}',
-'.pf-project-icon{font-size:18px;width:24px;text-align:center}.pf-project-copy{flex:1;min-width:0}.pf-project-copy strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pf-project-copy small{display:block;margin-top:3px;font-size:11px;color:var(--muted)}',
-'.pf-q{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #f4cb7766;color:var(--amber);border-radius:999px;padding:3px 6px}',
-'.pf-stage{overflow:auto;padding:18px 18px 40px;background:radial-gradient(circle at 78% 0,rgba(89,52,120,.12),transparent 34%),linear-gradient(180deg,rgba(11,9,18,.9),rgba(7,7,13,.94))}',
+'.pf-project-icon{font-size:14px;width:18px;text-align:center;opacity:.9}.pf-project-copy{flex:1;min-width:0}.pf-project-copy strong{display:block;font-size:11px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pf-project-copy small{display:none}',
+'.pf-q{width:6px;height:6px;padding:0;border:0;border-radius:50%;background:var(--amber);font-size:0;box-shadow:0 0 9px #f4cb7755}',
+'.pf-stage{overflow:auto;padding:12px 14px 28px;background:radial-gradient(circle at 78% 0,rgba(89,52,120,.10),transparent 32%),linear-gradient(180deg,rgba(10,8,17,.92),rgba(7,7,12,.96))}',
 '.pf-empty{display:grid;place-items:center;min-height:50%;color:var(--muted);text-align:center}.pf-empty strong{display:block;color:var(--text);font-size:18px;margin-bottom:6px}',
-'.pf-project-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:18px}.pf-project-head>div:first-child{flex:1}.pf-project-head h2{font-size:1.45rem}.pf-project-head p{margin-top:5px;color:var(--muted);font-size:.86rem;max-width:760px}.pf-head-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.pf-head-actions .btn{min-height:36px;font-size:12px;padding:7px 10px}',
-'.pf-layout-toggle{display:inline-flex;padding:3px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.045);box-shadow:inset 0 1px rgba(255,255,255,.05)}.pf-layout-toggle button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:11px;padding:6px 9px;border-radius:8px;cursor:pointer}.pf-layout-toggle button.on{color:#0b0d12;background:linear-gradient(180deg,#fff,#e9e9ee);box-shadow:0 4px 14px #0005}',
+'.pf-project-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;min-height:34px}.pf-project-head>div:first-child{flex:1;min-width:0}.pf-project-head h2{font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pf-project-head p{display:none}.pf-head-actions{display:flex;gap:5px;align-items:center;flex-wrap:nowrap}.pf-head-actions .btn{width:30px;height:30px;min-height:30px;padding:0;border-radius:9px;font-size:0}.pf-head-actions .btn:before{font-size:13px}.pf-head-actions .btn[data-open-project]:before{content:"↗"}.pf-head-actions .btn[data-export-project]:before{content:"⇩"}',
+'.pf-layout-toggle{display:inline-flex;padding:2px;border:1px solid rgba(255,255,255,.10);border-radius:9px;background:rgba(255,255,255,.03)}.pf-layout-toggle button{width:28px;height:26px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:0;padding:0;border-radius:7px;cursor:pointer}.pf-layout-toggle button[data-layout="vertical"]:before{content:"↕";font-size:13px}.pf-layout-toggle button[data-layout="horizontal"]:before{content:"↔";font-size:13px}.pf-layout-toggle button.on{color:#0b0d12;background:linear-gradient(180deg,#fff,#e9e9ee);box-shadow:0 3px 10px #0004}',
 '.pf-queue{border:1px solid #806b3b;background:#2d26142e;border-radius:14px;padding:16px}.pf-queue strong{color:var(--amber)}.pf-queue p{margin-top:6px;color:var(--muted);font-size:.86rem}',
-'.pf-line{position:relative}.pf-line.mode-vertical{padding-left:38px}.pf-line.mode-vertical:before{content:"";position:absolute;left:13px;top:10px;bottom:10px;width:1px;background:linear-gradient(#ffffff55,#ffffff0d)}.pf-line.mode-horizontal{display:flex;align-items:flex-start;gap:18px;min-width:max-content;padding:8px 8px 18px 8px}.pf-line.mode-horizontal:before{content:"";position:absolute;left:12px;right:12px;top:19px;height:1px;background:linear-gradient(90deg,#ffffff22,#ffffff55,#ffffff22)}',
-'.pf-version{position:relative;border:1px solid rgba(255,255,255,.13);border-radius:20px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));margin:0 0 18px;padding:15px;box-shadow:0 18px 50px #0006,inset 0 1px rgba(255,255,255,.08);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);overflow:visible}.pf-version:before{content:"";position:absolute;left:-32px;top:23px;width:11px;height:11px;border-radius:50%;background:#0b101b;border:2px solid #f8f8fa;box-shadow:0 0 15px #ffffff33}.pf-line.mode-horizontal .pf-version{width:min(520px,72vw);min-width:380px;margin:22px 0 0}.pf-line.mode-horizontal .pf-version:before{left:18px;top:-16px}.pf-version.working{border-color:rgba(244,203,119,.30);box-shadow:0 18px 50px #0006,inset 0 1px rgba(255,255,255,.09),0 0 0 1px rgba(244,203,119,.08)}.pf-version.working:before{border-color:var(--amber);box-shadow:0 0 16px #f4cb7755}',
-'.pf-vhead{display:flex;align-items:flex-start;gap:10px}.pf-vcopy{flex:1;min-width:0}.pf-vtitle{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.pf-vtitle strong{font-size:15px}.pf-state{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:var(--muted)}.pf-state.locked{color:#f2f5fa;border-color:#ffffff2e}.pf-state.working{color:var(--amber);border-color:#f4cb7766}.pf-vmeta{font-size:11px;color:var(--muted);margin-top:4px}.pf-vactions{display:flex;gap:7px;flex-wrap:wrap}.pf-vactions .btn{min-height:34px;padding:6px 9px;font-size:12px}',
-'.pf-summary{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.pf-summary span{font-size:10px;color:var(--muted);border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:3px 7px;background:rgba(255,255,255,.025)}',
-'.pf-components{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #ffffff10}.pf-line.mode-horizontal .pf-components{grid-template-columns:repeat(2,minmax(0,1fr))}',
-'.pf-tile{position:relative;min-height:94px;padding:13px 12px 11px;border:1px solid rgba(255,255,255,.72);border-radius:17px;background:linear-gradient(160deg,rgba(255,255,255,.98),rgba(237,238,243,.94));color:#16171b;box-shadow:0 10px 24px #0005,inset 0 1px rgba(255,255,255,1);overflow:hidden;isolation:isolate}.pf-tile:before{content:"";position:absolute;inset:0;background:linear-gradient(125deg,rgba(255,255,255,.72),rgba(255,255,255,.14) 38%,rgba(255,255,255,0) 62%);border-radius:inherit;pointer-events:none;z-index:-1}.pf-tile:after{content:"";position:absolute;inset:1px;border-radius:16px;border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 0 24px rgba(255,255,255,.18);pointer-events:none}.pf-tile strong{display:block;font-size:12px;line-height:1.28;letter-spacing:-.01em}.pf-tile small{display:block;margin-top:8px;font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#656a72}.pf-tile .pf-kind{position:absolute;right:9px;bottom:8px;font-size:9px;color:#7b8088;opacity:.75}.pf-tile.inherited{opacity:.28;filter:saturate(.5);box-shadow:0 5px 16px #0003}.pf-tile.changed{opacity:1;box-shadow:0 12px 30px #0007,0 0 0 1px rgba(110,255,170,.34),0 0 26px rgba(77,255,145,.20)}.pf-tile.new{opacity:1;box-shadow:0 12px 30px #0007,0 0 0 1px rgba(110,255,170,.52),0 0 34px rgba(77,255,145,.30)}.pf-tile.removed{opacity:.18;background:transparent;color:#e8e8ed;border:1px dashed rgba(255,255,255,.35);box-shadow:none}.pf-tile.removed:before,.pf-tile.removed:after{display:none}.pf-tile.blocked{box-shadow:0 10px 24px #0005,0 0 0 1px rgba(244,203,119,.38),0 0 24px rgba(244,203,119,.12)}',
-'.pf-detail{margin-top:12px;border-top:1px solid #ffffff0d;padding-top:10px}.pf-detail summary{color:var(--muted);font-size:12px}.pf-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px}.pf-card{border:1px solid #30394f;border-radius:10px;padding:10px;background:#0d1220}.pf-card strong{display:block;font-size:12px}.pf-card p{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.45}',
-'.pf-ramble{margin-top:13px;padding-top:12px;border-top:1px solid #ffffff0d}.pf-ramble label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}.pf-ramble textarea{width:100%;min-height:92px;resize:vertical}.pf-ramble .pf-note{font-size:11px;color:var(--muted);margin-top:6px}.pf-ramble-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.pf-ramble-actions .btn{min-height:34px;padding:6px 9px;font-size:12px}',
+'.pf-line{position:relative}.pf-line.mode-vertical{display:flex;flex-direction:column;align-items:flex-start;gap:20px}.pf-line.mode-horizontal{display:flex;align-items:flex-start;gap:22px;min-width:max-content;padding:4px 10px 14px 4px;overflow:visible}',
+'.pf-version{position:relative;display:flex;gap:10px;align-items:flex-start;background:transparent;border:0;padding:0;margin:0;box-shadow:none;overflow:visible}.pf-line.mode-vertical .pf-version{display:block;width:min(360px,100%)}.pf-line.mode-horizontal .pf-version{display:flex;flex-direction:row;min-width:max-content}.pf-version.working{filter:none}',
+'.pf-vhead{display:contents}.pf-vcopy{display:none}.pf-state,.pf-vmeta,.pf-summary{display:none}.pf-vactions{display:flex;gap:4px}.pf-vactions .btn{width:28px;height:28px;min-height:28px;padding:0;border-radius:8px;font-size:0}.pf-vactions .btn[data-duplicate]:before{content:"+";font-size:17px}.pf-vactions .btn[data-copy-revision]:before{content:"⧉";font-size:13px}',
+'.pf-version-marker{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;flex-direction:column;width:64px;min-width:64px;height:64px;border:1px solid rgba(255,255,255,.72);border-radius:17px;background:linear-gradient(160deg,#fff,#e8e9ee);color:#15161a;box-shadow:0 10px 24px #0005,inset 0 1px #fff}.pf-version-marker strong{font-size:15px;line-height:1}.pf-version-marker small{margin-top:5px;font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#747983}.pf-version.working .pf-version-marker{box-shadow:0 10px 24px #0005,0 0 24px rgba(244,203,119,.15)}.pf-line.mode-vertical .pf-version-marker{margin-bottom:9px}.pf-line.mode-horizontal .pf-version-marker{margin-top:4px}',
+'.pf-version-body{display:flex;flex-direction:column;gap:5px}.pf-version-tools{display:flex;gap:4px;align-items:center;margin-top:2px}.pf-line.mode-vertical .pf-version-body{margin-left:0}.pf-line.mode-horizontal .pf-version-body{min-width:0}.pf-line.mode-vertical .pf-version-tools{width:220px;justify-content:flex-end}.pf-line.mode-horizontal .pf-version-tools{justify-content:flex-start}',
+'.pf-components{display:flex;gap:8px}.pf-line.mode-vertical .pf-components{flex-direction:column;width:220px}.pf-line.mode-horizontal .pf-components{flex-direction:row;align-items:flex-start}',
+'.pf-tile{position:relative;width:150px;min-width:150px;height:86px;padding:12px 11px 10px;border:1px solid rgba(255,255,255,.72);border-radius:17px;background:linear-gradient(160deg,rgba(255,255,255,.98),rgba(237,238,243,.94));color:#16171b;box-shadow:0 10px 24px #0005,inset 0 1px rgba(255,255,255,1);overflow:hidden;isolation:isolate}.pf-line.mode-vertical .pf-tile{width:220px;min-width:220px}.pf-tile:before{content:"";position:absolute;inset:0;background:linear-gradient(125deg,rgba(255,255,255,.72),rgba(255,255,255,.14) 38%,rgba(255,255,255,0) 62%);border-radius:inherit;pointer-events:none;z-index:-1}.pf-tile:after{content:"";position:absolute;inset:1px;border-radius:16px;border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 0 24px rgba(255,255,255,.18);pointer-events:none}.pf-tile strong{display:block;font-size:11px;line-height:1.25;letter-spacing:-.01em}.pf-tile small{display:block;margin-top:7px;font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:#656a72}.pf-tile .pf-kind{position:absolute;right:9px;bottom:8px;font-size:8px;color:#7b8088;opacity:.72}.pf-tile.inherited{opacity:.25;filter:saturate(.4);box-shadow:0 5px 16px #0003}.pf-tile.changed{opacity:1;box-shadow:0 12px 30px #0007,0 0 0 1px rgba(110,255,170,.30),0 0 22px rgba(77,255,145,.16)}.pf-tile.new{opacity:1;box-shadow:0 12px 30px #0007,0 0 0 1px rgba(110,255,170,.46),0 0 28px rgba(77,255,145,.24)}.pf-tile.removed{opacity:.16;background:transparent;color:#e8e8ed;border:1px dashed rgba(255,255,255,.28);box-shadow:none}.pf-tile.removed:before,.pf-tile.removed:after{display:none}.pf-tile.blocked{box-shadow:0 10px 24px #0005,0 0 0 1px rgba(244,203,119,.32)}',
+'.pf-detail{margin:6px 0 0}.pf-detail summary{font-size:0;color:var(--muted);width:28px;height:28px;border:1px solid rgba(255,255,255,.08);border-radius:8px;display:flex;align-items:center;justify-content:center;list-style:none;cursor:pointer}.pf-detail summary:before{content:"···";font-size:13px;letter-spacing:1px}.pf-detail summary::-webkit-details-marker{display:none}.pf-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px;margin-top:7px;max-width:720px}.pf-card{border:1px solid #30394f;border-radius:9px;padding:9px;background:#0d1220}.pf-card strong{display:block;font-size:11px}.pf-card p{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.4}',
+'.pf-ramble{margin-top:8px;width:min(520px,78vw)}.pf-ramble label{display:none}.pf-ramble textarea{width:100%;min-height:64px;resize:vertical;padding:9px;font-size:12px}.pf-ramble .pf-note{display:none}.pf-ramble-actions{display:flex;gap:5px;margin-top:5px}.pf-ramble-actions .btn{min-height:30px;padding:5px 8px;font-size:11px}',
 '.pf-status{font-size:11px;color:var(--muted);padding:0 4px;min-height:16px}',
-'@media(max-width:900px){.pf-layout{grid-template-columns:190px minmax(0,1fr)}}',
-'@media(max-width:760px){body.pw-active #main{padding:6px!important}.pf-layout{display:block;overflow:auto}.pf-bin{max-height:210px;margin-bottom:8px}.pf-stage{overflow:visible;padding:14px}.pf-project-head{display:block}.pf-head-actions{margin-top:10px}.pf-line.mode-vertical{padding-left:27px}.pf-line.mode-vertical:before{left:9px}.pf-line.mode-vertical .pf-version:before{left:-23px}.pf-line.mode-horizontal{overflow-x:auto;padding-bottom:14px}.pf-line.mode-horizontal .pf-version{min-width:82vw;width:82vw}.pf-components{display:flex;overflow-x:auto;flex-wrap:nowrap;padding-bottom:8px;scroll-snap-type:x proximity}.pf-tile{flex:0 0 138px;scroll-snap-align:start}.pf-layout-toggle{width:100%}.pf-layout-toggle button{flex:1}}'
+'@media(max-width:900px){.pf-layout{grid-template-columns:150px minmax(0,1fr)}}',
+'@media(max-width:760px){body.pw-active #main{padding:5px!important}.pf-top{display:none}.pf-layout{display:block;overflow:auto}.pf-bin{max-height:118px;margin-bottom:5px;padding:5px}.pf-bin input{height:26px}.pf-list{display:flex;gap:3px;overflow-x:auto;overflow-y:hidden}.pf-project{width:auto;min-width:max-content;padding:6px 8px}.pf-project-copy strong{font-size:10px}.pf-project-icon{display:none}.pf-stage{overflow:visible;padding:10px}.pf-project-head{margin-bottom:8px}.pf-project-head h2{font-size:.92rem}.pf-head-actions{margin-left:auto}.pf-line.mode-horizontal{overflow-x:auto;padding-bottom:10px}.pf-line.mode-vertical .pf-version{width:100%}.pf-line.mode-vertical .pf-components{width:100%;align-items:flex-start}.pf-line.mode-vertical .pf-tile{width:min(220px,72vw);min-width:min(220px,72vw)}.pf-line.mode-horizontal .pf-components{overflow:visible}.pf-tile{flex:0 0 140px}.pf-ramble{width:100%}}'
 ].join('\n');
 document.head.appendChild(style);
 
@@ -167,8 +168,7 @@ function init(){
  shell.className='pf-shell';
  shell.setAttribute('aria-label','Funnel project versions');
  shell.innerHTML=
-  '<div class="pf-top"><div class="pf-top-copy"><h2>Funnel</h2><p>Projects are the visible unit. Locked versions are immutable; revisions duplicate the whole project and inherit unchanged answers by reference.</p></div>'+
-  '<span class="pill"><span id="pf-project-count"></span> projects</span><span class="pill amber"><span id="pf-queue-count"></span> queued</span></div>'+
+  '<div class="pf-top"><div class="pf-top-copy"><h2>Funnel</h2></div></div>'+
   '<div class="pf-layout"><aside class="pf-bin"><input id="pf-search" type="search" placeholder="Search projects…" aria-label="Search Funnel projects"><div id="pf-list" class="pf-list"></div></aside><section id="pf-stage" class="pf-stage"></section></div>'+
   '<div id="pf-status" class="pf-status" role="status"></div>';
  main.prepend(shell);
@@ -177,10 +177,7 @@ function init(){
  const status=t=>statusEl.textContent=t||'';
  function save(){state.selected=selected;write(STORE,state);write(LAYOUT_KEY,layoutMode);renderCounts();}
  function setLayout(mode){if(!['vertical','horizontal'].includes(mode))return;layoutMode=mode;write(LAYOUT_KEY,layoutMode);renderStage();status(mode==='horizontal'?'Horizontal lineage · oldest left, newest right.':'Vertical lineage · newest top, oldest bottom.');}
- function renderCounts(){
-  shell.querySelector('#pf-project-count').textContent=state.projects.length;
-  shell.querySelector('#pf-queue-count').textContent=state.projects.filter(p=>p.queued).length;
- }
+ function renderCounts(){}
  function show(){document.body.classList.add('pw-active');ensureTabbar();render();}
  function projectById(id){return state.projects.find(p=>p.id===id);}
  function versionById(p,id){return (p.versions||[]).find(v=>v.id===id);}
@@ -214,8 +211,7 @@ function init(){
   const rows=state.projects.filter(p=>!q||[p.name,p.description].join(' ').toLowerCase().includes(q));
   listEl.innerHTML=rows.map(p=>
    '<button class="pf-project '+(p.id===selected?'on':'')+'" data-project="'+esc(p.id)+'">'+
-   '<span class="pf-project-icon">'+esc(p.icon||'◇')+'</span><span class="pf-project-copy"><strong>'+esc(p.name)+'</strong><small>'+
-   (p.queued?'Queued · no snapshot yet':((p.versions||[]).length+' version'+((p.versions||[]).length===1?'':'s')))+'</small></span>'+
+   '<span class="pf-project-icon">'+esc(p.icon||'◇')+'</span><span class="pf-project-copy"><strong>'+esc(p.name)+'</strong></span>'+
    (p.queued?'<span class="pf-q">Queued</span>':'')+'</button>'
   ).join('');
  }
@@ -250,33 +246,33 @@ function init(){
  }
  function versionHtml(p,v){
   const isWorking=v.state==='working';
-  const stateLabel=v.state==='locked-import'?'LOCKED IMPORT':(isWorking?'WORKING':'LOCKED');
   const actions=isWorking
-   ? '<button class="btn" data-copy-revision="'+esc(v.id)+'">Copy request</button>'
-   : '<button class="btn" data-duplicate="'+esc(v.id)+'">Duplicate as new version</button>';
+   ? '<button class="btn" data-copy-revision="'+esc(v.id)+'" title="Copy request">Copy request</button>'
+   : '<button class="btn" data-duplicate="'+esc(v.id)+'" title="Duplicate as new version">Duplicate as new version</button>';
+  const marker='<div class="pf-version-marker"><strong>'+esc(v.number.toUpperCase())+'</strong><small>'+esc(p.name)+'</small></div>';
   const ramble=isWorking
-   ? '<div class="pf-ramble"><label for="rev-'+esc(v.id)+'">What do you want to change in this version?</label><textarea id="rev-'+esc(v.id)+'" data-revision="'+esc(v.id)+'" placeholder="Ramble here. The locked parent stays untouched.">'+esc(v.revision||'')+'</textarea><div class="pf-ramble-actions"><button class="btn primary" data-save-revision="'+esc(v.id)+'">Save revision request</button>'+(p.id==='funnel'?'<button class="btn" data-open-project="'+esc(p.id)+'">Open actual Funnel</button>':'<button class="btn" data-open-funnel>Open Funnel resolver</button>')+'</div><div class="pf-note">No component parameters are edited here. The revision must resolve through the Funnel before any changed part receives a new version.</div></div>'
+   ? '<div class="pf-ramble"><textarea aria-label="Revision request" id="rev-'+esc(v.id)+'" data-revision="'+esc(v.id)+'" placeholder="What changes?">'+esc(v.revision||'')+'</textarea><div class="pf-ramble-actions"><button class="btn primary" data-save-revision="'+esc(v.id)+'">Save</button>'+(p.id==='funnel'?'<button class="btn" data-open-project="'+esc(p.id)+'">Open Funnel</button>':'<button class="btn" data-open-funnel>Resolve</button>')+'</div></div>'
    : '';
   return '<article class="pf-version '+(isWorking?'working':'')+'" data-version-card="'+esc(v.id)+'">'+
-   '<div class="pf-vhead"><div class="pf-vcopy"><div class="pf-vtitle"><strong>'+esc(p.name)+' · '+esc(v.number)+'</strong><span class="pf-state '+(isWorking?'working':'locked')+'">'+stateLabel+'</span></div><div class="pf-vmeta">'+esc(v.title||'')+' · '+esc(new Date(v.createdAt).toLocaleString())+(v.parentId?' · from '+esc(versionById(p,v.parentId)?.number||'parent'):'')+'</div></div><div class="pf-vactions">'+actions+'</div></div>'+
-   '<div class="pf-summary">'+versionSummary(v)+'</div><div class="pf-components">'+(v.items||[]).map(itemTile).join('')+'</div>'+
-   '<details class="pf-detail"><summary>Expand version details</summary><div class="pf-detail-grid">'+(v.items||[]).map(detailCard).join('')+'</div></details>'+ramble+'</article>';
+   marker+
+   '<div class="pf-version-body"><div class="pf-components">'+(v.items||[]).map(itemTile).join('')+'</div>'+
+   '<div class="pf-version-tools"><div class="pf-vactions">'+actions+'</div><details class="pf-detail"><summary>Details</summary><div class="pf-detail-grid">'+(v.items||[]).map(detailCard).join('')+'</div></details></div>'+ramble+'</div></article>';
  }
  function renderStage(){
   const p=projectById(selected);
   if(!p){stage.innerHTML='<div class="pf-empty"><div><strong>Select a project</strong><span>Choose one from the project bin.</span></div></div>';return;}
   const toggle='<div class="pf-layout-toggle" role="group" aria-label="Version layout"><button data-layout="vertical" class="'+(layoutMode==='vertical'?'on':'')+'">Vertical</button><button data-layout="horizontal" class="'+(layoutMode==='horizontal'?'on':'')+'">Horizontal</button></div>';
-  const actions=toggle+(p.page?'<button class="btn" data-open-project="'+esc(p.id)+'">Open project</button>':'')+
-    '<button class="btn" data-export-project="'+esc(p.id)+'">Export manifest</button>';
+  const actions=toggle+(p.page?'<button class="btn" data-open-project="'+esc(p.id)+'" title="Open project" aria-label="Open project">Open project</button>':'')+
+    '<button class="btn" data-export-project="'+esc(p.id)+'" title="Export manifest" aria-label="Export manifest">Export manifest</button>';
   let body='';
   if(p.queued){
-   body='<div class="pf-queue"><strong>Queued — intentionally not imported yet.</strong><p>'+esc(p.description)+'</p><p>Nothing from the active Beta has been frozen, duplicated, or modified by this Funnel migration. When you are ready, this queue entry can become the first immutable Beta snapshot.</p></div>';
+   body='<div class="pf-queue"><strong>Queued</strong><p>Not frozen yet. Beta stays untouched until you import its first locked version.</p></div>';
   }else{
    const versions=(p.versions||[]).slice();
    if(layoutMode==='vertical')versions.reverse();
    body='<div class="pf-line mode-'+layoutMode+'">'+versions.map(v=>versionHtml(p,v)).join('')+'</div>';
   }
-  stage.innerHTML='<header class="pf-project-head"><div><h2>'+esc(p.icon||'')+' '+esc(p.name)+'</h2><p>'+esc(p.description)+'</p></div><div class="pf-head-actions">'+actions+'</div></header>'+body;
+  stage.innerHTML='<header class="pf-project-head"><div><h2>'+esc(p.name)+'</h2></div><div class="pf-head-actions">'+actions+'</div></header>'+body;
  }
  function render(){renderCounts();renderList();renderStage();}
  function exportProject(p){
