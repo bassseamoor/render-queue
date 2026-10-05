@@ -2723,6 +2723,23 @@ CSS +=
  '.wf-render-fail{min-height:210px;display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;border:1px solid rgba(255,120,140,.25);border-radius:14px;background:#090c14;color:#d9deef;font:11px/1.5 system-ui;text-align:center}'+
  '@media(max-width:620px){.wf-triple-stage{height:238px}.wf-triple-adapters{grid-template-columns:1fr 1fr 1fr}.wf-triple-adapters article{padding:6px}.wf-triple-state>label{grid-template-columns:44px 1fr 43px}}';
 
+/* WONDER FEED VISUAL-FIRST V4 */
+CSS +=
+ '.wd-card[data-kind="amalgam"]{padding:8px 58px 18px 8px!important}'+
+ '.wd-card[data-kind="amalgam"] .wd-idea{padding:9px!important;background:#080b13!important}'+
+ '.wd-card[data-kind="amalgam"] .wd-kicker{margin:1px 3px 8px!important;font-size:8px!important;letter-spacing:.16em!important}'+
+ '.wd-card[data-kind="amalgam"] .wf-artifact-preview{margin:0!important;min-height:340px;border-radius:12px!important}'+
+ '.wd-card[data-kind="amalgam"] .wf-native-shell{min-height:340px}'+
+ '.wf-amalgam-meta{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 3px 1px}'+
+ '.wd-card[data-kind="amalgam"] .wd-ideaT{font-size:17px!important;line-height:1.2!important;margin:0 0 4px!important}'+
+ '.wd-card[data-kind="amalgam"] .wd-ideaB{font-size:10px!important;line-height:1.35!important;color:#8993ad!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'+
+ '.wd-card[data-kind="amalgam"] .wd-copy-build{margin:0!important;padding:7px 11px!important;font-size:10px!important}'+
+ '.wf-qblend{height:min(56vh,430px);min-height:340px;position:relative;overflow:hidden;border-radius:12px;background:#05070d}'+
+ '.wf-qblend>canvas{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;border-radius:0!important}'+
+ '.wf-qsrc{position:absolute;left:-5px;top:-5px;width:2px;height:2px;overflow:hidden;opacity:.001;pointer-events:none}.wf-qsource{width:2px!important;height:2px!important;display:block!important}'+
+ '.wf-qhud{position:absolute;left:10px;top:10px;z-index:3;padding:7px 9px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(4,7,13,.58);backdrop-filter:blur(7px)}.wf-qhud b{display:block;font-size:9px;color:#eef2ff}.wf-qhud span{display:block;margin-top:2px;font-size:7px;letter-spacing:.09em;color:#8d9abc}'+
+ '@media(max-width:620px){.wd-card[data-kind="amalgam"]{padding:7px 48px 14px 6px!important}.wd-card[data-kind="amalgam"] .wf-artifact-preview{min-height:330px}.wf-qblend{height:52vh;min-height:330px}.wf-amalgam-meta{padding-top:8px}.wd-card[data-kind="amalgam"] .wd-ideaT{font-size:16px!important}.wd-card[data-kind="amalgam"] .wd-ideaB{-webkit-line-clamp:1}}';
+
 /* ================= GENOME =================
  * genome = {type, seed, p:{...}} — the complete, serializable recipe.
  * make(genome) is a pure function of the genome: same genome, same wonder.
@@ -7230,6 +7247,183 @@ function amalgamCopy(spec){
   lines.push('Present the working result in its native medium first; explanation is secondary.');
   return lines.join('\n');
 }
+/* WONDER FEED QUALITY RESET V4
+ * Default feed = useful amalgamations only.
+ * Component-balanced selection avoids capability-count bias and duplicate components. */
+function capQText(c){
+  return [c.component,c.verb,c.what,(c.knobs||[]).join(' '),(c.outputs||[]).join(' '),c.notes||'',c.code_ref||''].join(' ').toLowerCase();
+}
+function capVisibleScore(c){
+  var h=capQText(c),s=0;
+  if(/\b(render|canvas|webgl|frame|visual|ui|panel|window|editor|map|terrain|world|planet|model|mesh|creature|audio|sound|ambience|waveform|chart|feed|scene)\b/.test(h))s+=7;
+  if(/\b(generate|transform|simulate|compose|compile|build|create)\b/.test(h))s+=3;
+  if(/\b(export|save|share|sync|capture|record|route|control|govern)\b/.test(h))s+=2;
+  if(c.status==='marginal')s-=7;
+  if(/\bthin primitive\b|\bhelper\b|\bplumbing\b/.test(h))s-=4;
+  return s;
+}
+function capRoleQ(c){
+  var v=String(c.verb||'').toLowerCase(),h=capQText(c);
+  if(/\brender|paint|display|draw\b/.test(v+' '+h))return 'present';
+  if(/\bgenerate|simulate|emit|spawn\b/.test(v))return 'source';
+  if(/\btransform|compile|compose|mix|filter|convert|map\b/.test(v))return 'transform';
+  if(/\bcontrol|govern|steer|schedule|pace|route\b/.test(v+' '+h))return 'control';
+  if(/\bsave|store|export|serialize|capture|record|sync\b/.test(v+' '+h))return 'persist';
+  return 'function';
+}
+function capTokensQ(s){
+  var stop={the:1,and:1,with:1,from:1,into:1,for:1,that:1,this:1,seeded:1,component:1,render:1,renders:1,generates:1,transforms:1};
+  var m=String(s||'').toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g)||[],o={},a=[];
+  m.forEach(function(x){if(!stop[x]&&!o[x]){o[x]=1;a.push(x);}});
+  return a;
+}
+function capCompatQ(chosen,c){
+  var score=capVisibleScore(c),role=capRoleQ(c),roles={};
+  chosen.forEach(function(x){roles[capRoleQ(x)]=1;});
+  if(!roles[role])score+=4;
+  if(role==='present'&&(roles.source||roles.transform||roles.control))score+=5;
+  if((role==='transform'||role==='control')&&(roles.source||roles.present))score+=4;
+  if(role==='persist'&&chosen.length>=2)score+=2;
+  var ct=capTokensQ((c.knobs||[]).join(' ')+' '+c.what+' '+(c.outputs||[]).join(' ')),common=0;
+  chosen.forEach(function(x){
+    var xt=capTokensQ((x.outputs||[]).join(' ')+' '+x.what+' '+(x.knobs||[]).join(' ')),set={};
+    xt.forEach(function(t){set[t]=1;});ct.forEach(function(t){if(set[t])common++;});
+  });
+  score+=Math.min(6,common*1.25);
+  return score;
+}
+amalgamCaps=function(P){
+  var C=caps().filter(function(c){return c&&c.component&&c.what&&c.status!=='marginal';});
+  if(!C.length)return [];
+  var groups={};
+  C.forEach(function(c){(groups[c.component]=groups[c.component]||[]).push(c);});
+  var names=Object.keys(groups).filter(function(n){return groups[n].some(function(c){return capVisibleScore(c)>=2;});}).sort();
+  if(!names.length)names=Object.keys(groups).sort();
+  var idx=[P.capA,P.capB,P.capC,P.capD].map(function(x){return Math.abs(Math.round(x||0));});
+  var want=Math.max(2,Math.min(4,Math.round(P.partCount||3)));
+  var anchorName=names[idx[0]%names.length],anchorCaps=groups[anchorName].slice();
+  anchorCaps.sort(function(a,b){return capVisibleScore(b)-capVisibleScore(a);});
+  var topA=anchorCaps.slice(0,Math.max(1,Math.min(6,anchorCaps.length)));
+  var out=[topA[idx[1]%topA.length]],used={};used[anchorName]=1;
+  for(var step=1;step<want;step++){
+    var ranked=[];
+    names.forEach(function(name){
+      if(used[name])return;
+      var best=null,bestScore=-999;
+      groups[name].forEach(function(c){var sc=capCompatQ(out,c);if(sc>bestScore){bestScore=sc;best=c;}});
+      if(best)ranked.push({name:name,cap:best,score:bestScore});
+    });
+    if(!ranked.length)break;
+    ranked.sort(function(a,b){return b.score-a.score||a.name.localeCompare(b.name);});
+    var top=ranked.slice(0,Math.min(9,ranked.length));
+    var pick=top[idx[(step+1)%idx.length]%top.length];
+    used[pick.name]=1;out.push(pick.cap);
+  }
+  return out;
+};
+artifactTypeFor=function(parts){
+  var h=amalgamHay(parts),renderCount=0,uiCount=0,audioCount=0,env=0,model=0;
+  parts.forEach(function(c){
+    var x=capQText(c);
+    if(String(c.verb||'').toLowerCase()==='renders'||/\b(canvas frame|webgl frame|painted ui|visual|rendered)\b/.test(x))renderCount++;
+    if(/\b(ui|panel|window|editor|dashboard|feed|console|canvas editor)\b/.test(x))uiCount++;
+    if(/\b(audio|ambience|sound|stereo|waveform|mixl|mixr)\b/.test(x))audioCount++;
+    if(/\b(terrain|world|planet|biome|forest|environment|scene|city|map)\b/.test(x))env++;
+    if(/\b(model|mesh|creature|geometry|voxel|sdf|softbody)\b/.test(x))model++;
+  });
+  if(renderCount>=Math.ceil(parts.length/2)){
+    if(model>renderCount/2)return 'model';
+    if(env>renderCount/2)return 'environment';
+    return 'animation';
+  }
+  if(uiCount>=Math.ceil(parts.length/2))return 'ui';
+  if(audioCount&&renderCount)return 'animation';
+  var scores={ui:uiCount*4,animation:audioCount*3,model:model*3,environment:env*3,function:1,system:0};
+  if(/\b(sync|state|registry|network|pipeline|workflow|continuity|event)\b/.test(h))scores.system+=5;
+  if(/\b(save|export|import|transform|compile|codec|query|validate|encode|decode|search|function)\b/.test(h))scores.function+=4;
+  var best='function',n=-1;Object.keys(scores).forEach(function(k){if(scores[k]>n){best=k;n=scores[k];}});return best;
+};
+function wonderKindFromCapQ(c){
+  var m=String(c&&c.code_ref||'').match(/TYPES\s+([a-z0-9_-]+)/i);
+  if(m)return m[1].toLowerCase();
+  var w=String(c&&c.what||'').toLowerCase(),map=[
+    [/planet sphere/,'planet'],[/particle field/,'particles'],[/fire fountain/,'firefountain'],[/spiral galaxy/,'galaxy'],
+    [/starfield warp/,'warp'],[/heightfield ridgeline/,'terrain'],[/softbody spring-ring creature/,'creature'],
+    [/tree silhouettes/,'forest'],[/wave ribbons/,'tide'],[/polar labyrinth/,'maze'],[/particle swarm/,'swarm'],
+    [/palette fields/,'spectrum'],[/smooth-union goo/,'metaball'],[/aurora/,'aurora'],[/lightning storm/,'storm'],
+    [/glass refraction/,'glass'],[/fireball/,'fireball'],[/frost nova/,'frostnova']
+  ];
+  for(var i=0;i<map.length;i++)if(map[i][0].test(w))return map[i][1];
+  return null;
+}
+function wonderTypeQ(kind){for(var i=0;i<TYPES.length;i++)if(TYPES[i].kind===kind)return TYPES[i];return null;}
+function wonderKindsQ(spec){
+  var out=[],seen={};
+  (spec.parts||[]).forEach(function(c){var k=wonderKindFromCapQ(c);if(k&&!seen[k]&&wonderTypeQ(k)){seen[k]=1;out.push(k);}});
+  return out.slice(0,3);
+}
+function nativeWonderBlendQ(slot,spec){
+  var kinds=wonderKindsQ(spec),seed=spec.seed>>>0,live=false,raf=0,children=[];
+  slot.innerHTML='<div class="wf-qblend"><canvas></canvas><div class="wf-qsrc"></div><div class="wf-qhud"><b>'+esc(spec.title)+'</b><span>LIVE · '+kinds.map(function(k){return k.toUpperCase();}).join(' + ')+'</span></div></div>';
+  var stage=slot.firstChild,out=stage.querySelector('canvas'),holder=stage.querySelector('.wf-qsrc'),ctx=out.getContext('2d',{alpha:false});
+  function resize(){
+    var r=stage.getBoundingClientRect(),d=Math.min(window.devicePixelRatio||1,2),w=Math.max(320,Math.round((r.width||360)*d)),h=Math.max(260,Math.round((r.height||360)*d));
+    if(out.width!==w||out.height!==h){out.width=w;out.height=h;}return {w:w,h:h};
+  }
+  function cover(cv,W,H){
+    var sw=cv.width||1,sh=cv.height||1,sa=sw/sh,da=W/H,sx=0,sy=0,cw=sw,ch=sh;
+    if(sa>da){cw=sh*da;sx=(sw-cw)/2;}else{ch=sw/da;sy=(sh-ch)/2;}
+    ctx.drawImage(cv,sx,sy,cw,ch,0,0,W,H);
+  }
+  kinds.forEach(function(k,i){
+    var t=wonderTypeQ(k),r=mulberry32((seed^Math.imul(i+1,0x45d9f3b))>>>0),p=t.params(r);
+    if(typeof p.hue==='number')p.hue=(seed%360+i*57)%360;
+    if(typeof p.pick==='number')p.pick=(seed^0x9e3779b9)>>>0;
+    var w=makeWonder({type:k,seed:(seed^Math.imul(i+11,0x27d4eb2d))>>>0,p:p}),cv=w.el.querySelector('canvas');
+    if(cv){cv.className='wf-qsource';holder.appendChild(cv);children.push({w:w,cv:cv,k:k});}
+  });
+  function paint(){
+    var z=resize(),W=z.w,H=z.h;ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;ctx.fillStyle='#05070d';ctx.fillRect(0,0,W,H);
+    children.forEach(function(c,i){try{ctx.globalCompositeOperation=i===0?'source-over':'screen';ctx.globalAlpha=i===0?1:(i===1?.82:.62);cover(c.cv,W,H);}catch(e){}});
+    ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
+  }
+  function frame(){if(!live){raf=0;return;}raf=requestAnimationFrame(frame);paint();}
+  paint();
+  return {start:function(){if(live)return;live=true;children.forEach(function(c){try{c.w.start();}catch(e){}});if(!raf)frame();},
+    stop:function(){live=false;if(raf){cancelAnimationFrame(raf);raf=0;}children.forEach(function(c){try{c.w.stop();}catch(e){}});}};
+}
+function nativeStereoContextQ(slot,spec){
+  var q=makePreviewCanvas(slot,330),ctx=q.ctx,W=q.cv.width,H=q.cv.height,d=q.dpr,t=0,raf=0,live=false;
+  function wave(y,phase,amp){
+    ctx.beginPath();for(var x=18*d;x<W-18*d;x+=3*d){var u=x/W,n=Math.sin(u*28+phase)*.38+Math.sin(u*71-phase*.7)*.18;var yy=y+n*amp;if(x===18*d)ctx.moveTo(x,yy);else ctx.lineTo(x,yy);}ctx.stroke();
+  }
+  function paint(){
+    ctx.fillStyle='#070b13';ctx.fillRect(0,0,W,H);ctx.strokeStyle='rgba(255,255,255,.055)';ctx.lineWidth=d;
+    for(var x=18*d;x<W;x+=40*d){ctx.beginPath();ctx.moveTo(x,52*d);ctx.lineTo(x,H-28*d);ctx.stroke();}
+    ctx.fillStyle='#edf2ff';ctx.font='700 '+14*d+'px system-ui';ctx.fillText('SEEDED STEREO CANVAS',18*d,27*d);
+    ctx.font=9*d+'px system-ui';ctx.fillStyle='rgba(150,165,200,.8)';ctx.fillText('48,000 Hz · 12 s · 576,000 samples / channel',18*d,44*d);
+    ctx.strokeStyle='rgba(99,213,255,.9)';ctx.lineWidth=1.5*d;wave(H*.39,t,42*d);ctx.strokeStyle='rgba(244,203,119,.78)';wave(H*.68,t*.87+1.6,42*d);
+    ctx.fillStyle='rgba(99,213,255,.9)';ctx.font='700 '+9*d+'px system-ui';ctx.fillText('L',18*d,H*.39-50*d);
+    ctx.fillStyle='rgba(244,203,119,.85)';ctx.fillText('R',18*d,H*.68-50*d);
+    ctx.fillStyle='rgba(158,171,207,.7)';ctx.font=8*d+'px ui-monospace,monospace';ctx.fillText('seed → rng → mixL / mixR → recipe paint',18*d,H-14*d);t+=.035;
+  }
+  paint();function frame(){if(!live){raf=0;return;}raf=requestAnimationFrame(frame);paint();}
+  return {start:function(){live=true;if(!raf)frame();},stop:function(){live=false;if(raf){cancelAnimationFrame(raf);raf=0;}}};
+}
+var renderArtifactPreviewV4Base=renderArtifactPreview;
+renderArtifactPreview=function(slot,spec){
+  try{
+    if(typeof isWonderTripleShared==='function'&&isWonderTripleShared(spec))return wonderTripleSharedPreview(slot,spec);
+    if(wonderKindsQ(spec).length)return nativeWonderBlendQ(slot,spec);
+    var h=nativeHay(spec);
+    if(/seeded stereo render context|mixl|mixr|stereo ambient|ambience-engine/.test(h))return nativeStereoContextQ(slot,spec);
+    return renderArtifactPreviewV4Base(slot,spec);
+  }catch(err){
+    slot.innerHTML='<div class="wf-render-fail">renderer failed · '+esc((err&&err.message)||'unknown error')+'</div>';
+    return {start:function(){},stop:function(){}};
+  }
+};
+
 TYPES.push({kind:'amalgam',icon:'✣',label:'Amalgam',
  params:function(r){
    var n=Math.max(1,caps().length);
@@ -7244,17 +7438,15 @@ TYPES.push({kind:'amalgam',icon:'✣',label:'Amalgam',
      return {el:el,title:'Amalgam',sub:'empty catalog',start:function(){},stop:function(){}};
    }
    var spec=amalgamSpec(parts,P,seed), preview=null;
-   var chips=parts.map(function(c){return '<span>'+esc(c.component)+'</span>';}).join('');
    el.querySelector('.wd-cap b').textContent=spec.title;
    el.querySelector('.wd-cap span').textContent=spec.type+' · '+spec.parts.length+' parts';
    vis.innerHTML=
      '<div class="wd-idea">'+
        '<div class="wd-kicker">'+esc(spec.modeName)+' · '+esc(spec.type.toUpperCase())+'</div>'+
-       '<div class="wf-artifact-preview" style="margin:0 0 14px"></div>'+
-       '<div class="wd-ideaT" style="font-size:18px">'+esc(spec.title)+'</div>'+
-       '<div class="wd-ideaB" style="font-size:13px;line-height:1.45;opacity:.82">'+esc(spec.relation)+'</div>'+
-       '<div class="wd-ideaS">'+chips+'</div>'+
-       '<button class="wd-hbtn wd-copy-build" style="margin-top:12px">build this ↗</button>'+
+       '<div class="wf-artifact-preview"></div>'+
+       '<div class="wf-amalgam-meta"><div><div class="wd-ideaT">'+esc(spec.title)+'</div>'+
+       '<div class="wd-ideaB">'+esc(spec.relation)+'</div></div>'+
+       '<button class="wd-hbtn wd-copy-build">build ↗</button></div>'+
      '</div>';
    preview=renderArtifactPreview(vis.querySelector('.wf-artifact-preview'),spec)||{};
    vis.querySelector('.wd-copy-build').onclick=function(e){
@@ -7626,7 +7818,12 @@ function mountFeed(host, opts){
      * 4. Soft nudge: param nudging is 20% toward mean, min 5 samples, and the
      *    open-random branch never nudges (full wild RANGES). */
     var recentKinds = [];
+    var recentAmalgams = [];
     var cardCount = 0;
+    function amalgamSignature(g){
+      if(!g||g.type!=='amalgam')return '';
+      try{return amalgamCaps(g.p).map(function(c){return c.component;}).sort().join('|');}catch(e){return '';}
+    }
     function noteKind(k){
       recentKinds.push(k);
       if (recentKinds.length > 6) recentKinds.shift();
@@ -7653,12 +7850,17 @@ function mountFeed(host, opts){
       for (var i=0;i<TYPES.length;i++){
         var k=TYPES[i].kind;
         if (onlyKind){ if (k===onlyKind) ks.push(k); }
-        else if (!TYPES[i].noFeed) ks.push(k);
+        else if (k==='amalgam') ks.push(k);
       }
       return ks;
     }
     function pickGenome(isSurprise){
       var g;
+      if (!onlyKind){
+        var at=typeByKind('amalgam');
+        g={type:'amalgam',seed:(rng()*1000000000)|0,p:at.params(rng)};
+        return sanitizeGenome(g);
+      }
       if (onlyKind){
         var ot=typeByKind(onlyKind);
         g = {type:onlyKind, seed:(rng()*1000000000)|0, p:ot.params(rng)};
@@ -7688,8 +7890,11 @@ function mountFeed(host, opts){
     function nextGenome(){
       cardCount++;
       Taste2.decay();
-      var g=pickGenome(false), tries=0;
-      while(tries<8 && Attention.isSuppressed(genomeKey(g))){g=pickGenome(false);tries++;}
+      var g=pickGenome(false),tries=0,sig=amalgamSignature(g);
+      while(tries<16 && (Attention.isSuppressed(genomeKey(g)) || (sig&&recentAmalgams.indexOf(sig)>=0))){
+        g=pickGenome(false);sig=amalgamSignature(g);tries++;
+      }
+      if(sig){recentAmalgams.push(sig);if(recentAmalgams.length>12)recentAmalgams.shift();}
       noteKind(g.type);
       return g;
     }
