@@ -6301,7 +6301,7 @@ var FSH_WATER='precision mediump float;varying vec3 vC;varying vec3 vN;varying v
  * tip. Two wave trains + a slow traveling gust so waves roll across the
  * meadow. Tips lighten as they catch the light (fragment). */
 var VSH_GRASS='attribute vec3 p;attribute vec3 n;attribute vec3 c;attribute float bend;'+'uniform mat4 mvp;uniform float uTime;uniform float uWindK;'+'varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'void main(){vC=c;vN=n;vBend=bend;'+'float t=uTime;'+'float w1=sin(p.x*0.35+t*1.8)+sin(p.z*0.27-t*1.3)*0.7;'+'float w2=sin((p.x+p.z)*0.12+t*0.7);'+'vec3 dp=p+vec3(w1*0.08+w2*0.18,-abs(w1+w2)*0.03,w1*0.06-w2*0.12)*bend*uWindK;'+'vec4 wp=mvp*vec4(dp,1.0);vD=-wp.z;gl_Position=wp;}';
-var FSH_GRASS='precision mediump float;varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'uniform vec3 sun;uniform vec3 fog;uniform float fogK;uniform float uSunI;'+'void main(){'+'vec3 N=normalize(vN);'+'float lam=0.55+0.45*max(dot(N,normalize(sun)),0.0);'+'vec3 col=vC*lam*(0.55+0.45*uSunI);'+'col+=vec3(0.10,0.14,0.04)*vBend;'+'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+'gl_FragColor=vec4(col,1.0);}';
+var FSH_GRASS='precision mediump float;varying vec3 vC;varying vec3 vN;varying float vD;varying float vBend;'+'uniform vec3 sun;uniform vec3 fog;uniform float fogK;uniform float uSunI;'+'void main(){'+'vec3 N=normalize(vN);'+'float lam=0.55+0.45*max(dot(N,normalize(sun)),0.0);'+'vec3 col=vC*lam*(0.55+0.45*uSunI);'+'col+=vec3(0.16,0.22,0.06)*vBend*vBend;'+'col=mix(col,col*vec3(0.9,1.05,0.75),vBend*0.5);'+'float f=1.0-exp(-vD*fogK);col=mix(col,fog,clamp(f,0.0,1.0));'+'gl_FragColor=vec4(col,1.0);}';
 var gprog=null, gAPos, gANrm, gACol, gABend, gUMVP, gUTime, gUSun, gUFog, gUFogK, gUSunI, gUWindK;
 var wprog=null, wAPos, wANrm, wACol, wUMVP, wUTime, wUSun, wUCam, wUFog, wUFogK,
     wUShallow, wUDeep, wUSky, wUSkyZen, wUSkyHor, wUSunCol, wUSunI, wURain, wUGlint, wUCamP;
@@ -8136,20 +8136,24 @@ function updateScatterChunks(pcx,pcz){
  * pebble clusters (~24 tris), mushrooms (~20), crystal shards (~24),
  * fallen logs (~48). All deterministic via the passed RNG. */
 function grassSprig(x,y,z,s,R,tint){
-  /* 3 crossed quads leaning with the wind — reads as grass at 6 triangles.
-   * In the grass buffer: roots bend=0, tips bend=1 for the wind shader.
-   * BotW scale: big clumps (1.5-3m) so the meadow reads at a distance. */
-  var wa=R()*Math.PI, wl=0.15+R()*0.25, h=(0.9+R()*0.9)*s, w2=0.16*s;
+  /* 3 crossed quads = one blade-tuft. PROPORTIONS ARE THE LOOK: BotW tufts are
+   * short and wide, never tall pipes — height ~0.4-0.8m, width ~0.5-1m.
+   * Blades taper to the tip and shade dark-root -> light-tip (blade shading).
+   * In the grass buffer: roots bend=0, tips bend=1 for the wind shader. */
+  var wa=R()*Math.PI, h=(0.38+R()*0.42)*s, w2=0.30*s, w2t=w2*0.30;
   var c=tint||[0.42,0.58,0.24];
   var bj=0.8+0.4*R();
   var cr=Math.min(1,c[0]*bj), cg=Math.min(1,c[1]*bj), cb=Math.min(1,c[2]*bj);
+  var rk=0.42; /* root darkening: strong vertical blade gradient */
   for(var q=0;q<3;q++){
     var a=wa+q*Math.PI/3, dx=Math.cos(a), dz=Math.sin(a);
-    var lx=Math.cos(wa)*wl, lz=Math.sin(wa)*wl;
-    var v0=pushG(x-dx*w2,y,z-dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8, 0);
-    var v1=pushG(x+dx*w2,y,z+dz*w2, 0,1,0, cr*0.8,cg*0.8,cb*0.8, 0);
-    var v2=pushG(x+dx*w2+lx,y+h,z+dz*w2+lz, 0,1,0, cr,cg,cb, 1);
-    var v3=pushG(x-dx*w2+lx,y+h,z-dz*w2+lz, 0,1,0, cr,cg,cb, 1);
+    var la=wa+R()*0.6-0.3, ll=0.10+R()*0.22, lx=Math.cos(la)*ll, lz=Math.sin(la)*ll;
+    var ox=(R()-0.5)*0.35*s, oz=(R()-0.5)*0.35*s; /* tuft volume, not a flat fan */
+    var hh=h*(0.75+0.5*R());
+    var v0=pushG(x+ox-dx*w2,y,z+oz-dz*w2, 0,1,0, cr*rk,cg*rk,cb*rk, 0);
+    var v1=pushG(x+ox+dx*w2,y,z+oz+dz*w2, 0,1,0, cr*rk,cg*rk,cb*rk, 0);
+    var v2=pushG(x+ox+dx*w2t+lx,y+hh,z+oz+dz*w2t+lz, 0,1,0, cr,cg,cb, 1);
+    var v3=pushG(x+ox-dx*w2t+lx,y+hh,z+oz-dz*w2t+lz, 0,1,0, cr,cg,cb, 1);
     grassIdx.push(v0,v1,v2, v0,v2,v3);
   }
 }
@@ -13039,7 +13043,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-1132';
+var BETA_VERSION='20261005-1538';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
