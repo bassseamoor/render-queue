@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Moor Harness Runtime v1 — prototype</title>
+<style>
+:root{--bg:#0b0e14;--bg2:#10141d;--card:#151b26;--line:#232c3d;--txt:#e8ecf4;--dim:#8b93a7;
+--acc:#7dd3fc;--grn:#4ade80;--amb:#fbbf24;--red:#f87171;--pur:#c084fc}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:15px/1.55 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
+  max-width:1060px;margin:0 auto;padding:14px 14px 120px;-webkit-font-smoothing:antialiased}
+h1{font-size:22px;letter-spacing:.5px}
+h2{font-size:17px;margin:18px 0 8px}
+h3{font-size:14px;margin:14px 0 6px;color:var(--acc)}
+.sub{color:var(--dim);font-size:13px;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{background:var(--acc);color:#06121c;border:0;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;cursor:pointer}
+.btn:disabled{opacity:.4;cursor:default}
+.ghost{background:transparent;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:9px 14px;font-size:13px;cursor:pointer}
+.ghost:disabled{opacity:.4}
+textarea.inp,input.inp,select.inp{width:100%;background:var(--bg2);border:1px solid var(--line);color:var(--txt);
+  border-radius:10px;padding:10px;font-size:14px;font-family:inherit}
+textarea.inp{min-height:110px;resize:vertical}
+.pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;border:1px solid var(--line);color:var(--dim);margin:2px 4px 2px 0}
+.pill.you{border-color:var(--grn);color:var(--grn)}
+.pill.fill{border-color:var(--amb);color:var(--amb)}
+.pill.ok{border-color:var(--grn);color:var(--grn)}
+.pill.bad{border-color:var(--red);color:var(--red)}
+.pill.run{border-color:var(--acc);color:var(--acc)}
+.stages{display:flex;gap:6px;overflow-x:auto;padding:8px 0;margin-bottom:6px}
+.stg{white-space:nowrap;font-size:12px;padding:7px 11px;border-radius:20px;border:1px solid var(--line);color:var(--dim);cursor:pointer;background:var(--bg2)}
+.stg.on{border-color:var(--acc);color:var(--acc)}
+.stg.done{border-color:var(--grn);color:var(--grn)}
+pre.code{background:#070a10;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;
+  overflow:auto;max-height:320px;white-space:pre-wrap;word-break:break-word}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:12px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.gate{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.log{font-size:12px;color:var(--dim);max-height:180px;overflow:auto;background:#070a10;border-radius:10px;padding:10px;border:1px solid var(--line)}
+.log b{color:var(--txt)}
+.job{border-left:3px solid var(--line);padding:8px 12px;margin:8px 0;background:var(--bg2);border-radius:0 10px 10px 0}
+.job.pass{border-color:var(--grn)} .job.fail{border-color:var(--red)} .job.work{border-color:var(--acc)}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:4px 10px;font-size:13px}
+.kv dt{color:var(--dim)} .kv dd{margin:0}
+details{margin:8px 0} summary{cursor:pointer;color:var(--acc);font-size:13px}
+.hud{position:sticky;top:0;z-index:5;background:rgba(11,14,20,.94);backdrop-filter:blur(8px);padding:10px 0;border-bottom:1px solid var(--line);margin:-14px -14px 10px;padding:10px 14px}
+iframe.appview{width:100%;height:520px;border:1px solid var(--line);border-radius:14px;background:#fff}
+.note{font-size:12px;color:var(--dim);border-left:2px solid var(--amb);padding:4px 10px;margin:8px 0}
+</style>
+</head>
+<body>
+<div class="hud">
+  <h1>⚙️ MOOR HARNESS <span style="color:var(--dim);font-size:12px">runtime v1 · prototype</span></h1>
+  <div class="sub">Ramble in → spec compiled → jobs → worker packets → gates → promotion → runnable app. Every gate really runs.</div>
+  <div class="stages" id="stages"></div>
+  <div class="row" style="margin-top:8px">
+    <button class="btn" id="autorun">▶ Run full pipeline</button>
+    <button class="ghost" id="cycle">↻ Run upkeep cycle</button>
+    <button class="ghost" id="reset">Reset</button>
+  </div>
+</div>
+<div id="main"></div>
+
+<script>
+/* ================= utils ================= */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const uid=p=>(p||"id")+"-"+Math.random().toString(36).slice(2,8);
+const clone=o=>JSON.parse(JSON.stringify(o));
+function log(msg){ H.logArr=H.logArr||[]; H.logArr.push(msg);
+  const l=$("#runlog"); if(l){ l.innerHTML+="<div>"+msg+"</div>"; l.scrollTop=l.scrollHeight; } }
+function download(name,text){ const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([text],{type:"text/html"})); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+
+/* storage adapter: localStorage with in-memory fallback (offline-first, no network) */
+const store=(()=>{ let mem={};
+  const ok=(()=>{ try{localStorage.setItem("__t","1");localStorage.removeItem("__t");return true;}catch(e){return false;} })();
+  return { get:k=>{ try{ return ok?localStorage.getItem(k):(mem[k]||null);}catch(e){return mem[k]||null;} },
+           set:(k,v)=>{ try{ ok?localStorage.setItem(k,v):mem[k]=v;}catch(e){mem[k]=v;} },
+           del:k=>{ try{ ok?localStorage.removeItem(k):delete mem[k];}catch(e){delete mem[k];} } }; })();
+
+/* ================= app CSS (shared by every generated app) ================= */
+const APP_CSS=`
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:15px/1.5 -apple-system,system-ui,sans-serif;background:#f4f5f7;color:#111}
+.app{max-width:480px;margin:0 auto;min-height:100vh;background:#fff;display:flex;flex-direction:column}
+.app.dark{background:#14161c;color:#eef}.app.dark .card{background:#1e2230;color:#eef}.app.dark .inp{background:#14161c;color:#eef;border-color:#333}
+header.ahead{padding:18px 16px 10px;font-size:22px;font-weight:800}
+main{flex:1;padding:0 12px 90px}
+.panel{display:none}.panel.on{display:block;animation:fade .25s}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+.card{background:#fff;border:1px solid #e3e5ea;border-radius:14px;padding:14px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.btn{background:#0a84ff;color:#fff;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;font-size:14px}
+.inp{width:100%;border:1px solid #d5d8de;border-radius:10px;padding:10px;font-size:14px;margin:4px 0}
+.addrow{display:flex;gap:8px}.addrow .inp{flex:1}
+.bottomnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;
+ background:rgba(255,255,255,.96);border-top:1px solid #e3e5ea;display:flex;z-index:20}
+.app.dark .bottomnav{background:rgba(20,22,30,.96);border-color:#333}
+.bottomnav button{flex:1;background:none;border:0;padding:12px 4px;font-size:11px;color:#666;cursor:pointer}
+.app.dark .bottomnav button{color:#aaa}
+.bottomnav button.on{color:#0a84ff;font-weight:700}
+.gate{position:fixed;inset:0;background:#0b0e14;color:#fff;z-index:50;display:flex;align-items:center;justify-content:center;padding:24px}
+.gatebox{width:100%;max-width:340px;text-align:center}
+.gbanner{background:#fff8e1;border:1px solid #f0d060;color:#7a5c00;border-radius:12px;padding:10px 14px;margin:0 12px 8px;font-size:13px}
+.listrow{display:flex;justify-content:space-between;align-items:center;padding:11px 4px;border-bottom:1px solid #eee;font-size:14px}
+.app.dark .listrow{border-color:#2a2e3d}
+.tabs{display:flex;gap:6px;margin:8px 0;overflow-x:auto}
+.tabs button{border:1px solid #d5d8de;background:#fff;border-radius:18px;padding:7px 14px;font-size:13px;white-space:nowrap;cursor:pointer}
+.tabs button.on{background:#0a84ff;color:#fff;border-color:#0a84ff}
+canvas.game{width:100%;border-radius:14px;background:#0e1526;display:block;touch-action:none}
+.gctl{display:flex;gap:8px;margin-top:8px}.gctl .btn{flex:1}
+.kcol{background:#f1f3f7;border-radius:12px;padding:10px;min-width:150px;flex:1}
+.app.dark .kcol{background:#1e2230}
+.kcard{background:#fff;border:1px solid #e3e5ea;border-radius:10px;padding:9px;margin:7px 0;font-size:13px}
+.app.dark .kcard{background:#262b3d;border-color:#333}
+.feeditem{padding:12px 2px;border-bottom:1px solid #eee}.app.dark .feeditem{border-color:#2a2e3d}
+.dashgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#f1f3f7;border-radius:12px;padding:14px;text-align:center}.app.dark .stat{background:#1e2230}
+.stat b{font-size:24px;display:block}`;
+const SCRIPT_OPEN='<scr'+'ipt>';
+const SCRIPT_CLOSE='</scr'+'ipt>';
+function navJS(){ return `(function(){var ps=[...document.querySelectorAll(".panel")],bs=[...document.querySelectorAll(".bottomnav button")];
+window.__show=function(i){ps.forEach((p,j)=>p.classList.toggle("on",i===j));bs.forEach((b,j)=>b.classList.toggle("on",i===j));};
+bs.forEach((b,i)=>b.onclick=function(){window.__show(i);});window.__show(0);})();`; }
+</script>
+<script>
+/* ================= PARTS REGISTRY (pre-verified capabilities) =================
+   Every part: id, name, caps[] (fit-match keywords), weight_hint (importance),
+   build(feat, spec) -> {html, js, checks:[{name, code}]}.
+   check.code is JS evaluated inside the part's own iframe; must return truthy. */
+const PARTS=[
+/* ---- deep: identity ---- */
+{id:"gate-sms",name:"SMS-code sign-in gate",kind:"deep",caps:["sign-in","signin","phone","sms","auth","identity","login"],weight_hint:9,
+ build(){ const g="gt"+Math.random().toString(36).slice(2,6);
+  return {html:"",overlay:'<div class="gate" id="'+g+'"><div class="gatebox"><h2>Welcome</h2>'+
+   '<p style="opacity:.7;margin:8px 0 16px">Sign in with your phone</p>'+
+   '<input class="inp" id="'+g+'-ph" inputmode="tel" placeholder="Phone number" style="background:#161b26;border-color:#333;color:#fff">'+
+   '<button class="btn" id="'+g+'-go" style="width:100%;margin-top:8px">Continue</button>'+
+   '<p id="'+g+'-msg" style="font-size:13px;min-height:20px;margin-top:8px"></p></div></div>',
+  js:'(function(){var g=document.getElementById("'+g+'");try{if(localStorage.getItem("app_user"))g.style.display="none";}catch(e){}'+
+   'var code=null;document.getElementById("'+g+'-go").onclick=function(){var v=document.getElementById("'+g+'-ph").value.trim();'+
+   'if(code===null){if(!v){document.getElementById("'+g+'-msg").textContent="Enter a phone number.";return;}'+
+   'code=String(Math.floor(1000+Math.random()*9000));document.getElementById("'+g+'-msg").textContent="Code sent by SMS. (demo code: "+code+")";'+
+   'document.getElementById("'+g+'-ph").value="";document.getElementById("'+g+'-ph").placeholder="Enter code";}'+
+   'else{if(v===code){try{localStorage.setItem("app_user","sms:"+Date.now());}catch(e){}g.style.display="none";}'+
+   'else document.getElementById("'+g+'-msg").textContent="Wrong code — try again.";}};})();',
+  checks:[{name:"gate blocks content until verified",
+    code:'(function(){var g=document.querySelector(".gate");return g&&g.style.display!=="none";})()'}]};}},
+{id:"gate-password",name:"Password sign-in gate",kind:"deep",caps:["sign-in","signin","email","password","auth","identity","login"],weight_hint:9,
+ build(){ const g="gp"+Math.random().toString(36).slice(2,6);
+  return {html:"",overlay:'<div class="gate" id="'+g+'"><div class="gatebox"><h2>Welcome back</h2>'+
+   '<input class="inp" id="'+g+'-em" placeholder="Email" style="background:#161b26;border-color:#333;color:#fff">'+
+   '<input class="inp" id="'+g+'-pw" type="password" placeholder="Password" style="background:#161b26;border-color:#333;color:#fff;margin-top:8px">'+
+   '<button class="btn" id="'+g+'-go" style="width:100%;margin-top:8px">Sign in</button>'+
+   '<p id="'+g+'-msg" style="font-size:13px;min-height:20px;margin-top:8px"></p></div></div>',
+  js:'(function(){var g=document.getElementById("'+g+'");try{if(localStorage.getItem("app_user"))g.style.display="none";}catch(e){}'+
+   'document.getElementById("'+g+'-go").onclick=function(){var e=document.getElementById("'+g+'-em").value.trim(),'+
+   'p=document.getElementById("'+g+'-pw").value;'+
+   'if(e.indexOf("@")<0||p.length<4){document.getElementById("'+g+'-msg").textContent="Enter a valid email and 4+ character password.";return;}'+
+   'try{localStorage.setItem("app_user","pw:"+e);}catch(x){}g.style.display="none";};})();',
+  checks:[{name:"gate rejects bad credentials",
+    code:'(function(){document.querySelector(".gate .btn").click();var m=document.querySelector(".gate p").textContent;return m.length>5;})()'}]};}},
+{id:"gate-guest",name:"Guest-mode banner",kind:"deep",caps:["guest","no sign-in","nosignin","deferred","auth","identity"],weight_hint:6,
+ build(){ const g="gg"+Math.random().toString(36).slice(2,6);
+  return {html:"",banner:'<div class="gbanner" id="'+g+'">Browsing as guest — <a href="#" id="'+g+'-up">create an account</a> to sync.</div>',
+  js:'(function(){var b=document.getElementById("'+g+'");try{if(localStorage.getItem("app_user"))b.style.display="none";}catch(e){}'+
+   'document.getElementById("'+g+'-up").onclick=function(e){e.preventDefault();var n=prompt("Pick a username:");'+
+   'if(n){try{localStorage.setItem("app_user","guest:"+n);}catch(x){}b.style.display="none";}};})();',
+  checks:[{name:"guest banner offers upgrade path",
+    code:'(function(){var a=document.querySelector(".gbanner a");return a&&a.textContent.indexOf("account")>=0;})()'}]};}},
+/* ---- deep: collaboration ---- */
+{id:"collab-comments",name:"Comment threads",kind:"deep",caps:["comments","comment","team","collaboration","notes","async"],weight_hint:8,
+ build(f){ const t="cm"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Team notes")+'</h2>'+
+   '<div class="addrow" style="margin:8px 0"><input class="inp" id="'+t+'-in" placeholder="Add a comment…">'+
+   '<button class="btn" id="'+t+'-add">Post</button></div><div id="'+t+'-c"></div>',js:"",
+  js:'(function(){var K="app_'+t+'",box=document.getElementById("'+t+'-c"),inp=document.getElementById("'+t+'-in");'+
+   'function draw(){var items=[];try{items=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}'+
+   'box.innerHTML=items.map(function(x){return \'<div class="card">\'+x.replace(/</g,"&lt;")+"</div>";}).join("")||\'<p style="color:#888">No comments yet.</p>\';}'+
+   'document.getElementById("'+t+'-add").onclick=function(){var v=inp.value.trim();if(!v)return;'+
+   'var items=[];try{items=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}items.push(v);'+
+   'try{localStorage.setItem(K,JSON.stringify(items));}catch(e){}inp.value="";draw();};draw();})();',
+  checks:[{name:"posting a comment persists it",
+    code:'(function(){var i=document.querySelector(".panel input"),b=document.querySelector(".panel .btn");'+
+    'i.value="hello check";b.click();return document.querySelector(".panel").innerText.indexOf("hello check")>=0;})()'}]};}},
+{id:"collab-local",name:"Local-first + export",kind:"deep",caps:["local-first","local","offline","export","backup","private"],weight_hint:8,
+ build(f){ const t="lf"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Your data")+'</h2>'+
+   '<div class="card"><b>🔒 Local-first.</b><p style="color:#666;font-size:13px">Everything is stored on this device. Export any time.</p>'+
+   '<div class="addrow" style="margin-top:8px"><button class="btn" id="'+t+'-ex">Export JSON</button>'+
+   '<button class="btn" id="'+t+'-wipe" style="background:#666">Clear</button></div></div>',
+  js:'(function(){document.getElementById("'+t+'-ex").onclick=function(){'+
+   'var dump={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k.indexOf("app_")===0)dump[k]=localStorage.getItem(k);}'+
+   'var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(dump,null,2)],{type:"application/json"}));'+
+   'a.download="export.json";a.click();};'+
+   'document.getElementById("'+t+'-wipe").onclick=function(){if(confirm("Clear all local data?")){'+
+   'Object.keys(localStorage).filter(function(k){return k.indexOf("app_")===0;}).forEach(function(k){localStorage.removeItem(k);});location.reload();}};})();',
+  checks:[{name:"export button exists and is wired",
+    code:'(function(){return !!document.querySelector(".panel .btn");})()'}]};}},
+/* ---- deep: game combat ---- */
+{id:"combat-buttons",name:"Real-time action controls",kind:"deep",caps:["game","combat","action","real-time","realtime","buttons","play"],weight_hint:10,
+ build(f){ const t="cb"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Arena")+'</h2>'+
+   '<canvas class="game" id="'+t+'-cv" width="360" height="300"></canvas>'+
+   '<div class="gctl"><button class="btn" id="'+t+'-l">◀</button><button class="btn" id="'+t+'-r">▶</button></div>'+
+   '<p style="text-align:center;color:#666" id="'+t+'-s">Score: 0</p>',
+  js:'(function(){var cv=document.getElementById("'+t+'-cv"),cx=cv.getContext("2d"),px=170,score=0,tx=Math.random()*320+10,ty=40;'+
+   'function frame(){cx.fillStyle="#0e1526";cx.fillRect(0,0,360,300);cx.fillStyle="#4ade80";cx.fillRect(px,260,24,24);'+
+   'ty+=2;if(ty>300){ty=0;tx=Math.random()*320+10;}cx.fillStyle="#f87171";cx.beginPath();cx.arc(tx,ty,10,0,7);cx.fill();'+
+   'if(Math.abs(tx-(px+12))<20&&ty>250){score++;ty=0;tx=Math.random()*320+10;document.getElementById("'+t+'-s").textContent="Score: "+score;}'+
+   'requestAnimationFrame(frame);}frame();'+
+   'document.getElementById("'+t+'-l").onclick=function(){px=Math.max(0,px-24);};'+
+   'document.getElementById("'+t+'-r").onclick=function(){px=Math.min(336,px+24);};})();',
+  checks:[{name:"canvas renders and controls move player",
+    code:'(function(){var c=document.querySelector("canvas.game");return c&&c.width===360;})()'}]};}},
+{id:"combat-turns",name:"Turn-based battle",kind:"deep",caps:["game","combat","turn-based","turns","battle","strategy"],weight_hint:10,
+ build(f){ const t="tb"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Battle")+'</h2>'+
+   '<div class="card"><div class="addrow"><div style="flex:1"><b>You</b><div style="background:#eee;border-radius:6px;height:12px"><i id="'+t+'-yh" style="display:block;height:100%;width:100%;background:#4ade80;border-radius:6px"></i></div></div>'+
+   '<div style="flex:1"><b>Foe</b><div style="background:#eee;border-radius:6px;height:12px"><i id="'+t+'-eh" style="display:block;height:100%;width:100%;background:#f87171;border-radius:6px"></i></div></div></div>'+
+   '<div class="gctl"><button class="btn" id="'+t+'-atk">⚔ Attack</button><button class="btn" id="'+t+'-heal" style="background:#4ade80">✚ Heal</button></div>'+
+   '<p id="'+t+'-msg" style="min-height:22px;margin-top:6px"></p></div>',
+  js:'(function(){var yh=100,eh=100;function d(){document.getElementById("'+t+'-yh").style.width=yh+"%";document.getElementById("'+t+'-eh").style.width=eh+"%";}'+
+   'function msg(t){document.getElementById("'+t+'-msg").textContent=t;}'+
+   'function foe(){if(eh<=0||yh<=0)return;var d1=5+Math.floor(Math.random()*10);yh=Math.max(0,yh-d1);msg("Foe hits you for "+d1+".");'+
+   'if(yh<=0)msg("Defeated!");d();}'+
+   'document.getElementById("'+t+'-atk").onclick=function(){if(yh<=0||eh<=0)return;var d1=8+Math.floor(Math.random()*12);'+
+   'eh=Math.max(0,eh-d1);msg("You hit for "+d1+".");if(eh<=0)msg("Victory!");d();setTimeout(foe,500);};'+
+   'document.getElementById("'+t+'-heal").onclick=function(){if(yh<=0||eh<=0)return;yh=Math.min(100,yh+15);msg("You heal 15.");d();setTimeout(foe,500);};d();})();',
+  checks:[{name:"attack lands and reports",
+    code:'(function(){var m=document.querySelector(".panel p");document.querySelector(".gctl .btn").click();return m&&m.textContent.length>3;})()'}]};}},
+/* ---- features ---- */
+{id:"feat-cards",name:"Card collection",kind:"feature",caps:["invoice","invoices","card","cards","track","item","items","expense","product","products"],weight_hint:7,
+ build(f){ const t="fc"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Items")+'</h2>'+
+   '<div class="addrow" style="margin:8px 0"><input class="inp" id="'+t+'-in" placeholder="Add…"><button class="btn" id="'+t+'-add">＋</button></div>'+
+   '<div id="'+t+'-g"></div>',
+  js:'(function(){var K="app_'+t+'",g=document.getElementById("'+t+'-g"),inp=document.getElementById("'+t+'-in");'+
+   'function draw(){var items=[];try{items=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}'+
+   'g.innerHTML=items.map(function(x,i){return \'<div class="card"><div class="addrow"><span style="flex:1">\'+x.replace(/</g,"&lt;")+\'</span><button class="btn" style="background:#f87171;padding:6px 10px" data-i="\'+i+\'">✕</button></div></div>\';}).join("")||\'<p style="color:#888">Nothing yet — add one above.</p>\';'+
+   '[...g.querySelectorAll("[data-i]")].forEach(function(b){b.onclick=function(){var it=[];try{it=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}'+
+   'it.splice(+b.dataset.i,1);try{localStorage.setItem(K,JSON.stringify(it));}catch(e){}draw();};});}'+
+   'document.getElementById("'+t+'-add").onclick=function(){var v=inp.value.trim();if(!v)return;var it=[];'+
+   'try{it=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}it.push(v);try{localStorage.setItem(K,JSON.stringify(it));}catch(e){}inp.value="";draw();};draw();})();',
+  checks:[{name:"add + delete round-trip",
+    code:'(function(){var i=document.querySelector(".panel input"),b=document.querySelectorAll(".panel .btn")[0];'+
+    'i.value="gate-check-item";b.click();var n=document.querySelectorAll(".panel .card").length;'+
+    'var del=document.querySelector(".panel [data-i]");if(del)del.click();'+
+    'return n===1&&document.querySelectorAll(".panel .card").length===0;})()'}]};}},
+{id:"feat-list",name:"Checklist",kind:"feature",caps:["reminder","reminders","todo","todos","task","tasks","list","checklist","habit"],weight_hint:7,
+ build(f){ const t="fl"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"List")+'</h2>'+
+   '<div class="addrow" style="margin:8px 0"><input class="inp" id="'+t+'-in" placeholder="Add…"><button class="btn" id="'+t+'-add">＋</button></div>'+
+   '<div id="'+t+'-l"></div>',
+  js:'(function(){var K="app_'+t+'",box=document.getElementById("'+t+'-l"),inp=document.getElementById("'+t+'-in");'+
+   'function draw(){var items=[];try{items=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}'+
+   'box.innerHTML=items.map(function(x,i){return \'<div class="listrow"><span style="\'+(x.d?"text-decoration:line-through;opacity:.5":"")+\'">\'+x.t.replace(/</g,"&lt;")+\'</span><button class="btn" style="padding:6px 10px" data-i="\'+i+\'">\'+(x.d?"↩":"✓")+"</button></div>";}).join("")||\'<p style="color:#888">Empty.</p>\';'+
+   '[...box.querySelectorAll("[data-i]")].forEach(function(b){b.onclick=function(){var it=[];try{it=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}'+
+   'it[+b.dataset.i].d=!it[+b.dataset.i].d;try{localStorage.setItem(K,JSON.stringify(it));}catch(e){}draw();};});}'+
+   'document.getElementById("'+t+'-add").onclick=function(){var v=inp.value.trim();if(!v)return;var it=[];'+
+   'try{it=JSON.parse(localStorage.getItem(K)||"[]");}catch(e){}it.push({t:v,d:false});try{localStorage.setItem(K,JSON.stringify(it));}catch(e){}inp.value="";draw();};draw();})();',
+  checks:[{name:"toggle completes an item",
+    code:'(function(){var i=document.querySelector(".panel input");i.value="toggle-me";document.querySelectorAll(".panel .btn")[0].click();'+
+    'document.querySelector(".panel [data-i]").click();return document.querySelector(".panel").innerHTML.indexOf("line-through")>=0;})()'}]};}},
+{id:"feat-tabs",name:"Tabbed browser",kind:"feature",caps:["browse","tab","tabs","categor","filter","explore","gallery"],weight_hint:6,
+ build(f){ const t="ft"+Math.random().toString(36).slice(2,6);
+  const cats=["All","New","Saved"];
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Browse")+'</h2>'+
+   '<div class="tabs" id="'+t+'-tabs">'+cats.map((c,i)=>'<button class="'+(i===0?"on":"")+'" data-c="'+c+'">'+c+'</button>').join("")+'</div>'+
+   '<div id="'+t+'-g"></div>',
+  js:'(function(){var items=["Sunset run","Gym PR","Meal prep","Deep work","Call mom","Read 20 pages"];'+
+   'var tabs=[...document.querySelectorAll("#'+t+'-tabs button")],g=document.getElementById("'+t+'-g");'+
+   'function draw(c){var list=c==="All"?items:c==="New"?items.slice(0,3):items.slice(3);'+
+   'g.innerHTML=list.map(function(x){return \'<div class="card">\'+x+"</div>";}).join("");}'+
+   'tabs.forEach(function(b){b.onclick=function(){tabs.forEach(function(x){x.classList.remove("on");});b.classList.add("on");draw(b.dataset.c);};});draw("All");})();',
+  checks:[{name:"tab switch changes content",
+    code:'(function(){var bs=document.querySelectorAll(".tabs button");var before=document.querySelector(".panel").innerText;'+
+    'bs[1].click();return document.querySelector(".panel").innerText!==before;})()'}]};}},
+{id:"feat-dashboard",name:"Stats dashboard",kind:"feature",caps:["stat","stats","dashboard","overview","number","numbers","metric","analytic"],weight_hint:7,
+ build(f){ const t="fd"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Overview")+'</h2>'+
+   '<div class="dashgrid"><div class="stat"><b id="'+t+'-a">0</b>done</div><div class="stat"><b id="'+t+'-b">0</b>open</div></div>'+
+   '<div class="card"><b>Today</b><p style="color:#666;font-size:13px" id="'+t+'-n">You are all caught up.</p>'+
+   '<button class="btn" id="'+t+'-go" style="margin-top:8px">Log activity</button></div>',
+  js:'(function(){var K="app_'+t+'",n=0;try{n=+localStorage.getItem(K)||0;}catch(e){}'+
+   'function d(){document.getElementById("'+t+'-a").textContent=n;document.getElementById("'+t+'-b").textContent=Math.max(0,3-n);}'+
+   'document.getElementById("'+t+'-go").onclick=function(){n++;try{localStorage.setItem(K,n);}catch(e){}d();};d();})();',
+  checks:[{name:"logging activity increments the stat",
+    code:'(function(){var b=document.getElementById;var before=document.querySelector(".stat b").textContent;'+
+    'document.querySelector(".panel .btn").click();return document.querySelector(".stat b").textContent!==before;})()'}]};}},
+{id:"feat-feed",name:"Update feed",kind:"feature",caps:["feed","update","updates","post","posts","news","share","social"],weight_hint:6,
+ build(f){ const t="ff"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Updates")+'</h2><div id="'+t+'-f"></div>'+
+   '<div class="addrow" style="margin:8px 0"><input class="inp" id="'+t+'-in" placeholder="Share an update…"><button class="btn" id="'+t+'-post">Post</button></div>',
+  js:'(function(){var K="app_'+t+'",box=document.getElementById("'+t+'-f"),inp=document.getElementById("'+t+'-in");'+
+   'var seed=["Welcome to your feed.","Seed data loads instantly."];'+
+   'function draw(){var items=[];try{items=JSON.parse(localStorage.getItem(K)||"null")||seed.slice();}catch(e){items=seed.slice();}'+
+   'box.innerHTML=items.map(function(x){return \'<div class="feeditem">\'+x.replace(/</g,"&lt;")+"</div>";}).join("");}'+
+   'document.getElementById("'+t+'-post").onclick=function(){var v=inp.value.trim();if(!v)return;var it=[];'+
+   'try{it=JSON.parse(localStorage.getItem(K)||"null")||seed.slice();}catch(e){it=seed.slice();}it.unshift(v);'+
+   'try{localStorage.setItem(K,JSON.stringify(it));}catch(e){}inp.value="";draw();};draw();})();',
+  checks:[{name:"posting appears at top of feed",
+    code:'(function(){var i=document.querySelector(".panel input");i.value="feed-gate-item";'+
+    'document.querySelectorAll(".panel .btn")[0].click();'+
+    'return document.querySelector(".feeditem").textContent.indexOf("feed-gate-item")>=0;})()'}]};}},
+{id:"feat-kanban",name:"Kanban board",kind:"feature",caps:["project","projects","board","kanban","status","workflow","track"],weight_hint:7,
+ build(f){ const t="fk"+Math.random().toString(36).slice(2,6);
+  return {html:'<h2 style="padding:14px 4px 0">'+esc(f.text||"Board")+'</h2>'+
+   '<div style="display:flex;gap:8px;overflow-x:auto" id="'+t+'-b">'+
+   ["Todo","Doing","Done"].map(c=>'<div class="kcol" data-c="'+c+'"><b>'+c+'</b><div class="kcards"></div>'+
+   '<button class="btn" style="padding:6px 10px;font-size:12px" data-add="'+c+'">＋</button></div>').join("")+'</div>',
+  js:'(function(){var K="app_'+t+'",cols=["Todo","Doing","Done"];'+
+   'function load(){var d=null;try{d=JSON.parse(localStorage.getItem(K));}catch(e){}'+
+   'return d||{Todo:["First task"],Doing:[],Done:[]};}function save(d){try{localStorage.setItem(K,JSON.stringify(d));}catch(e){}}'+
+   'function draw(){var d=load();document.querySelectorAll("#'+t+'-b .kcol").forEach(function(col){'+
+   'var c=col.dataset.c,box=col.querySelector(".kcards");'+
+   'box.innerHTML=d[c].map(function(x,i){return \'<div class="kcard">\'+x.replace(/</g,"&lt;")+\'<br><button class="ghost" style="padding:2px 8px;font-size:11px;margin-top:4px" data-c="\'+c+\'" data-i="\'+i+\'">move →</button></div>\';}).join("");});'+
+   'document.querySelectorAll("#'+t+'-b [data-c][data-i]").forEach(function(b){b.onclick=function(){var dd=load();'+
+   'var it=dd[b.dataset.c].splice(+b.dataset.i,1)[0];var nx=cols[(cols.indexOf(b.dataset.c)+1)%3];dd[nx].push(it);save(dd);draw();};});}'+
+   'document.querySelectorAll("#'+t+'-b [data-add]").forEach(function(b){b.onclick=function(){var v=prompt("Card title:");if(!v)return;'+
+   'var dd=load();dd[b.dataset.add].push(v);save(dd);draw();};});draw();})();',
+  checks:[{name:"move advances a card to the next column",
+    code:'(function(){var mv=document.querySelector(".kcard button");if(!mv)return false;mv.click();'+
+    'var cols=document.querySelectorAll(".kcol .kcards");return cols[1].querySelectorAll(".kcard").length>=1;})()'}]};}},
+/* ---- theme ---- */
+{id:"theme-dark",name:"Dark theme",kind:"theme",caps:["dark","theme","night","mode","appearance"],weight_hint:4,
+ build(){ return {html:'<div class="card"><b>Theme probe</b><p style="color:#666;font-size:13px">Dark theme is active.</p></div>',
+  js:"",theme:"dark",
+  checks:[{name:"dark theme class applied",
+   code:'(function(){return document.querySelector(".app").classList.contains("dark");})()'}]}; }},
+];
+function partById(id){ return PARTS.find(p=>p.id===id); }
+</script>
+<script>
+/* ================= SPEC COMPILER (heuristic local brain — transparent, no LLM) =================
+   Ramble in -> structured spec out. Every field carries provenance: "you" or "filled". */
+const BRAIN={ id:"local-heuristic-1", kind:"local", label:"Local heuristic compiler", cost:0, online:false };
+function compileSpec(ramble){
+  const t=" "+ramble.toLowerCase()+" ";
+  const has=(...ws)=>ws.some(w=>t.includes(w));
+  // app type
+  let app_type="web app", aSrc="filled", aConf="low";
+  if(has("game","playable","level","battle","arena","player")){app_type="game";aSrc="you";aConf="high";}
+  else if(has("mobile","phone","iphone","android","on the go")){app_type="mobile app";aSrc="you";aConf="high";}
+  else if(has("dashboard","team","web","browser","site")){app_type="web app";aSrc="you";aConf="med";}
+  // audience: "for X" pattern
+  let audience=null, auSrc="filled";
+  const m=ramble.match(/for\s+([a-z][a-z\s]{2,28}?)(?=[,.]| to | who | with |$)/i);
+  if(m){audience=m[1].trim();auSrc="you";}
+  else{audience={ "mobile app":"busy people","web app":"small teams","game":"casual players"}[app_type];}
+  // features: strip the app/audience preamble, then pull verb-led phrases
+  const VERBS=["track","send","add","manage","share","post","browse","play","log","plan","remind","organize","build","create","view","check","monitor","schedule","message","chat"];
+  const vrx=new RegExp("\\b("+VERBS.join("|")+")\\b","i");
+  let core=ramble.replace(/\s+/g," ").trim()
+    .replace(/^.*?\bapps?\s+for\s+[a-z][a-z\s]{2,30}?\s+to\s+/i,"")
+    .replace(/^(i want|please|it should|the app should|also)\s+/i,"");
+  const deepSkip=/sign\s*in|log\s*in|phone number/i, conSkip=/dark\s*(mode|theme)|night\s*mode|works?\s+offline|^offline$/i;
+  let feats=[];
+  core.split(/[.\n]+|\s+plus\s+|;/).map(s=>s.trim()).filter(s=>s.length>3).forEach(b=>{
+    const parts=b.split(/\s+and\s+/); let cur=parts[0];
+    for(let k=1;k<parts.length;k++){
+      if(vrx.test(parts[k].trim())){ feats.push(cur); cur=parts[k]; } else cur+=" and "+parts[k]; }
+    feats.push(cur); });
+  feats=feats.map(p=>p.trim().replace(/^(also|with|and)\s+/i,""))
+    .filter(p=>p.length>2&&p.length<60&&!deepSkip.test(p)&&!conSkip.test(p));
+  feats=feats.filter((p,i)=>feats.indexOf(p)===i);
+  feats.sort((a,b)=>(vrx.test(b)?1:0)-(vrx.test(a)?1:0));
+  feats=feats.slice(0,4).map((p,i)=>({text:p, weight:8-i, source:vrx.test(p)?"you":"filled"}));
+  if(!feats.length){ const fb={"mobile app":["Track items","Send reminders"],"web app":["Dashboard","Team notes"],"game":["Quick play","Battle arena"]}[app_type];
+    feats=fb.map((p,i)=>({text:p,weight:8-i,source:"filled"})); }
+  // constraints
+  const constraints=[];
+  if(has("offline","no internet","local-first","local first"))constraints.push({text:"works offline",source:"you"});
+  if(has("dark mode","dark theme","night mode"))constraints.push({text:"dark theme",source:"you"});
+  if(has("no sign","guest","no login","without account"))constraints.push({text:"guest mode (no sign-in)",source:"you"});
+  // deep aspect per app type
+  const deepQ={"mobile app":"sign-in","web app":"collaboration","game":"combat"}[app_type];
+  let deepChoice=null, dSrc="filled";
+  if(app_type==="mobile app"){ deepChoice=has("guest","no sign","no login")?"guest":has("password","email")?"password":"sms"; dSrc=has("guest","password","email","phone","sms")?"you":"filled"; }
+  if(app_type==="web app"){ deepChoice=has("comment","notes","async")?"comments":has("local","offline","private")?"local":"comments"; dSrc=has("comment","notes","async","local","offline")?"you":"filled"; }
+  if(app_type==="game"){ deepChoice=has("turn","strategy")?"turns":has("idle","auto")?"idle":"buttons"; dSrc=has("turn","strategy","idle","auto","real","action")?"you":"filled"; }
+  return { app_type, app_type_src:aSrc, app_type_conf:aConf, audience, audience_src:auSrc,
+    features:feats, constraints, deep:{aspect:deepQ, choice:deepChoice, src:dSrc}, raw:ramble };
+}
+/* ================= HOLE-POKER: attack the spec for ambiguity ================= */
+function pokeHoles(spec){
+  const holes=[];
+  if(spec.audience_src==="filled")holes.push({id:"aud",q:"Who is this for?",opts:["busy parents","freelancers","small teams","students","gamers"],field:"audience"});
+  if(spec.app_type_conf==="low")holes.push({id:"type",q:"What kind of app is this?",opts:["mobile app","web app","game"],field:"app_type"});
+  if(spec.deep.src==="filled")holes.push({id:"deep",q:{"mobile app":"How do people sign in?","web app":"How do people work together?","game":"What kind of combat?"}[spec.app_type],
+    opts:{"mobile app":["sms","password","guest"],"web app":["comments","local"],"game":["buttons","turns"]}[spec.app_type],field:"deep"});
+  spec.features.forEach((f,i)=>{ if(f.text.split(" ").length<2||f.source==="filled")
+    holes.push({id:"feat"+i,q:"What should \""+f.text+"\" actually do?",opts:["keep as-is","make it a list","make it cards","drop it"],field:"feat"+i}); });
+  const c=spec.constraints.map(x=>x.text);
+  if(c.includes("works offline")&&spec.deep.choice==="comments")holes.push({id:"conf",q:"Offline + team comments conflict. Which wins?",
+    opts:["offline wins (local-first)","comments win (needs sync)"],field:"conflict"});
+  return holes;
+}
+/* ================= FIT CHECK: every feature -> a registry part ================= */
+function fitScore(feat,part){
+  const t=" "+feat.text.toLowerCase()+" ";
+  let s=0; part.caps.forEach(c=>{ if(t.includes(c))s+=c.length>4?2:1; });
+  return s;
+}
+function fitCheck(spec){
+  return spec.features.map((f,i)=>{
+    const ranked=PARTS.filter(p=>p.kind==="feature")
+      .map(p=>({part:p,score:fitScore(f,p)})).sort((a,b)=>b.score-a.score);
+    const best=ranked[0];
+    return {feat:i, text:f.text, best:best.part.id, bestName:best.part.name, score:best.score,
+      ok:best.score>=2, alts:ranked.slice(1,3).map(r=>({id:r.part.id,name:r.part.name,score:r.score}))};
+  });
+}
+function deepPartFor(spec){
+  const c=spec.deep.choice;
+  const map={sms:"gate-sms",password:"gate-password",guest:"gate-guest",
+    comments:"collab-comments",local:"collab-local",buttons:"combat-buttons",turns:"combat-turns",idle:"combat-turns"};
+  return map[c]||"gate-guest";
+}
+</script>
+<script>
+/* ================= WORKER ECONOMY (contractors, not employees) ================= */
+const ECON={ upkeep:10, tax:0.10, strikes_to_retire:3, bounty:0 };
+const CODENAMES=["Anvil","Bishop","Cinder","Drift","Ember","Flint","Gale","Harbor","Iris","Jolt"];
+const ROLESPEC={
+  planner:{rate:25,blurb:"turns raw asks into written specs; no project context"},
+  "hole-poker":{rate:15,blurb:"attacks specs for ambiguity before anyone builds"},
+  builder:{rate:40,blurb:"executes specs in isolation; spec + destination + done-criteria only"},
+  verifier:{rate:30,blurb:"fit-checks against the real app; its pass releases payment"},
+  integrator:{rate:35,blurb:"assembles verified parts; owns the integration seams"}};
+function mkWorker(role){ const r=ROLESPEC[role];
+  return {id:uid("wrk"),codename:CODENAMES.splice(Math.floor(Math.random()*CODENAMES.length),1)[0]+"-"+Math.floor(Math.random()*90+10),
+    role,blurb:r.blurb,rate:r.rate,balance:50,record:{done:0,failed:0,strikes:0},status:"active",
+    terms:{paid_per_verified_job:true,tax:ECON.tax,strikes_to_retire:ECON.strikes_to_retire}}; }
+function payWorker(w,weight){
+  const gross=Math.round(w.rate*(0.5+weight/10)*100)/100;
+  const tax=Math.round(gross*ECON.tax*100)/100, net=Math.round((gross-tax)*100)/100;
+  w.balance=Math.round((w.balance+net)*100)/100; ECON.bounty=Math.round((ECON.bounty+tax)*100)/100;
+  w.record.done++; return {gross,tax,net};
+}
+function failWorker(w){ w.record.failed++; w.record.strikes++;
+  if(w.record.strikes>=ECON.strikes_to_retire){ w.status="retired"; } }
+function runUpkeepCycle(){
+  H.workers.forEach(w=>{ if(w.status!=="active")return;
+    w.balance=Math.round((w.balance-ECON.upkeep)*100)/100;
+    if(w.balance<0&&w.status==="active")w.status="strained"; });
+  H.cycles++;
+}
+function routeWorker(role,minWeight){
+  const cands=H.workers.filter(w=>w.role===role&&w.status==="active");
+  if(!cands.length)return H.workers.find(w=>w.role===role);
+  cands.sort((a,b)=>{ const ra=a.record.done/(1+a.record.done+a.record.failed*2), rb=b.record.done/(1+b.record.done+b.record.failed*2);
+    return rb-ra; });
+  return minWeight>=9?cands[0]:cands[cands.length-1]; // best record gets the heavy jobs
+}
+/* ================= JOB GRAPH ================= */
+function buildJobs(spec,fit){
+  const jobs=[]; let n=0;
+  const deepId=deepPartFor(spec);
+  const deepW=partById(deepId).weight_hint;
+  jobs.push({id:"job-"+(++n),kind:"deep",label:partById(deepId).name,part_id:deepId,
+    feature:spec.deep.aspect+" ("+spec.deep.choice+")",weight:deepW,deps:[],status:"planned"});
+  fit.forEach((f,i)=>{ if(f.dropped)return;
+    const p=partById(f.best);
+    jobs.push({id:"job-"+(++n),kind:"feature",label:p.name+" — "+f.text,part_id:f.best,
+      feature:f.text,weight:spec.features[f.feat].weight,deps:["job-1"],status:"planned"}); });
+  if(spec.constraints.some(c=>c.text==="dark theme"))
+    jobs.push({id:"job-"+(++n),kind:"theme",label:"Dark theme",part_id:"theme-dark",
+      feature:"dark theme",weight:4,deps:jobs.map(j=>j.id).filter(id=>id!=="job-"+n),status:"planned"});
+  jobs.push({id:"job-"+(++n),kind:"integration",label:"Assemble + regression",part_id:null,
+    feature:"integration",weight:8,deps:jobs.map(j=>j.id),status:"planned"});
+  return jobs;
+}
+/* ================= WORKER PACKETS (exact, isolated, downloadable) ================= */
+function buildPacket(job,spec){
+  const role=job.kind==="integration"?"integrator":"builder";
+  const worker=routeWorker(role,job.weight);
+  const dest="app section #"+(job.kind==="deep"?"deep":job.kind==="theme"?"theme":job.id);
+  return {packet_id:uid("pkt"), job_id:job.id, issued_to:{worker_id:worker.id,codename:worker.codename,role:worker.role},
+    role_briefing:ROLESPEC[worker.role].blurb,
+    spec_slice:{app:spec.app_type,audience:spec.audience,feature:job.feature,weight:job.weight,
+      constraints:spec.constraints.map(c=>c.text)},
+    destination:dest,
+    limits:{may_touch:[dest,"its own localStorage keys"],
+      may_not_touch:["other jobs' sections","the harness UI","network","any file outside this packet"]},
+    done_criteria:["syntax gate: code parses with zero errors",
+      "boot gate: section boots in a sandboxed iframe with zero errors",
+      "behavior gate: every declared check passes",
+      "visible-path gate: output lands at "+dest+" and nowhere else"],
+    weight:job.weight, rate_per_job:worker.rate,
+    terms:clone(worker.terms), echo_required:true};
+}
+</script>
+<script>
+/* ================= GATES — every one really runs ================= */
+function gateSyntax(js){
+  try{ new Function(js); return {ok:true}; }catch(e){ return {ok:false,error:String(e).split("\n")[0]}; }
+}
+function bootDoc(built){
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'+APP_CSS+'</style></head><body>'+
+   '<div class="app'+(built.theme==="dark"?" dark":"")+'">'+(built.banner||"")+
+   '<section class="panel on">'+(built.html||"")+'</section></div>'+(built.overlay||"")+
+   SCRIPT_OPEN+'window.__errs=[];window.onerror=function(m){window.__errs.push(String(m));};'+(built.js||"")+
+   SCRIPT_CLOSE+'</body></html>';
+}
+function gateBoot(built){
+  return new Promise(res=>{
+    const errs=[]; let settled=false;
+    const done=(ok,why)=>{ if(settled)return; settled=true; try{document.body.removeChild(fr);}catch(e){}
+      res({ok:ok,errors:errs,why:why||""}); };
+    const fr=document.createElement("iframe");
+    fr.setAttribute("sandbox","allow-scripts allow-same-origin");
+    fr.style.cssText="position:fixed;left:-9999px;width:390px;height:700px;visibility:hidden";
+    const to=setTimeout(()=>done(false,"timeout"),9000);
+    fr.onload=function(){ setTimeout(()=>{
+      clearTimeout(to);
+      try{ const w=fr.contentWindow, e2=w.__errs||[];
+        const blank=(w.document.body.innerText||"").trim().length<20 && !(built.overlay||built.banner);
+        done(e2.length===0&&!blank, e2[0]||(blank?"blank render":""));
+      }catch(e){ done(false,String(e).split("\n")[0]); }
+    },1400); };
+    document.body.appendChild(fr); fr.srcdoc=bootDoc(built);
+  });
+}
+async function gateBehavior(built,fr){
+  // runs inside a live iframe created by the caller
+  const out=[];
+  for(const c of (built.checks||[])){
+    try{ const r=fr.contentWindow.eval(c.code); out.push({name:c.name,ok:!!r}); }
+    catch(e){ out.push({name:c.name,ok:false,error:String(e).split("\n")[0]}); }
+  }
+  return out;
+}
+async function verifyPart(part,feat,spec){
+  const built=part.build(feat,spec);
+  const syntax=gateSyntax(built.js||"");
+  const result={built,syntax,boot:{ok:false},behavior:[],allOk:false};
+  if(!syntax.ok)return result;
+  // boot + behavior share one iframe
+  const boot=await new Promise(res=>{
+    const fr=document.createElement("iframe");
+    fr.setAttribute("sandbox","allow-scripts allow-same-origin");
+    fr.style.cssText="position:fixed;left:-9999px;width:390px;height:700px;visibility:hidden";
+    const to=setTimeout(()=>{try{document.body.removeChild(fr);}catch(e){}res({fr:null,ok:false,why:"timeout"});},9000);
+    fr.onload=function(){ setTimeout(async()=>{
+      clearTimeout(to);
+      try{ const w=fr.contentWindow,e2=w.__errs||[];
+        const blank=(w.document.body.innerText||"").trim().length<20&&!(built.overlay||built.banner);
+        if(e2.length||blank){try{document.body.removeChild(fr);}catch(e){}
+          res({fr:null,ok:false,why:e2[0]||(blank?"blank render":"")});return;}
+        const beh=await gateBehavior(built,fr);
+        try{document.body.removeChild(fr);}catch(e){}
+        res({fr:null,ok:true,behavior:beh});
+      }catch(e){try{document.body.removeChild(fr);}catch(x){}res({fr:null,ok:false,why:String(e).split("\n")[0]});}
+    },1400); };
+    document.body.appendChild(fr); fr.srcdoc=bootDoc(built);
+  });
+  result.boot={ok:boot.ok,why:boot.why||""};
+  result.behavior=boot.behavior||[];
+  result.allOk=syntax.ok&&boot.ok&&result.behavior.every(b=>b.ok);
+  return result;
+}
+/* ================= WORKER EXECUTION (simulated contractors, real assembly, real gates) ================= */
+async function executeJob(job,spec){
+  job.status="building"; job.tries=(job.tries||0)+1; render();
+  const pkt=buildPacket(job,spec); job.packet=pkt; job.worker_id=pkt.issued_to.worker_id;
+  log("<b>"+esc(pkt.issued_to.codename)+"</b> ("+pkt.issued_to.role+") takes <b>"+esc(job.id)+"</b> — "+esc(job.label)+
+      " · weight "+job.weight+" · rate "+pkt.rate_per_job);
+  await new Promise(r=>setTimeout(r,350)); // visible work beat
+  if(job.kind==="integration"){ return await executeIntegration(job,spec); }
+  const part=partById(job.part_id);
+  const v=await verifyPart(part,{text:job.feature},spec);
+  job.verify=v; job.code=v.built;
+  const w=H.workers.find(x=>x.id===job.worker_id);
+  if(v.allOk){ job.status="gated"; const p=payWorker(w,job.weight);
+    const vw=H.workers.find(x=>x.role==="verifier"&&x.status==="active");
+    const vp=vw?payWorker(vw,5):null;
+    log("✓ <b>"+esc(job.id)+"</b> passed all gates — paid "+esc(w.codename)+" "+p.net+" (tax "+p.tax+" → bounty)"+
+      (vp?" · verifier "+esc(vw.codename)+" "+vp.net:""));
+  }else{ job.status="failed";
+    const why=!v.syntax.ok?"syntax: "+v.syntax.error:(!v.boot.ok?"boot: "+(v.boot.why||"error"):"behavior: "+v.behavior.filter(b=>!b.ok).map(b=>b.name).join(", "));
+    log("✗ <b>"+esc(job.id)+"</b> FAILED — "+esc(why));
+    failWorker(w); log("  strike → <b>"+esc(w.codename)+"</b> ("+w.record.strikes+"/"+ECON.strikes_to_retire+")"+(w.status==="retired"?" — RETIRED":""));
+  }
+  render(); return v.allOk;
+}
+/* ================= INTEGRATION + REGRESSION ================= */
+function assembleApp(jobs,spec){
+  const okS=j=>j.status==="gated"||j.status==="approved";
+  const themeJob=jobs.find(j=>j.kind==="theme"&&okS(j));
+  const theme=themeJob?"dark":"light";
+  let banner="",overlay="",nav=[],body=[],js=[];
+  const deep=jobs.find(j=>j.kind==="deep"&&okS(j));
+  if(deep){ banner+=deep.code.banner||""; overlay+=deep.code.overlay||"";
+    if(deep.code.html){ nav.push("Main"); body.push('<section class="panel">'+deep.code.html+'</section>'); }
+    js.push(deep.code.js||""); }
+  jobs.filter(j=>j.kind==="feature"&&okS(j)).forEach((j,i)=>{
+    nav.push((j.feature||"Section").slice(0,12)); body.push('<section class="panel">'+j.code.html+'</section>'); js.push(j.code.js||""); });
+  if(!body.length)body.push('<section class="panel"><div class="card"><b>Empty app</b></div></section>');
+  if(!nav.length)nav.push("Main");
+  const html='<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+   '<title>'+esc(spec.audience)+' app</title><style>'+APP_CSS+'</style></head><body>'+
+   '<div class="app'+(theme==="dark"?" dark":"")+'"><header class="ahead">'+esc(spec.audience)+' app</header>'+
+   '<main>'+banner+body.join("")+'</main><nav class="bottomnav">'+
+   nav.map(n=>'<button>'+esc(n)+'</button>').join("")+'</nav></div>'+overlay+
+   SCRIPT_OPEN+'window.__errs=[];window.onerror=function(m){window.__errs.push(String(m));};'+
+   js.join("\n")+navJS()+SCRIPT_CLOSE+'</body></html>';
+  return {html,theme,sections:body.length};
+}
+async function executeIntegration(job,spec){
+  const parts=assembleApp(H.jobs.filter(j=>j!==job&&(j.status==="gated"||j.status==="approved")),spec);
+  job.code={html:"(full app)",js:"(combined)",theme:parts.theme};
+  // visible-path gate: every gated job's destination section is present
+  const missing=H.jobs.filter(j=>j!==job&&(j.status==="gated"||j.status==="approved")&&j.kind!=="theme"&&j.kind!=="integration").filter(j=>{
+    if(j.kind==="deep")return !(parts.html.includes(j.code.banner||"x")||parts.html.includes(j.code.overlay||"x")||(j.code.html&&parts.html.includes(j.code.html.slice(0,40))));
+    return !(j.code.html&&parts.html.includes(j.code.html.slice(0,40))); });
+  // regression: full app boots clean
+  const boot=await gateBoot({html:'<div class="card">regression probe</div>',js:""});
+  const fullBoot=await new Promise(res=>{ const fr=document.createElement("iframe");
+    fr.setAttribute("sandbox","allow-scripts allow-same-origin");
+    fr.style.cssText="position:fixed;left:-9999px;width:390px;height:700px;visibility:hidden";
+    const to=setTimeout(()=>{try{document.body.removeChild(fr);}catch(e){}res({ok:false,why:"timeout"});},12000);
+    fr.onload=function(){ setTimeout(()=>{ clearTimeout(to);
+      try{ const e2=fr.contentWindow.__errs||[]; try{document.body.removeChild(fr);}catch(e){}
+        res({ok:e2.length===0,why:e2[0]||""}); }catch(e){ res({ok:false,why:String(e)}); } },2000); };
+    document.body.appendChild(fr); fr.srcdoc=parts.html; });
+  job.verify={visiblePath:missing.length===0,missing:missing.map(m=>m.id),regression:fullBoot,
+    allOk:missing.length===0&&fullBoot.ok};
+  job.appHtml=parts.html;
+  const w=H.workers.find(x=>x.id===job.worker_id);
+  if(job.verify.allOk){ job.status="gated"; const p=payWorker(w,job.weight);
+    log("✓ <b>integration</b> passed — visible-path ✓ regression ✓ — paid "+esc(w.codename)+" "+p.net); }
+  else{ job.status="failed"; failWorker(w);
+    log("✗ <b>integration</b> FAILED — "+esc(missing.length?"missing: "+missing.map(m=>m.id).join(","):"regression: "+fullBoot.why)); }
+  render(); return job.verify.allOk;
+}
+</script>
+<script>
+/* ================= STATE + PIPELINE ================= */
+const STAGES=[["intake","1 · Ramble"],["spec","2 · Spec"],["holes","3 · Holes"],["fit","4 · Fit"],["jobs","5 · Jobs"],["build","6 · Build"],["review","7 · Review"],["promote","8 · Promote"],["deliver","9 · Deliver"],["ledger","10 · Ledger"]];
+let H=null;
+function freshH(){ return {stage:"intake",ramble:"",spec:null,holes:[],fit:[],jobs:[],
+  workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],auto:false}; }
+const NAMEPOOL=["Anvil","Bishop","Cinder","Drift","Ember","Flint","Gale","Harbor","Iris","Jolt","Kestrel","Lumen","Mesa","North","Onyx","Pico"];
+function initWorkers(){ const pool=NAMEPOOL.slice();
+  const mk=(role)=>{ const r=ROLESPEC[role];
+    return {id:uid("wrk"),codename:(pool.splice(Math.floor(Math.random()*pool.length),1)[0]||"Rook")+"-"+Math.floor(Math.random()*90+10),
+    role,blurb:r.blurb,rate:r.rate,balance:50,record:{done:0,failed:0,strikes:0},status:"active",terms:{paid_per_verified_job:true,tax:ECON.tax,strikes_to_retire:ECON.strikes_to_retire}}; };
+  H.workers=[mk("planner"),mk("hole-poker"),mk("builder"),mk("builder"),mk("builder"),mk("verifier"),mk("integrator")]; }
+function bumpVer(v){ const p=v.split("."); p[1]=+p[1]+1; return p.join("."); }
+
+function renderStages(){ $("#stages").innerHTML=STAGES.map(s=>{
+  const i=STAGES.findIndex(x=>x[0]===s[0]), cur=STAGES.findIndex(x=>x[0]===H.stage);
+  const cls=s[0]===H.stage?"on":(i<cur?"done":"");
+  return '<button class="stg '+cls+'" data-s="'+s[0]+'">'+s[1]+'</button>'; }).join("");
+  document.querySelectorAll(".stg").forEach(b=>b.onclick=()=>{ H.stage=b.dataset.s; render(); }); }
+
+/* ---------- stage: intake ---------- */
+const SAMPLE_RAMBLE="I want a mobile app for gym owners to track invoices and send reminders. People sign in with their phone number. Dark mode. It should work offline.";
+function vIntake(){ return `<div class="card"><h2>Ramble the goal</h2>
+  <p class="sub">Dump everything — huge block, no structure needed. The compiler turns it into a spec; you confirm it before anything builds. Nothing you write here ever reaches a builder raw.</p>
+  <textarea class="inp" id="ramble" placeholder="What are we building? Who's it for? What does it do?"></textarea>
+  <div class="row" style="margin-top:10px">
+    <button class="btn" id="compile">Compile spec →</button>
+    <button class="ghost" id="usesample">Use sample ramble</button>
+  </div></div>
+  <div class="card"><h3>Adapters</h3><div class="kv">
+   <dt>Brain</dt><dd>${esc(BRAIN.label)} · heuristic, local, transparent <span class="pill ok">$0</span></dd>
+   <dt>Storage</dt><dd>localStorage with in-memory fallback · offline-first</dd>
+   <dt>Network</dt><dd>none required — single file, no fetch</dd>
+   <dt>Cost</dt><dd>all compute local <span class="pill ok">$0.00</span></dd></div></div>`; }
+
+/* ---------- stage: spec ---------- */
+function vSpec(){ const s=H.spec;
+  const prov=v=>'<span class="pill '+(v==="you"?"you":"fill")+'">'+(v==="you"?"from you":"filled in")+'</span>';
+  return `<div class="card"><h2>Compiled spec</h2>
+  <p class="sub">Compiled by ${esc(BRAIN.label)} from your ramble. <span class="pill fill">filled in</span> fields are machine guesses — fix anything before continuing.</p>
+  <div class="kv">
+   <dt>App type</dt><dd>${esc(s.app_type)} ${prov(s.app_type_src)} <span class="pill">${esc(s.app_type_conf)} confidence</span></dd>
+   <dt>Audience</dt><dd>${esc(s.audience)} ${prov(s.audience_src)}</dd>
+   <dt>Deep aspect</dt><dd>${esc(s.deep.aspect)} → <b>${esc(s.deep.choice)}</b> ${prov(s.deep.src)}</dd>
+   <dt>Constraints</dt><dd>${s.constraints.map(c=>esc(c.text)+" "+prov(c.source)).join(" · ")||"—"}</dd>
+  </div><h3>Features</h3>
+  ${s.features.map((f,i)=>'<div class="job"><b>'+esc(f.text)+'</b> <span class="pill">weight '+f.weight+'</span> '+prov(f.source)+'</div>').join("")}
+  <div class="row" style="margin-top:10px"><button class="btn" id="gospec">Confirm spec → poke holes</button>
+  <button class="ghost" id="back1">← Back</button></div></div>
+  <details><summary>Raw ramble</summary><pre class="code">${esc(s.raw)}</pre></details>`; }
+
+/* ---------- stage: holes ---------- */
+function vHoles(){
+  if(!H.holes.length)return `<div class="card"><h2>No holes found</h2><p class="sub">The spec survived the attack. Moving on.</p>
+   <button class="btn" id="gofit">Fit check →</button></div>`;
+  return `<div class="card"><h2>Poke holes <span class="pill run">${H.holes.length} open</span></h2>
+  <p class="sub">The hole-poker attacked your spec. Resolve each, or accept the machine's fill.</p>
+  ${H.holes.map(h=>`<div class="job work"><b>${esc(h.q)}</b><div class="row" style="margin-top:8px">
+    ${h.opts.map(o=>'<button class="ghost" data-h="'+h.id+'" data-o="'+esc(o)+'">'+esc(o)+'</button>').join("")}
+   </div></div>`).join("")}
+  <div class="row" style="margin-top:10px"><button class="btn" id="gofit">Resolve & fit check →</button></div></div>`;
+}
+function applyHole(h,opt){
+  const s=H.spec;
+  if(h.field==="audience"){s.audience=opt;s.audience_src="you";}
+  if(h.field==="app_type"){s.app_type=opt;s.app_type_src="you";s.app_type_conf="high";}
+  if(h.field==="deep"){s.deep.choice=opt;s.deep.src="you";}
+  if(h.field==="conflict"){ if(opt.indexOf("offline")===0){s.deep.choice="local";s.constraints=s.constraints.filter(c=>c.text!=="works offline");s.constraints.push({text:"works offline",source:"you"});} }
+  if(h.field.indexOf("feat")===0){ const i=+h.field.slice(4);
+    if(opt==="drop it")s.features.splice(i,1);
+    else if(opt!=="keep as-is"){s.features[i].text=s.features[i].text+" ("+opt+")";s.features[i].source="you";} }
+  H.holes=H.holes.filter(x=>x.id!==h.id);
+}
+
+/* ---------- stage: fit ---------- */
+function vFit(){
+  return `<div class="card"><h2>Fit check</h2>
+  <p class="sub">Every feature must map to a pre-verified registry part. Low scores need your pick — the machine doesn't guess silently.</p>
+  ${H.fit.map((f,i)=>`<div class="job ${f.ok?"pass":"fail"}"><b>${esc(f.text)}</b><br>
+    <span class="mono">→ ${esc(f.bestName)}</span> <span class="pill ${f.ok?"ok":"bad"}">fit ${f.score}</span>
+    ${f.ok?"":'<div class="row" style="margin-top:6px">'+f.alts.map(a=>'<button class="ghost" data-f="'+i+'" data-p="'+a.id+'">'+esc(a.name)+' ('+a.score+')</button>').join("")+"</div>"}
+   </div>`).join("")}
+  <div class="row" style="margin-top:10px"><button class="btn" id="gojobs" ${H.fit.some(f=>!f.ok&&!f.dropped)?"disabled":""}>Build job graph →</button></div>
+  ${H.fit.some(f=>!f.ok)?'<p class="note">Resolve the low-fit features above (or drop them) to continue.</p>':""}</div>`;
+}
+
+/* ---------- stage: jobs ---------- */
+function vJobs(){
+  return `<div class="card"><h2>Weighted job graph</h2>
+  <p class="sub">Deep job first (weight sets the depth), then features, then integration. Each job gets an exact worker packet — isolated, downloadable.</p>
+  ${H.jobs.map(j=>`<div class="job"><b class="mono">${j.id}</b> — ${esc(j.label)}
+    <span class="pill">weight ${j.weight}</span> <span class="pill">${j.kind}</span>
+    ${j.deps.length?'<span class="pill">after '+j.deps.join(", ")+'</span>':""}
+    <div class="row" style="margin-top:6px"><button class="ghost" data-pkt="${j.id}">View packet</button></div>
+    <pre class="code" id="pkt-${j.id}" style="display:none"></pre></div>`).join("")}
+  <div class="row" style="margin-top:10px"><button class="btn" id="gobuild">Dispatch workers →</button></div></div>`;
+}
+
+/* ---------- stage: build ---------- */
+function vBuild(){
+  return `<div class="card"><h2>Build — workers on the job</h2>
+  <p class="sub">Simulated contractors, <b>real</b> registry assembly, <b>real</b> gates. Payment releases only on a verified pass.</p>
+  <div class="log" id="runlog">${(H.logArr||[]).map(function(m){return "<div>"+m+"</div>";}).join("")}</div>
+  <div id="joblist">${H.jobs.map(j=>`<div class="job" id="jl-${j.id}"><b class="mono">${j.id}</b> — ${esc(j.label)}
+   <span class="pill">${j.status}</span></div>`).join("")}</div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="goreview" disabled>Review gated jobs →</button></div></div>`;
+}
+
+/* ---------- stage: review ---------- */
+function gateRow(g){
+  if(g.syntax)return `<div class="gate"><span>syntax</span><span class="pill ${g.syntax.ok?"ok":"bad"}">${g.syntax.ok?"pass":"FAIL"}</span></div>`;
+  return "";
+}
+function vReview(){
+  return `<div class="card"><h2>Review — approve, reject, or revise</h2>
+  <p class="sub">Nothing promotes without your verdict. Rejected jobs go back with notes; the worker revises (max 2 tries).</p>
+  ${H.jobs.map(j=>{ const v=j.verify||{};
+    return `<div class="job ${j.status==="gated"?"pass":j.status==="failed"?"fail":"work"}">
+    <b class="mono">${j.id}</b> — ${esc(j.label)} <span class="pill">${j.status}</span>
+    ${j.packet?`<div class="kv" style="margin-top:6px"><dt>Worker</dt><dd>${esc(j.packet.issued_to.codename)} (${j.packet.issued_to.role})</dd>
+     <dt>Destination</dt><dd class="mono">${esc(j.packet.destination)}</dd></div>`:""}
+    ${v.syntax?`<div class="gate"><span>syntax</span><span class="pill ${v.syntax.ok?"ok":"bad"}">${v.syntax.ok?"pass":"FAIL "+esc(v.syntax.error||"")}</span></div>`:""}
+    ${v.boot?`<div class="gate"><span>boot (sandboxed iframe)</span><span class="pill ${v.boot.ok?"ok":"bad"}">${v.boot.ok?"pass":"FAIL "+esc(v.boot.why||"")}</span></div>`:""}
+    ${(v.behavior||[]).map(b=>`<div class="gate"><span>${esc(b.name)}</span><span class="pill ${b.ok?"ok":"bad"}">${b.ok?"pass":"FAIL"}</span></div>`).join("")}
+    ${v.visiblePath!==undefined?`<div class="gate"><span>visible-path</span><span class="pill ${v.visiblePath?"ok":"bad"}">${v.visiblePath?"pass":"FAIL"}</span></div>`:""}
+    ${v.regression?`<div class="gate"><span>regression (full app boot)</span><span class="pill ${v.regression.ok?"ok":"bad"}">${v.regression.ok?"pass":"FAIL "+esc(v.regression.why||"")}</span></div>`:""}
+    <div class="row" style="margin-top:8px">
+     <button class="ghost" data-ap="${j.id}" ${j.status!=="gated"?"disabled":""}>Approve</button>
+     <button class="ghost" data-rj="${j.id}" ${(j.status==="gated"||j.status==="failed")?"":"disabled"}>Reject + revise</button>
+     <button class="ghost" data-cd="${j.id}">Code</button>
+    </div><pre class="code" id="cd-${j.id}" style="display:none">${esc((j.code&&(j.code.js||"")||"").slice(0,1200))}</pre></div>`; }).join("")}
+  <div class="row" style="margin-top:10px"><button class="btn" id="gopromote" ${H.jobs.some(j=>j.status!=="approved")?"disabled":""}>Promote candidate →</button></div>
+  ${H.jobs.some(j=>j.status!=="approved")?'<p class="note">Approve every job to promote. Rejected jobs can be revised first.</p>':""}</div>`;
+}
+
+/* ---------- stage: promote ---------- */
+function vPromote(){
+  const ready=H.jobs.length&&H.jobs.every(j=>j.status==="approved");
+  const integ=H.jobs.find(j=>j.kind==="integration");
+  const next=H.canon==="—"?"1.0":bumpVer(H.canon);
+  return `<div class="card"><h2>Promotion</h2>
+  <p class="sub">Candidate → canonical. The version graph is the verdict history: keep the one you like.</p>
+  <div class="kv"><dt>Canonical now</dt><dd><b>v${H.canon}</b></dd>
+   <dt>Candidate</dt><dd>v${next} · ${H.jobs.filter(j=>j.status==="approved").length}/${H.jobs.length} jobs approved</dd></div>
+  ${H.versions.map(v=>'<div class="job pass"><b>v'+v.v+'</b> — '+v.jobs+' jobs · '+esc(v.note)+'</div>').join("")}
+  <div class="row" style="margin-top:10px">
+   <button class="btn" id="dopromote" ${ready?"":"disabled"}>Promote v${next} → canonical</button></div>
+  ${ready?"":'<p class="note">Approve all jobs in Review first.</p>'}</div>`;
+}
+
+/* ---------- stage: deliver ---------- */
+function vDeliver(){
+  return `<div class="card"><h2>Delivered — v${H.canon}</h2>
+  <p class="sub">The running app, built by the pipeline. Download it, open it anywhere — it's a single file.</p>
+  <iframe class="appview" id="appview" sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"></iframe>
+  <div class="row" style="margin-top:10px">
+   <button class="btn" id="dl">⤓ Download app .html</button>
+   <button class="ghost" id="openapp">Open separately</button></div></div>
+  <div class="card"><h2>Propose a modification ◈</h2>
+  <p class="sub">Mods are just the pipeline run again on a built app. Ramble the change.</p>
+  <textarea class="inp" id="modramble" placeholder="e.g. add a dark theme, add a stats dashboard…"></textarea>
+  <div class="row" style="margin-top:8px"><button class="btn" id="gomod">Run mod pipeline →</button></div>
+  <div id="modlog">${H.mods.map(m=>'<div class="job pass"><b>'+esc(m.name)+'</b> → v'+m.v+' <span class="pill ok">★ feature</span></div>').join("")}</div></div>`;
+}
+
+/* ---------- stage: ledger ---------- */
+function vLedger(){
+  return `<div class="card"><h2>Worker ledger</h2>
+  <p class="sub">Public record — wins and failures both on the board. Paid per <b>verified</b> job only. Upkeep ${ECON.upkeep}/cycle · tax ${(ECON.tax*100)}% → bounty pool.</p>
+  <div class="kv"><dt>Bounty pool</dt><dd><b>${ECON.bounty.toFixed(2)}</b></dd><dt>Cycles run</dt><dd>${H.cycles}</dd></div>
+  <table style="margin-top:8px"><tr><th>Worker</th><th>Role</th><th>Balance</th><th>Done</th><th>Failed</th><th>Strikes</th><th>Status</th></tr>
+  ${H.workers.map(w=>`<tr><td><b>${esc(w.codename)}</b></td><td>${w.role}</td><td>${w.balance.toFixed(2)}</td>
+   <td>${w.record.done}</td><td>${w.record.failed}</td><td>${w.record.strikes}</td>
+   <td><span class="pill ${w.status==="active"?"ok":w.status==="strained"?"fill":"bad"}">${w.status}</span></td></tr>`).join("")}
+  </table>
+  <p class="note">The deal, briefed up front: paid per verified job · failed verification pays 0 · ${ECON.strikes_to_retire} strikes → public failure mark + retirement + deletion.</p></div>`;
+}
+
+/* ================= RENDER ================= */
+function render(){
+  renderStages();
+  const v={intake:vIntake,spec:vSpec,holes:vHoles,fit:vFit,jobs:vJobs,build:vBuild,review:vReview,promote:vPromote,deliver:vDeliver,ledger:vLedger}[H.stage];
+  $("#main").innerHTML=v();
+  wire();
+  if(H.stage==="deliver"&&H.appHtml){ $("#appview").srcdoc=H.appHtml; }
+}
+function wire(){
+  const on=(id,fn)=>{ const e=$(id); if(e)e.onclick=fn; };
+  on("#usesample",()=>{ $("#ramble").value=SAMPLE_RAMBLE; });
+  on("#compile",()=>{ const r=$("#ramble").value.trim()||SAMPLE_RAMBLE;
+    H.ramble=r; H.spec=compileSpec(r); H.stage="spec"; render(); });
+  on("#gospec",()=>{ const pl=H.workers.find(w=>w.role==="planner"&&w.status==="active");
+    if(pl){const p=payWorker(pl,8); log("planner "+esc(pl.codename)+" paid "+p.net+" — spec compiled");}
+    H.holes=pokeHoles(H.spec); H.stage="holes"; render(); });
+  on("#back1",()=>{ H.stage="intake"; render(); });
+  on("#gofit",()=>{ const hp=H.workers.find(w=>w.role==="hole-poker"&&w.status==="active");
+    if(hp){const p=payWorker(hp,6); log("hole-poker "+esc(hp.codename)+" paid "+p.net+" — holes attacked");}
+    H.fit=fitCheck(H.spec); H.stage="fit"; render(); });
+  on("#gojobs",()=>{ H.jobs=buildJobs(H.spec,H.fit); H.stage="jobs"; render(); });
+  on("#gobuild",()=>{ H.stage="build"; render(); runBuild(); });
+  on("#goreview",()=>{ H.stage="review"; render(); });
+  on("#gopromote",()=>{ H.stage="promote"; render(); });
+  on("#dopromote",doPromote);
+  on("#dl",()=>download("moor-app-v"+H.canon+".html",H.appHtml));
+  on("#openapp",()=>{ const w=window.open("","_blank"); w.document.write(H.appHtml); w.document.close(); });
+  on("#gomod",runMod);
+  document.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>{
+    const h=H.holes.find(x=>x.id===b.dataset.h); applyHole(h,b.dataset.o); render(); });
+  document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{
+    const f=H.fit[+b.dataset.f]; f.best=b.dataset.p;
+    const p=partById(b.dataset.p); f.bestName=p.name; f.score=fitScore({text:f.text},p); f.ok=f.score>=2; render(); });
+  document.querySelectorAll("[data-pkt]").forEach(b=>b.onclick=()=>{
+    const j=H.jobs.find(x=>x.id===b.dataset.pkt);
+    if(!j.packet)j.packet=buildPacket(j,H.spec);
+    const pre=$("#pkt-"+j.id); pre.style.display=pre.style.display==="none"?"block":"none";
+    pre.textContent=JSON.stringify(j.packet,null,2); });
+  document.querySelectorAll("[data-cd]").forEach(b=>b.onclick=()=>{
+    const pre=$("#cd-"+b.dataset.cd); pre.style.display=pre.style.display==="none"?"block":"none"; });
+  document.querySelectorAll("[data-ap]").forEach(b=>b.onclick=()=>{
+    const j=H.jobs.find(x=>x.id===b.dataset.ap); j.status="approved"; log("approved "+j.id); render(); });
+  document.querySelectorAll("[data-rj]").forEach(b=>b.onclick=()=>reviseJob(b.dataset.rj));
+}
+/* ================= ORCHESTRATION ================= */
+async function runBuild(){
+  for(const job of H.jobs){
+    if(job.status==="gated"||job.status==="approved")continue;
+    const depsOk=job.deps.every(d=>{ const dj=H.jobs.find(x=>x.id===d); return dj&&(dj.status==="gated"||dj.status==="approved"); });
+    if(!depsOk){ job.status="blocked"; continue; }
+    await executeJob(job,H.spec);
+  }
+  const go=$("#goreview"); if(go)go.disabled=false;
+  log("<b>Build round complete.</b> Review each job →");
+  render();
+}
+async function reviseJob(jid){
+  const job=H.jobs.find(x=>x.id===jid); if((job.tries||0)>=3){ log("max tries — needs a human"); return; }
+  if(job.kind==="feature"){
+    const ranked=PARTS.filter(p=>p.kind==="feature")
+      .map(p=>({p,s:fitScore({text:job.feature},p)})).sort((a,b)=>b.s-a.s);
+    const next=ranked.find(r=>r.p.id!==job.part_id);
+    if(next){ job.part_id=next.p.id; job.label=next.p.name+" — "+job.feature;
+      log("revising "+job.id+" → "+next.p.name); }
+  }
+  job.status="planned"; H.stage="build"; render(); await executeJob(job,H.spec);
+  H.stage="review"; render();
+}
+function doPromote(){
+  const integ=H.jobs.find(j=>j.kind==="integration");
+  if(!integ||integ.status!=="approved"||!integ.appHtml){ log("<b>promotion refused</b> — integration not verified"); return; }
+  const next=H.canon==="—"?"1.0":bumpVer(H.canon);
+  H.appHtml=integ.appHtml; H.canon=next;
+  H.versions.push({v:next,jobs:H.jobs.length,note:H.spec.audience+" "+H.spec.app_type});
+  store.set("moor-harness",JSON.stringify({canon:H.canon,versions:H.versions.map(v=>({v:v.v,note:v.note}))}));
+  H.stage="deliver"; render();
+}
+async function runMod(){
+  const r=$("#modramble").value.trim(); if(!r)return;
+  const mspec=compileSpec(r);
+  log("<b>Mod ◈</b> — compiling delta…");
+  const feats=mspec.features.length?mspec.features:[{text:r.slice(0,40),weight:6,source:"you"}];
+  const isTheme=/dark|theme|night/i.test(r);
+  const jobs=feats.slice(0,2).map((f,i)=>{
+    const ranked=PARTS.filter(p=>p.kind===(isTheme?"theme":"feature"))
+      .map(p=>({p,s:fitScore(f,p)})).sort((a,b)=>b.s-a.s);
+    return {id:"mod-"+uid("j"),kind:isTheme?"theme":"feature",label:ranked[0].p.name+" — "+f.text,
+      part_id:ranked[0].p.id,feature:f.text,weight:f.weight,deps:[],status:"planned",isMod:true,name:f.text};
+  });
+  for(const j of jobs){ await executeJob(j,H.spec);
+    if(j.status==="gated"){ j.status="approved"; H.jobs.push(j); } }
+  // reassemble everything into a new canonical version
+  const integ={id:"job-re",kind:"integration",label:"Assemble + regression (mod)",part_id:null,
+    feature:"integration",weight:8,deps:[],status:"planned",isMod:true};
+  integ.packet=buildPacket(integ,H.spec); integ.worker_id=integ.packet.issued_to.worker_id;
+  log("<b>"+esc(integ.packet.issued_to.codename)+"</b> (integrator) reassembles "+H.jobs.filter(j=>j.status==="approved").length+" approved jobs");
+  await executeIntegration(integ,H.spec);
+  if(integ.status==="gated"){
+    const next=bumpVer(H.canon); H.appHtml=integ.appHtml; H.canon=next;
+    H.versions.push({v:next,jobs:jobs.length,note:"mod: "+r.slice(0,50)});
+    const nm=jobs.map(j=>j.feature).join(", ")||"mod";
+    H.mods.push({name:nm,v:next});
+    log("<b>Mod promoted ★</b> → v"+next);
+  } else log("mod integration failed — held, not promoted");
+  render();
+}
+/* ---------- auto-run: the funnel runs itself ---------- */
+async function autoRun(){
+  H.auto=true;
+  $("#ramble")&&($("#ramble").value=SAMPLE_RAMBLE);
+  H.ramble=SAMPLE_RAMBLE; H.spec=compileSpec(SAMPLE_RAMBLE); H.stage="spec"; render();
+  await new Promise(r=>setTimeout(r,600));
+  const pl=H.workers.find(w=>w.role==="planner"&&w.status==="active"); if(pl)payWorker(pl,8);
+  const hp=H.workers.find(w=>w.role==="hole-poker"&&w.status==="active"); if(hp)payWorker(hp,6);
+  H.holes=pokeHoles(H.spec);
+  // auto-resolve holes with first options (marked filled)
+  while(H.holes.length){ const h=H.holes[0]; applyHole(h,h.opts[0]); }
+  H.fit=fitCheck(H.spec);
+  H.fit.forEach(f=>{ if(!f.ok){ const a=f.alts[0]; if(a){f.best=a.id;f.bestName=a.name;f.score=a.score;f.ok=true;} else f.dropped=true; } });
+  H.jobs=buildJobs(H.spec,H.fit); H.stage="build"; render();
+  await runBuild();
+  for(const j of H.jobs){ if(j.status==="failed"&&j.kind!=="integration"&&(j.tries||0)<3){ await reviseJob(j.id); } }
+  await runBuild();
+  H.jobs.forEach(j=>{ if(j.status==="gated")j.status="approved"; });
+  H.stage="review"; render(); await new Promise(r=>setTimeout(r,600));
+  H.stage="promote"; render(); await new Promise(r=>setTimeout(r,600));
+  doPromote(); H.auto=false;
+}
+/* ================= INIT ================= */
+H=freshH(); initWorkers();
+$("#autorun").onclick=()=>{ H=freshH(); initWorkers(); H.stage="intake"; render();
+  setTimeout(()=>{ $("#ramble").value=SAMPLE_RAMBLE; },50); setTimeout(autoRun,400); };
+$("#cycle").onclick=()=>{ runUpkeepCycle(); render(); };
+$("#reset").onclick=()=>{ H=freshH(); initWorkers(); ECON.bounty=0; render(); };
+render();
+</script>
+</body>
+</html>
