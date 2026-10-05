@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en">
 <head>
-<script src="wonder-logic.js?v=1"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#05070d">
@@ -6613,64 +6612,95 @@ TYPES.push({kind:'motive', icon:'💬', label:'Motive',
 }});
 
 /* ---------- 42. IDEA — concept cards distilled from capabilities ---------- */
-function ideaText(a, b, tmpl){
-  function short(c){
-   var w=String(c.what||c.verb||c.component||'thing').split(' ');
-   return w.slice(0,5).join(' ');
-  }
-  function knobs(c){ return (c.knobs||[]).slice(0,3).join(', ')||'its knobs'; }
-  var an=short(a), bn=short(b);
-  var T=[
-   {t: an+' × '+bn,
-    b: 'Mashup: '+a.verb+' '+a.what+' with '+b.verb+' '+b.what+'. Steal the knobs: '+knobs(a)+'.'},
-   {t: 'A '+bn+' that '+a.verb+'s',
-    b: 'Take '+a.what+' ('+a.component+') and aim it at '+b.what+'. First dial to turn: '+knobs(a)+'.'},
-   {t: 'Steal the knobs',
-    b: 'Apply '+knobs(a)+' from '+a.component+' to '+b.what+'. If it breaks, it was worth knowing.'},
-   {t: 'Situation: '+an+' meets '+bn,
-    b: 'Stage it like a scene — '+a.verb+' '+a.what+', then '+b.verb+' '+b.what+' hits. What does the camera see?'},
-   {t: 'Build this: '+a.verb+' → '+b.verb,
-    b: a.what+' as the input, '+b.what+' as the output. '+a.component+' feeds '+b.component+'.'},
-   {t: 'Remix the '+a.component,
-    b: 'Same '+a.verb+' engine, new skin: '+b.what+'. Change one knob ('+knobs(a)+') and ship the variant.'}
-  ];
-  return T[tmpl%T.length];
+/* ================= AMALGAMATIONS =================
+ * Wonder Feed is intentionally simple: no canned idea kits and no fake prompt
+ * understanding. It recombines the distilled capabilities that already exist
+ * across the whole MOOR OS into deterministic system mashups.
+ * Same seed = same amalgamation. */
+function capShort(c){
+  var w=String(c.what||c.verb||c.component||'capability').replace(/\s+/g,' ').trim();
+  return w.length>86?w.slice(0,83)+'…':w;
 }
-TYPES.push({kind:'idea', icon:'💡', label:'Idea', noFeed:true,
- params: function(r){ var n=Math.max(1,caps().length); return {capA:(r()*n)|0,capB:(r()*n)|0,tmpl:(r()*6)|0,logicVersion:1,kit:(r()*8)|0,op:(r()*4)|0,scene:(r()*8)|0,density:(r()*5)|0}; },
- make: function(genome){
-  var P=genome.p, seed=genome.seed;
-  var C=caps();
-  var el=cardShell(genome,'Idea '+((seed%900)+100),'concept — from the distiller');
-  var vis=el.querySelector('.wd-visual');
-  if(P.logicVersion===1 && window.WonderLogic){
-   var L=window.WonderLogic.plan(genome), cv=document.createElement('canvas');cv.width=840;cv.height=260;cv._glNoFit=true;
-   cv.style.cssText='display:block;width:100%;height:150px;object-fit:cover;border-radius:10px;margin:0 0 16px';
-   vis.innerHTML='<div class="wd-idea"><div class="wd-logic-preview"></div><div class="wd-ideaT">'+esc(L.title)+'</div><div class="wd-ideaB">'+esc(L.behavior)+'<br><code style="color:#aee9d4;font-size:12px">'+esc(L.rule)+'</code></div><div class="wd-ideaS">'+L.parts.map(function(s){return '<span>'+esc(s)+'</span>';}).join('')+'</div><div style="margin-top:13px;color:#a5adc4;font-size:12px;line-height:1.5">'+esc(L.step)+'</div><button class="wd-hbtn wd-copy-build" style="margin-top:14px">copy build task ↗</button></div>';
-   vis.querySelector('.wd-logic-preview').appendChild(cv);
-   el.querySelector('.wd-cap b').textContent=L.title;
-   vis.querySelector('.wd-copy-build').onclick=function(e){e.stopPropagation();copyText(L.brief,function(ok){toast(ok?'build task copied':'copy unavailable');});};
-   var raf=0,tick=0,reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-   function frame(){window.WonderLogic.draw(cv,L,tick);tick+=.033;if(!reduce)raf=requestAnimationFrame(frame);}
-   window.WonderLogic.draw(cv,L,0);
-   return {el:el,title:L.title,sub:'idea recipe v1 / '+L.parts.join(' + '),start:function(){if(!raf&&!reduce)frame();},stop:function(){if(raf)cancelAnimationFrame(raf);raf=0;}};
+function compLabel(n){
+  return String(n||'component').replace(/^comp-/,'').replace(/[-_]+/g,' ').replace(/\b\w/g,function(m){return m.toUpperCase();});
+}
+function amalgamCaps(P){
+  var C=caps(), out=[], seen={};
+  if(!C.length) return out;
+  var idx=[P.a,P.b,P.c,P.d], want=Math.max(2,Math.min(4,Math.round(P.count||3)));
+  for(var i=0;i<idx.length&&out.length<want;i++){
+    var k=((Math.round(idx[i]||0)%C.length)+C.length)%C.length, tries=0;
+    while(tries<C.length && seen[C[k].id]){k=(k+1)%C.length;tries++;}
+    if(!seen[C[k].id]){seen[C[k].id]=1;out.push(C[k]);}
   }
-
-  if(!C.length){
-   vis.innerHTML='<div class="wd-idea"><div class="wd-ideaB">The distiller hasn\'t fed this feed yet.</div></div>';
-   return {el:el,title:'Idea',sub:'',start:function(){},stop:function(){}};
-  }
-  var a=C[P.capA%C.length], b=C[P.capB%C.length];
-  var T=ideaText(a,b,P.tmpl);
-  el.querySelector('.wd-cap b').textContent=T.t;
-  el.querySelector('.wd-cap span').textContent='idea — '+a.component+' × '+b.component;
-  vis.innerHTML=
-   '<div class="wd-idea"><div class="wd-ideaT">'+esc(T.t)+'</div>'+
-   '<div class="wd-ideaB">'+esc(T.b)+'</div>'+
-   '<div class="wd-ideaS"><span>'+esc(a.component)+'</span><span>'+esc(b.component)+'</span></div></div>';
-  return {el:el,title:T.t,sub:'idea — '+a.component+' × '+b.component,
-   start:function(){},stop:function(){}};
-}});
+  for(var j=0;j<C.length&&out.length<want;j++) if(!seen[C[j].id]){seen[C[j].id]=1;out.push(C[j]);}
+  return out;
+}
+function amalgamCopy(parts,mode,seed){
+  var names=parts.map(function(c){return c.component;});
+  var lines=[
+    'Build a MOOR OS component amalgamation from these existing capabilities.',
+    'Seed: '+seed+'.',
+    'Parts: '+names.join(' + ')+'.',
+    'Do not replace the source components; connect them with explicit adapters.',
+    'Use each component\'s real inputs, outputs, knobs, and contracts.'
+  ];
+  if(mode===0) lines.push('Shape: pipeline. Feed the useful output of each capability into the next one where possible.');
+  else if(mode===1) lines.push('Shape: shared state. Let the capabilities read/write one small common state object while remaining independently replaceable.');
+  else if(mode===2) lines.push('Shape: control loop. Let one capability\'s output modulate another\'s knobs, then expose the resulting state to the remaining capability.');
+  else if(mode===3) lines.push('Shape: lens. Use one capability as data source, one as transformation, and the others as presentation/persistence/interaction as their contracts allow.');
+  else if(mode===4) lines.push('Shape: feedback. Route the downstream result back into one upstream control without creating an unstable unbounded loop.');
+  else lines.push('Shape: toolchain. Make the parts feel like one OS capability with one obvious first action and one saved result.');
+  parts.forEach(function(c,i){
+    lines.push((i+1)+'. '+c.component+' — '+c.verb+' '+c.what+'; knobs: '+((c.knobs||[]).slice(0,5).join(', ')||'none listed')+'; outputs: '+((c.outputs||[]).slice(0,4).join(', ')||'none listed')+'.');
+  });
+  lines.push('Return the smallest working integration first. Preserve deterministic behavior where the source parts are seeded.');
+  return lines.join('\n');
+}
+TYPES.push({kind:'amalgam', icon:'✣', label:'Amalgam',
+ params:function(r){
+   var n=Math.max(1,caps().length);
+   return {a:(r()*n)|0,b:(r()*n)|0,c:(r()*n)|0,d:(r()*n)|0,count:2+((r()*3)|0),mode:(r()*6)|0,hue:r()*360};
+ },
+ make:function(genome){
+   var P=genome.p, seed=genome.seed, parts=amalgamCaps(P);
+   var el=cardShell(genome,'Amalgam '+((seed%900)+100),'MOOR OS · component recombination');
+   var vis=el.querySelector('.wd-visual');
+   if(!parts.length){
+     vis.innerHTML='<div class="wd-idea"><div class="wd-ideaB">No distilled capabilities yet.</div></div>';
+     return {el:el,title:'Amalgam',sub:'empty catalog',start:function(){},stop:function(){}};
+   }
+   genome.capIds=parts.map(function(c){return c.id;});
+   var mode=Math.round(P.mode)%6;
+   var modeNames=['PIPELINE','SHARED STATE','CONTROL LOOP','LENS','FEEDBACK','TOOLCHAIN'];
+   var title=parts.map(function(c){return compLabel(c.component);}).join(' × ');
+   var relation;
+   if(mode===0) relation=parts.map(function(c){return c.verb+' '+capShort(c);}).join(' → ');
+   else if(mode===1) relation='One shared state, '+parts.length+' independent capabilities: '+parts.map(function(c){return capShort(c);}).join(' · ');
+   else if(mode===2) relation=capShort(parts[0])+' drives the controls of '+capShort(parts[1])+(parts[2]?' while '+capShort(parts[2])+' observes or stores the result':'')+'.';
+   else if(mode===3) relation='Treat '+capShort(parts[0])+' as source material; reinterpret it through '+parts.slice(1).map(function(c){return capShort(c);}).join(', ')+'.';
+   else if(mode===4) relation='Create a bounded feedback loop between '+parts.map(function(c){return capShort(c);}).join(' ↔ ')+'.';
+   else relation='Collapse these into one user-facing MOOR tool: '+parts.map(function(c){return capShort(c);}).join(' + ')+'.';
+   var chips=parts.map(function(c){return '<span>'+esc(c.component)+'</span>';}).join('');
+   var knobs=[];
+   parts.forEach(function(c){(c.knobs||[]).slice(0,2).forEach(function(k){if(knobs.indexOf(k)<0)knobs.push(k);});});
+   el.querySelector('.wd-cap b').textContent=title;
+   el.querySelector('.wd-cap span').textContent='amalgam · '+modeNames[mode]+' · '+parts.length+' parts';
+   vis.innerHTML='<div class="wd-idea">'+
+     '<div class="wd-kicker">'+modeNames[mode]+'</div>'+
+     '<div class="wd-ideaT">'+esc(title)+'</div>'+
+     '<div class="wd-ideaB">'+esc(relation)+'</div>'+
+     '<div class="wd-ideaS">'+chips+'</div>'+
+     '<div style="margin-top:13px;color:#a5adc4;font-size:12px;line-height:1.5">Expose first: '+esc(knobs.slice(0,6).join(' · ')||'component defaults')+'</div>'+
+     '<button class="wd-hbtn wd-copy-build" style="margin-top:14px">copy build task ↗</button>'+
+     '</div>';
+   vis.querySelector('.wd-copy-build').onclick=function(e){
+     e.stopPropagation();
+     copyText(amalgamCopy(parts,mode,seed),function(ok){toast(ok?'build task copied':'copy unavailable');});
+   };
+   return {el:el,title:title,sub:'MOOR OS amalgam · '+modeNames[mode],start:function(){},stop:function(){}};
+ }
+});
 
 function thumbnail(genome, W2, H2, cb){
   var holder = document.createElement('div');
@@ -6890,11 +6920,7 @@ function mountFeed(host, opts){
     '<div class="wd-feed" id="wd-feed">'+
       '<div class="wd-chrome">'+
       '<div class="wd-head">'+
-        '<span class="wd-tabs">'+
-          '<button class="wd-hbtn wd-tab on" data-f="wonders">wonders</button>'+
-          '<button class="wd-hbtn wd-tab" data-f="components">components</button>'+
-          '<button class="wd-hbtn wd-tab" data-f="ideas">ideas</button>'+
-        '</span>'+
+        '<span class="wd-tabs"><b>WONDER FEED</b></span>'+
         '<span class="wd-hright">'+
           '<span class="wd-tastepill" id="wd-taste" hidden>tuned · <button id="wd-reset">reset</button></span>'+
           '<button class="wd-hbtn" id="wd-menubtn" title="more">⋯</button>'+
@@ -6905,19 +6931,13 @@ function mountFeed(host, opts){
         '<span id="wd-seedlbl" class="wd-seedlbl"></span>'+
         (fullscreen ? '' : '<a class="wd-fullink" href="'+SHARE_BASE+'" target="_blank" rel="noopener">full screen ↗</a>')+
       '</div>'+
-      '<div class="wd-steer" id="wd-steer">'+
-        '<input id="wd-steerin" placeholder="steer the feed — more glass, less rain…" spellcheck="false" autocomplete="off" enterkeyhint="go">'+
-        '<button id="wd-steergo" title="steer">→</button>'+
-        '<button id="wd-steertog" title="collapse">–</button>'+
-      '</div>'+
-      '<div id="wd-chips"></div>'+
+
       '</div>'+
       '<div id="wd-body"></div>'+
     '</div>';
   host.appendChild(st);
 
   Taste2.migrate();
-  Steer.boot();
 
   var scroller = host.querySelector('#wd-feed');
   var body = host.querySelector('#wd-body');
@@ -6927,10 +6947,9 @@ function mountFeed(host, opts){
   var drawer = null, intoEl = null;
 
   function refreshChrome(){
-    host.querySelector('#wd-taste').hidden = !(Taste2.hasSignal()||Taste.list().length||Steer.list().length);
+    host.querySelector('#wd-taste').hidden = !(Taste2.hasSignal()||Taste.list().length);
     var n = Library.list().length;
     host.querySelector('#wd-libn').textContent = n ? '('+n+')' : '';
-    renderChips();
   }
 
   /* ---------- generic infinite feed core with dwell tracking ---------- */
@@ -7063,8 +7082,6 @@ function mountFeed(host, opts){
       if (!cands.length) cands = scored;
       return cands[(rng()*cands.length)|0].k;
     }
-    var ideaT = typeByKind('idea');
-
     function visualKinds(){
       var ks=[];
       for (var i=0;i<TYPES.length;i++){
@@ -7077,8 +7094,8 @@ function mountFeed(host, opts){
     function pickGenome(isSurprise){
       var g;
       if (onlyKind){
-        g = {type:'idea', seed:(rng()*1000000000)|0, p:ideaT.params(rng)};
-        g.p.kit=(sessionSeed+cardCount-1)%8;
+        var ot=typeByKind(onlyKind);
+        g = {type:onlyKind, seed:(rng()*1000000000)|0, p:ot.params(rng)};
         return sanitizeGenome(g);
       }
       if (isSurprise){
@@ -7103,21 +7120,10 @@ function mountFeed(host, opts){
       return sanitizeGenome(g);
     }
     function nextGenome(){
-      var g, tries=0;
       cardCount++;
       Taste2.decay();
-      var surprise = (!onlyKind && cardCount % 7 === 0);
-      /* component spotlight: every 4th card pulls from the workshop */
-      var spotlight = (!onlyKind && !surprise && cardCount % 4 === 0 && componentCatalog().length > 0);
-      do {
-        if (spotlight){
-          var ct = typeByKind('component');
-          g = sanitizeGenome({type:'component', seed:(rng()*1000000000)|0, p:ct.params(rng)});
-        } else if(!onlyKind&&!surprise&&cardCount%3===0){g=sanitizeGenome({type:'idea',seed:(rng()*1000000000)|0,p:ideaT.params(rng)});}
-        else g = pickGenome(surprise);
-        tries++;
-      }
-      while (!onlyKind && tries<6 && Attention.isSuppressed(genomeKey(g)));
+      var g=pickGenome(false), tries=0;
+      while(tries<8 && Attention.isSuppressed(genomeKey(g))){g=pickGenome(false);tries++;}
       noteKind(g.type);
       return g;
     }
@@ -7435,43 +7441,17 @@ function mountFeed(host, opts){
   /* ---------- feed switching ---------- */
   var active=null, activeName='';
   var apiRef={insertGenome:null};
-  function showFeed(name){
-    if(active){ try{active.destroy();}catch(e){} active=null; }
+  function showFeed(){
+    if(active){try{active.destroy();}catch(e){}active=null;}
     body.innerHTML='';
-    var rng=mulberry32(((sessionSeed ^ hashStr(name))>>>0)||1);
-    if(name==='components') active=buildComponentFeed(rng);
-    else if(name==='ideas') active=buildVisualFeed(rng,'idea');
-    else active=buildVisualFeed(rng,null);
-    activeName=name;
+    var rng=mulberry32(((sessionSeed ^ hashStr('amalgams'))>>>0)||1);
+    active=buildVisualFeed(rng,'amalgam');
+    activeName='wonders';
     apiRef.insertGenome=(active&&active.insertGenome)?active.insertGenome:null;
-    var tabs=host.querySelectorAll('.wd-tab');
-    for(var i=0;i<tabs.length;i++) tabs[i].classList.toggle('on', tabs[i].getAttribute('data-f')===name);
     refreshChrome();
-  }
-  var tabs=host.querySelectorAll('.wd-tab');
-  for(var ti=0;ti<tabs.length;ti++){
-    (function(tb){ tb.onclick=function(){ showFeed(tb.getAttribute('data-f')); }; })(tabs[ti]);
   }
 
-  /* ---------- steering bar ---------- */
-  var steerIn=host.querySelector('#wd-steerin');
-  function submitSteer(){
-    var v=steerIn.value.trim();
-    if(!v) return;
-    Steer.add(v);
-    steerIn.value='';
-    refreshChrome();
-  }
-  host.querySelector('#wd-steergo').onclick=submitSteer;
-  steerIn.addEventListener('keydown', function(e){
-    if(e.key==='Enter') submitSteer();
-    e.stopPropagation();
-  });
-  host.querySelector('#wd-steertog').onclick=function(){
-    var sb=host.querySelector('#wd-steer');
-    var collapsed=sb.classList.toggle('collapsed');
-    this.textContent=collapsed?'+':'–';
-  };
+
 
   /* ---------- header buttons ---------- */
   host.querySelector('#wd-libbtn').onclick=openLibrary;
@@ -7482,10 +7462,10 @@ function mountFeed(host, opts){
     m.hidden=!m.hidden;
   };
   host.querySelector('#wd-reset').onclick=function(){
-    Taste2.reset(); Steer.clear(); refreshChrome(); toast('taste reset — wide open again');
+    Taste2.reset(); refreshChrome(); toast('taste reset — wide open again');
   };
   refreshChrome();
-  showFeed(hashGenome()?'wonders':feedParams.get('feed')==='ideas'?'ideas':'wonders');
+  showFeed();
 
   /* refit visible card canvases on viewport change (rotation, toolbar show/hide) */
   var rsT = 0;
@@ -7512,7 +7492,7 @@ function mountFeed(host, opts){
       drawer=null;
     },
     insertGenome:function(g){
-      if(activeName!=='wonders') showFeed('wonders');
+      if(!active) showFeed();
       if(active&&active.insertGenome) active.insertGenome(g);
     }
   };
