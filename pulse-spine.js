@@ -51,7 +51,7 @@ function hash(s){
   for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
   return (h>>>0).toString(16);
 }
-var REF_KINDS=['concept','intent','component','generator','recipe','artifact','blueprint','rule','requirement','evidence','failure','project','version','implementation','training'];
+var REF_KINDS=['concept','intent','component','generator','recipe','artifact','blueprint','rule','requirement','evidence','failure','project','version','implementation','training','dataset','example','preference','critique'];
 function slug(v){return String(v||'ref').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,80)||'ref';}
 function refStatusWeight(s){return {canonical:9,'human-approved':8,'machine-verified':7,generated:5,observed:4,'specified-not-verified':3,failed:1}[s]||2;}
 function normalizeRefKind(k){
@@ -213,6 +213,8 @@ function referencePacket(query,limit){
     concepts:all.filter(function(r){return r.kind==='concept';}),
     recipes:all.filter(function(r){return r.kind==='recipe';}),
     implementations:all.filter(function(r){return r.kind==='component'||r.kind==='generator'||r.kind==='implementation'||r.kind==='artifact';}),
+    datasets:all.filter(function(r){return r.kind==='dataset';}),
+    examples:all.filter(function(r){return r.kind==='example'||r.kind==='preference'||r.kind==='critique';}),
     rules:all.filter(function(r){return r.kind==='rule'||r.kind==='requirement'||r.kind==='blueprint';}),
     failures:all.filter(function(r){return r.kind==='failure';}),
     evidence:all.filter(function(r){return r.kind==='evidence';}),
