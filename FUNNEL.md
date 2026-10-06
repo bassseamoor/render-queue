@@ -64,7 +64,7 @@ If replay omits an obligation or introduces an unapproved substitution, no recei
 - Execution/Harness component: `app-compiler-harness`
 - Muse operating personality: `/BUSTER.md`
 
-The UI filename may retain its historical name. The executable law version is owned by the kernel.
+The UI filename may retain its historical name. The current executable law version is `v44-sealed`, owned by the kernel.
 
 ## Agent rule
 
