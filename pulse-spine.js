@@ -566,7 +566,10 @@ var CONTRACTS=[
   source:'moor-harness-runtime-v1.html'},
  {id:'reference-graph',name:'Universal Reference Graph',
   summary:'Bin stores concepts, intent, recipes, artifacts, rules, failures, evidence, projects, versions, components, generators, and implementations as linked references.',
-  source:'pulse-reference-graph-schema.json'}
+  source:'pulse-reference-graph-schema.json'},
+ {id:'request-entry',name:'Universal MOOR Request Entry',
+  summary:'Humans, scripts, and models enter through MOOR.request; deterministic routing chooses references, Funnel, or Harness without requiring a key.',
+  source:'FUNNEL.md'}
 ];
 function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS);}
 
@@ -574,10 +577,12 @@ function ensureFunnelProject(){
   try{
     if(!window.PulseFunnel||!PulseFunnel.state||!Array.isArray(PulseFunnel.state.projects))return;
     var fs=PulseFunnel.state, now=new Date().toISOString();
-    var members=blueprintDocs().map(function(b){return {kind:b.id==='harness-completion'?'compiler-contract':'architecture',
-      ref:(b.id==='harness-completion'?'contract-':'spine-')+b.id,label:b.name,
-      sourceVersion:b.id==='funnel'?'v43':b.id==='harness-completion'?'v1':'v1',
-      source:'pulse-learning-spine-blueprints.json',detail:b.summary};});
+    var members=blueprintDocs().map(function(b){
+      var isContract=CONTRACTS.some(function(c){return c.id===b.id;});
+      return {kind:isContract?'architecture-contract':'architecture',
+      ref:(isContract?'contract-':'spine-')+b.id,label:b.name,
+      sourceVersion:b.id==='funnel'?'v43':'v1',
+      source:isContract&&b.source?b.source:'pulse-learning-spine-blueprints.json',detail:b.summary};});
     var p=fs.projects.find(function(x){return x.id==='learning-spine';});
     if(!p){
       p={id:'learning-spine',name:'Pulse Learning Spine',icon:'◇',
@@ -618,6 +623,19 @@ function ensureFunnelProject(){
           parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
           revision:'Bin now stores concepts, recipes, artifacts, rules, failures, evidence, projects, versions, generators, components, implementations, and training as linked references; app/project outputs feed it with provenance.',
           items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-reference-graph';y.change=x.ref==='contract-reference-graph'?'new':'inherited';return y;})});
+      }
+    }
+    var hasRequestEntry=(p.members||[]).some(function(x){return x.ref==='contract-request-entry';});
+    if(!hasRequestEntry){
+      var re=members.find(function(x){return x.ref==='contract-request-entry';});
+      if(re){
+        p.members=p.members||[];p.members.push(re);p.versions=p.versions||[];
+        var rnums=p.versions.map(function(v){return parseInt(String(v.number||'').replace(/\D/g,''),10);}).filter(Number.isFinite);
+        var rvn='v'+((rnums.length?Math.max.apply(null,rnums):0)+1);
+        p.versions.push({id:'spine-request-entry-'+Date.now(),number:rvn,title:'Universal MOOR request entry',state:'locked-import',createdAt:now,
+          parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
+          revision:'One zero-key MOOR.request doorway now routes reference lookup, navigation, unresolved decisions, and resolved execution; agents read FUNNEL.md and do not use the human bar.',
+          items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-request-entry';y.change=x.ref==='contract-request-entry'?'new':'inherited';return y;})});
       }
     }
     try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
