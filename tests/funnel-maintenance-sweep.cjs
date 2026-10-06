@@ -17,6 +17,7 @@ const stations=[
   {id:'factory-accumulation',tests:['tests/factory-accumulation-checks.cjs'],critical:false},
   {id:'software-manufacturing',tests:['tests/software-manufacturing-checks.cjs','tests/software-manufacturing-machine-ultra-run.cjs'],critical:false},
   {id:'software-factory-ledger',tests:['tests/software-factory-core-checks.cjs','tests/moor-request-factory-checks.cjs'],critical:true},
+  {id:'factory-digital-twin',tests:['tests/factory-twin-core-checks.cjs','tests/pulse-beam-laser-citadel-checks.cjs'],critical:false},
   {id:'ultra-human-runtime',tests:['tests/funnel-runtime-checks.cjs'],critical:false}
 ];
 
