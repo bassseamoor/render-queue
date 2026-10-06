@@ -43,6 +43,10 @@ const afterPg01=JSON.parse(JSON.stringify(afterBf02));
 afterPg01.slices['PG-01']=evidence.slices['PG-01'];
 const afterGenerators=Ch.evaluate({choreography,evidence:afterPg01});
 assert.equal(afterGenerators.recommendation.slice_id,'PG-02');
+const afterPg02=JSON.parse(JSON.stringify(afterPg01));
+afterPg02.slices['PG-02']=evidence.slices['PG-02'];
+const afterRecipe=Ch.evaluate({choreography,evidence:afterPg02});
+assert.equal(afterRecipe.recommendation.slice_id,'WO-01');
 
 const ch02=run(
   'owner-start-building-ch02-v1',
@@ -94,4 +98,12 @@ const pg02=run(
   'Project Pulse / Procedural toolchain',
   ['recipe/anchor/receipt schemas are versioned','generator binding and version are mandatory','anchors are stable and validatable','no generator is silently upgraded or substituted']
 );
-console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation},null,2));
+const wo01=run(
+  'owner-start-building-wo01-v1',
+  'Build WO-01: implement exact SliceRelease and WorkerJob contracts. Planning must not spawn workers; release packets must bind blueprint slice, Page 0, Funnel authority, repository base, owner approval, budget, scope, done criteria, verification and handoff.',
+  [{key:'slice',value:'WO-01'},{key:'selection_basis',value:'CH-02 advisory after verified PG-02'},{key:'automation',value:'contracts only; no worker spawning'}],
+  {slice_id:'WO-01',task:'slice release and worker job contracts',authority:'contract validation only'},
+  'Project Pulse / Worker orchestration',
+  ['SliceRelease is versioned and authority-bound','WorkerJob cannot exceed release scope','repository base and owner approval are mandatory','planning alone cannot spawn a worker']
+);
+console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,wo01_receipt:wo01.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation,after_pg02:afterRecipe.recommendation},null,2));
