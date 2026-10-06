@@ -35,7 +35,7 @@ function capture(canvas){return new Promise(resolve=>{if(!canvas){resolve(null);
 function nativeRenderer(g){
  const spec=nativeFor(g),el=document.createElement('div');el.className='wd-card';
  const vis=document.createElement('div');vis.className='wd-visual';el.append(vis);
- let frame=null,canvas=null,settings=[],timer=0,dead=false,started=false,attempts=0;
+ let frame=null,canvas=null,output=null,frameTick=0,settings=[],timer=0,dead=false,started=false,attempts=0;
  function tune(doc){
   const r=rng(g.seed);const scope=doc.querySelector('.tool-host')||doc;const controls=[...scope.querySelectorAll('input,select')];
   controls.forEach(input=>{if(/seed/i.test(input.id+' '+input.name+' '+input.closest('label')?.textContent)){input.value=String(g.seed);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));}});
@@ -62,11 +62,12 @@ function nativeRenderer(g){
   doc.defaultView.dispatchEvent(new Event('resize'));
   const orientation=document.documentElement.dataset.wonderOrientation||'portrait';
   if(spec.id==='native-plant'){canvas.width=orientation==='portrait'?480:854;canvas.height=orientation==='portrait'?854:480;}
-  vis.dataset.ready='true';
+  vis.dataset.ready='true';mirror();
  }
+ function mirror(){if(dead||!canvas||!output)return;try{if(output.width!==canvas.width||output.height!==canvas.height){output.width=canvas.width;output.height=canvas.height;}output.getContext('2d').drawImage(canvas,0,0);}catch(_){}frameTick=requestAnimationFrame(mirror);}
  return {el,title:spec.label,sub:spec.category,genome:g,
-  start(){if(started)return;started=true;dead=false;attempts=0;delete vis.dataset.error;frame=document.createElement('iframe');frame.title=spec.label+' generated output';frame.setAttribute('allow','autoplay');const u=new URL(spec.page||'pulse-dashboard.html',location.href);if(spec.component)u.searchParams.set('workspace-tool',spec.component);u.searchParams.set('wonder-preview',g.seed);u.searchParams.set('seed',g.seed);u.searchParams.set('release',RELEASE);frame.src=u.href;frame.onload=()=>{try{tune(frame.contentDocument);adapt(frame.contentDocument);}catch(e){vis.dataset.error='Generator unavailable';}};vis.append(frame);},
-  stop(){dead=true;started=false;clearTimeout(timer);frame?.remove();frame=null;canvas=null;},
+  start(){if(started)return;started=true;dead=false;attempts=0;delete vis.dataset.error;output=document.createElement('canvas');output.className='wd-native-output';output.setAttribute('aria-label',spec.label+' generated output');vis.replaceChildren(output);frame=document.createElement('iframe');frame.title=spec.label+' renderer';frame.setAttribute('aria-hidden','true');frame.setAttribute('allow','autoplay');frame.style.cssText='position:fixed;left:-10000px;top:-10000px;width:800px;height:800px;opacity:0;pointer-events:none';const u=new URL(spec.page||'pulse-dashboard.html',location.href);if(spec.component)u.searchParams.set('workspace-tool',spec.component);u.searchParams.set('wonder-preview',g.seed);u.searchParams.set('seed',g.seed);u.searchParams.set('release',RELEASE);frame.src=u.href;frame.onload=()=>{try{tune(frame.contentDocument);adapt(frame.contentDocument);}catch(e){vis.dataset.error='Generator unavailable';}};document.body.append(frame);},
+  stop(){dead=true;started=false;clearTimeout(timer);cancelAnimationFrame(frameTick);frameTick=0;frame?.remove();frame=null;canvas=null;output=null;vis.replaceChildren();},
   async capture(){const end=Date.now()+15000;while(!canvas&&!dead&&!vis.dataset.error&&Date.now()<end)await new Promise(r=>setTimeout(r,200));if(!canvas)throw Error(vis.dataset.error||'This generator is still loading.');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return capture(canvas);},settings:()=>settings
  };
 }
@@ -83,21 +84,34 @@ const css=`
 @media(max-width:600px){.wh{height:calc(100dvh - 110px);min-height:330px}.wh-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.wh-top{gap:4px;padding:7px}.wh-name{font-size:12px}.wh button{padding:7px 9px;font-size:12px}.wh-card{border-radius:14px}.wh-caption{padding:30px 8px 8px}.wh-caption strong{font-size:12px}.wh-caption small{display:none}.wh-caption button{min-height:32px;padding:4px 8px}.wh-full .wh-card{height:calc(100dvh - 68px)}.wh[data-orientation=landscape] .wh-grid{grid-template-columns:1fr}}
 `;
 const style=document.createElement('style');style.id='wonder-haven-style';style.textContent=css;document.head.append(style);
+const feedStyle=document.createElement('style');feedStyle.textContent='.wh-generator{max-width:190px;overflow:hidden;text-overflow:ellipsis}@media(max-width:600px){.wh-generator{max-width:118px}}';document.head.append(feedStyle);
 function mount(host,opts={}){
  const shell=document.createElement('section');shell.className='wh';if(opts.fullscreen)shell.style.height='100dvh';shell.dataset.orientation=localStorage.getItem('moor-wonder-orientation')||'portrait';document.documentElement.dataset.wonderOrientation=shell.dataset.orientation;
  shell.innerHTML=`<header class="wh-top"><button class="wh-icon" data-full aria-label="Enter fullscreen" title="Fullscreen">⛶</button><span class="wh-name">Wonder Feed</span><div class="wh-orientation"><button data-orientation="portrait">Portrait</button><button data-orientation="landscape">Landscape</button></div><button data-files title="Saved files">Saved</button></header><div class="wh-scroll" tabindex="0" aria-label="Procedural generator feed"><div class="wh-grid"></div><div class="wh-more" style="height:30px"></div></div><section class="wh-files" hidden aria-label="Saved Wonder files"></section><div class="wh-status" role="status"></div>`;
- host.replaceChildren(shell);const grid=shell.querySelector('.wh-grid'),scroll=shell.querySelector('.wh-scroll'),files=shell.querySelector('.wh-files'),records=[],urls=[];
- let dead=false,bag=[],last='',full=false,statusTimer,visibleObserver,moreObserver;
+ host.replaceChildren(shell);const grid=shell.querySelector('.wh-grid'),scroll=shell.querySelector('.wh-scroll'),files=shell.querySelector('.wh-files'),urls=[];
+ const picker=document.createElement('select');picker.className='wh-generator';picker.setAttribute('aria-label','Generator feed');picker.innerHTML='<option value="all">All generators</option>'+kinds.map(t=>'<option value="'+esc(t.kind)+'">'+esc(t.label)+'</option>').join('');shell.querySelector('.wh-orientation').before(picker);
+ let dead=false,bag=[],last='',full=false,statusTimer,visibleObserver,moreObserver,records=[];
+ let activeKind=localStorage.getItem('moor-wonder-generator')||'all';
+ if(!kinds.some(t=>t.kind===activeKind))activeKind='all';
+ picker.value=activeKind;
  const params=new URLSearchParams(location.search),random=rng(hash(params.get('seed')||String(Date.now())));
  function notify(s){shell.querySelector('.wh-status').textContent=s;clearTimeout(statusTimer);statusTimer=setTimeout(()=>shell.querySelector('.wh-status').textContent='',3200);}
- function next(){if(!bag.length){bag=kinds.slice();for(let i=bag.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}if(bag.at(-1)?.kind===last)[bag[0],bag[bag.length-1]]=[bag.at(-1),bag[0]];}const t=bag.pop();last=t.kind;return {type:t.kind,seed:Math.floor(random()*1e9),p:t.params(random)};}
+ function next(){const chosen=activeKind==='all'?null:kinds.find(t=>t.kind===activeKind);if(chosen)return {type:chosen.kind,seed:Math.floor(random()*1e9),p:chosen.params(random)};if(!bag.length){bag=kinds.slice();for(let i=bag.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}if(bag.at(-1)?.kind===last)[bag[0],bag[bag.length-1]]=[bag.at(-1),bag[0]];}const t=bag.pop();last=t.kind;return {type:t.kind,seed:Math.floor(random()*1e9),p:t.params(random)};}
  function stop(rec){rec.w?.stop();rec.w=null;rec.card.querySelector('.wh-surface').replaceChildren();}
  function start(rec){if(dead||rec.w)return;try{rec.w=W.make(rec.g);const vis=rec.w.el.querySelector('.wd-visual');if(!vis)throw Error('No visual output');rec.card.querySelector('.wh-surface').replaceChildren(vis);const cv=vis.querySelector('canvas');if(cv&&['planet','galaxy','firefountain','warp'].includes(rec.g.type)&&!cv.getContext('webgl')){vis.dataset.error='This generator needs WebGL in your browser.';vis.replaceChildren(document.createTextNode(vis.dataset.error));}if(cv&&!cv._glNoFit){const box=rec.card.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,1.5);cv.width=Math.round(box.width*dpr);cv.height=Math.round(box.height*dpr);rec.w.onResize?.(cv.width,cv.height);}rec.w.start();}catch(e){rec.card.querySelector('.wh-surface').innerHTML='<span class="wh-wait">This generator could not render. Scroll for another.</span>';}}
  async function save(rec){const btn=rec.card.querySelector('[data-save]');if(btn.disabled)return;btn.disabled=true;try{start(rec);if(rec.card.querySelector('.wd-visual')?.dataset.error)throw Error(rec.card.querySelector('.wd-visual').dataset.error);const image=rec.w?.capture?await rec.w.capture():await capture(rec.card.querySelector('canvas'));const old=(await all()).find(x=>x.id===key(rec.g));const out={schema:'moor.wonder-file',version:1,id:key(rec.g),generator:rec.g.type,category:category(rec.g),title:rec.title,genome:rec.g,settings:rec.w?.settings?.()||[],savedAt:old?.savedAt||Date.now(),updatedAt:Date.now(),image,orientation:shell.dataset.orientation};await put('files',out);W.Library.save(rec.g,rec.title,category(rec.g));btn.classList.add('saved');btn.textContent='✓';notify('Saved · '+out.category+' / '+rec.title);if(folder){try{await toFolder(out);notify('Saved to your folder');}catch(e){notify('Saved here. Reconnect your folder to export.');}}}catch(e){notify(e.message||'Could not save. Try again.');}finally{btn.disabled=false;}}
  function add(g){g=g||next();const t=W.genome.types.find(x=>x.kind===g.type);if(!t)return;const card=document.createElement('article');card.className='wh-card';card.dataset.generator=g.type;card.dataset.seed=g.seed;card.innerHTML=`<div class="wh-surface"><span class="wh-wait">${esc(t.label)}</span></div><div class="wh-caption"><div><strong>${esc(t.label)}</strong><small>${g.seed}</small></div><button data-save aria-label="Save ${esc(t.label)}" title="Save generated result">＋</button></div>`;const rec={g,card,title:t.label,w:null};records.push(rec);grid.append(card);card.querySelector('[data-save]').onclick=()=>save(rec);visibleObserver.observe(card);return rec;}
  visibleObserver=new IntersectionObserver(entries=>entries.forEach(en=>{const rec=records.find(r=>r.card===en.target);if(!rec)return;if(en.isIntersecting)start(rec);else stop(rec);}),{root:scroll,threshold:.02});
- moreObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))for(let i=0;i<6;i++)add();},{root:scroll,rootMargin:'500px'});
+ moreObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))add();},{root:scroll,rootMargin:'500px'});
  moreObserver.observe(shell.querySelector('.wh-more'));
+ function setGenerator(kind){
+  activeKind=kinds.some(t=>t.kind===kind)?kind:'all';bag=[];last='';
+  try{localStorage.setItem('moor-wonder-generator',activeKind);}catch(_){}
+  records.forEach(rec=>{visibleObserver.unobserve(rec.card);stop(rec);});records=[];grid.replaceChildren();
+  scroll.scrollTop=0;add();
+  notify(activeKind==='all'?'All generators · one fresh seed per scroll':(kinds.find(t=>t.kind===activeKind)?.label||'Generator')+' feed · one fresh seed per scroll');
+ }
+ picker.onchange=e=>setGenerator(e.target.value);
  function setOrientation(mode){shell.dataset.orientation=mode;document.documentElement.dataset.wonderOrientation=mode;try{localStorage.setItem('moor-wonder-orientation',mode);}catch(_){}shell.querySelectorAll('[data-orientation]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.orientation===mode)));records.forEach(rec=>{if(rec.w){stop(rec);const b=rec.card.getBoundingClientRect(),s=scroll.getBoundingClientRect();if(b.bottom>s.top&&b.top<s.bottom)start(rec);}});}
  setOrientation(shell.dataset.orientation);shell.querySelectorAll('[data-orientation]').forEach(b=>b.onclick=()=>setOrientation(b.dataset.orientation));
  async function fullscreen(){full=!full;shell.classList.toggle('wh-full',full);const b=shell.querySelector('[data-full]');b.textContent=full?'×':'⛶';b.setAttribute('aria-label',full?'Exit fullscreen':'Enter fullscreen');b.title=full?'Exit fullscreen':'Fullscreen';if(full){try{await shell.requestFullscreen();}catch(_){}}else if(document.fullscreenElement===shell){try{await document.exitFullscreen();}catch(_){}}setOrientation(shell.dataset.orientation);}
@@ -118,7 +132,7 @@ function mount(host,opts={}){
  db().then(async d=>{const q=d.transaction('settings').objectStore('settings').get('folder');q.onsuccess=()=>folder=q.result?.handle||null;const existing=await all();for(const old of W.Library.list()){if(!existing.some(x=>x.id===key(old.genome)))await put('files',{schema:'moor.wonder-file',version:1,id:key(old.genome),genome:old.genome,generator:old.genome.type,category:category(old.genome),title:old.title,savedAt:old.savedAt||Date.now(),updatedAt:Date.now(),comment:old.comment||'',image:null});}}).catch(()=>{});
  let shared=null;try{const m=location.hash.match(/#w=([\w-]+)/);if(m){shared=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));if(!W.genome.valid(shared))shared=null;}}catch(_){}
  if(shared)add(shared);
- const first=['terrain','native-plant','planet','forest','native-furniture','firefountain'];for(const type of first){const t=kinds.find(x=>x.kind===type);if(t)add({type,seed:Math.floor(random()*1e9),p:t.params(random)});}
+ const first=activeKind==='all'?['terrain','native-plant','planet','forest','native-furniture','firefountain']:[activeKind];for(const type of first){const t=kinds.find(x=>x.kind===type);if(t)add({type,seed:Math.floor(random()*1e9),p:t.params(random)});}
  const api={stopAll(){dead=true;visibleObserver.disconnect();moreObserver.disconnect();records.forEach(stop);document.removeEventListener('fullscreenchange',onFs);document.removeEventListener('keydown',onKey);urls.forEach(u=>URL.revokeObjectURL(u));clearTimeout(statusTimer);instances.delete(api);},insertGenome(g){const rec=add(g);rec?.card.scrollIntoView({block:'start'});}};host._wonderApi=api;instances.add(api);return api;
 }
 W.mount=mount;W.unmount=()=>{for(const api of [...instances])api.stopAll();};W.Haven={native,kinds:kinds.map(x=>x.kind),release:RELEASE};

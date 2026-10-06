@@ -12,4 +12,6 @@ for(const k of ['terrain','planet','forest','firefountain','native-plant','nativ
 for(const page of ['wonder-feed.html','pulse-dashboard.html']){const s=source(page);assert(s.includes('wonder-core.js?v='+w.Haven.release));assert(s.includes('wonder-haven.js?v='+w.Haven.release));for(const match of s.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g))if(!/application\/json/.test(match[1]))new vm.Script(match[2]);}
 assert(source('pulse-dashboard.html').includes('x:wonderPlant?0:Math.cos(a)*r'));
 assert(source('wonder-haven.js').includes('indexedDB.open'));assert(source('wonder-haven.js').includes('createWritable'));assert(source('wonder-haven.js').includes("frame?.remove()"));
+assert(source('wonder-haven.js').includes("aria-label','Generator feed"));assert(source('wonder-haven.js').includes("activeKind==='all'?null"));assert(source('wonder-haven.js').includes("entries.some(e=>e.isIntersecting))add()"));
+assert(source('wonder-haven.js').includes("document.body.append(frame)"));assert(!source('wonder-haven.js').includes("vis.append(frame)"));assert(source('wonder-haven.js').includes('function mirror()'));
 console.log('PASS: '+w.Haven.kinds.length+' visual generators, 19 native adapters, canonical genomes, shared engine, centered plants, local files and paused previews');
