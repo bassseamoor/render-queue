@@ -13,7 +13,7 @@ assert.equal(status.current_authority.production,'v44-sealed');
 assert.equal(status.current_authority.candidate,'ultra-v1-candidate');
 assert.equal(agent.funnel.candidate_version,'ultra-v1-candidate');
 assert.equal(agent.funnel.maintenance_status,'funnel-maintenance-status.json');
-assert.equal(agent.manufacturing.observability,'pulse-beam-funnel-hall.html');
+assert.equal(agent.manufacturing.stations.observability,'pulse-beam-funnel-hall.html');
 
 for(const term of ['documented','implemented','wired','verified','receipt_backed','visualized'])
   assert(Object.prototype.hasOwnProperty.call(status.semantics,term),'maintenance semantics missing '+term);
