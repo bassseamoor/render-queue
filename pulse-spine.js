@@ -352,12 +352,22 @@ function relatedTraining(r,limit){
   return ranked.slice(0,limit||5);
 }
 function sendRecordToFunnel(id){
-  var r=S.stream.find(function(x){return x.id===id;}); if(!r)return;
-  if(!S.funnelInbox.some(function(k){return k.recordId===id;})){
-    S.funnelInbox.push({id:uid('fin'),recordId:id,at:new Date().toISOString(),record:r,status:'waiting',
-      training_refs:relatedTraining(r,5),training_batch_ids:S.trainingBatches.slice()});
-    save();
-  }
+  var r=S.stream.find(function(x){return x.id===id;}); if(!r)return null;
+  var existing=S.funnelInbox.find(function(k){return k.recordId===id;});
+  if(existing)return existing;
+  var item={id:uid('fin'),recordId:id,at:new Date().toISOString(),record:r,status:'waiting',
+    training_refs:relatedTraining(r,5),training_batch_ids:S.trainingBatches.slice()};
+  S.funnelInbox.push(item);
+  save();
+  return item;
+}
+function requestToFunnel(input,context,source){
+  input=String(input==null?'':input);
+  var r=addStream('intent',source||'MOOR.request','Request · '+(input.slice(0,72)||'empty'),{
+    input:input,context:context||{}
+  },{mode:'request',context:context||{},provenance:'explicit'},'request:'+hash(input+'|'+textOf(context||{})));
+  if(!r)return null;
+  return sendRecordToFunnel(r.id);
 }
 function componentRecord(id){
   var c=COMPS.find(function(x){return x.id===id;}); if(!c)return null;
@@ -885,6 +895,7 @@ window.PulseSpine={
   add:function(kind,source,title,payload,meta){return addStream(kind,source,title,payload,meta);},
   keep:keepRecord,
   funnel:sendRecordToFunnel,
+  request:requestToFunnel,
   harvest:harvest,
   blueprints:BLUEPRINTS.slice(),
   contracts:CONTRACTS.slice(),
