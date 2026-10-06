@@ -51,6 +51,11 @@ function interactiveTarget(t){return !!(t&&t.closest&&t.closest('input,textarea,
 function installGestures(){let start=null;document.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;if(interactiveTarget(e.target))return;start={x:e.clientX,y:e.clientY,t:performance.now()}},{passive:true});document.addEventListener('pointerup',e=>{if(!start)return;const dx=e.clientX-start.x,dy=e.clientY-start.y,dt=Math.max(1,performance.now()-start.t),v=Math.abs(dx)/dt;start=null;if(Math.abs(dx)<72||Math.abs(dx)<Math.abs(dy)*1.35||v<.18)return;if(dx<0)nextSpace(1);else nextSpace(-1)},{passive:true})}
 function installKeys(){window.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement&&document.activeElement.tagName))return;if(e.key===']'||(e.altKey&&e.key==='ArrowRight')){e.preventDefault();nextSpace(1)}if(e.key==='['||(e.altKey&&e.key==='ArrowLeft')){e.preventDefault();nextSpace(-1)}})}
 function observeFocus(){let last=null;setInterval(()=>{let f=null;try{f=typeof UI!=='undefined'?UI.focus:null}catch(e){}if(f!==last){last=f;if(f){state.selected=f;state.recent=[f].concat(state.recent.filter(x=>x!==f)).slice(0,18);save()}renderDock();renderInspector()}},320)}
+window.addEventListener('message',e=>{
+  const d=e&&e.data||{};
+  if(d.type==='beam:navigate'&&d.space)setSpace(d.space);
+  if(d.type==='beam:open-component'&&Array.isArray(d.ids)){for(const id of d.ids){if(comp(id)){openComp(id);break}}}
+});
 function start(){read();build()}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 window.PulseBeam=Object.freeze({spaces:SPACES.slice(),setSpace,openComp,getState:()=>JSON.parse(JSON.stringify(state))});
