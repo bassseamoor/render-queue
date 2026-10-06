@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+const S=require('../sebastian-solver-core.js');
+const q={id:'q1',prompt:'What architecture best scales this Funnel system?',leading_risk:'none'};
+const tasks=S.spawn(q,4);assert.equal(tasks.length,4);assert(tasks.every(t=>t.prompt_as_from_sebastian.startsWith('Sebastian asks:')));
+const bs=tasks.map((t,i)=>S.ballot({task_id:t.task_id,question_id:'q1',worker_id:t.worker_id,independence_key:t.isolation_key,proposition_key:'recursive-fabric',proposal:'Use a recursive package graph with fan-out/fan-in and resource budgets.',confidence:.82+i*.03}));
+for(const b of bs)assert(S.verifyBallot(b));
+let r=S.reconcile(bs,{min_votes:3,threshold:.7});assert.equal(r.status,'resolved');assert.equal(r.vote_count,4);assert(r.synthetic_confidence>.7);assert.equal(r.owner_evidence_confidence,null);
+const split=[bs[0],bs[1],S.ballot({task_id:tasks[2].task_id,question_id:'q1',worker_id:tasks[2].worker_id,independence_key:tasks[2].isolation_key,proposition_key:'single-funnel',proposal:'Use one fixed funnel.',confidence:.9}),S.ballot({task_id:tasks[3].task_id,question_id:'q1',worker_id:tasks[3].worker_id,independence_key:tasks[3].isolation_key,proposition_key:'single-funnel',proposal:'Use one fixed funnel.',confidence:.9})];
+r=S.reconcile(split,{min_votes:3,threshold:.7});assert.equal(r.status,'disputed');
+console.log('PASS: Sebastian solver workers independently answer open questions; agreeing ballots manufacture labeled synthetic confidence without becoming owner evidence');
