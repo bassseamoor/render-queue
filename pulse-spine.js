@@ -51,7 +51,7 @@ function hash(s){
   for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
   return (h>>>0).toString(16);
 }
-var REF_KINDS=['concept','intent','component','generator','recipe','artifact','blueprint','rule','requirement','evidence','failure','project','version','implementation','training','dataset','example','preference','critique'];
+var REF_KINDS=['concept','intent','component','generator','recipe','artifact','blueprint','rule','requirement','evidence','failure','project','version','implementation','training','dataset','example','preference','critique','capability','assembly','composition','handoff','learning'];
 function slug(v){return String(v||'ref').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,80)||'ref';}
 function refStatusWeight(s){return {canonical:9,'human-approved':8,'machine-verified':7,generated:5,observed:4,'specified-not-verified':3,failed:1}[s]||2;}
 function normalizeRefKind(k){
@@ -129,6 +129,57 @@ function inferConcepts(text){
   });
   return hits;
 }
+function ingestCrystalBundle(bundle,outputRef){
+  if(!bundle||bundle.schema!=='moor.crystal-bundle')return null;
+  var sourceName='MOOR Refinery',sid=bundle.source&&bundle.source.id||'refinery';
+  var assemblyRef=null;
+  if(bundle.assembly_contract){
+    assemblyRef=addReference({id:'assembly:'+bundle.assembly_contract.content_hash,kind:'assembly',
+      title:'Assembly · '+(bundle.assembly_contract.artifact_id||bundle.source&&bundle.source.title||'artifact'),
+      summary:'Deterministic model-free assembly contract.',status:bundle.status==='machine-verified'?'machine-verified':'specified-not-verified',
+      source:sourceName,source_id:sid,provenance:'procedural',implementation_ref:bundle.implementation_ref||null,data:bundle.assembly_contract});
+    if(outputRef)addEdge(outputRef.id,assemblyRef.id,'reassembled_by','refinery');
+  }
+  (bundle.capability_delta||[]).forEach(function(c){
+    var cr=addReference({id:'capability:'+hash(textOf([c.capability_id,c.version,c.content_hash])),kind:'capability',
+      title:c.capability_id||'Capability',summary:(c.provides&&c.provides.length)?('Provides '+c.provides.join(', ')):'Reusable MOOR capability.',
+      status:c.status||'specified-not-verified',source:sourceName,source_id:c.capability_id||sid,provenance:(c.status==='machine-verified'||c.status==='human-approved')?'verified':'procedural',
+      implementation_ref:c.implementation_ref||bundle.implementation_ref||null,data:c});
+    if(outputRef)addEdge(outputRef.id,cr.id,'provides','refinery');
+    if(assemblyRef)addEdge(cr.id,assemblyRef.id,'assembled_by','refinery');
+    (c.evidence_refs||[]).forEach(function(eid){if(S.refs.some(function(r){return r.id===eid;}))addEdge(eid,cr.id,'verifies','refinery');});
+  });
+  if(bundle.learning_capsule){
+    var lr=addReference({id:'learning:'+hash(textOf(bundle.learning_capsule)),kind:'learning',title:'Learning · '+(bundle.source&&bundle.source.title||sid),
+      summary:'Compacted reusable decisions, constraints, failures and verification outcome.',status:bundle.status==='machine-verified'?'machine-verified':'observed',
+      source:sourceName,source_id:sid,provenance:'procedural',data:bundle.learning_capsule});
+    if(outputRef)addEdge(lr.id,outputRef.id,'learned_from','refinery');
+  }
+  if(window.MoorCapabilityMemory){
+    var snap=window.MoorCapabilityMemory.snapshot();
+    Object.keys(snap.compositions||{}).forEach(function(id){
+      var c=snap.compositions[id];
+      var rr=addReference({id:id,kind:'composition',title:(c.from||'capability')+' → '+(c.to||'capability'),
+        summary:'Typed capability composition · '+(c.match||'compatibility')+'.',status:c.status==='machine-verified'?'machine-verified':'specified-not-verified',
+        source:sourceName,source_id:id,provenance:c.status==='machine-verified'?'verified':'inferred',data:c});
+      var from=S.refs.find(function(x){return x.kind==='capability'&&x.data&&x.data.capability_id===c.from;});
+      var to=S.refs.find(function(x){return x.kind==='capability'&&x.data&&x.data.capability_id===c.to;});
+      if(from)addEdge(from.id,rr.id,'feeds','typed-output');
+      if(to)addEdge(rr.id,to.id,'feeds','typed-input');
+    });
+  }
+  return bundle;
+}
+function crystallizeAndIngestOutput(d,outputRef){
+  try{
+    if(!window.MoorRefinery||!window.MoorCapabilityMemory)return null;
+    var bundle=d&&d.crystal_bundle&&d.crystal_bundle.schema==='moor.crystal-bundle'?d.crystal_bundle:window.MoorRefinery.crystallizeOutput(d||{});
+    window.MoorCapabilityMemory.ingest(bundle);
+    ingestCrystalBundle(bundle,outputRef);
+    if(window.MoorCapabilityHandoff)window.MoorCapabilityHandoff.publishBundle(bundle);
+    return bundle;
+  }catch(e){return null;}
+}
 function ingestOutput(d){
   d=d||{};
   var src=d.source||{}, sourceName=(typeof src==='string'?src:(src.app||src.project||src.component||'Application'));
@@ -172,6 +223,7 @@ function ingestOutput(d){
       provenance:'verified',data:d.failure||d.payload||d});
     addEdge(output.id,fr.id,'failed_because','output-failure');
   }
+  crystallizeAndIngestOutput(d,output);
   save();
   return output;
 }
@@ -218,7 +270,12 @@ function referencePacket(query,limit){
     rules:all.filter(function(r){return r.kind==='rule'||r.kind==='requirement'||r.kind==='blueprint';}),
     failures:all.filter(function(r){return r.kind==='failure';}),
     evidence:all.filter(function(r){return r.kind==='evidence';}),
-    intents:all.filter(function(r){return r.kind==='intent';})
+    intents:all.filter(function(r){return r.kind==='intent';}),
+    capabilities:all.filter(function(r){return r.kind==='capability';}),
+    assemblies:all.filter(function(r){return r.kind==='assembly';}),
+    compositions:all.filter(function(r){return r.kind==='composition';}),
+    handoffs:all.filter(function(r){return r.kind==='handoff';}),
+    learning:all.filter(function(r){return r.kind==='learning';})
   };
 }
 function refMarkdown(r){
@@ -485,6 +542,14 @@ function captureAppMessage(ev){
   save();
 }
 
+function harvestCapabilityMemory(){
+  try{
+    if(!window.MoorCapabilityMemory)return;
+    var snap=window.MoorCapabilityMemory.snapshot();
+    Object.keys(snap.bundles||{}).forEach(function(k){ingestCrystalBundle(snap.bundles[k],null);});
+    Object.keys(snap.handoffs||{}).forEach(function(){});
+  }catch(e){}
+}
 function harvest(){
   try{
     var w=JSON.parse(localStorage.getItem('moor-wonder-library-v1')||'[]');
@@ -519,6 +584,7 @@ function harvest(){
       }
     });
   }catch(e){}
+  harvestCapabilityMemory();
   harvestProtocolStores();
   syncReferenceGraph();
   save();
@@ -704,7 +770,15 @@ var FABRIC_DOCS=[
     "source": "tests/funnel-law-ultra-checks.cjs"
   }
 ];
-function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS,FABRIC_DOCS);}
+var REFINERY_DOCS=[
+ {id:'refinery-blueprint',name:'MOOR Refinery',summary:'Parallel non-authoritative filter that crystallizes blueprints/builds into deterministic assembly contracts, verified capability deltas, compact learning and candidate compositions.',source:'blueprint/moor-refinery.blueprint.json'},
+ {id:'refinery-assembly',name:'Assembly Core',summary:'Executes versioned AssemblyContracts without an LLM and fails explicitly when an executor is missing.',source:'moor-assembly-core.js'},
+ {id:'refinery-core',name:'Refinery Core',summary:'Converts outputs and BLUEPRINT_READY events into Crystal Bundles.',source:'moor-capability-refinery.js'},
+ {id:'refinery-memory',name:'Capability Memory',summary:'Typed graph of verified capabilities, assembly contracts, adapters and candidate/verified compositions.',source:'moor-capability-memory.js'},
+ {id:'refinery-handoff',name:'Funnel Capability Handoff',summary:'Reference-only bridge from verified Refinery capability deltas into the singular Funnel reference lane.',source:'funnel-capability-handoff.js'},
+ {id:'refinery-ui',name:'Capability Memory UI',summary:'Pulse surface for inspecting crystals, capabilities, candidates, missing executors and handoffs.',source:'pulse-capability-memory.html'}
+];
+function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS,FABRIC_DOCS,REFINERY_DOCS);}
 
 function ensureFunnelProject(){
   try{
@@ -815,6 +889,26 @@ function ensureFunnelFabricProject(){
           revision:'Parallel Citadel + Society blueprints realigned into Secure Core / Elastic Society. Candidate law is receipt-gated and remains beside v44 until promotion.',
           items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.kind!=='funnel-fabric-asset';y.change=x.kind==='funnel-fabric-asset'?'new':'inherited';return y;})});
       }
+    }
+    try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
+  }catch(e){}
+}
+
+function ensureCapabilityMemoryProject(){
+  try{
+    if(!window.PulseFunnel||!PulseFunnel.state||!Array.isArray(PulseFunnel.state.projects))return;
+    var fs=PulseFunnel.state,now=new Date().toISOString(),p=fs.projects.find(function(x){return x.id==='capability-memory';});
+    var members=REFINERY_DOCS.map(function(b){return {kind:'refinery-asset',ref:'refinery-'+b.id,label:b.name,sourceVersion:'v1',source:b.source,detail:b.summary};});
+    if(!p){
+      p={id:'capability-memory',name:'MOOR Refinery',icon:'◇',
+        description:'Parallel capability filter. Crystallizes blueprints/builds into model-free assembly contracts and verified capability memory, then hands reference-only deltas to the singular Funnel.',
+        members:members,page:'pulse-capability-memory.html',queued:false,versions:[{id:'refinery-v1',number:'v1',title:'Parallel Refinery',state:'candidate',createdAt:now,parentId:null,
+          revision:'Separate non-authoritative capability crystallization from Funnel authority. Verified deltas hand off through the reference graph.',
+          items:members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='new';return y;})}]};
+      fs.projects.push(p);
+    }else{
+      p.members=p.members||[];members.forEach(function(m){if(!p.members.some(function(x){return x.ref===m.ref;}))p.members.push(m);});
+      p.page='pulse-capability-memory.html';p.queued=false;
     }
     try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
   }catch(e){}
@@ -1053,6 +1147,7 @@ window.addEventListener('moor:spine-input',function(e){
   addStream(d.kind||'information',d.source||'App',d.title||d.kind||'Input',d.payload!=null?d.payload:d,d.meta||{mode:'app'},d.stableKey||null);
 });
 window.addEventListener('moor:output',function(e){if(e&&e.detail)ingestOutput(e.detail);});
+window.addEventListener('moor:capability-memory',function(e){if(e&&e.detail&&e.detail.bundle){ingestCrystalBundle(e.detail.bundle,null);save();}});
 window.addEventListener('moor:reference',function(e){if(e&&e.detail){addReference(e.detail);save();}});
 window.addEventListener('message',captureAppMessage);
 window.addEventListener('storage',function(e){
@@ -1096,6 +1191,7 @@ window.PulseSpine={
   blueprints:BLUEPRINTS.slice(),
   contracts:CONTRACTS.slice(),
   fabric:FABRIC_DOCS.slice(),
+  refinery:REFINERY_DOCS.slice(),
   get training(){return S.training.slice();},
   get trainingLessons(){return S.trainingLessons.slice();},
   findTraining:function(q){return relatedTraining({title:q||'',payload:q||''},8);},
@@ -1133,6 +1229,7 @@ save();
 scheduleLocalBinSync();
 ensureFunnelProject();
 ensureFunnelFabricProject();
+ensureCapabilityMemoryProject();
 ensureTabbar();
 if(typeof renderStage==='function')renderStage();
 decorateFunnel();
