@@ -25,6 +25,8 @@ const agent=JSON.parse(read('moor-agent.json'));
 assert.equal(agent.entrypoint, 'MOOR.request');
 assert.equal(agent.funnel.kernel, 'funnel-kernel.js');
 assert.equal(agent.funnel.execution_receipt, 'moor.funnel-receipt');
+assert.equal(agent.funnel.execution_claim, 'moor.funnel-execution-claim');
+assert.equal(agent.funnel.canonical_version, 'v45-armored');
 assert(html.indexOf('funnel-kernel.js')<html.indexOf('moor-request.js'), 'Funnel kernel must load before request router');
 const sourceBlock = html.match(/window\.SEED_CONSOLE_SRC = ([^\n]+);/)[1];
 new vm.Script(JSON.parse(sourceBlock), { filename: 'embedded Seed Console source' });
