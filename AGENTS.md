@@ -18,6 +18,39 @@ Machine-readable entry: `/moor-agent.json`.
 - Run `node tests/funnel-kernel-checks.cjs` before publishing Funnel/router changes.
 - Muse/Buster personality is `/BUSTER.md`; personality is advisory behavior, never execution authority.
 
+## Software manufacturing model
+
+MOOR treats software production like a physical manufacturing system. The 3D Pulse Beam machine is the HMI/digital twin, not the source of truth.
+
+Canonical mapping:
+- `OBJECTIVE` = outside-in requirements/customer need before solution shape.
+- `HUB` = versioned KIND/part-number registry, shared rules and interface control.
+- Funnel / Ultra Funnel = process planning, routing, decisions and authority gates.
+- `moor-assembly-core.js` = deterministic work instructions / operation sequence.
+- Harness/builders = execution cells / machine tools.
+- Verifier/CI = inspection and metrology.
+- Receipts = travelers / traceability records.
+- Refinery + Capability Memory = reusable tooling/process-capability library.
+- Pulse learning/failures = nonconformance history and continuous improvement.
+- Pulse Beam = spatial factory HMI and observability.
+
+Do not infer health from documentation or 3D presence. Read `/funnel-maintenance-status.json`. A subsystem may be documented, implemented, wired, verified, receipt-backed, and visualized independently.
+
+### Cumulative machinery law
+
+A verified capability is capital equipment. It does not disappear merely because a later product, shell, model, or workflow was created.
+
+- Every reusable function/machine receives a stable identity, version, inputs, outputs, invariants, dependencies, compatibility rules, tests, provenance, and implementation reference.
+- New work reuses or composes existing verified machines before creating substitutes.
+- Connections between adjacent capabilities must be explicit in data/contracts; proximity in source files or human memory is not a connection.
+- A new machine adds to the capability graph. It must not silently shadow, duplicate, fork, or orphan an existing machine with the same job.
+- Changed fit/form/function creates a new version/KIND. The prior verified version remains addressable for replay, rollback, and older assemblies.
+- Deprecation removes a machine from preferred routing only. It does not erase identity, provenance, receipts, compatibility history, or dependent assemblies.
+- An assembly/route references machines by stable identity and compatible version constraints rather than copying their logic.
+- Refinery/Pulse must expose reusable verified capabilities so future Funnels can discover them automatically.
+- Repeated manual recreation of an already-verified capability is a process defect and should produce maintenance/learning evidence.
+- The production capability of MOOR should be monotonic except when a capability is explicitly quarantined for safety, integrity, or incompatibility.
+
 # Pulse dashboard rebuild contract
 
 This repository publishes Project Pulse. Multiple builders update it. Always fetch the latest dashboard and manifest before writing; never replace newer changes using an older snapshot.
