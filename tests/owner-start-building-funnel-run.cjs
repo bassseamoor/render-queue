@@ -55,6 +55,10 @@ const afterWo02=JSON.parse(JSON.stringify(afterWo01));
 afterWo02.slices['WO-02']=evidence.slices['WO-02'];
 const afterGuard=Ch.evaluate({choreography,evidence:afterWo02});
 assert.equal(afterGuard.recommendation.slice_id,'FM-05');
+const afterFm05=JSON.parse(JSON.stringify(afterWo02));
+afterFm05.slices['FM-05']=evidence.slices['FM-05'];
+const afterMaintenanceReceipt=Ch.evaluate({choreography,evidence:afterFm05});
+assert.equal(afterMaintenanceReceipt.recommendation.slice_id,'DT-02');
 
 const ch02=run(
   'owner-start-building-ch02-v1',
@@ -130,4 +134,12 @@ const fm05=run(
   'Project Pulse / Funnel maintenance',
   ['receipt records law versions and snapshot hash','mechanism/test/gap state is machine-readable','failed stations remain visible','Citadel consumes receipt evidence without creating authority']
 );
-console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,wo01_receipt:wo01.fingerprint,wo02_receipt:wo02.fingerprint,fm05_receipt:fm05.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation,after_pg02:afterRecipe.recommendation,after_wo01:afterReleaseContract.recommendation,after_wo02:afterGuard.recommendation},null,2));
+const dt02=run(
+  'owner-start-building-dt02-v1',
+  'Build DT-02: make the Citadel semantic floor render machines, routes and work orders from the validated FactoryTwinSnapshot and its spatial bindings. Raw registries may provide detail but must not independently invent displayed operational entities.',
+  [{key:'slice',value:'DT-02'},{key:'selection_basis',value:'CH-02 advisory after verified FM-05'},{key:'truth_source',value:'FactoryTwinSnapshot'}],
+  {slice_id:'DT-02',task:'semantic factory-floor binding',authority:'read-only observability'},
+  'Project Pulse / Funnel Citadel',
+  ['displayed factory machines originate from TwinMachine records','work-order placement follows Twin spatial bindings','displayed routes originate from TwinRoute records','invalid twin fails visibly instead of optimistic fallback']
+);
+console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,wo01_receipt:wo01.fingerprint,wo02_receipt:wo02.fingerprint,fm05_receipt:fm05.fingerprint,dt02_receipt:dt02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation,after_pg02:afterRecipe.recommendation,after_wo01:afterReleaseContract.recommendation,after_wo02:afterGuard.recommendation,after_fm05:afterMaintenanceReceipt.recommendation},null,2));
