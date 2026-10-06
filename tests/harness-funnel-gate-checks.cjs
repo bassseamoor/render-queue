@@ -23,4 +23,6 @@ assert(html.includes('await routeRawIntakeToFunnel(r,{mode:"modify",base_version
 assert(html.includes('await routeRawIntakeToFunnel(SAMPLE_RAMBLE,{mode:"demo"})'));
 assert(!html.includes('H.ramble=r; H.spec=compileSpec(r); H.stage="spec"'),'Raw Harness intake bypass must stay removed');
 assert(html.includes('obligations:clone(spec.funnel_obligations||[])'));
-console.log('PASS: Harness syntax, verified inbox, exact Page 0 receipt binding, worker/build/promotion gates, and raw-intake anti-bypass guards');
+assert(html.includes('H.workOrderId=h.work_order_id||null'),'Harness must preserve the manufacturing work order from the verified handoff');
+assert(html.includes('work_order_id:H.workOrderId||null'),'Harness output must return to the same software factory traveler');
+console.log('PASS: Harness syntax, verified inbox, exact Page 0 receipt binding, worker/build/promotion gates, manufacturing traveler return, and raw-intake anti-bypass guards');
