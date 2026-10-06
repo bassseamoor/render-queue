@@ -200,7 +200,7 @@ function mount(host,opts={}){
  const resizeObserver=new ResizeObserver(()=>{for(const r of records){if(r.w&&r!==busySave)stop(r,true);r.needsResize=true;}schedule();});resizeObserver.observe(scroll);
  const onVisibility=()=>schedule();document.addEventListener('visibilitychange',onVisibility);
  function setGenerator(kind){
-  activeKind=kinds.some(t=>t.kind===kind)?kind:'all';bag=[];last='';
+  activeKind=kinds.some(t=>t.kind===kind)?kind:'all';picker.value=activeKind;bag=[];last='';
   try{localStorage.setItem('moor-wonder-generator',activeKind);}catch(_){}
   records.forEach(rec=>stop(rec,true));records=[];byCard.clear();focused=null;grid.replaceChildren();before.style.height='0px';after.style.height='0px';
   scroll.scrollTop=0;add();
