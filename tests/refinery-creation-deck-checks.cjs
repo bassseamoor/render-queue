@@ -60,6 +60,15 @@ const H=require('../funnel-capability-handoff.js');
 
   const candidate=Object.values(M.snapshot().compositions).find(c=>c.from==='test.produce.number'&&c.to==='test.consume.number');
   assert(candidate);
+  assert.equal(M.preferredCapability({provides:'number:produce'}).capability_id,'test.produce.number','verified machinery must be discoverable for reuse');
+  const beforeDep=M.getCapability('test.produce.number','1');
+  M.deprecateCapability('test.produce.number','1',{reason:'superseded in test',replacement_id:'test.produce.number.v2'});
+  assert.equal(M.getCapability('test.produce.number','1').lifecycle,'deprecated','deprecation must preserve the machine');
+  assert.equal(M.preferredCapability({provides:'number:produce'}),null,'deprecated machinery must leave preferred routing');
+  assert.equal(M.listCapabilities({include_deprecated:true}).some(x=>x.content_hash===beforeDep.content_hash),true,'deprecated verified machine must remain addressable');
+  M.quarantineCapability('test.consume.number','1',{reason:'test integrity hold',evidence_ref:'evidence:test'});
+  assert.equal(M.getCapability('test.consume.number','1').lifecycle,'quarantined');
+  assert.equal(M.listCapabilities({include_quarantined:false,include_deprecated:true}).some(x=>x.capability_id==='test.consume.number'),false,'quarantined machinery must not enter normal reuse');
   M.promoteComposition(candidate.composition_id,{status:'machine-verified',tests:[{ok:true}]});
   assert.equal(M.snapshot().compositions[candidate.composition_id].status,'machine-verified');
 
@@ -80,6 +89,8 @@ const H=require('../funnel-capability-handoff.js');
   M.recordUse('request_resolved_from_reference',{request_id:'r2'});
   const stats=M.stats();
   assert(stats.inventory.verified_capabilities>=2);
+  assert(stats.inventory.deprecated_capabilities>=1);
+  assert(stats.inventory.quarantined_capabilities>=1);
   assert(stats.inventory.verified_compositions>=1);
   assert(stats.usage.capability_handoffs_consumed>=1);
   assert(stats.usage.estimated_repeated_reasoning_avoided>=2,'usage stats must count real reuse events');
