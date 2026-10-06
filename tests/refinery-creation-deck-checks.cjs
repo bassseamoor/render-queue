@@ -6,6 +6,7 @@ const H=require('../funnel-capability-handoff.js');
 
 (async()=>{
   M.clearForTests();
+  global.MoorCapabilityMemory=M;
 
   const contract=A.createContract({
     artifact_id:'demo',version:'1',source_hash:'source-demo',
