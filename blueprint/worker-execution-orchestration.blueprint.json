@@ -1,0 +1,291 @@
+{
+  "schema": "moor.worker-execution-orchestration-blueprint",
+  "version": 1,
+  "title": "Blueprint-to-Worker Orchestration — Deliberate Release",
+  "page0": "Design the future system that can take an approved MOOR blueprint or implementation slice and execute it through workers when explicitly released. Planning must not automatically become execution. Workers must use existing verified machinery where possible, operate in isolated scopes, produce receipts/evidence, and return work for independent verification and integration.",
+  "correctedQuestion": "What orchestration contract lets MOOR release one selected blueprint slice to parallel workers with precise scope, capability, budget, dependency, merge and verification boundaries, while preventing stale plans, ambient authority, duplicate work and cross-chat clobber?",
+  "objective": "Turn approved blueprint slices into reproducible worker jobs without letting the Blueprint Farm become an uncontrolled autonomous builder.",
+  "knownEvidence": [
+    {
+      "state": "verified-existing",
+      "ref": "funnel-case-runtime.js",
+      "claim": "Ultra already models scoped child cases."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "funnel-capability-core.js",
+      "claim": "Least-authority grants already exist."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "funnel-budget-core.js",
+      "claim": "Conserved hierarchical budgets already exist."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "funnel-receipt-core.js",
+      "claim": "Typed authority receipts already exist."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "MoorCapabilityMemory",
+      "claim": "Verified machinery can be resolved cumulatively."
+    },
+    {
+      "state": "observed",
+      "ref": "GitHub concurrent edits",
+      "claim": "Multiple chats can change main concurrently; stale writes are a real integration hazard."
+    }
+  ],
+  "openQuestions": [
+    "Which blueprint slice characteristics justify parallel workers versus one sequential owner?",
+    "What is the minimum job packet a worker needs to execute correctly without receiving irrelevant project context?",
+    "How should workers reserve files, interfaces or semantic regions to prevent overlapping ownership?",
+    "When two workers legitimately need the same file, what merge protocol is safer than file-level exclusivity?",
+    "Which changes should be built in branches/worktrees versus additive artifacts on main?",
+    "How should a worker prove it used current repository state rather than a stale checkout?",
+    "What kinds of failures should retry automatically, route to a different worker, or stop for owner input?",
+    "How should the orchestrator choose between existing verified capability, deterministic assembly and novel implementation?",
+    "What evidence is required before a worker result can move from candidate output to integration?",
+    "How should integration detect semantic conflict when tests pass but two workers made incompatible architectural choices?",
+    "What maximum recursion/parallelism is useful before coordination cost exceeds throughput gain?",
+    "What information from failed workers should become durable learning rather than discarded logs?"
+  ],
+  "assumptions": [
+    "Explicit human/Funnel release is required to start implementation.",
+    "Workers are replaceable execution cells, not authorities.",
+    "Git repository state is canonical for code.",
+    "Tests and receipts remain necessary but cannot alone detect all semantic integration conflicts."
+  ],
+  "nonGoals": [
+    "Do not create unattended continuous autonomous building.",
+    "Do not let workers promote Funnel law.",
+    "Do not let a planner mint execution authority.",
+    "Do not assume every task benefits from parallelism."
+  ],
+  "dataContracts": {
+    "SliceRelease": [
+      "release_id",
+      "blueprint_id",
+      "blueprint_version",
+      "slice_id",
+      "page0_hash",
+      "blueprint_receipt",
+      "dependency_receipts",
+      "repository_base",
+      "owner_approval",
+      "budget",
+      "release_scope"
+    ],
+    "WorkerJob": [
+      "job_id",
+      "release_id",
+      "objective",
+      "owned_files_or_interfaces",
+      "read_scope",
+      "capability_grant",
+      "budget",
+      "inputs",
+      "expected_outputs",
+      "done_criteria",
+      "verification_plan",
+      "handoff_contract"
+    ],
+    "WorkerReceipt": [
+      "job_id",
+      "base_sha",
+      "result_sha_or_artifact_hash",
+      "files_changed",
+      "interfaces_changed",
+      "tests_run",
+      "evidence",
+      "known_failures",
+      "assumptions",
+      "handoff"
+    ],
+    "IntegrationPlan": [
+      "release_id",
+      "worker_receipts",
+      "merge_order",
+      "conflicts",
+      "shared_interface_checks",
+      "rollback_points",
+      "integration_tests"
+    ],
+    "SliceReleaseReceipt": [
+      "release_id",
+      "integrated_configuration_hash",
+      "verification_receipts",
+      "remaining_debt",
+      "released_artifacts"
+    ]
+  },
+  "routingLaw": [
+    "Resolve existing verified machinery before assigning novel implementation.",
+    "Prefer deterministic assembly when an AssemblyContract already satisfies the slice.",
+    "Parallelize only jobs whose write scopes or interfaces can be isolated.",
+    "A worker starts from a recorded base SHA/snapshot.",
+    "A stale base invalidates write authority until the job is rebased/replanned.",
+    "Workers may propose additional work but cannot expand their own release scope.",
+    "A failed worker returns a failure receipt; sibling jobs may continue when dependencies permit.",
+    "Integration is a separate job from implementation.",
+    "Independent verification runs after integration, not only inside worker branches."
+  ],
+  "workerRoles": [
+    {
+      "role": "surveyor",
+      "job": "Read current state, resolve dependencies and identify stale assumptions; no writes."
+    },
+    {
+      "role": "builder",
+      "job": "Implement one isolated slice/job."
+    },
+    {
+      "role": "adapter",
+      "job": "Connect existing machinery across interfaces without rewriting either side unnecessarily."
+    },
+    {
+      "role": "verifier",
+      "job": "Test requested behavior independently of builder confidence."
+    },
+    {
+      "role": "integrator",
+      "job": "Merge compatible worker outputs and resolve interface-level conflicts."
+    },
+    {
+      "role": "maintainer",
+      "job": "Update maintenance truth, docs and factory twin state from verified result."
+    },
+    {
+      "role": "choreographer",
+      "job": "Order jobs/slices and preserve storyline/dependency intent; cannot self-release work."
+    }
+  ],
+  "concurrencyModel": {
+    "fileOwnership": "Advisory/contractual reservation backed by current base SHA and explicit overlap declaration.",
+    "interfaceOwnership": "Prefer ownership of contracts/interfaces over arbitrary file partitions.",
+    "sharedFiles": "Require predeclared merge strategy or serialize changes.",
+    "maxParallelism": "Derived from dependency graph, conflict probability and budget; no fixed 'more workers is better' rule."
+  },
+  "failureModes": [
+    {
+      "id": "stale-worker",
+      "containment": "Base SHA check before write/integration."
+    },
+    {
+      "id": "scope-creep",
+      "containment": "Capability grant and changed-file/interface check."
+    },
+    {
+      "id": "parallel-clobber",
+      "containment": "Ownership matrix + integration job + branch protection."
+    },
+    {
+      "id": "duplicate-invention",
+      "containment": "Mandatory capability/assembly resolution before novel build."
+    },
+    {
+      "id": "green-tests-wrong-design",
+      "containment": "Integration semantic checks against blueprint invariants/Page 0."
+    },
+    {
+      "id": "retry-loop",
+      "containment": "Bounded retries; repeated failure escalates to maintenance/owner decision."
+    },
+    {
+      "id": "orphan-artifact",
+      "containment": "Every worker output needs a handoff/receipt and explicit disposition."
+    }
+  ],
+  "maintenanceModel": {
+    "metrics": [
+      "worker_first_pass_yield",
+      "integration_conflict_rate",
+      "stale_base_rejections",
+      "reuse_before-build_rate",
+      "mean_worker_handoff_size",
+      "rework_cycles",
+      "escaped_integration_defects"
+    ],
+    "learning": "Repeated integration conflict changes job decomposition rules or interface contracts.",
+    "capacity": "Use Funnel budget/resource governor rather than arbitrary worker count."
+  },
+  "observability": {
+    "human": "Factory floor shows released slice, active jobs, blocked dependencies, integration queue, QC and rework.",
+    "machine": "Release/job/integration receipts form a traceable DAG.",
+    "notification": "Only meaningful blocked/owner-required/release-ready states interrupt the owner."
+  },
+  "securityAuthority": {
+    "releaseAuthority": "Requires a valid blueprint/release decision from the Funnel plus explicit selection of the slice.",
+    "workerAuthority": "Scoped capability only; no law promotion or unrelated write authority.",
+    "integrationAuthority": "Separate from individual builder jobs.",
+    "productionRelease": "Requires integrated verification and current configuration hash."
+  },
+  "implementationSlices": [
+    {
+      "id": "WO-01",
+      "name": "Release packet schema",
+      "dependsOn": [],
+      "deliverable": "SliceRelease + WorkerJob contracts; no worker automation yet."
+    },
+    {
+      "id": "WO-02",
+      "name": "Repository reservation/base checks",
+      "dependsOn": [
+        "WO-01"
+      ],
+      "deliverable": "Stale-base and ownership guard."
+    },
+    {
+      "id": "WO-03",
+      "name": "Capability-first job planner",
+      "dependsOn": [
+        "WO-01"
+      ],
+      "deliverable": "Resolve existing machinery/assemblies before novel work."
+    },
+    {
+      "id": "WO-04",
+      "name": "Worker adapters",
+      "dependsOn": [
+        "WO-02",
+        "WO-03"
+      ],
+      "deliverable": "Connect actual supported worker backends with scoped packets."
+    },
+    {
+      "id": "WO-05",
+      "name": "Integration cell",
+      "dependsOn": [
+        "WO-04"
+      ],
+      "deliverable": "Merge order, conflict detection and integrated configuration hash."
+    },
+    {
+      "id": "WO-06",
+      "name": "Independent QC + maintenance handoff",
+      "dependsOn": [
+        "WO-05"
+      ],
+      "deliverable": "Verification receipts and factory-state update."
+    },
+    {
+      "id": "WO-07",
+      "name": "Choreographed multi-slice execution",
+      "dependsOn": [
+        "WO-06"
+      ],
+      "deliverable": "Owner can release next eligible slice; no autonomous release."
+    }
+  ],
+  "acceptance": [
+    "Planning alone never spawns workers.",
+    "Every worker job is bound to a blueprint slice, base state, scope, budget and done criteria.",
+    "Existing verified machinery is resolved before novel implementation.",
+    "Stale bases and unauthorized scope expansion fail closed.",
+    "Parallel work has explicit ownership and integration choreography.",
+    "Builder success is not production release; independent integration verification remains required.",
+    "Failed work produces durable evidence and bounded rework."
+  ],
+  "rollback": "Worker orchestration layers are additive around existing Git/Funnel/Harness flows; disable worker adapters and return to manually released sequential execution without invalidating blueprints."
+}
