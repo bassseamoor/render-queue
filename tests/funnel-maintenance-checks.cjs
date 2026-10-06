@@ -4,6 +4,9 @@ const status=require('../funnel-maintenance-status.json');
 const migration=require('../blueprint/funnel-ultra-v44-migration.blueprint.json');
 const agent=require('../moor-agent.json');
 const workflow=fs.readFileSync('.github/workflows/pulse-checks.yml','utf8');
+const pages=fs.readFileSync('.github/workflows/pulse-pages.yml','utf8');
+const hall=fs.readFileSync('pulse-beam-funnel-hall.js','utf8');
+const hallHtml=fs.readFileSync('pulse-beam-funnel-hall.html','utf8');
 const dash=fs.readFileSync('pulse-dashboard.html','utf8');
 const manifest=JSON.parse(fs.readFileSync('pulse-manifest.json','utf8'));
 const ultra=fs.readFileSync('funnel-law-core.js','utf8');
@@ -18,8 +21,12 @@ assert.equal(agent.manufacturing.stations.observability,'pulse-beam-funnel-hall.
 for(const term of ['documented','implemented','wired','verified','receipt_backed','visualized'])
   assert(Object.prototype.hasOwnProperty.call(status.semantics,term),'maintenance semantics missing '+term);
 
-const required=['page0-v44','page0-ultra','ultra-society','ultra-capabilities','ultra-budgets','refinery-handoff','pulse-beam-shell','funnel-citadel','ultra-persistence'];
+const required=['page0-v44','page0-ultra','ultra-society','ultra-capabilities','ultra-budgets','refinery-handoff','harness-gate','pulse-beam-shell','funnel-citadel','factory-accumulation','ultra-human-runtime','ultra-persistence'];
 for(const id of required)assert(status.systems.some(x=>x.id===id),'maintenance register missing '+id);
+for(const s of status.systems.filter(x=>x.visualized===true)){
+  assert(s.visual_state,'visualized system missing visual_state '+s.id);
+  assert(s.owner,'visualized system missing owner '+s.id);
+}
 
 const gap=status.systems.find(x=>x.id==='ultra-persistence');
 assert.equal(gap.status,'remaining-gap');
@@ -39,5 +46,11 @@ for(const id of ['pulse-beam','pulse-beam-funnel-hall','pulse-beam-standards','f
 assert(contract.includes('Visualization never upgrades another state.'));
 assert(contract.includes('Verified machinery is cumulative.'));
 assert(workflow.includes('tests/funnel-law-ultra-checks.cjs'));
+assert(workflow.includes('maintenance-sweep:'),'maintenance sweep must run independently of monolithic validation');
+assert(workflow.includes('tests/factory-accumulation-checks.cjs'));
+assert(pages.includes('tests/funnel-maintenance-sweep.cjs --report-only'),'Pages must publish a deploy-time QC report');
+assert(hall.includes("fetch('funnel-maintenance-status.json'"),'Citadel must read canonical maintenance truth');
+assert(hall.includes("fetch('funnel-maintenance-live.json'"),'Citadel must overlay last deploy QC');
+assert(!hallHtml.includes('funnel-maintenance-state.js'),'Citadel must not load a parallel maintenance truth source');
 
-console.log('PASS: Funnel maintenance truth distinguishes docs/code/wiring/tests/receipts/visualization, exposes Ultra migration gaps, and detects Beam BOM integration drift');
+console.log('PASS: Funnel maintenance truth distinguishes docs/code/wiring/tests/receipts/visualization, drives the 3D factory from one canonical register, overlays independent deploy QC, exposes Ultra gaps, and detects Beam BOM drift');
