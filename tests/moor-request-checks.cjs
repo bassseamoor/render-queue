@@ -12,6 +12,12 @@ const localStorage = {
   setItem:(k,v) => store.set(k,String(v)),
   removeItem:k => store.delete(k)
 };
+const sessionStore=new Map();
+const sessionStorage={
+  getItem:k=>sessionStore.has(k)?sessionStore.get(k):null,
+  setItem:(k,v)=>sessionStore.set(k,String(v)),
+  removeItem:k=>sessionStore.delete(k)
+};
 const document = {
   readyState:'loading',
   title:'Pulse Test',
@@ -31,7 +37,7 @@ const window = {
 window.parent=window;
 const context = vm.createContext({
   window,document,location,localStorage,
-  URLSearchParams,URL,Promise,Date,Math,JSON,String,Array,Object,RegExp,Number,
+  URLSearchParams,URL,Promise,Date,Math,JSON,String,Array,Object,RegExp,Number,sessionStorage,
   setTimeout:()=>0,clearTimeout:()=>{},CustomEvent:function(){}
 });
 new vm.Script(kernelSrc,{filename:'funnel-kernel.js'}).runInContext(context);
@@ -98,11 +104,18 @@ assert(window.MOOR && typeof window.MOOR.request === 'function');
   const approved=await window.MOOR.request({input:receiptInput,source:'test',funnel_receipt:receipt});
   assert.equal(approved.route,'harness');
   assert.equal(approved.status,'ready-for-execution');
-  assert.equal(approved.result.verdict_packet.done_criteria[0],'layout works');
+  assert(approved.result.execution_claim&&approved.result.execution_claim.claim_id);
+  assert(approved.result.launch_url.includes(approved.result.execution_claim.claim_id));
+  const stored=JSON.parse(sessionStorage.getItem('moor.harness.claim.'+approved.result.execution_claim.claim_id));
+  assert.equal(stored.claim_id,approved.result.execution_claim.claim_id);
 
-  const replayAttack=await window.MOOR.request({input:'fix a different layout',source:'test',funnel_receipt:receipt});
+  const replayAttack=await window.MOOR.request({input:receiptInput,source:'test',funnel_receipt:receipt});
   assert.equal(replayAttack.route,'funnel');
-  assert.equal(replayAttack.status,'locked','Receipt must be bound to exact Page 0 input');
+  assert.equal(replayAttack.status,'locked','A receipt may mint only one execution claim');
 
-  console.log('PASS: zero-key queue, reference lookup, mandatory Funnel routing, caller-bypass denial, exact-Page-0 receipt binding, and verified Harness execution');
+  const packet=K.consumeClaim(stored);
+  assert.equal(packet.done_criteria[0],'layout works');
+  assert.throws(()=>K.consumeClaim(stored),/claim|consumed|denied/i);
+
+  console.log('PASS: zero-key queue, mandatory Funnel routing, caller-bypass denial, one-time execution claim stashing, and Harness claim consumption');
 })().catch(err=>{console.error(err);process.exitCode=1;});
