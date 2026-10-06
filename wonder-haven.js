@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const W=window.WonderFeed;if(!W)return;
-const RELEASE='20261006-wonder-haven2';
+const RELEASE='20261006-wonder-haven3';
 const native=[
  ['plant','Plant','Plants','planet-vegetation'],['field','Terrain field','Nature','terrain-field'],
  ['heightfield','Terrain','Nature','terrain-core'],['relief','Micro relief','Nature','micro-relief'],
