@@ -716,6 +716,45 @@ function render(){
  else if(S.phase==='replay') vReplay();
  else vVerdict();
 }
+/* Callable agent adapter: real Quiz questions, supplied reasoning, canonical gates.
+   Does not alter human locks or the active UI draft. */
+window.MOORQuiz=Object.freeze({
+ compile({input,answers={},blueprint={}}={}){
+  if(typeof input!=='string'||!input.trim())throw Error('Original request is required.');
+  const previous=S;
+  try{
+   S={ramble:input,draft:distill(input),answers:[],blueprint};
+   const allowed=new Set(QUESTIONS.map(q=>q.id));
+   for(const[id,text]of Object.entries(answers)){
+    if(!allowed.has(id)||typeof text!=='string'||!text.trim())throw Error('Unknown or empty quiz answer: '+id);
+    const q=QUESTIONS.find(q=>q.id===id);
+    if(q.opts&&!q.opts.some(o=>o.split('|')[0]===text))throw Error('Answer is outside Quiz options: '+id);
+    S.answers.push({...mkAns(id,q.q,text,'filled'),provenance:'agent-supplied reasoning; not a human lock'});
+   }
+   const questions=qList();prune();
+   const missing=questions.filter(q=>!answered(q.id)).map(q=>({id:q.id,question:q.q,options:q.opts||null}));
+   const spec=Object.fromEntries(S.answers.map(a=>[a.id,a.text]));
+   return {schema:'moor.quiz-automation',version:1,page0:input,questions:questions.map(q=>({id:q.id,question:q.q})),answers:JSON.parse(JSON.stringify(S.answers)),blueprint:JSON.parse(JSON.stringify(blueprint)),spec,missing,ready:missing.length===0};
+  }finally{S=previous;}
+ },
+ async automate(job){
+  const quiz=this.compile(job);if(!quiz.ready)return quiz;
+  const initial=await window.MOOR.request({input:job.input,source:'agent',forceFunnel:true,context:{source:'MOORQuiz.automate',provenance:'agent-supplied answers'}});
+  const K=window.MOORFunnelKernel,id=initial.request_id;
+  for(const ref of job.references||[])K.write({request_id:id,kind:'reference',value:ref,source:'quiz-automation',provenance:ref.provenance||'inferred'});
+  K.advance({request_id:id,stage:'distill',payload:{spec_draft:JSON.stringify({quiz:quiz.spec,blueprint:quiz.blueprint})},provenance:'inferred'});
+  K.advance({request_id:id,stage:'decisions',payload:{locked:quiz.answers,unresolved:[]},provenance:'inferred'});
+  const obligations=K.extractObligations(job.input).map(o=>{const evidence=job.obligationEvidence?.[o.id]||job.obligationEvidence?.['*'];if(typeof evidence!=='string'||!evidence.trim())throw Error('Missing obligation evidence: '+o.id);return {...o,status:'satisfied',evidence};});
+  K.advance({request_id:id,stage:'replay',payload:{page0_verified:true,page0_hash:K.inspect(id).stages.page0.raw_hash,obligations,substitutions:[]},provenance:'inferred'});
+  if(!Array.isArray(job.doneCriteria)||!job.doneCriteria.length)throw Error('Reviewable done criteria required.');
+  const verdict={spec:{quiz:quiz.spec,blueprint:quiz.blueprint,obligations},destination:'app-compiler-harness',done_criteria:job.doneCriteria};
+  const final=K.advance({request_id:id,stage:'verdict',payload:verdict,provenance:'inferred'});
+  if(!K.verifyReceipt(final.receipt))throw Error('Invalid quiz receipt.');
+  const execution=await window.MOOR.request({input:job.input,source:'agent',forceFunnel:true,funnel_receipt:final.receipt});
+  return {...quiz,verdict,receipt:final.receipt,receiptVerified:true,execution};
+ }
+});
+
 el('tBuild').onclick=()=>{
  if(S.done) S.phase=(kSession()&&kSession().stage==='verdict')?'verdict':'replay';
  else if(S.phase==='spec') S.phase='spec';
@@ -729,3 +768,4 @@ el('tBlueprint').onclick=()=>vBlueprint();
 render();
 </script><script src="moor-request.js?v=20261005-request2"></script>
 </body></html>
+

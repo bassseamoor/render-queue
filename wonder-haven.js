@@ -87,14 +87,14 @@ function nativeRenderer(g){
   async capture(){const end=Date.now()+15000;while((!canvas||!signal)&&!dead&&!vis.dataset.error&&Date.now()<end)await new Promise(r=>setTimeout(r,200));if(!canvas||!mirrored||!signal)throw Error(vis.dataset.error||'This generator is still loading.');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return capture(output);},settings:()=>settings
  };
 }
-native.forEach(n=>W.genome.types.push({kind:n.id,label:n.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000),...(n.recipe?{recipe:n.recipe}:{})}),make:nativeRenderer}));
+native.forEach(n=>W.genome.types.push({kind:n.id,label:n.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000),...(n.recipe?{recipe:n.recipe}:{}),...(n.proceduralRecipe?{proceduralRecipe:n.proceduralRecipe}:{})}),make:nativeRenderer}));
 const excluded=new Set(['amalgam','component','motive','evolver','idea']);
 const kinds=W.genome.types.filter(x=>!excluded.has(x.kind)&&!x.noFeed);
 function register(descriptor){
  if(!descriptor||!/^native-[a-z0-9-]+$/.test(descriptor.id)||!descriptor.label||!descriptor.category||!(descriptor.page||descriptor.component))throw Error('Generator needs id, label, category and page or component');
  if(W.genome.types.some(t=>t.kind===descriptor.id))throw Error('Duplicate generator: '+descriptor.id);
  if(descriptor.page){const u=new URL(descriptor.page,location.href);if(u.origin!==location.origin||!/^https?:$/.test(u.protocol))throw Error('Preview must be same-origin');}
- const spec={...descriptor};native.push(spec);const t={kind:spec.id,label:spec.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000),...(spec.recipe?{recipe:spec.recipe}:{})}),make:nativeRenderer};W.genome.types.push(t);kinds.push(t);W.Haven?.kinds.push(t.kind);for(const api of instances)api.refreshRegistry();return spec.id;
+ const spec={...descriptor};native.push(spec);const t={kind:spec.id,label:spec.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000),...(spec.recipe?{recipe:spec.recipe}:{}),...(spec.proceduralRecipe?{proceduralRecipe:spec.proceduralRecipe}:{})}),make:nativeRenderer};W.genome.types.push(t);kinds.push(t);W.Haven?.kinds.push(t.kind);for(const api of instances)api.refreshRegistry();return spec.id;
 }
 const css=`
 .tool-host:has(>.wh){border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:0!important}.wh{--wh-ratio:9/16;color:#eef1f4;background:#080c10;border:0!important;border-radius:0!important;box-shadow:none!important;display:flex;flex-direction:column;height:min(82dvh,920px);min-height:400px;position:relative;font:14px/1.4 system-ui;overflow:hidden}
@@ -234,5 +234,6 @@ W.mount=mount;W.unmount=()=>{for(const api of [...instances])api.stopAll();};W.H
 if(typeof fetch==='function')fetch('wonder-generators.json?v='+RELEASE).then(r=>{if(!r.ok)throw Error('Registry unavailable');return r.json();}).then(reg=>{if(reg.schema!=='moor.wonder-generators'||!Array.isArray(reg.generators))throw Error('Invalid registry');for(const spec of reg.generators){try{register(spec);}catch(e){failures.push({generator:spec.id,reason:e.message});}}}).catch(e=>failures.push({reason:e.message,source:'registry'}));
 if(typeof TOOLS!=='undefined')TOOLS.wonder={mount:host=>mount(host),unmount:W.unmount};
 })();
+
 
 

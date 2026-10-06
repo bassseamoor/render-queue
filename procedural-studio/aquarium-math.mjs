@@ -1,0 +1,2 @@
+// Reused verbatim from Aquarium Studio CAUSTIC_GLSL.
+export const CAUSTIC_GLSL='\nfloat caustic(vec2 p, float t){\n  float c = 0.0;\n  vec2 q = p;\n  for(int i=0;i<3;i++){\n    float fi = float(i)*1.7;\n    q = p + 0.35*vec2(sin(q.y*2.1 + t*1.1 + fi), cos(q.x*2.1 - t*0.9 + fi*1.3));\n    float w = sin(q.x*3.0 + t*1.7 + fi) * sin(q.y*3.0 - t*1.3 + fi*2.1);\n    c += 1.0 - abs(w);\n  }\n  c /= 3.0;\n  return pow(clamp(c, 0.0, 1.0), 3.0);\n}';

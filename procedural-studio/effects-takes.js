@@ -1,0 +1,8 @@
+/* Explicit keeps only. Separate database preserves old generator connections. */
+(function(root){
+'use strict';const C=root.EffectsWorkbenchCore;let opening;
+function db(){if(opening)return opening;opening=new Promise((resolve,reject)=>{const q=indexedDB.open('moor-effect-takes-v1',1);q.onupgradeneeded=()=>q.result.createObjectStore('takes',{keyPath:'id'});q.onsuccess=()=>{q.result.onversionchange=()=>{q.result.close();opening=null;};resolve(q.result);};q.onerror=()=>{opening=null;reject(q.error);};q.onblocked=()=>{opening=null;reject(Error('Close another Studio tab to finish the storage upgrade'));};});return opening;}
+async function list(){const d=await db();return new Promise((resolve,reject)=>{const q=d.transaction('takes').objectStore('takes').getAll();q.onsuccess=()=>resolve(q.result.sort((a,b)=>b.createdAt-a.createdAt));q.onerror=()=>reject(q.error);});}
+async function keep(state){const snapshot=C.take(state),rec={id:'take-'+crypto.randomUUID(),createdAt:Date.now(),snapshot};const d=await db();return new Promise((resolve,reject)=>{const tx=d.transaction('takes','readwrite'),store=tx.objectStore('takes'),q=store.getAll();let failure;tx.oncomplete=()=>resolve(rec);tx.onabort=tx.onerror=()=>reject(failure||tx.error||Error('Take storage unavailable; download the take instead'));q.onsuccess=()=>{const rows=q.result;if(rows.length>=C.limits.takes){failure=Error('24 kept takes reached. Download your take to keep it elsewhere.');tx.abort();return;}if(JSON.stringify([...rows,rec]).length>C.limits.bytes){failure=Error('Take library reached 2 MB. Download the take instead.');tx.abort();return;}store.add(rec);};});}
+root.EffectsTakes={list,keep};
+})(window);
