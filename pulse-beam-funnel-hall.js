@@ -51,23 +51,83 @@ const maintenanceStations=[];
   maintenanceStations.push(g);
 });
 scene.add(ring(16.5,.08,WHITE,.055,low?64:128));
+
+/* Cumulative software-factory projection.
+ * Capability Memory is authoritative for reusable machine inventory/lineage.
+ * This scene is only a bounded HMI projection; hidden/cull state never deletes machinery.
+ */
+let factory={schema:'moor.software-factory-graph',nodes:[],edges:[],counts:{machines:0,fixtures:0,connections:0,adapters:0}};
+try{if(window.MoorCapabilityMemory&&typeof window.MoorCapabilityMemory.factoryGraph==='function')factory=window.MoorCapabilityMemory.factoryGraph()||factory}catch(_){}
+const factoryGroup=new THREE.Group();scene.add(factoryGroup),factoryNodeMap=new Map();
+function factoryColor(n){
+  if(n.kind==='machine'&&n.lifecycle==='quarantined')return RED;
+  if(n.kind==='machine'&&n.lifecycle==='deprecated')return AMBER;
+  if(n.kind==='machine')return n.status==='machine-verified'||n.status==='human-approved'||n.status==='canonical'?GREEN:ICE;
+  if(n.kind==='fixture')return CYAN;
+  if(n.kind==='adapter')return ICE;
+  if(n.kind==='connection')return n.status==='machine-verified'?GREEN:WHITE;
+  return 0x83a9bc;
+}
+function machineGlyph(n,c){
+  const g=new THREE.Group(),w=n.kind==='machine'?1.05:n.kind==='fixture'?.9:.72,h=n.kind==='machine'?1.5:1.12,d=.58;
+  const base=new THREE.Mesh(new THREE.BoxGeometry(w,.18,d),mats.darkMetal);base.position.y=.09;g.add(base);
+  const pts=[
+    [-w/2,.18,-d/2],[w/2,.18,-d/2],[w/2,h,-d/2],[-w/2,h,-d/2],[-w/2,.18,-d/2],
+    [-w/2,.18,d/2],[w/2,.18,d/2],[w/2,h,d/2],[-w/2,h,d/2],[-w/2,.18,d/2]
+  ].map(p=>new THREE.Vector3(...p));
+  g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:c,transparent:true,opacity:.62,blending:THREE.AdditiveBlending,depthWrite:false})));
+  g.add(beam(new THREE.Vector3(-w/2,h,-d/2),new THREE.Vector3(-w/2,h,d/2),c,.012,.55));
+  g.add(beam(new THREE.Vector3(w/2,h,-d/2),new THREE.Vector3(w/2,h,d/2),c,.012,.55));
+  g.add(beam(new THREE.Vector3(0,.24,0),new THREE.Vector3(0,h+.24,0),c,.018,n.lifecycle==='quarantined'?.9:.58));
+  const top=new THREE.Mesh(new THREE.OctahedronGeometry(.08,0),glow(c,.9));top.position.y=h+.2;g.add(top);
+  if(n.lifecycle==='deprecated'){
+    g.add(beam(new THREE.Vector3(-w*.38,h*.72,.31),new THREE.Vector3(w*.38,h*.22,.31),AMBER,.02,.72));
+  }
+  if(n.lifecycle==='quarantined'){
+    g.add(beam(new THREE.Vector3(-w*.38,h*.76,.31),new THREE.Vector3(w*.38,h*.2,.31),RED,.024,.9));
+    g.add(beam(new THREE.Vector3(w*.38,h*.76,.31),new THREE.Vector3(-w*.38,h*.2,.31),RED,.024,.9));
+  }
+  return g;
+}
+const factoryPriority=n=>n.kind==='machine'?(n.lifecycle==='active'?0:n.lifecycle==='deprecated'?4:5):n.kind==='fixture'?1:n.kind==='connection'?2:n.kind==='adapter'?3:6;
+const factoryNodes=(factory.nodes||[]).slice().sort((a,b)=>factoryPriority(a)-factoryPriority(b)||String(a.id).localeCompare(String(b.id)));
+const factoryLimit=low?24:72,visibleFactory=factoryNodes.slice(0,factoryLimit);
+const factoryKinds={machine:[],fixture:[],connection:[],adapter:[]};visibleFactory.forEach(n=>(factoryKinds[n.kind]||factoryKinds.machine).push(n));
+for(const kind of Object.keys(factoryKinds)){
+  const arr=factoryKinds[kind],r=kind==='machine'?20.2:kind==='connection'?18.5:kind==='fixture'?22.3:24.2,y=kind==='machine'?2.15:kind==='connection'?3.05:kind==='fixture'?2.7:3.55;
+  arr.forEach((n,i)=>{
+    const a=(i/Math.max(1,arr.length))*Math.PI*2-Math.PI/2+(kind==='connection'?.08:kind==='fixture'?.16:kind==='adapter'?.24:0);
+    const c=factoryColor(n),g=machineGlyph(n,c);g.position.set(Math.cos(a)*r,y+(i%3)*.18,Math.sin(a)*r);g.rotation.y=-a;factoryGroup.add(g);factoryNodeMap.set(n.id,g);
+    const picked={id:'factory.'+n.id,label:n.label||n.id,type:'factory-'+n.kind,detail:(n.kind==='machine'?'Reusable capability machine. ':n.kind==='fixture'?'Deterministic assembly fixture. ':n.kind==='connection'?'Known capability routing/connection. ':'Verified or specified adapter. ')+(n.implementation_ref||''),factory:n};
+    const p=new THREE.Mesh(new THREE.BoxGeometry(1.5,2.2,1.4),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));p.position.set(0,.9,0);p.userData.node=picked;g.add(p);pickables.push(p);
+  });
+}
+for(const e of (factory.edges||[]).slice(0,low?36:120)){
+  const a=factoryNodeMap.get(e.from),b=factoryNodeMap.get(e.to);if(!a||!b)continue;
+  const c=e.type==='supersedes'?AMBER:e.type==='assembled_by'?CYAN:e.type==='feeds'?WHITE:0x55798d;
+  const start=a.position.clone(),end=b.position.clone(),mid=start.clone().lerp(end,.5);mid.y+=.7;
+  const curve=new THREE.QuadraticBezierCurve3(start,mid,end);
+  factoryGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve,10,.009,4,false),glow(c,e.type==='supersedes'?.48:.17)));
+}
+scene.add(ring(20.2,.06,GREEN,.045,low?64:128),ring(22.3,.06,CYAN,.035,low?64:128),ring(24.2,.06,ICE,.025,low?64:128));
+
 const drones=[];if(!low)for(let i=0;i<6;i++){const g=new THREE.Group(),body=new THREE.Mesh(new THREE.OctahedronGeometry(.13,0),mats.metal),lamp=new THREE.Mesh(new THREE.BoxGeometry(.04,.04,.18),glow(i===0?GREEN:ICE,.72));g.add(body,lamp);g.userData={radius:9+i*2.3,phase:unit('drone:'+i)*Math.PI*2,height:3.2+(i%3)*1.4,speed:.028+i*.005};scene.add(g);drones.push(g)}
 const funnels=graph.nodes.filter(n=>n.type==='funnel'),law=graph.currentLaw||{},systems=maintenance.systems||[],gapCount=systems.filter(s=>s.visual_state==='gap').length,candidateCount=systems.filter(s=>s.state==='candidate_tested').length;
-document.getElementById('hall-count').textContent=funnels.length+' specialist funnels · '+systems.length+' maintained systems';
+document.getElementById('hall-count').textContent=funnels.length+' specialist funnels · '+systems.length+' maintained systems · '+((factory.counts&&factory.counts.machines)||0)+' machines';
 document.getElementById('hall-state').innerHTML='<b>LAW</b> <span class="emerald">'+((maintenance.current_authority&&maintenance.current_authority.production)||law.active||'unavailable')+'</span> · <b>CANDIDATE</b> <span class="ice">'+((maintenance.current_authority&&maintenance.current_authority.candidate)||law.candidate||'unavailable')+'</span>'+(gapCount?' · <b style="color:#ff806f">'+gapCount+' GAP</b>':'')+(candidateCount?' · '+candidateCount+' CANDIDATE SYSTEMS':'');
 const info=document.getElementById('info');
 function inspect(n){
   if(!n)return;
-  const m=n.maintenance||null;
-  document.getElementById('info-type').textContent=m?'factory machine · '+(m.visual_state||'unknown'):(n.type||'node').replaceAll('-',' ');
+  const m=n.maintenance||null,fm=n.factory||null;
+  document.getElementById('info-type').textContent=fm?'factory registry · '+fm.kind:m?'factory machine · '+(m.visual_state||'unknown'):(n.type||'node').replaceAll('-',' ');
   document.getElementById('info-title').textContent=n.label||n.id;
   document.getElementById('info-copy').textContent=n.detail||'Live Funnel graph node.';
-  document.getElementById('info-status').textContent=m?(m.visual_state||'unknown').replaceAll('_',' ').toUpperCase():n.type==='law-active'?'ACTIVE':n.type==='law-candidate'?'CANDIDATE':'LIVE GRAPH';
-  document.getElementById('info-owner').textContent=m?(m.owner||'unassigned'):(n.type==='law-active'?'v44-sealed':n.type==='law-candidate'?'ultra-v1-candidate':'graph');
-  document.getElementById('info-live').textContent=m?(m.live_path?'YES':'NO'):'graph projection';
-  document.getElementById('info-verified').textContent=m?(m.verified?'YES':'NO'):'—';
-  document.getElementById('info-receipt').textContent=m?(m.receipt_backed?'YES':'NO'):'—';
-  document.getElementById('info-evidence').textContent=m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')):'graph topology';
+  document.getElementById('info-status').textContent=fm?String(fm.lifecycle||fm.status||'registered').replaceAll('_',' ').toUpperCase():m?(m.visual_state||'unknown').replaceAll('_',' ').toUpperCase():n.type==='law-active'?'ACTIVE':n.type==='law-candidate'?'CANDIDATE':'LIVE GRAPH';
+  document.getElementById('info-owner').textContent=fm?'Capability Memory':m?(m.owner||'unassigned'):(n.type==='law-active'?'v44-sealed':n.type==='law-candidate'?'ultra-v1-candidate':'graph');
+  document.getElementById('info-live').textContent=fm?'REGISTRY':m?(m.live_path?'YES':'NO'):'graph projection';
+  document.getElementById('info-verified').textContent=fm?((fm.status==='machine-verified'||fm.status==='human-approved'||fm.status==='canonical')?'YES':'NO'):m?(m.verified?'YES':'NO'):'—';
+  document.getElementById('info-receipt').textContent=fm?(fm.kind==='machine'?'VIA CAPABILITY PROVENANCE':'—'):m?(m.receipt_backed?'YES':'NO'):'—';
+  document.getElementById('info-evidence').textContent=fm?(fm.implementation_ref||fm.id||'registry record'):m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')):'graph topology';
   info.classList.add('on');
 }
 const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();function pick(x,y){pointer.x=x/innerWidth*2-1;pointer.y=-(y/innerHeight)*2+1;ray.setFromCamera(pointer,camera);const hit=ray.intersectObjects(pickables,false)[0];if(hit)inspect(hit.object.userData.node);else info.classList.remove('on')}let yaw=0,pitch=-.03,drag=false,lastX=0,lastY=0,moved=0;renderer.domElement.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;lastY=e.clientY;moved=0;renderer.domElement.setPointerCapture?.(e.pointerId)});renderer.domElement.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;moved+=Math.abs(dx)+Math.abs(dy);yaw-=dx*.0042;pitch=Math.max(-1.08,Math.min(1.08,pitch-dy*.0036))});renderer.domElement.addEventListener('pointerup',e=>{drag=false;if(moved<8)pick(e.clientX,e.clientY)});
