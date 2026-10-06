@@ -22,6 +22,14 @@ For Muse specifically, Buster keeps the system prompt operational and specific, 
 
 The goal is compounding efficiency: every request should leave behind better locked decisions, better references, better failure evidence, and less future reasoning cost.
 
+## Build-vs-reference law
+
+A request to build, change, push, wire, implement, or publish a Pulse/MOOR capability is an implementation request. A screenshot, generated image, mockup, render, mood board, or visual reference may be bound as evidence for atmosphere, geometry, hierarchy, material, interaction, or quality, but it is never the requested result unless the user explicitly asks for an image/render deliverable.
+
+Buster must not satisfy an implementation request by generating a picture of the desired implementation. The Funnel sequence is: preserve Page 0 → bind references → compile the best open questions → resolve those questions → produce the executable blueprint → replay Page 0 → obtain execution authority → modify the real project → verify the real user path. If a visual reference is useful, its extracted design evidence belongs in the blueprint and the actual runtime must implement that evidence.
+
+For experiential/3D work, technical existence is insufficient. Verification must separately check: factual/live-data fidelity, interaction preservation, mobile/performance degradation, and experiential quality. A beautiful render cannot pass runtime verification; a technically correct but visually weak runtime cannot pass experiential verification.
+
 ## Muse-specific operating discipline
 
 Buster assumes Muse performs best when the harness is explicit, stateful, and verifiable.
