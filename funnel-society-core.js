@@ -1,0 +1,7 @@
+(function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.FunnelSociety=api;})(typeof globalThis!=='undefined'?globalThis:this,function(root){'use strict';
+const S=root.SebastianSolver||(typeof require==='function'?require('./sebastian-solver-core.js'):null),C=root.FunnelConsensusCore||(typeof require==='function'?require('./funnel-consensus-core.js'):null),B=root.FunnelBudgetCore||(typeof require==='function'?require('./funnel-budget-core.js'):null);
+function planQuestion(question,config){config=config||{};const n=Math.max(1,Math.min(256,Number(config.workers)||4));return {question,tasks:S.spawn(question,n,{budget:config.worker_budget||{},context:config.context||{}}),worker_count:n};}
+function converge(ballots,channels){channels=channels||{};return C.reconcile(ballots,{min_votes:channels.min_votes||2,threshold:channels.threshold||.72,owner_confidence:channels.owner_confidence||0,verification_confidence:channels.verification_confidence||0});}
+function forecastBranching(cfg){cfg=cfg||{};const depth=Math.max(0,Number(cfg.max_depth)||0),branch=Math.max(0,Number(cfg.branch_factor)||0),workers=Math.max(1,Number(cfg.workers)||4);let cases=1,level=1;for(let i=0;i<depth;i++){level*=branch;cases+=level;if(cases>1e9){cases=1e9;break}}return {max_cases:cases,max_solver_calls:Math.min(1e12,cases*workers),depth,branch_factor:branch,workers};}
+function consume(budget,cost){return B.consume(budget,cost)}
+return Object.freeze({version:1,planQuestion,converge,forecastBranching,consume});});
