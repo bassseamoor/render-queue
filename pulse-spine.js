@@ -558,7 +558,7 @@ var BLUEPRINTS=[
  {id:'stream',name:'Stream',summary:'Append-only arrival lane. Records stay raw and can be kept in Bin or sent to Funnel.'},
  {id:'discover',name:'Discover',summary:'Deterministically surface relevant or novel real components from recent Stream context. Discovery is not truth.'},
  {id:'bin',name:'Bin',summary:'Durable searchable inventory for every Pulse component plus kept knowledge and blueprints.'},
- {id:'funnel',name:'Funnel',summary:'Canonical v43 two-sided resolver. User or system answers the same questions; locked pages precede building.'}
+ {id:'funnel',name:'Funnel',summary:'Sealed v44 resolver. Page 0 is immutable; references, distill, decisions, replay, and verdict are hard-gated before execution.'}
 ];
 var CONTRACTS=[
  {id:'harness-completion',name:'Harness Completion Invariant',
@@ -568,8 +568,11 @@ var CONTRACTS=[
   summary:'Bin stores concepts, intent, recipes, artifacts, rules, failures, evidence, projects, versions, components, generators, and implementations as linked references.',
   source:'pulse-reference-graph-schema.json'},
  {id:'request-entry',name:'Universal MOOR Request Entry',
-  summary:'Humans, scripts, and models enter through MOOR.request; deterministic routing chooses references, Funnel, or Harness without requiring a key.',
-  source:'FUNNEL.md'}
+  summary:'Humans, scripts, and models enter through MOOR.request; deterministic routing chooses references or sealed Funnel resolution without requiring a key.',
+  source:'FUNNEL.md'},
+ {id:'sealed-funnel',name:'Sealed Funnel Execution Law',
+  summary:'Build/change execution requires immutable Page 0, ordered Funnel stages, second-half replay, builder-facing obligation preservation, and a kernel-issued receipt. Harness independently verifies the receipt.',
+  source:'funnel-kernel.js'}
 ];
 function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS);}
 
@@ -581,7 +584,7 @@ function ensureFunnelProject(){
       var isContract=CONTRACTS.some(function(c){return c.id===b.id;});
       return {kind:isContract?'architecture-contract':'architecture',
       ref:(isContract?'contract-':'spine-')+b.id,label:b.name,
-      sourceVersion:b.id==='funnel'?'v43':'v1',
+      sourceVersion:b.id==='funnel'?'v44-sealed':'v1',
       source:isContract&&b.source?b.source:'pulse-learning-spine-blueprints.json',detail:b.summary};});
     var p=fs.projects.find(function(x){return x.id==='learning-spine';});
     if(!p){
@@ -636,6 +639,19 @@ function ensureFunnelProject(){
           parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
           revision:'One zero-key MOOR.request doorway now routes reference lookup, navigation, unresolved decisions, and resolved execution; agents read FUNNEL.md and do not use the human bar.',
           items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-request-entry';y.change=x.ref==='contract-request-entry'?'new':'inherited';return y;})});
+      }
+    }
+    var hasSealed=(p.members||[]).some(function(x){return x.ref==='contract-sealed-funnel';});
+    if(!hasSealed){
+      var sf=members.find(function(x){return x.ref==='contract-sealed-funnel';});
+      if(sf){
+        p.members=p.members||[];p.members.push(sf);p.versions=p.versions||[];
+        var snums=p.versions.map(function(v){return parseInt(String(v.number||'').replace(/\D/g,''),10);}).filter(Number.isFinite);
+        var svn='v'+((snums.length?Math.max.apply(null,snums):0)+1);
+        p.versions.push({id:'spine-sealed-funnel-'+Date.now(),number:svn,title:'Sealed Funnel execution law',state:'locked-import',createdAt:now,
+          parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
+          revision:'Execution authority moved out of model personality and into a deterministic receipt-gated Funnel Kernel with immutable Page 0 replay.',
+          items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-sealed-funnel';y.change=x.ref==='contract-sealed-funnel'?'new':'inherited';return y;})});
       }
     }
     try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
