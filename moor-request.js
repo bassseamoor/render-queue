@@ -110,6 +110,65 @@ function queueFunnel(req){
 function kernel(){
   return window.MOORFunnelKernel||null;
 }
+function factory(){
+  return window.MoorSoftwareFactory||null;
+}
+function factoryOrderId(input){
+  var k=kernel(),h=k&&k.hash?k.hash(input):String(input.length);
+  return 'work-order:'+h;
+}
+function factoryParts(refs,input){
+  var out=[],seen={};
+  function addPart(x,kind){
+    if(!x)return;var id=x.id||x.source_id||x.capability_id||x.content_hash||null;
+    if(!id||seen[id])return;seen[id]=1;out.push({id:String(id),kind:kind||x.kind||'reference'});
+  }
+  ['capabilities','assemblies','compositions','handoffs','implementations','recipes','rules','evidence'].forEach(function(kind){
+    (refs&&refs[kind]||[]).forEach(function(x){addPart(x,kind)});
+  });
+  if(!out.length)addPart({id:'intent-material:'+(kernel()&&kernel().hash?kernel().hash(input):input.length)},'intent');
+  return out;
+}
+function ensureFactoryOrder(req,refs){
+  var F=factory(),k=kernel();if(!F||!k)return null;
+  try{
+    var id=factoryOrderId(req.input),o=F.get(id);
+    if(!o)o=F.open({work_order_id:id,page0_hash:k.hash(req.input),objective:req.input,scope:req.context||{},owner:req.source||null,requested_outputs:['authorized software change'],done_criteria:[],route_version:'funnel-harness-verifier-v1'});
+    if(o.state==='QUEUED'){
+      o=F.bindMaterials(id,{parts:factoryParts(refs,req.input),dependency_edges:[],source_hashes:[]});
+    }
+    if(o.state==='MATERIALS_BOUND'){
+      o=F.setRoute(id,{route_id:'funnel-harness-verifier',version:'1',stations:[
+        {station_id:'funnel',operation_id:'resolve',executor:'MOOR Funnel'},
+        {station_id:'harness',operation_id:'build',executor:'app-compiler-harness'},
+        {station_id:'verifier',operation_id:'verify',executor:'Verifier'}
+      ],allowed_rework_loops:2});
+    }
+    return o;
+  }catch(e){
+    try{window.dispatchEvent(new CustomEvent('moor:factory-warning',{detail:{message:String(e&&e.message||e),input:req.input}}))}catch(_){}
+    return null;
+  }
+}
+function advanceFactoryToHarness(req,refs,receipt,packet){
+  var F=factory(),o=ensureFactoryOrder(req,refs);if(!F||!o)return null;
+  try{
+    var id=o.work_order_id;
+    if(o.state==='ROUTED'&&!o.authorization)o=F.authorize(id,receipt);
+    if(o.state==='ROUTED'&&o.route&&o.route.stations[o.route_index]&&o.route.stations[o.route_index].station_id==='funnel'){
+      o=F.startOperation(id,{executor:'MOOR Funnel',inputs:{page0_hash:o.page0_hash}});
+      o=F.completeOperation(id,{outputs:{verdict_packet:packet},evidence:[receipt.fingerprint]});
+      o=F.inspect(id,{inspection_id:'funnel-replay:'+receipt.fingerprint,characteristic:'Page 0 fidelity and authority',observed:'kernel-verified receipt',tolerance:'exact Page 0 receipt binding',pass:true,evidence_ref:receipt.fingerprint,verifier:'MOOR.request'});
+    }
+    if(o.state==='ROUTED'&&o.route&&o.route.stations[o.route_index]&&o.route.stations[o.route_index].station_id==='harness'){
+      o=F.startOperation(id,{executor:'app-compiler-harness',inputs:{verdict_packet:packet}});
+    }
+    return o;
+  }catch(e){
+    try{window.dispatchEvent(new CustomEvent('moor:factory-warning',{detail:{message:String(e&&e.message||e),work_order_id:o&&o.work_order_id}}))}catch(_){}
+    return F.get(o&&o.work_order_id)||o;
+  }
+}
 function openKernel(req,refs){
   var k=kernel();
   if(!k)throw Error('Funnel Kernel unavailable. Build execution is locked.');
@@ -164,6 +223,7 @@ async function request(arg){
 
   if(arg.forceFunnel||buildIntent(input)){
     var refsForFunnel=referencePacket(input);
+    var factoryOrder=ensureFactoryOrder(req,refsForFunnel);
     if(arg.funnel_receipt){
       var packet=verifiedExecution(arg.funnel_receipt,input);
       if(packet){
@@ -173,10 +233,11 @@ async function request(arg){
             source:'MOOR.request',source_id:req.id,provenance:'verified',data:{context:ctx,packet:packet}
           });
         }catch(e){}
-        var handoff={schema:'moor.harness-inbox',version:1,at:new Date().toISOString(),input:input,context:ctx,verdict_packet:packet,references:refsForFunnel};
+        factoryOrder=advanceFactoryToHarness(req,refsForFunnel,arg.funnel_receipt,packet)||factoryOrder;
+        var handoff={schema:'moor.harness-inbox',version:1,at:new Date().toISOString(),input:input,context:ctx,verdict_packet:packet,references:refsForFunnel,work_order_id:factoryOrder&&factoryOrder.work_order_id||null};
         try{localStorage.setItem('moor-harness-inbox-v1',JSON.stringify(handoff));}catch(e){}
         try{window.dispatchEvent(new CustomEvent('moor:harness-ready',{detail:handoff}));}catch(e){}
-        return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:'verified',context:ctx,result:{verdict_packet:packet,references:refsForFunnel,harness_inbox:true}};
+        return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:'verified',context:ctx,result:{verdict_packet:packet,references:refsForFunnel,harness_inbox:true,work_order:factoryOrder}};
       }
       return {request_id:req.id,route:'funnel',status:'locked',provenance:'fallback',context:ctx,result:{error:'Invalid Funnel receipt. Execution denied.'}};
     }
@@ -186,7 +247,7 @@ async function request(arg){
       return {request_id:req.id,route:'funnel',status:'locked',provenance:'fallback',context:ctx,result:{error:String(err&&err.message||err)}};
     }
     var queued=queueFunnel(req);
-    return {request_id:req.id,route:'funnel',status:'queued',provenance:'explicit',context:ctx,result:{queue:queued,kernel:{law_version:kernel().law_version,stage:kernelSession.stage}}};
+    return {request_id:req.id,route:'funnel',status:'queued',provenance:'explicit',context:ctx,result:{queue:queued,kernel:{law_version:kernel().law_version,stage:kernelSession.stage},work_order:factoryOrder}};
   }
 
   var refs=referencePacket(input);
@@ -254,7 +315,7 @@ var api={
   request:request,
   context:pageContext,
   drain:drain,
-  contract:{funnel:'FUNNEL.md',kernel:'funnel-kernel.js',agent:'moor-agent.json',runtime:'quiz-funnel-v3.html'},
+  contract:{funnel:'FUNNEL.md',kernel:'funnel-kernel.js',factory:'software-factory-core.js',agent:'moor-agent.json',runtime:'quiz-funnel-v3.html'},
   routes:['reference','navigation','funnel','harness','fallback']
 };
 if(window.MOOR&&window.MOOR!==api){for(var k in window.MOOR)if(!(k in api))api[k]=window.MOOR[k];}
