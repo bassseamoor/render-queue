@@ -270,6 +270,15 @@ PRESERVED_PLATFORM_ITEMS = {
         'tags': ['cat:system','cat:compdata','kind:software-factory','prov:verified','see:funnel-fabric'],
         'honest_limits': 'Records manufacturing state and binds authority; it does not replace the Funnel or mint execution authority.'
     },
+    'factory-digital-twin': {
+        'label': 'MOOR Factory Digital Twin', 'file': 'factory-twin-core.js',
+        'component': 'FactoryTwinSnapshot v1',
+        'component_source': 'blueprint/factory-digital-twin.blueprint.json',
+        'page': 'pulse-beam-funnel-hall.html',
+        'depends_on': ['funnel-maintenance-status.json','moor-capability-memory.js','software-factory-core.js','funnel-environment-data.js'],
+        'tags': ['cat:system','cat:compdata','kind:digital-twin','prov:verified','see:funnel-fabric'],
+        'honest_limits': 'Read-only semantic projection. It composes evidence and state but cannot mint authority.'
+    },
     'pulse-beam': {
         'label': 'Pulse Beam', 'file': 'pulse-beam.js',
         'component': 'Pulse Beam Spatial Shell v1',
@@ -283,7 +292,7 @@ PRESERVED_PLATFORM_ITEMS = {
         'component': 'Pulse Beam Funnel Hall v1',
         'component_source': 'blueprint/pulse-beam-rebrand.blueprint.json',
         'page': 'pulse-beam-funnel-hall.html',
-        'depends_on': ['three.module.js','funnel-foundry-core.js','funnel-environment-data.js'],
+        'depends_on': ['three.module.js','funnel-foundry-core.js','funnel-environment-data.js','funnel-maintenance-status.json','moor-capability-memory.js','software-factory-core.js','factory-twin-core.js'],
         'tags': ['cat:space','cat:compdata','kind:permanent-space','prov:beam','prov:funnel-fabric']
     },
     'pulse-beam-standards': {
