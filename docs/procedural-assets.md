@@ -35,3 +35,9 @@ The reproducible job is `docs/procedural-assets-quiz-job.json`; its run is `docs
 Thirty asset families plus six preserved particle presets. Soft bodies are analytic elastic animation, not collision physics. Talking rigs use explicit mouth envelope/speech shape rather than infer speech from audio. Stroke fonts support A–Z, 0–9 and simple punctuation as SVG glyph geometry, not a full multilingual TTF engine. Picture wrapping bends an explicitly uploaded image; it does not infer hidden depth. Aquarium reuses the original caustic GLSL and plant sway, with bounded analytic schools rather than porting the original ecological simulation. World placement stores twelve bindings, renders four scenes at low detail / 15 Hz, and uses the host's Three.js and actual scene.
 
 Verification combines automatic geometry/input/receipt checks with rendered workflow inspection. Production availability is tracked separately from source commits and CI.
+
+## Release verification — 6 October 2026
+
+Pulse commit df6b8ec500f035fb516413638af292a268fe3909 passed Publish Pulse and Pages deployment. MOOR commit 9a378e99d0ed998098bda7a5c76d0e0dbb7c2533 passed CI and community checks. Browser inspection confirms the aquarium renders, saves a recipe, exports JSON, and appears in the saved-generator feed alongside existing Effects recipes. This cloud browser disables WebGL; the studio uses a bounded 15 Hz software projection of the same procedural 3D geometry. GPU visuals and production City placement remain unverified in this browser. MOOR's public domain is paused by Netlify usage limits.
+
+The final follow-up preserves a typed generator name at Save, corrects the MOOR navigation link, and makes optional feed/effects package links explicit external links. Quiz regression checks also reject invalid options, report missing answers, and preserve the human draft. Packages contain the authoring app; optional feed/effects links require the original host.
