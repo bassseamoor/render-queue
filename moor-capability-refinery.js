@@ -40,7 +40,7 @@ function normalizeCapabilities(d,assembly){
 }
 function crystallizeOutput(d,opts){
   d=clone(d||{});opts=opts||{};const assembly=makeAssembly(d),caps=normalizeCapabilities(d,assembly),status=verifiedStatus(d.status)?d.status:'specified';
-  const learning={scope:clone(opts.scope||d.scope||{}),decisions:clone(d.decisions||[]),constraints:clone(d.constraints||[]),failures:clone(d.failures||d.failure?[d.failure].filter(Boolean):[]),
+  const learning={scope:clone(opts.scope||d.scope||{}),decisions:clone(d.decisions||[]),constraints:clone(d.constraints||[]),failures:clone(Array.isArray(d.failures)?d.failures:(d.failure?[d.failure]:[])),
     substitutions:clone(d.substitutions||[]),owner_corrections:clone(d.owner_corrections||[]),verification:clone(d.evidence||null),intent:clone(d.intent||null),
     supersedes:clone(d.supersedes||[]),compacted_at:new Date().toISOString()};
   const core={schema:'moor.crystal-bundle',version:1,bundle_id:'crystal:'+hash([d.id||d.title,assembly.content_hash]),source:{id:srcId(d.source),artifact_id:d.id||null,title:d.title||d.name||null},
