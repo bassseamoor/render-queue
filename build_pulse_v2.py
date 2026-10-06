@@ -252,6 +252,15 @@ for c in comps:
 # Platform-level items that must survive every dashboard rebuild. These are not
 # derived from the legacy COMPS inventory, so regeneration must add them explicitly.
 PRESERVED_PLATFORM_ITEMS = {
+    'blueprint-farm': {
+        'label': 'MOOR Blueprint Farm', 'file': 'blueprint-farm.html',
+        'component': 'MOOR Blueprint Farm v1',
+        'component_source': 'blueprint/blueprint-farm.blueprint.json',
+        'page': 'blueprint-farm.html',
+        'depends_on': ['pulse-blueprint-farm-library.json','blueprint/funnel-maintenance-modernization.blueprint.json','blueprint/factory-digital-twin.blueprint.json','blueprint/seeded-procedural-toolchain.blueprint.json','blueprint/worker-execution-orchestration.blueprint.json','blueprint/blueprint-choreography.blueprint.json'],
+        'tags': ['cat:creation','cat:compdata','kind:blueprint-farm','prov:ultra-funnel','prov:bf-01'],
+        'honest_limits': 'Read-only planning/inspection slice. BF-01 is the only released slice.'
+    },
     'pulse-beam': {
         'label': 'Pulse Beam', 'file': 'pulse-beam.js',
         'component': 'Pulse Beam Spatial Shell v1',
