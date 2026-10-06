@@ -199,7 +199,18 @@ function kWrite(kind,value,provenance){
 }
 function currentSpec(){
  const spec={}; S.answers.forEach(a=>spec[a.id]=a.text);
- if(S.draft)spec.working_title=S.draft.title;
+ if(S.draft){
+  spec.working_title=S.draft.title;
+  spec.must_haves=(S.draft.feats||[]).slice();
+ }
+ const k=FK(), ks=kSession();
+ if(k&&ks&&ks.page0){
+  spec.obligations=k.extractObligations(ks.page0).map(function(o){
+   const r=(S.replay||{})[o.id]||{};
+   return {id:o.id,source:o.source,status:r.status||'unverified',approved:r.approved===true,reason:r.reason||''};
+  });
+  spec.funnel_law_version=k.law_version;
+ }
  return spec;
 }
 function ensureDecisionStage(){
