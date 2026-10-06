@@ -17,10 +17,11 @@ function evaluate(input){
   const rows=release.map(s=>{
     const missing=(s.dependsOn||[]).filter(id=>!completed.has(id));
     const rec=ev.slices&&ev.slices[s.id]||null;
+    const historicalMissing=rec&&rec.implemented_ahead_of_plan&&Array.isArray(rec.implemented_ahead_of_plan.observed_missing_dependencies)?rec.implemented_ahead_of_plan.observed_missing_dependencies:[];
     const isCompleted=completed.has(s.id),isActive=active.has(s.id);
     let status=isCompleted?'completed':isActive?'active':missing.length?'blocked':'eligible';
-    const divergence=isCompleted&&missing.length?'implemented-ahead-of-plan':null;
-    return {...clone(s),status,missing_dependencies:missing,evidence:rec&&clone(rec.evidence||[]),divergence,score:score(s)};
+    const divergence=isCompleted&&(missing.length||historicalMissing.length)?(missing.length?'implemented-ahead-of-plan':'implemented-ahead-of-plan-history'):null;
+    return {...clone(s),status,missing_dependencies:missing,historical_missing_dependencies:clone(historicalMissing),evidence:rec&&clone(rec.evidence||[]),divergence,score:score(s)};
   });
   const eligible=rows.filter(x=>x.status==='eligible').sort((a,b)=>b.score-a.score||String(a.id).localeCompare(String(b.id)));
   const blocked=rows.filter(x=>x.status==='blocked');
