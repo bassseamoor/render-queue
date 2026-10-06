@@ -7,5 +7,33 @@ try{
   const saved=JSON.parse(root.localStorage&&root.localStorage.getItem('moor.funnel-foundry.config.v1')||'null');
   if(saved)config=saved;
 }catch(e){}
-root.FUNNEL_ENVIRONMENT_GRAPH=root.FunnelFoundry.build(config);
+const graph=root.FunnelFoundry.build(config);
+graph.version=3;
+graph.title='Current Funnel · v44 active + Ultra candidate';
+graph.currentLaw={active:'v44-sealed',candidate:'ultra-v1-candidate',architecture:'Secure Core / Elastic Society'};
+const addNode=n=>{if(!graph.nodes.some(x=>x.id===n.id))graph.nodes.push(n);};
+const addEdge=e=>{if(!graph.edges.some(x=>x.from===e.from&&x.to===e.to&&x.type===e.type))graph.edges.push(e);};
+addNode({id:'law.active',label:'v44 ACTIVE',type:'law-active',detail:'Current production authority. Immutable Page 0, ordered stages, replay and receipt gate.',position:{x:0,y:64,z:0}});
+addNode({id:'law.ultra',label:'ULTRA CANDIDATE',type:'law-candidate',detail:'Secure Core / Elastic Society candidate. Tested beside v44 and not silently promoted.',position:{x:0,y:56,z:0}});
+[
+ ['law.plane.authority','AUTHORITY','Small deterministic law, receipts, capabilities, budgets.',0],
+ ['law.plane.reasoning','REASONING','Solver society, questions, convergence and recursive child Funnels.',1],
+ ['law.plane.execution','EXECUTION','Harness, builders, integration and independent verification.',2],
+ ['law.plane.knowledge','KNOWLEDGE','Owner evidence, reference graph, learning, package registry and archive.',3],
+ ['law.plane.pulse','PULSE / FOUNDRY','3D observability, topology experiments, diffs, receipts and resource forecast.',4]
+].forEach((x,i)=>{
+  const a=(i/5)*Math.PI*2-Math.PI/2,r=23;
+  addNode({id:x[0],label:x[1],type:'law-plane',detail:x[2],position:{x:+(Math.cos(a)*r).toFixed(3),y:47,z:+(Math.sin(a)*r).toFixed(3)}});
+  addEdge({from:'law.ultra',to:x[0],type:'candidate',label:'candidate plane'});
+});
+addEdge({from:'law.active',to:'page0',type:'governs',label:'production authority'});
+addEdge({from:'law.ultra',to:'law.active',type:'candidate',label:'candidate replacement'});
+[
+ ['law.plane.authority','receipt.merge'],
+ ['law.plane.reasoning','meta.merge'],
+ ['law.plane.execution','verify.merge'],
+ ['law.plane.knowledge','learn.0.funnel'],
+ ['law.plane.pulse','page0']
+].forEach(([from,to])=>{if(graph.nodes.some(n=>n.id===to))addEdge({from,to,type:'contains-plane',label:'maps to live path'});});
+root.FUNNEL_ENVIRONMENT_GRAPH=graph;
 })(window);
