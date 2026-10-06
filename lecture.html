@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LECTURE · Moor-built</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:#000; overflow:hidden; }
+  body { font-family:-apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif;
+         color:#e8e6df; -webkit-font-smoothing:antialiased; }
+  #wall { position:fixed; inset:0; display:flex; justify-content:center;
+          align-items:flex-start; pointer-events:none; }
+  #col { width:min(880px,86vw); text-align:justify; hyphens:auto;
+         font-size:clamp(17px,2.1vw,23px); font-weight:300; line-height:2.05;
+         letter-spacing:.02em; will-change:transform; }
+  #col .u { margin:0 0 2.2em; opacity:.92; }
+  #col .law { color:#c9a227; font-weight:500; }
+  #col .ill { opacity:.62; }
+  .fade { position:fixed; left:0; right:0; height:18vh; pointer-events:none; z-index:2; }
+  .fade.top { top:0; background:linear-gradient(#000 8%, transparent); }
+  .fade.bot { bottom:0; background:linear-gradient(transparent, #000 92%); }
+  #hint { position:fixed; bottom:14px; right:18px; font-size:11px; color:#3a3d46;
+          letter-spacing:1px; z-index:3; transition:opacity 2s; }
+</style>
+</head>
+<body>
+<div id="wall"><div id="col"></div></div>
+<div class="fade top"></div><div class="fade bot"></div>
+<div id="hint">TAP FOR VOICE</div>
+
+<script>
+'use strict';
+/* LECTURE v1 — the speaker. A wall of words: the canon of how things are
+   built in Moor OS, generated endlessly, scrolling forever. Zero chrome. */
+function mulberry32(s){ let y=(s>>>0)||0x9E3779B9;
+  return function(){ y^=y<<13; y^=y>>>17; y^=y<<5; y>>>=0; return y/4294967296; }; }
+function hashStr(s){ let h=2166136261>>>0;
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h>>>0; }
+
+const qs=new URLSearchParams(location.search);
+const seedStr=qs.get('seed')||('lecture-'+Date.now().toString(36));
+const rng=mulberry32(hashStr(seedStr));
+
+/* the canon: laws of how things are built. each: law + plain illustration. */
+const CANON=[
+ {law:'Every request runs the funnel.', ill:'Ask, blueprint, funnel again, build. No skipping — the tube shapes every rod.'},
+ {law:'Page 0 is immutable.', ill:'The original ask is preserved verbatim. Nothing downstream may rewrite what was wanted.'},
+ {law:'No inferred solutions.', ill:'The funnel asks openly. Answers come from the request, not from the machine guessing.'},
+ {law:'The objective is convergence.', ill:'Not completion of planned work — observable output moving toward declared intent, measurably.'},
+ {law:'Done means live.', ill:'MD5-verified on the real surface, or it is not done. A file in the workspace is not in the world.'},
+ {law:'If it is not there it is not done.', ill:'Every explicit request is a pass/fail gate. Partial is not done.'},
+ {law:'Refuse loudly.', ill:'A context that cannot honor a rule says so — never silently degrades, never pretends.'},
+ {law:'Declare once.', ill:'Rules are stated at creation and inherited everywhere. Repetition is not a rule.'},
+ {law:'Every build carries its receipt.', ill:'Sealed, kernel-verified. The proof travels with the product.'},
+ {law:'The request is the catalyst.', ill:'It drives the reaction. The tube — funnel plus request — shapes it. The rod extrudes.'},
+ {law:'The questions face outward.', ill:'The objective lives on the surface, open-ended, so a later tube has something real to cut against.'},
+ {law:'Name no machine before the questions are answered.', ill:'The last tube named the machine too early. The instrument keeps the objective clean.'}
+];
+const BRIDGES=['And so','Which is why','That is how','In other words','Follow it through','Keep going','Notice what that means'];
+
+const N=8;                  // no-repeat window (must stay < CANON.length)
+const recent=[];
+function pick(){
+  let pool=CANON.map((_,i)=>i).filter(i=>!recent.includes(i));
+  if(!pool.length){ recent.length=0; pool=CANON.map((_,i)=>i); }
+  const i=pool[Math.floor(rng()*pool.length)];
+  recent.push(i); if(recent.length>N) recent.shift();
+  return CANON[i];
+}
+let spoken=0;
+function utterance(){
+  const c=pick();
+  const b=BRIDGES[Math.floor(rng()*BRIDGES.length)];
+  spoken++;
+  return { law:c.law, text:b+' — '+c.law.toLowerCase()+' '+c.ill };
+}
+
+const col=document.getElementById('col');
+function addPara(){
+  const u=utterance();
+  const d=document.createElement('div'); d.className='u';
+  const l=document.createElement('span'); l.className='law'; l.textContent=u.law+' ';
+  const t=document.createElement('span'); t.className='ill'; t.textContent=u.text.slice(u.text.indexOf('—')+1).trim();
+  d.appendChild(l); d.appendChild(t); col.appendChild(d);
+  return d;
+}
+/* fill viewport + buffer (guarded: never spin forever) */
+let guard=0;
+while(col.scrollHeight < innerHeight*2.2 && guard++ < 400) addPara();
+
+/* endless scroll */
+let y=0; const SPEED=0.45;
+function tick(){
+  y+=SPEED;
+  const first=col.firstElementChild;
+  if(first){
+    const h=first.getBoundingClientRect().height + parseFloat(getComputedStyle(first).marginBottom);
+    if(y>=h){ col.removeChild(first); y-=h; addPara(); }
+  }
+  col.style.transform='translateY('+(-y)+'px)';
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* voice: the speaker speaks. tap toggles. */
+let voiceOn=false, utter=null;
+function speak(text){
+  if(!voiceOn||!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  utter=new SpeechSynthesisUtterance(text);
+  utter.rate=0.92; utter.pitch=0.9;
+  speechSynthesis.speak(utter);
+}
+document.getElementById('hint').style.opacity='1';
+setTimeout(()=>{document.getElementById('hint').style.opacity='0';},6000);
+addEventListener('pointerdown',()=>{
+  voiceOn=!voiceOn;
+  const h=document.getElementById('hint');
+  h.textContent=voiceOn?'VOICE ON — TAP TO MUTE':'TAP FOR VOICE';
+  h.style.opacity='1'; setTimeout(()=>{h.style.opacity='0';},2500);
+  if(!voiceOn&&('speechSynthesis' in window)) speechSynthesis.cancel();
+  if(voiceOn){
+    const paras=col.children;
+    if(paras.length) speak(paras[0].innerText);
+  }
+});
+/* expose for verification */
+window.LECTURE={utterance,pick,CANON,version:'1.0'};
+</script>
+</body>
+</html>
