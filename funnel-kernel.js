@@ -11,12 +11,14 @@
 var SCHEMA='moor.funnel-kernel-state';
 var RECEIPT_SCHEMA='moor.funnel-receipt';
 var VERSION=1;
-var LAW_VERSION='v45-armored';
+var LAW_VERSION='v46-redundant';
 var STORE='moor.funnel.kernel.v1';
 var ACTIVE='moor.funnel.active-request.v1';
 var STAGES=Object.freeze(['page0','references','distill','decisions','replay','verdict']);
 var WRITABLE=Object.freeze(['answer','evidence','failure','correction','reference','note']);
 var CLAIM_SCHEMA='moor.funnel-execution-claim';
+var REDUNDANCY=(root&&root.MOORFunnelRedundancy)||null;
+if(!REDUNDANCY&&typeof require==='function'){try{REDUNDANCY=require('./funnel-redundancy.js');}catch(e){}}
 var mem=null;
 
 function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}
@@ -109,7 +111,8 @@ function open(arg){
     if(cur.page0!==raw)throw Error('Page 0 is immutable for this request.');
     setActive(id);return cur;
   }
-  append('stage',id,{stage:'page0',raw:raw,raw_hash:hash(raw),source:arg.source||'unknown',context:clone(arg.context||{})},'explicit');
+  var ra=redundancyAnalysis(raw);
+  append('stage',id,{stage:'page0',raw:raw,raw_hash:hash(raw),source:arg.source||'unknown',context:clone(arg.context||{}),redundancy:ra},'explicit');
   setActive(id);return session(id);
 }
 function write(arg){
@@ -140,20 +143,24 @@ function checkReplay(payload,s){
   if(bad.length)throw Error('Every Page 0 obligation must be source-backed and satisfied, or explicitly deferred with approval.');
   if(payload.substitutions&&payload.substitutions.some(function(x){return !x||x.approved!==true;}))throw Error('Unapproved substitution blocks Funnel receipt.');
 }
+function redundancyAnalysis(raw){
+  if(!REDUNDANCY||typeof REDUNDANCY.analyze!=='function'||!Array.isArray(REDUNDANCY.lenses)||REDUNDANCY.lenses.length<3){
+    throw Error('Redundant Funnel distillation unavailable: all isolated lenses are required.');
+  }
+  var a=REDUNDANCY.analyze(text(raw));
+  if(!a||!Array.isArray(a.union)||!Array.isArray(a.consensus)||!Array.isArray(a.disagreements)||!a.fingerprint){
+    throw Error('Redundant Funnel distillation returned an invalid analysis.');
+  }
+  return clone(a);
+}
 function extractObligations(raw){
-  var source=text(raw),parts=source.split(/(?:\n+|(?<=[.!?;])\s+)/).map(function(x){return x.trim();}).filter(Boolean);
-  var seen={},out=[],signal=/\b(must|need(?:s)?|should|have to|has to|gotta|make sure|ensure|never|cannot|can't|want(?:s)?|required?|no excuse|prevent(?:s|ed|ing)?|forbid(?:s|den|ding)?|block(?:s|ed|ing)?|lock(?:s|ed|ing)?|seal(?:s|ed|ing)?|force(?:s|d|ing)?|protect(?:s|ed|ing)?|disable(?:s|d|ing)?|require(?:s|d|ing)?|create|build|make|add|remove|fix)\b/i;
-  parts.forEach(function(part){
-    var meaningful=part.replace(/\bi\s+(?:don't|do not)\s+know\b/ig,'').replace(/\bi(?:'m| am)\s+not\s+sure\b/ig,'').trim();
-    if(!signal.test(meaningful))return;
-    var id='obligation:'+hash(part.toLowerCase());
-    if(!seen[id]){seen[id]=1;out.push({id:id,source:part});}
+  return redundancyAnalysis(raw).union.map(function(o){
+    return {id:o.id,source:o.source,support:o.support,lenses:clone(o.lenses||[])};
   });
-  if(!out.length&&source.trim())out.push({id:'obligation:'+hash(source.trim().toLowerCase()),source:source.trim()});
-  return out;
 }
 function receiptFor(id,verdict,head,page0Hash){
-  var core={schema:RECEIPT_SCHEMA,version:VERSION,law_version:LAW_VERSION,request_id:id,page0_hash:page0Hash,spec_hash:hash(verdict.spec),destination:verdict.destination,done_criteria:clone(verdict.done_criteria),ledger_head:head,issued_at:new Date().toISOString()};
+  var ps=session(id).stages.page0||{},rf=ps.redundancy&&ps.redundancy.fingerprint;
+  var core={schema:RECEIPT_SCHEMA,version:VERSION,law_version:LAW_VERSION,request_id:id,page0_hash:page0Hash,redundancy_fingerprint:rf,spec_hash:hash(verdict.spec),destination:verdict.destination,done_criteria:clone(verdict.done_criteria),ledger_head:head,issued_at:new Date().toISOString()};
   return Object.assign({},core,{fingerprint:hash(core)});
 }
 function advance(arg){
@@ -201,6 +208,9 @@ function verifyReceipt(receipt){
   if(!s.receipt||s.receipt.fingerprint!==receipt.fingerprint||!s.stages.replay||!s.stages.verdict)return false;
   if(!last||last.type!=='receipt'||!last.payload||last.payload.fingerprint!==receipt.fingerprint)return false;
   if(s.stages.page0.raw_hash!==receipt.page0_hash)return false;
+  if(!s.stages.page0.redundancy||s.stages.page0.redundancy.fingerprint!==receipt.redundancy_fingerprint)return false;
+  var freshRedundancy;try{freshRedundancy=redundancyAnalysis(s.page0);}catch(e){return false;}
+  if(freshRedundancy.fingerprint!==receipt.redundancy_fingerprint)return false;
   if(hash(s.stages.verdict.spec)!==receipt.spec_hash)return false;
   if(s.stages.verdict._event_hash!==receipt.ledger_head)return false;
   return verifyState(state());
@@ -248,14 +258,14 @@ function verifyConsumedClaim(claim){
 function exportProof(requestId){
   var s=session(active(requestId));
   if(!s||!s.page0||!s.stages.page0)return null;
-  return {schema:'moor.funnel-proof',version:1,law_version:LAW_VERSION,request_id:s.request_id,page0:{raw:s.page0,raw_hash:s.stages.page0.raw_hash},references:clone(s.stages.references||null),distill:clone(s.stages.distill||null),decisions:clone(s.stages.decisions||null),replay:clone(s.stages.replay||null),verdict:clone(s.stages.verdict||null),receipt:clone(s.receipt||null),writes:clone(s.writes||[])};
+  return {schema:'moor.funnel-proof',version:1,law_version:LAW_VERSION,request_id:s.request_id,page0:{raw:s.page0,raw_hash:s.stages.page0.raw_hash,redundancy:clone(s.stages.page0.redundancy||null)},references:clone(s.stages.references||null),distill:clone(s.stages.distill||null),decisions:clone(s.stages.decisions||null),replay:clone(s.stages.replay||null),verdict:clone(s.stages.verdict||null),receipt:clone(s.receipt||null),writes:clone(s.writes||[])};
 }
 function inspect(requestId){var s=session(active(requestId));return clone(s);}
 function resetForTests(){mem=blank();if(root&&root.localStorage){try{root.localStorage.removeItem(STORE);root.localStorage.removeItem(ACTIVE);}catch(e){}}}
 
 return Object.freeze({
   version:VERSION,law_version:LAW_VERSION,stages:STAGES.slice(),writable:WRITABLE.slice(),
-  open:open,write:write,advance:advance,inspect:inspect,extractObligations:extractObligations,verifyReceipt:verifyReceipt,claimExecution:claimExecution,verifyClaim:verifyClaim,consumeClaim:consumeClaim,verifyConsumedClaim:verifyConsumedClaim,exportProof:exportProof,hash:hash,
+  open:open,write:write,advance:advance,inspect:inspect,extractObligations:extractObligations,redundancyAnalysis:redundancyAnalysis,verifyReceipt:verifyReceipt,claimExecution:claimExecution,verifyClaim:verifyClaim,consumeClaim:consumeClaim,verifyConsumedClaim:verifyConsumedClaim,exportProof:exportProof,hash:hash,
   _verifyState:verifyState,_resetForTests:resetForTests
 });
 });
