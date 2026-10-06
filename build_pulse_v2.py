@@ -257,7 +257,7 @@ PRESERVED_PLATFORM_ITEMS = {
         'component': 'MOOR Blueprint Farm v1',
         'component_source': 'blueprint/blueprint-farm.blueprint.json',
         'page': 'blueprint-farm.html',
-        'depends_on': ['pulse-blueprint-farm-library.json','blueprint/funnel-maintenance-modernization.blueprint.json','blueprint/factory-digital-twin.blueprint.json','blueprint/seeded-procedural-toolchain.blueprint.json','blueprint/worker-execution-orchestration.blueprint.json','blueprint/blueprint-choreography.blueprint.json'],
+        'depends_on': ['pulse-blueprint-farm-library.json','pulse-slice-release-ledger.json','blueprint-choreography-core.js','blueprint-choreography-state.json','blueprint-comparison-core.js','blueprint/funnel-maintenance-modernization.blueprint.json','blueprint/factory-digital-twin.blueprint.json','blueprint/seeded-procedural-toolchain.blueprint.json','blueprint/worker-execution-orchestration.blueprint.json','blueprint/blueprint-choreography.blueprint.json'],
         'tags': ['cat:creation','cat:compdata','kind:blueprint-farm','prov:ultra-funnel','prov:bf-01'],
         'honest_limits': 'Read-only planning/inspection slice. BF-01 is the only released slice.'
     },
