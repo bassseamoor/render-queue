@@ -1,5 +1,5 @@
-import {createAssetScene} from './scene.mjs';
-import {normalize,recipe} from './core.mjs';
+import {createAssetScene} from './scene.mjs?v=20261006-assets2';
+import {normalize,recipe} from './core.mjs?v=20261006-assets2';
 export const PLACEMENT_KEY='moor.procedural.placements.v1';
 export function normalizePlacement(value){if(!value||value.schema!=='moor.procedural-placement'||value.version!==1)throw Error('Expected a MOOR procedural placement v1.');if(!Array.isArray(value.position)||value.position.length!==3||value.position.some(n=>typeof n!=='number'||!Number.isFinite(n)||Math.abs(n)>10000))throw Error('Placement needs three finite coordinates within the world boundary.');return{schema:value.schema,version:1,recipe:normalize(value.recipe),position:[...value.position]};}
 export const proceduralAssets={

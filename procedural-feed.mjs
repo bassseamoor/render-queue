@@ -1,5 +1,5 @@
-import {FAMILIES,recipe} from './procedural-studio/core.mjs';
-import {list,descriptor} from './procedural-studio/storage.mjs';
+import {FAMILIES,recipe} from './procedural-studio/core.mjs?v=20261006-assets2';
+import {list,descriptor} from './procedural-studio/storage.mjs?v=20261006-assets2';
 const W=window.WonderFeed;
 if(W?.Haven){
  function register(spec){const existing=W.Haven.native.find(n=>n.id===spec.id);if(existing){Object.assign(existing,spec);W.Haven.refreshRegistry();}else W.Haven.register(spec);}

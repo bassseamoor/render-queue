@@ -1,4 +1,4 @@
-import {normalize} from './core.mjs';
+import {normalize} from './core.mjs?v=20261006-assets2';
 const MAX=64,BYTES=3*1024*1024;
 function db(){return new Promise((ok,bad)=>{const q=indexedDB.open('moor-procedural-assets-v1',1);q.onupgradeneeded=()=>q.result.createObjectStore('generators',{keyPath:'id'});q.onsuccess=()=>ok(q.result);q.onerror=()=>bad(q.error);});}
 export async function list(){const d=await db();try{return await new Promise((ok,bad)=>{const tx=d.transaction('generators'),q=tx.objectStore('generators').getAll();q.onsuccess=()=>ok(q.result);q.onerror=()=>bad(q.error);});}finally{d.close();}}

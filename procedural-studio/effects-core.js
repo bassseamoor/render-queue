@@ -52,7 +52,7 @@ function sample(compiled,time){
  return {index:p.i,position:pointAt(l,p,u,t),previous:pointAt(l,p,Math.max(0,u-.025),t-.035),age:u,alpha:l.opacity*fade,size:l.size*p.size,hue:(l.hue+p.color*l.hueSpread+360)%360,rotation:p.a+t*l.twist,path:(['beam','ribbon','ring'].includes(l.renderer)?path(l,p,t,u):null)};
  })}));
 }
-function path(l,p,t,u){
+function path(l,p,t){
  const n=l.renderer==='ring'?80:40,pts=[];
  for(let j=0;j<=n;j++){const f=j/n;
   if(l.renderer==='ring'){const a=f*TAU+p.a+t*l.speed*.25,rad=l.radius*(.75+.2*Math.sin(t*2+p.a));pts.push([Math.cos(a)*rad+l.position[0],Math.sin(a)*rad+l.position[1],Math.sin(a*3+t)*l.spread*.12+l.position[2]]);}

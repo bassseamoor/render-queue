@@ -1,6 +1,6 @@
-import {sample,normalize,MAX_OBJECTS} from './core.mjs';
-import {softwareViewport} from './software.mjs';
-import {CAUSTIC_GLSL} from './aquarium-math.mjs';
+import {sample,normalize,MAX_OBJECTS} from './core.mjs?v=20261006-assets2';
+import {softwareViewport} from './software.mjs?v=20261006-assets2';
+import {CAUSTIC_GLSL} from './aquarium-math.mjs?v=20261006-assets2';
 /* Host owns THREE, scene, clock and lifetime. No private copy of the world. */
 export function createAssetScene(THREE,input){
  let recipe=normalize(input),image=null;

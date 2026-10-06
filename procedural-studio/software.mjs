@@ -1,4 +1,4 @@
-import {sample,normalize} from './core.mjs';
+import {sample,normalize} from './core.mjs?v=20261006-assets2';
 /* Bounded software projection for devices without WebGL. Same 3D source math. */
 export function softwareViewport(canvas,input){
  const ctx=canvas.getContext('2d',{alpha:true});if(!ctx)throw Error('No graphics context is available.');let recipe=normalize(input),view={yaw:.38,pitch:.2,zoom:1,projection:'perspective'},last=0,dead=false,texture=null,calls=0;

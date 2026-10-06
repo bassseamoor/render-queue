@@ -1,7 +1,7 @@
 import * as THREE from './three.module.js';
-import {FAMILIES,recipe,normalize} from './core.mjs';
-import {createViewport} from './scene.mjs';
-import {list,save} from './storage.mjs';
+import {FAMILIES,recipe,normalize} from './core.mjs?v=20261006-assets2';
+import {createViewport} from './scene.mjs?v=20261006-assets2';
+import {list,save} from './storage.mjs?v=20261006-assets2';
 const host=document.getElementById('feed'),filter=document.getElementById('filter'),status=document.getElementById('feed-status'),canvas=document.createElement('canvas');canvas.setAttribute('aria-label','Live procedural asset');const particleCanvas=document.createElement('canvas'),particleRenderer=window.MoorEffects.renderer(particleCanvas);let compiledEffect=null;let viewport=null,records=[],sources=FAMILIES.map(f=>({id:f.id,label:f.label,recipe:recipe(f.id)})),ordinal=0,active=null,playing=!matchMedia('(prefers-reduced-motion: reduce)').matches,last=0,dead=false,frame=0;
 for(const f of FAMILIES)filter.add(new Option(f.label,f.id));
 const observer=new IntersectionObserver(entries=>{for(const e of entries){const r=records.find(r=>r.el===e.target);if(r)r.visible=e.isIntersecting;}choose();},{rootMargin:'0px',threshold:.05});
