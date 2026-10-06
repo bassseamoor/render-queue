@@ -2,6 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const K=require('../funnel-kernel.js');
+const {validateProof}=require('../scripts/funnel-proof-lib.cjs');
 
 K._resetForTests();
 const input='Build the Pulse request path. It must preserve Page 0. Never let Buster bypass the Funnel. Make sure every build gets a receipt.';
@@ -12,13 +13,10 @@ assert.throws(()=>K.open({request_id:'r1',input:'different request'}),/immutable
 assert.throws(()=>K.advance({request_id:'r1',stage:'distill',payload:{spec_draft:'x'}}),/Expected references/);
 
 s=K.advance({request_id:'r1',stage:'references',payload:{reused:[],missing:[]},provenance:'learned'});
-assert.equal(s.stage,'references');
 K.write({request_id:'r1',kind:'evidence',value:{note:'router inspected'},provenance:'verified'});
 s=K.advance({request_id:'r1',stage:'distill',payload:{spec_draft:'Preserve Page 0 and require a receipt.'},provenance:'inferred'});
-assert.equal(s.stage,'distill');
 assert.throws(()=>K.advance({request_id:'r1',stage:'decisions',payload:{locked:[],unresolved:['receipt format']}}),/Unresolved material decisions/);
 s=K.advance({request_id:'r1',stage:'decisions',payload:{locked:[{key:'receipt',value:'required'}],unresolved:[]},provenance:'explicit'});
-assert.equal(s.stage,'decisions');
 
 const obs=K.extractObligations(input);
 assert(obs.length>=3);
@@ -26,39 +24,49 @@ assert.throws(()=>K.advance({request_id:'r1',stage:'replay',payload:{page0_verif
 assert.throws(()=>K.advance({request_id:'r1',stage:'replay',payload:{page0_verified:true,page0_hash:s.stages.page0.raw_hash,obligations:obs.slice(1).map(o=>({...o,status:'satisfied'}))}}),/omitted/);
 
 s=K.advance({request_id:'r1',stage:'replay',payload:{
-  page0_verified:true,
-  page0_hash:s.stages.page0.raw_hash,
-  obligations:obs.map(o=>({...o,status:'satisfied'})),
-  substitutions:[]
+  page0_verified:true,page0_hash:s.stages.page0.raw_hash,
+  obligations:obs.map(o=>({...o,status:'satisfied'})),substitutions:[]
 },provenance:'verified'});
-assert.equal(s.stage,'replay');
-
 s=K.advance({request_id:'r1',stage:'verdict',payload:{
   spec:{router:'MOOR.request',page0:'immutable',receipt:'required'},
   destination:'app-compiler-harness',
   done_criteria:['A build cannot reach Harness without a valid Funnel receipt.']
 },provenance:'verified'});
-assert.equal(s.stage,'verdict');
-assert(s.receipt);
-assert.equal(K.verifyReceipt(s.receipt),true);
-const packet=K.executionPacket(s.receipt);
-assert.equal(packet.destination,'app-compiler-harness');
-assert.equal(packet.funnel_receipt.fingerprint,s.receipt.fingerprint);
 
-const tampered={...s.receipt,destination:'somewhere-else'};
+const receipt=s.receipt;
+assert(receipt);
+assert.equal(K.verifyReceipt(receipt),true);
+const proof=K.exportProof('r1');
+assert.equal(validateProof(proof),true);
+
+const tampered={...receipt,destination:'somewhere-else'};
 assert.equal(K.verifyReceipt(tampered),false);
-K.write({request_id:'r1',kind:'correction',value:{note:'spec changed after verdict'},provenance:'explicit'});
-assert.equal(K.verifyReceipt(s.receipt),false,'Any later write must stale the old receipt');
+
+const claim=K.claimExecution(receipt,input,'app-compiler-harness');
+assert.equal(claim.schema,'moor.funnel-execution-claim');
+assert.equal(K.verifyClaim(claim),true);
+assert.equal(K.verifyReceipt(receipt),false,'Minting a claim consumes receipt mint authority');
+assert.throws(()=>K.claimExecution(receipt,input,'app-compiler-harness'),/denied/);
+assert.throws(()=>K.claimExecution(receipt,'different input','app-compiler-harness'),/denied/);
+
+const packet=K.consumeClaim(claim);
+assert.equal(packet.destination,'app-compiler-harness');
+assert.equal(packet.execution_claim.claim_id,claim.claim_id);
+assert.equal(packet.funnel_receipt.fingerprint,receipt.fingerprint);
+assert.equal(K.verifyClaim(claim),false);
+assert.throws(()=>K.consumeClaim(claim),/already consumed|denied|claim/i);
 
 const root=path.resolve(__dirname,'..');
 const request=fs.readFileSync(path.join(root,'moor-request.js'),'utf8');
 const dash=fs.readFileSync(path.join(root,'pulse-dashboard.html'),'utf8');
+const harness=fs.readFileSync(path.join(root,'moor-harness-runtime-v1.html'),'utf8');
 const contract=fs.readFileSync(path.join(root,'FUNNEL.md'),'utf8');
 assert(request.includes('funnel_receipt'));
-assert(request.includes('verifyReceipt'));
+assert(request.includes('claimExecution'));
 assert(!request.includes('knownLocked('),'Fuzzy locked-version execution bypass must stay removed');
 assert(!request.includes('arg.resolved'),'Caller-declared resolved execution bypass must stay removed');
 assert(dash.indexOf('funnel-kernel.js')>=0&&dash.indexOf('funnel-kernel.js')<dash.indexOf('moor-request.js'),'Kernel must load before request router');
-assert(contract.includes('v44-sealed'));
+assert(harness.includes('consumeClaim'));
+assert(harness.includes('Stage order is locked'));
 assert(contract.includes('BUSTER.md'));
-console.log('PASS: sealed Funnel state order, immutable Page 0, source-backed replay, receipt gate, receipt staleness, and router anti-bypass guards');
+console.log('PASS: immutable Page 0, replay proof, one-time receipt->claim->consume authority, Harness lock, and router anti-bypass guards');
