@@ -47,6 +47,10 @@ const afterPg02=JSON.parse(JSON.stringify(afterPg01));
 afterPg02.slices['PG-02']=evidence.slices['PG-02'];
 const afterRecipe=Ch.evaluate({choreography,evidence:afterPg02});
 assert.equal(afterRecipe.recommendation.slice_id,'WO-01');
+const afterWo01=JSON.parse(JSON.stringify(afterPg02));
+afterWo01.slices['WO-01']=evidence.slices['WO-01'];
+const afterReleaseContract=Ch.evaluate({choreography,evidence:afterWo01});
+assert.equal(afterReleaseContract.recommendation.slice_id,'WO-02');
 
 const ch02=run(
   'owner-start-building-ch02-v1',
@@ -106,4 +110,12 @@ const wo01=run(
   'Project Pulse / Worker orchestration',
   ['SliceRelease is versioned and authority-bound','WorkerJob cannot exceed release scope','repository base and owner approval are mandatory','planning alone cannot spawn a worker']
 );
-console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,wo01_receipt:wo01.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation,after_pg02:afterRecipe.recommendation},null,2));
+const wo02=run(
+  'owner-start-building-wo02-v1',
+  'Build WO-02: implement repository-base and ownership guards for released worker jobs. Reject stale bases, undeclared overlapping ownership and writes outside the released scope. Do not perform Git writes or spawn workers.',
+  [{key:'slice',value:'WO-02'},{key:'selection_basis',value:'CH-02 advisory after verified WO-01'},{key:'fail_closed',value:'stale base or ownership conflict'}],
+  {slice_id:'WO-02',task:'stale-base and ownership guard',authority:'validation only'},
+  'Project Pulse / Worker orchestration',
+  ['current base must match recorded release base','write/interface ownership conflicts are detected','scope expansion fails closed','guard itself cannot mutate Git or spawn workers']
+);
+console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,wo01_receipt:wo01.fingerprint,wo02_receipt:wo02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation,after_pg02:afterRecipe.recommendation,after_wo01:afterReleaseContract.recommendation},null,2));
