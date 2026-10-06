@@ -65,10 +65,21 @@ function stats(){
 
 function types(x){return [...new Set((Array.isArray(x)?x:[]).map(v=>String(v).trim().toLowerCase()).filter(Boolean))].sort();}
 function compatibleType(outT,inT,state){outT=String(outT).toLowerCase();inT=String(inT).toLowerCase();if(outT===inT||inT==='any'||outT==='any')return {ok:true,mode:'exact'};const a=state.adapters[outT+'→'+inT];return a&&statusVerified(a.status)?{ok:true,mode:'adapter',adapter:a}:null;}
-function normalizeCapability(c,bundle){c=clone(c||{});if(!c.capability_id)c.capability_id='capability:'+hash({bundle:bundle&&bundle.bundle_id,c});c.version=String(c.version||'1');c.status=c.status||bundle&&bundle.status||'specified';c.lifecycle=c.lifecycle||'active';c.provides=types(c.provides);c.requires=types(c.requires);c.input_types=types(c.input_types);c.output_types=types(c.output_types);c.knobs=c.knobs||{};c.events=types(c.events);c.state=c.state||{};c.side_effects=types(c.side_effects);c.compatibility=c.compatibility||{};c.implementation_ref=c.implementation_ref||bundle&&bundle.implementation_ref||null;c.assembly_contract_hash=c.assembly_contract_hash||bundle&&bundle.assembly_contract&&bundle.assembly_contract.content_hash||null;c.evidence_refs=Array.isArray(c.evidence_refs)?c.evidence_refs:bundle&&bundle.evidence?[bundle.evidence.evidence_id||('evidence:'+hash(bundle.evidence))]:[];c.content_hash=hash({...c,content_hash:undefined,lifecycle:undefined,deprecation:undefined,quarantine:undefined});return c;}
+function normalizeCapability(c,bundle){c=clone(c||{});if(!c.capability_id)c.capability_id='capability:'+hash({bundle:bundle&&bundle.bundle_id,c});c.version=String(c.version||'1');c.status=c.status||bundle&&bundle.status||'specified';c.lifecycle=c.lifecycle||'active';c.supersedes=[...new Set((Array.isArray(c.supersedes)?c.supersedes:[]).map(String))];c.provides=types(c.provides);c.requires=types(c.requires);c.input_types=types(c.input_types);c.output_types=types(c.output_types);c.knobs=c.knobs||{};c.events=types(c.events);c.state=c.state||{};c.side_effects=types(c.side_effects);c.compatibility=c.compatibility||{};c.implementation_ref=c.implementation_ref||bundle&&bundle.implementation_ref||null;c.assembly_contract_hash=c.assembly_contract_hash||bundle&&bundle.assembly_contract&&bundle.assembly_contract.content_hash||null;c.evidence_refs=Array.isArray(c.evidence_refs)?c.evidence_refs:bundle&&bundle.evidence?[bundle.evidence.evidence_id||('evidence:'+hash(bundle.evidence))]:[];c.content_hash=hash({...c,content_hash:undefined,lifecycle:undefined,deprecation:undefined,quarantine:undefined});return c;}
 function ingest(bundle){bundle=clone(bundle||{});if(!bundle.bundle_id)bundle.bundle_id='crystal:'+hash(bundle);if(!bundle.content_hash)bundle.content_hash=hash({...bundle,content_hash:undefined});const s=read(),prior=s.bundles[bundle.content_hash];if(prior)return {added:false,bundle:clone(prior),candidates:inferCandidates()};
   s.bundles[bundle.content_hash]=bundle;recordUse('crystal_bundle_ingested',{bundle_hash:bundle.content_hash,status:bundle.status});if(bundle.assembly_contract)s.assemblies[bundle.assembly_contract.content_hash]=bundle.assembly_contract;
-  (bundle.capability_delta||[]).forEach(c=>{const n=normalizeCapability(c,bundle);const key=n.capability_id+'@'+n.version;const old=s.capabilities[key];if(old&&statusVerified(old.status)&&old.content_hash!==n.content_hash){recordUse('capability_version_conflict',{capability_id:n.capability_id,version:n.version,existing_hash:old.content_hash,incoming_hash:n.content_hash});return;}if(!old||(!statusVerified(old.status)&&statusVerified(n.status))){if(old&&old.lifecycle)n.lifecycle=old.lifecycle;if(old&&old.deprecation)n.deprecation=old.deprecation;if(old&&old.quarantine)n.quarantine=old.quarantine;s.capabilities[key]=n;if(statusVerified(n.status))recordUse('verified_capability_registered',{capability_id:n.capability_id,version:n.version,status:n.status});}});
+  (bundle.capability_delta||[]).forEach(c=>{const n=normalizeCapability(c,bundle);const key=n.capability_id+'@'+n.version;const old=s.capabilities[key];if(old&&statusVerified(old.status)&&old.content_hash!==n.content_hash){recordUse('capability_version_conflict',{capability_id:n.capability_id,version:n.version,existing_hash:old.content_hash,incoming_hash:n.content_hash});return;}if(!old||(!statusVerified(old.status)&&statusVerified(n.status))){if(old&&old.lifecycle)n.lifecycle=old.lifecycle;if(old&&old.deprecation)n.deprecation=old.deprecation;if(old&&old.quarantine)n.quarantine=old.quarantine;s.capabilities[key]=n;if(statusVerified(n.status))recordUse('verified_capability_registered',{capability_id:n.capability_id,version:n.version,status:n.status});}
+    n.supersedes.forEach(ref=>{
+      Object.entries(s.capabilities||{}).forEach(([priorKey,prior])=>{
+        if(priorKey===key)return;
+        const matches=priorKey===ref||prior.capability_id===ref||prior.capability_id+'@'+prior.version===ref;
+        if(!matches)return;
+        prior.lifecycle='deprecated';
+        prior.deprecation={at:new Date().toISOString(),reason:'superseded',replacement_id:n.capability_id,replacement_version:n.version};
+        recordUse('capability_superseded',{prior:priorKey,by:key});
+      });
+    });
+  });
   save();const candidates=inferCandidates();try{if(root&&root.dispatchEvent)root.dispatchEvent(new CustomEvent('moor:capability-memory',{detail:{bundle,candidates}}));}catch(e){}
   return {added:true,bundle:clone(bundle),candidates};
 }
@@ -105,7 +116,30 @@ function listCapabilities(opts){opts=opts||{};let xs=Object.values(read().capabi
 function deprecateCapability(id,version,input){input=clone(input||{});const s=read(),key=capabilityKey(id,version),c=s.capabilities[key];if(!c)throw Error('unknown capability');c.lifecycle='deprecated';c.deprecation={at:new Date().toISOString(),reason:String(input.reason||'superseded'),replacement_id:input.replacement_id||null,replacement_version:input.replacement_version||null};recordUse('capability_deprecated',{capability_id:c.capability_id,version:c.version,replacement_id:c.deprecation.replacement_id});save();return clone(c);}
 function quarantineCapability(id,version,input){input=clone(input||{});const s=read(),key=capabilityKey(id,version),c=s.capabilities[key];if(!c)throw Error('unknown capability');c.lifecycle='quarantined';c.quarantine={at:new Date().toISOString(),reason:String(input.reason||'integrity or safety hold'),evidence_ref:input.evidence_ref||null};recordUse('capability_quarantined',{capability_id:c.capability_id,version:c.version,reason:c.quarantine.reason});save();return clone(c);}
 function preferredCapability(query){query=query||{};let xs=listCapabilities({verified:true,provides:query.provides,include_deprecated:false,include_quarantined:false});if(query.capability_id)xs=xs.filter(c=>c.capability_id===String(query.capability_id));if(query.input_type){const t=String(query.input_type).toLowerCase();xs=xs.filter(c=>(c.input_types||[]).includes(t)||(c.input_types||[]).includes('any'));}xs.sort((a,b)=>String(b.version).localeCompare(String(a.version),undefined,{numeric:true}));const hit=xs[0]||null;if(hit)recordUse('preferred_capability_resolved',{capability_id:hit.capability_id,version:hit.version,provides:query.provides||null});return clone(hit);}
+function factoryGraph(){
+  const s=read(),nodes=[],edges=[],seen=new Set();
+  function node(id,kind,data){if(!id||seen.has(id))return;seen.add(id);nodes.push({id,kind,...clone(data||{})});}
+  function edge(from,to,type,data){if(from&&to)edges.push({from,to,type,...clone(data||{})});}
+  Object.entries(s.capabilities||{}).forEach(([key,cap])=>{
+    node('cap:'+key,'machine',{label:cap.capability_id,version:cap.version,status:cap.status,lifecycle:cap.lifecycle||'active',implementation_ref:cap.implementation_ref||null});
+    if(cap.assembly_contract_hash)edge('cap:'+key,'assembly:'+cap.assembly_contract_hash,'assembled_by');
+    (cap.supersedes||[]).forEach(ref=>{
+      const prior=Object.entries(s.capabilities||{}).find(([pk,p])=>pk===ref||p.capability_id===ref||p.capability_id+'@'+p.version===ref);
+      if(prior)edge('cap:'+key,'cap:'+prior[0],'supersedes');
+    });
+  });
+  Object.entries(s.assemblies||{}).forEach(([id,a])=>node('assembly:'+id,'fixture',{label:a.artifact_id||id,version:a.artifact_version||a.version||'1'}));
+  Object.entries(s.compositions||{}).forEach(([id,x])=>{
+    node(id,'connection',{label:(x.from||'?')+' → '+(x.to||'?'),status:x.status||'candidate-unverified'});
+    const from=Object.keys(s.capabilities||{}).find(k=>s.capabilities[k].capability_id===x.from&&String(s.capabilities[k].version)===String(x.from_version||s.capabilities[k].version));
+    const to=Object.keys(s.capabilities||{}).find(k=>s.capabilities[k].capability_id===x.to&&String(s.capabilities[k].version)===String(x.to_version||s.capabilities[k].version));
+    if(from)edge('cap:'+from,id,'feeds');
+    if(to)edge(id,'cap:'+to,'feeds');
+  });
+  Object.entries(s.adapters||{}).forEach(([id,a])=>node('adapter:'+id,'adapter',{label:id,status:a.status||'specified'}));
+  return {schema:'moor.software-factory-graph',version:1,nodes,edges,counts:{machines:Object.keys(s.capabilities||{}).length,fixtures:Object.keys(s.assemblies||{}).length,connections:Object.keys(s.compositions||{}).length,adapters:Object.keys(s.adapters||{}).length}};
+}
 function snapshot(){return clone(read());}
 function clearForTests(){mem=blank();return mem;}
-return Object.freeze({version:2,ingest,inferCandidates,registerAdapter,promoteComposition,getCapability,listCapabilities,preferredCapability,deprecateCapability,quarantineCapability,snapshot,statusVerified,recordUse,stats,clearForTests,save});
+return Object.freeze({version:2,ingest,inferCandidates,registerAdapter,promoteComposition,getCapability,listCapabilities,preferredCapability,deprecateCapability,quarantineCapability,factoryGraph,snapshot,statusVerified,recordUse,stats,clearForTests,save});
 });
