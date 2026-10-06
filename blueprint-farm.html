@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MOOR · Blueprint Farm</title>
+<style>
+:root{color-scheme:dark;--bg:#02060b;--panel:#07111a;--panel2:#0a1621;--line:rgba(177,220,245,.16);--text:#f3f8fc;--muted:#8398a8;--ice:#a8e8ff;--green:#4be0a3;--amber:#ffc76a}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+body{min-height:100vh;background:radial-gradient(1000px 550px at 50% -140px,rgba(65,151,190,.12),transparent 70%),var(--bg)}
+header{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line);background:rgba(2,6,11,.88);backdrop-filter:blur(18px)}
+.mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;border:1px solid var(--line);color:var(--ice);font-size:18px}.title{min-width:0}.title strong{display:block;font-size:14px}.title span{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.gate{margin-left:auto;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--green);border:1px solid rgba(75,224,163,.25);border-radius:999px;padding:7px 9px}
+main{display:grid;grid-template-columns:minmax(280px,380px) minmax(0,1fr);gap:12px;max-width:1480px;margin:0 auto;padding:12px}
+.sidebar,.detail{border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent),var(--panel);border-radius:18px;min-width:0}
+.sidebar{padding:12px;align-self:start;position:sticky;top:78px}.summary{padding:10px 9px 14px;border-bottom:1px solid var(--line);margin-bottom:8px}.summary b{font-size:18px}.summary p{margin:4px 0 0;color:var(--muted);font-size:11px}
+.list{display:flex;flex-direction:column;gap:6px}.bp{width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--text);padding:10px;border-radius:12px;cursor:pointer}.bp:hover,.bp.on{background:rgba(168,232,255,.06);border-color:var(--line)}.bp strong{display:block;font-size:12px}.bp span{display:block;color:var(--muted);font-size:9px;margin-top:2px}.pill{display:inline-block;margin-top:6px;border-radius:999px;padding:3px 7px;font-size:8px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);color:var(--ice)}
+.detail{padding:18px 20px 30px}.eyebrow{color:var(--ice);font-size:9px;letter-spacing:.12em;text-transform:uppercase}.detail h1{font-size:clamp(25px,4vw,44px);line-height:1.06;letter-spacing:-.035em;margin:6px 0 10px}.lead{color:#a8b7c3;max-width:920px;margin:0 0 18px}.meta{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:20px}.meta span{font-size:9px;border:1px solid var(--line);border-radius:999px;padding:5px 8px;color:var(--muted)}
+section{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}section h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px;color:#dbe7ee}.rows{display:grid;gap:7px}.row{padding:10px 11px;border:1px solid rgba(177,220,245,.09);border-radius:12px;background:rgba(255,255,255,.018)}.row strong{font-size:11px}.row p{margin:3px 0 0;color:var(--muted);font-size:11px}.q{padding:10px 0;border-top:1px solid rgba(177,220,245,.08)}.q:first-child{border-top:0}.q b{color:var(--amber);font:600 10px ui-monospace,SFMono-Regular,Menlo,monospace}.q p{margin:3px 0 0;color:#dce7ee}
+pre{white-space:pre-wrap;word-break:break-word;padding:12px;border-radius:12px;background:#03080d;border:1px solid var(--line);color:#b9c9d4;font:10px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
+.empty{color:var(--muted);padding:30px}
+@media(max-width:780px){main{grid-template-columns:1fr}.sidebar{position:static}.detail{padding:16px}.list{display:grid;grid-template-columns:1fr 1fr}.bp{min-width:0}.gate{display:none}}
+@media(max-width:460px){.list{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><div class="mark">⌬</div><div class="title"><strong>Blueprint Farm</strong><span>planning machinery · execution gated</span></div><div class="gate">BF-01 · library only</div></header>
+<main>
+<aside class="sidebar"><div class="summary"><b id="count">—</b><p>Versioned blueprints. Planned work has no execution authority until separately released.</p></div><div class="list" id="list"></div></aside>
+<article class="detail" id="detail"><div class="empty">Loading Blueprint Farm…</div></article>
+</main>
+<script>
+(function(){
+'use strict';
+const list=document.getElementById('list'),detail=document.getElementById('detail'),count=document.getElementById('count');
+let lib=null,selected=null;
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const arr=v=>Array.isArray(v)?v:[];
+function rows(items,render){if(!items.length)return '<div class="row"><p>None recorded.</p></div>';return '<div class="rows">'+items.map(render).join('')+'</div>'}
+function sec(title,body){return '<section><h2>'+esc(title)+'</h2>'+body+'</section>'}
+async function loadJson(path){const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error(path+' · '+r.status);return r.json()}
+function renderList(){
+  list.innerHTML='';count.textContent=lib.blueprints.length+' blueprints';
+  lib.blueprints.forEach(x=>{const b=document.createElement('button');b.className='bp'+(selected===x.id?' on':'');b.innerHTML='<strong>'+esc(x.title)+'</strong><span>'+esc(x.role)+'</span><i class="pill">'+esc(x.status)+'</i>';b.onclick=()=>select(x);list.appendChild(b)});
+}
+async function select(entry){
+  selected=entry.id;renderList();detail.innerHTML='<div class="empty">Loading '+esc(entry.title)+'…</div>';
+  try{
+    const bp=await loadJson(entry.path);
+    const questions=arr(bp.openQuestions);
+    const slices=arr(bp.implementationSlices);
+    const evidence=arr(bp.knownEvidence);
+    const failures=arr(bp.failureModes);
+    const contracts=bp.dataContracts||{};
+    detail.innerHTML=
+      '<div class="eyebrow">'+esc(entry.status)+' · '+esc(entry.id)+'</div>'+
+      '<h1>'+esc(bp.title||entry.title)+'</h1>'+
+      '<p class="lead">'+esc(bp.objective||bp.correctedQuestion||'')+'</p>'+
+      '<div class="meta"><span>v'+esc(bp.version||1)+'</span><span>'+questions.length+' open questions</span><span>'+slices.length+' slices</span><span>execution: '+(entry.id==='master'?'BF-01 only':'none')+'</span></div>'+
+      sec('Page 0','<pre>'+esc(bp.page0||'')+'</pre>')+
+      sec('Corrected question','<div class="row"><p>'+esc(bp.correctedQuestion||'')+'</p></div>')+
+      sec('Known evidence',rows(evidence,x=>'<div class="row"><strong>'+esc(x.state||'evidence')+' · '+esc(x.ref||'')+'</strong><p>'+esc(x.claim||'')+'</p></div>'))+
+      sec('Open questions','<div>'+questions.map((q,i)=>'<div class="q"><b>Q'+String(i+1).padStart(2,'0')+'</b><p>'+esc(typeof q==='string'?q:q.question||JSON.stringify(q))+'</p></div>').join('')+'</div>')+
+      sec('Implementation slices',rows(slices,x=>'<div class="row"><strong>'+esc(x.id||'slice')+' · '+esc(x.name||'')+'</strong><p>Depends on: '+esc(arr(x.dependsOn).join(', ')||'none')+(x.buildNow?' · RELEASED NOW':' · planned')+'</p></div>'))+
+      sec('Failure modes',rows(failures,x=>'<div class="row"><strong>'+esc(x.id||'failure')+'</strong><p>'+esc(x.risk||x.containment||'')+(x.containment?' · '+esc(x.containment):'')+'</p></div>'))+
+      sec('Data contracts','<pre>'+esc(JSON.stringify(contracts,null,2))+'</pre>')+
+      sec('Maintenance','<pre>'+esc(JSON.stringify(bp.maintenanceModel||{},null,2))+'</pre>')+
+      sec('Acceptance',rows(arr(bp.acceptance||bp.doneCriteria),x=>'<div class="row"><p>'+esc(x)+'</p></div>'))+
+      sec('Rollback','<div class="row"><p>'+esc(bp.rollback||'Not specified')+'</p></div>');
+  }catch(e){detail.innerHTML='<div class="empty">Could not load blueprint: '+esc(e.message)+'</div>'}
+}
+loadJson('pulse-blueprint-farm-library.json').then(x=>{lib=x;renderList();select(lib.blueprints[0])}).catch(e=>{detail.innerHTML='<div class="empty">Blueprint Farm index unavailable: '+esc(e.message)+'</div>'});
+})();
+</script>
+</body>
+</html>
