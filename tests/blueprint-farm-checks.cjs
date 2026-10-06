@@ -65,15 +65,18 @@ for(const id of ['fabric-blueprint-farm-master','fabric-blueprint-farm-index','f
 const build=fs.readFileSync('build_pulse_v2.py','utf8');
 assert(build.includes("'blueprint-farm':"),'Pulse manifest rebuild must preserve Blueprint Farm');
 const agent=JSON.parse(fs.readFileSync('moor-agent.json','utf8'));
-assert(agent.blueprint_farm&&agent.blueprint_farm.current_release==='BF-01','canonical MOOR entry must expose BF-01');
+assert(agent.blueprint_farm&&agent.blueprint_farm.current_release==='BF-02','canonical MOOR entry must expose the latest explicit release');
 assert.equal(agent.blueprint_farm.automatic_next_slice,false,'Blueprint Farm must not auto-release later slices');
 
 const evergreen=fs.readFileSync('morverse-evergreen-library.js','utf8');
 assert(evergreen.includes("id:'blueprint-farm'"),'EVERGREEN Blueprint Stacks must expose the farm for physical inspection');
 const html=fs.readFileSync('blueprint-farm.html','utf8');
 assert(html.includes('pulse-blueprint-farm-library.json'));
+assert(html.includes('blueprint-choreography-core.js'));
+assert(html.includes('blueprint-comparison-core.js'));
+assert(html.includes('Farm intelligence'));
 assert(html.includes('execution:'));
 assert(!html.includes('spawnWorker('));
 assert(!html.includes('EXECUTION_AUTHORIZED'));
 
-console.log('PASS: Blueprint Farm contains six end-to-end plans, preserves open questions, releases only BF-01, encodes deterministic recipe/worker/factory/maintenance contracts, and exposes a read-only inspection surface.');
+console.log('PASS: Blueprint Farm preserves the original BF-01 plan, records later owner/Funnel releases separately, exposes BF-02 cross-blueprint intelligence, and remains read-only/release-gated.');
