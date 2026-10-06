@@ -43,7 +43,7 @@ function words(s){
   return text(s).toLowerCase().replace(/[^a-z0-9:_-]+/g,' ').split(/\s+/).filter(Boolean);
 }
 function isExplicitRef(s){
-  return /^(concept|intent|component|generator|recipe|artifact|blueprint|rule|requirement|evidence|failure|project|version|implementation|training|dataset|example|preference|critique):[a-z0-9:_-]+$/i.test(text(s));
+  return /^(concept|intent|component|generator|recipe|artifact|blueprint|rule|requirement|evidence|failure|project|version|implementation|training|dataset|example|preference|critique|capability|assembly|composition|handoff|learning):[a-z0-9:_-]+$/i.test(text(s));
 }
 function retrievalIntent(s){
   return /^(find|search|lookup|look up|show me|where is|what is|what are|references? for)\b/i.test(text(s));
@@ -72,7 +72,17 @@ function exactReference(s){
 }
 function referencePacket(s){
   if(window.PulseReferences&&window.PulseReferences.packet)return window.PulseReferences.packet(s,8);
-  return {query:s,concepts:[],recipes:[],implementations:[],rules:[],failures:[],evidence:[],intents:[]};
+  return {query:s,concepts:[],recipes:[],implementations:[],rules:[],failures:[],evidence:[],intents:[],capabilities:[],assemblies:[],compositions:[],handoffs:[],learning:[]};
+}
+function refineryStat(type,data){
+  try{if(window.MoorCapabilityMemory&&typeof window.MoorCapabilityMemory.recordUse==='function')window.MoorCapabilityMemory.recordUse(type,data||{});}catch(e){}
+}
+function noteReferenceUse(ref,requestId,route){
+  if(!ref)return;
+  if(ref.kind==='capability')refineryStat('capability_reference_retrieved',{reference_id:ref.id,request_id:requestId,route:route||'reference'});
+  if(ref.kind==='assembly')refineryStat('assembly_reference_retrieved',{reference_id:ref.id,request_id:requestId,route:route||'reference'});
+  if(ref.kind==='handoff')refineryStat('capability_handoff_retrieved',{reference_id:ref.id,request_id:requestId,route:route||'reference'});
+  if(ref.kind==='composition')refineryStat('composition_reference_retrieved',{reference_id:ref.id,request_id:requestId,route:route||'reference',status:ref.status||null});
 }
 function tryOpen(ref){
   if(!ref)return false;
@@ -106,10 +116,18 @@ function openKernel(req,refs){
   var session=k.open({request_id:req.id,input:req.input,source:req.source,context:req.context});
   if(session.stage==='page0'){
     var reused=[];
-    ['concepts','recipes','implementations','rules','failures','evidence','intents'].forEach(function(kind){
+    ['concepts','recipes','implementations','rules','failures','evidence','intents','capabilities','assemblies','compositions','handoffs','learning'].forEach(function(kind){
       (refs&&refs[kind]||[]).forEach(function(r){reused.push({kind:kind,id:r.id||r.source_id||null,title:r.title||null});});
     });
     session=k.advance({request_id:req.id,stage:'references',payload:{reused:reused,missing:[]},provenance:'learned'});
+    var capCount=(refs.capabilities||[]).length,assemblyCount=(refs.assemblies||[]).length,handoffCount=(refs.handoffs||[]).length,compositionCount=(refs.compositions||[]).length;
+    if(capCount||assemblyCount||handoffCount||compositionCount){
+      refineryStat('capability_handoff_consumed_by_funnel',{request_id:req.id,capabilities:capCount,assemblies:assemblyCount,handoffs:handoffCount,compositions:compositionCount});
+      (refs.capabilities||[]).forEach(function(x){noteReferenceUse(x,req.id,'funnel');});
+      (refs.assemblies||[]).forEach(function(x){noteReferenceUse(x,req.id,'funnel');});
+      (refs.handoffs||[]).forEach(function(x){noteReferenceUse(x,req.id,'funnel');});
+      (refs.compositions||[]).forEach(function(x){noteReferenceUse(x,req.id,'funnel');});
+    }
   }
   return session;
 }
@@ -132,11 +150,16 @@ async function request(arg){
   var ref=exactReference(input);
   if(ref&&(isExplicitRef(input)||navigationIntent(input))){
     var opened=navigationIntent(input)?tryOpen(ref):false;
+    noteReferenceUse(ref,req.id,opened?'navigation':'reference');
+    if(ref.kind==='capability'||ref.kind==='assembly'||ref.kind==='handoff'||(ref.kind==='composition'&&ref.status==='machine-verified'))refineryStat('request_resolved_from_reference',{request_id:req.id,reference_id:ref.id,kind:ref.kind});
     return {request_id:req.id,route:opened?'navigation':'reference',status:'resolved',provenance:'learned',context:ctx,result:{reference:ref,opened:opened}};
   }
 
   if(retrievalIntent(input)&&!buildIntent(input)){
-    return {request_id:req.id,route:'reference',status:'resolved',provenance:'learned',context:ctx,result:referencePacket(input)};
+    var rp=referencePacket(input);
+    ['capabilities','assemblies','handoffs','compositions'].forEach(function(k){(rp[k]||[]).forEach(function(x){noteReferenceUse(x,req.id,'reference-search');});});
+    if((rp.capabilities||[]).length||(rp.assemblies||[]).length||(rp.handoffs||[]).length)refineryStat('request_resolved_from_reference',{request_id:req.id,kind:'packet'});
+    return {request_id:req.id,route:'reference',status:'resolved',provenance:'learned',context:ctx,result:rp};
   }
 
   if(arg.forceFunnel||buildIntent(input)){
@@ -167,8 +190,10 @@ async function request(arg){
   }
 
   var refs=referencePacket(input);
-  var hasKnown=(refs.concepts&&refs.concepts.length)||(refs.implementations&&refs.implementations.length)||(refs.recipes&&refs.recipes.length);
+  var hasKnown=(refs.concepts&&refs.concepts.length)||(refs.implementations&&refs.implementations.length)||(refs.recipes&&refs.recipes.length)||(refs.capabilities&&refs.capabilities.length)||(refs.assemblies&&refs.assemblies.length)||(refs.handoffs&&refs.handoffs.length)||(refs.compositions&&refs.compositions.some(function(x){return x.status==='machine-verified';}));
   if(hasKnown){
+    ['capabilities','assemblies','handoffs','compositions'].forEach(function(k){(refs[k]||[]).forEach(function(x){noteReferenceUse(x,req.id,'reference-resolve');});});
+    refineryStat('request_resolved_from_reference',{request_id:req.id,kind:'packet'});
     return {request_id:req.id,route:'reference',status:'resolved',provenance:'learned',context:ctx,result:refs};
   }
 
@@ -189,7 +214,7 @@ function statusText(r){
   if(r.route==='navigation')return 'Opened';
   if(r.route==='reference'){
     var x=r.result||{},n=0;
-    ['concepts','recipes','implementations','rules','evidence','intents'].forEach(function(k){n+=(x[k]||[]).length;});
+    ['concepts','recipes','implementations','rules','evidence','intents','capabilities','assemblies','compositions','handoffs'].forEach(function(k){n+=(x[k]||[]).length;});
     return 'References'+(n?' · '+n:'');
   }
   return r.route+' · '+r.status;
