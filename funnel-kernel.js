@@ -167,6 +167,11 @@ function advance(arg){
     if(!text(payload.destination).trim())throw Error('Verdict requires destination.');
     if(!Array.isArray(payload.done_criteria)||!payload.done_criteria.length)throw Error('Verdict requires done criteria.');
     var replay=s.stages.replay;if(!replay)throw Error('Page 0 replay is required before verdict.');
+    if(!payload.spec||typeof payload.spec!=='object'||Array.isArray(payload.spec))throw Error('Verdict spec must be a structured object.');
+    if(!Array.isArray(payload.spec.obligations))throw Error('Verdict spec must carry the Page 0 obligation ledger.');
+    var replayIds=(replay.obligations||[]).map(function(o){return o.id;}).sort();
+    var verdictIds=payload.spec.obligations.map(function(o){return o&&o.id;}).filter(Boolean).sort();
+    if(stable(replayIds)!==stable(verdictIds))throw Error('Verdict omitted or changed replay obligations.');
     var verdictEvent=append('stage',id,Object.assign({stage:to},payload),prov);
     var receipt=receiptFor(id,payload,verdictEvent.hash,s.stages.page0.raw_hash);
     append('receipt',id,receipt,'system');
