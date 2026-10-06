@@ -26,14 +26,8 @@ Law.transition(id,'BLUEPRINT_READY',{blueprint:'blueprint/pulse-luxe-ui.blueprin
 
 const br=Law.mintReceipt(id,'BlueprintReceipt',blueprint,'ultra-law',[],R.hash({ui:true,mobile:true}));
 assert(R.verify(br));
-Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,obligations:[
-  'actual UI build, not image',
-  'system-wide visual law',
-  'mobile interaction fixed',
-  'current Funnel visible in 3D',
-  'ice/white + emerald palette',
-  'Ultra not silently promoted'
-]},'ultra-law');
+const replayObligations=Law.extractObligations(page0).map(o=>({...o,status:'satisfied'}));
+Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,page0_hash:Law.get(id).page0_hash,obligations:replayObligations,substitutions:[]},'ultra-law');
 Law.transition(id,'EXECUTION_AUTHORIZED',{blueprint_receipt:br.fingerprint,destination:'Project Pulse'},'ultra-law');
 const er=Law.mintReceipt(id,'ExecutionReceipt',{destination:'Project Pulse',blueprint:'blueprint/pulse-luxe-ui.blueprint.json'},'ultra-law',[br.fingerprint],R.hash({files:blueprint.implementation}));
 assert(R.verify(er));
