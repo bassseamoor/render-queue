@@ -11,8 +11,9 @@ assert(css.includes('body.funnel-env'),'Funnel environment must share Luxe law')
 assert(!css.includes('#c9a7ff'),'Core Luxe shell must not use legacy purple accent');
 
 const dash=fs.readFileSync('pulse-dashboard.html','utf8');
-assert(dash.includes('moor-luxe.css?v=20261006-luxe1'));
-assert(dash.includes('moor-luxe.js?v=20261006-luxe1'));
+assert(dash.includes('pulse-creation-deck.css?v=20261006-deck1'),'Pulse shell must now use Creation Deck');
+assert(dash.includes('pulse-creation-deck.js?v=20261006-deck1'),'Pulse shell must mount Creation Deck runtime');
+assert(!dash.includes('moor-luxe.js?v=20261006-luxe1'),'old Luxe shell must not remain active on Pulse');
 
 const env=fs.readFileSync('funnel-environment.html','utf8');
 assert(env.includes('class="funnel-env"'));
@@ -43,4 +44,4 @@ const luxe=fs.readFileSync('moor-luxe.js','utf8');
 assert(luxe.includes("document.querySelectorAll('iframe')"));
 assert(luxe.includes("classList.add(cls)"));
 
-console.log('PASS: Luxe UI uses one shared spatial law, fixes mobile command/dock collision, propagates into Pulse tools, and renders active/candidate Funnel laws as real 3D graph geometry');
+console.log('PASS: Luxe remains on the 3D Funnel environment while Pulse uses the newer Creation Deck shell; current-law geometry and live independent tool routing remain intact');
