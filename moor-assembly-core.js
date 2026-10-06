@@ -29,14 +29,22 @@ function normalizeContract(input){
   c.content_hash=hash(c);return c;
 }
 function verifyContract(c){if(!c||c.schema!==SCHEMA||c.version!==VERSION||!c.content_hash)return false;const x=clone(c),h=x.content_hash;delete x.content_hash;return hash(x)===h;}
+function emitStat(type,data){
+  const detail={type,data:clone(data||{}),at:new Date().toISOString()};
+  try{if(root&&root.MoorCapabilityMemory&&typeof root.MoorCapabilityMemory.recordUse==='function')root.MoorCapabilityMemory.recordUse(type,detail.data);}catch(e){}
+  try{if(root&&root.dispatchEvent)root.dispatchEvent(new CustomEvent('moor:assembly-stat',{detail}));}catch(e){}
+  try{if(root&&root.parent&&root.parent!==root)root.parent.postMessage({type:'moor:assembly-stat',detail},'*');}catch(e){}
+}
 async function execute(contract,opts){
-  opts=opts||{};if(!verifyContract(contract))return {ok:false,status:'INVALID_CONTRACT',error:'Assembly contract hash/schema failed.'};
-  const missing=contract.required_executors.filter(x=>!executors.has(x));if(missing.length)return {ok:false,status:'MISSING_EXECUTOR',missing,required_executors:contract.required_executors.slice()};
+  opts=opts||{};emitStat('assembly_attempted',{contract_hash:contract&&contract.content_hash||null,artifact_id:contract&&contract.artifact_id||null});
+  if(!verifyContract(contract)){emitStat('assembly_failed',{reason:'invalid-contract'});return {ok:false,status:'INVALID_CONTRACT',error:'Assembly contract hash/schema failed.'};}
+  const missing=contract.required_executors.filter(x=>!executors.has(x));if(missing.length){emitStat('assembly_missing_executor',{contract_hash:contract.content_hash,missing});return {ok:false,status:'MISSING_EXECUTOR',missing,required_executors:contract.required_executors.slice()};}
   const ctx={state:clone(opts.state||{}),outputs:{},contract,log:[],services:opts.services||{}};
   try{
     for(const op of contract.operations){const ex=executors.get(op.op);const res=await ex.fn(clone(op.args),ctx);ctx.log.push({operation:op.id,op:op.op,ok:!(res&&res.ok===false),result:clone(res||null)});if(res&&res.ok===false)throw Error(res.error||('executor failed '+op.op));}
+    emitStat('assembly_succeeded',{contract_hash:contract.content_hash,artifact_id:contract.artifact_id,operations:contract.operations.length});
     return {ok:true,status:'ASSEMBLED',state:ctx.state,outputs:ctx.outputs,log:ctx.log,contract_hash:contract.content_hash};
-  }catch(e){return {ok:false,status:'ASSEMBLY_FAILED',error:String(e&&e.message||e),state:ctx.state,outputs:ctx.outputs,log:ctx.log,contract_hash:contract.content_hash};}
+  }catch(e){emitStat('assembly_failed',{contract_hash:contract.content_hash,error:String(e&&e.message||e)});return {ok:false,status:'ASSEMBLY_FAILED',error:String(e&&e.message||e),state:ctx.state,outputs:ctx.outputs,log:ctx.log,contract_hash:contract.content_hash};}
 }
 function listExecutors(){return [...executors.entries()].map(([name,x])=>({name,meta:clone(x.meta)}));}
 return Object.freeze({schema:SCHEMA,version:VERSION,hash,stable,normalizeContract,createContract:normalizeContract,verifyContract,registerExecutor,execute,listExecutors,getPath,setPath});
