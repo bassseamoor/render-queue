@@ -132,6 +132,13 @@ function init(){
   return [
    seedProject('moor-whole-blueprint','MOOR Whole Blueprint','◇','The whole-product blueprint: audited offer, 645 cards, dependency order, editable connections, reference previews and complete context export.',[pageItem('moor-whole-blueprint','MOOR Whole Blueprint','moor-blueprint.html','Audited baseline and editable versions.'),pageItem('moor-whole-blueprint-data','Complete graph data','blueprint/moor-blueprint-data.json','Source ledger, specifications and build dependencies.')],'moor-blueprint.html',false),
    seedProject('funnel','Funnel','🌀','The sealed v44 Funnel system: immutable Page 0, references, distill, decisions, replay, verdict receipts, workers, verification, Engine, Foundry, and versions.',funnelMembers(),'quiz-funnel-v3.html',false),
+   seedProject('evergreen-public-library','EVERGREEN Public Library','♜','The first public Blueprint Library world in the Morverse: a luxurious civic campus for learning, building, gathering, preserving and compounding reusable knowledge.',[
+    pageItem('evergreen-world-runtime','EVERGREEN world','morverse-evergreen-library.html','Traversable first-campus architectural slice.'),
+    pageItem('evergreen-world-blueprint','End-to-end world blueprint','blueprints/evergreen-public-library-world.json','Frozen Page 0, governance, architecture, social program, implementation, verification and six expansion phases.'),
+    virtualItem('evergreen-public-covenant','Public-use covenant','Public canonical holdings, visible provenance, durable history, no forced publication of private drafts.'),
+    virtualItem('evergreen-social-program','Social program','Lectures, salons, build nights, mentorship, reading circles, meals, steward open houses and festivals.'),
+    virtualItem('evergreen-expansions','Planetary expansions','Conservatory Belt → College of Making → regional branches → transit ring → symposium planet → interworld exchange.')
+   ],'morverse-evergreen-library.html',false),
    seedProject('project-pulse','Project Pulse','◈','The Project Pulse environment itself — inventory, tools, projects, and the Funnel surface.',[componentItem('project-pulse')],'pulse-dashboard.html',false),
    seedProject('procedural-generators','Procedural Generators','⚙','Every current Pulse component explicitly tagged as a generator, kept together as one heavyweight generator project.',generatorMembers(),null,false),
    seedProject('render-studio','Render Studio','◫','The unified rendering/creative studio as a complete project.',[componentItem('render-studio')],comp('render-studio')?.page||null,false),
