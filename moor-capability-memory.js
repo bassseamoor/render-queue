@@ -73,7 +73,7 @@ function stats(){
 }
 
 function types(x){return [...new Set((Array.isArray(x)?x:[]).map(v=>String(v).trim().toLowerCase()).filter(Boolean))].sort();}
-const GENERIC_TERMS=new Set(['moor','capability','capabilities','system','tool','tools','app','apps','component','components','reusable','new','change','changed','version','verified','artifact']);
+const GENERIC_TERMS=new Set(['moor','capability','capabilities','system','tool','tools','app','apps','component','components','reusable','new','change','changed','version','verified','artifact','test']);
 function words(v){return [...new Set(String(v||'').toLowerCase().replace(/[_:.\/→-]+/g,' ').match(/[a-z0-9][a-z0-9]{1,}/g)||[])].filter(x=>!GENERIC_TERMS.has(x));}
 function semanticTerms(c){return new Set([c.capability_id].concat(c.provides||[],c.requires||[],c.input_types||[],c.output_types||[],c.events||[]).flatMap(words));}
 function intersectSets(a,b){return [...a].filter(x=>b.has(x)).sort();}
@@ -127,7 +127,7 @@ function reconsiderDelta(deltaCaps,opts){
     if(r.score>=2)relevanceRows.push({from:a.capability_id,to:b.capability_id,from_version:a.version,to_version:b.version,score:r.score,terms:r.terms,provides:r.provides,typed:r.typed});
     r.typed.forEach(link=>{
       const typedStrong=link.match==='exact'||link.match==='adapter';
-      if((typedStrong&&r.score>=5)||(link.match==='generic'&&r.score>=5&&r.terms.length>0)){const c=createComposition(a,b,link,r.score,r.terms);if(c)made.push(c);}
+      if((typedStrong&&r.score>=5)||(link.match==='generic'&&r.score>=5&&r.terms.length>0&&r.provides.length>0)){const c=createComposition(a,b,link,r.score,r.terms);if(c)made.push(c);}
     });
   }
   (deltaCaps||[]).forEach(d=>{
