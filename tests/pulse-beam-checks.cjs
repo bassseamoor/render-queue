@@ -19,7 +19,7 @@ const beam=fs.readFileSync('pulse-beam.js','utf8');
 assert(beam.includes("{id:'create',label:'Create'"));
 assert(beam.includes("{id:'funnel',label:'Funnel Hall'"));
 assert(beam.includes("interactiveTarget(e.target)"),'global swipe must reject interactive component targets');
-assert(beam.includes("data-space="'+s.id+'""),'visible space controls must exist');
+assert(beam.includes("data-space=\"'+s.id+'\""),'visible space controls must exist');
 assert(beam.includes("beam:navigate"),'Funnel Hall must hand navigation back to shell');
 assert(beam.includes("beam:open-component"),'Hall must open real Pulse tools');
 
