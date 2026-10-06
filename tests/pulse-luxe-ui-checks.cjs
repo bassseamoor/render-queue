@@ -11,8 +11,8 @@ assert(css.includes('body.funnel-env'),'Funnel environment must share Luxe law')
 assert(!css.includes('#c9a7ff'),'Core Luxe shell must not use legacy purple accent');
 
 const dash=fs.readFileSync('pulse-dashboard.html','utf8');
-assert(dash.includes('pulse-beam.css'),'Pulse shell must now use Pulse Beam');
-assert(dash.includes('pulse-beam.js'),'Pulse shell must mount Pulse Beam runtime');
+assert(dash.includes('pulse-beam.css?v=20261006-beam1'),'Pulse shell must now use Pulse Beam');
+assert(dash.includes('pulse-beam.js?v=20261006-beam1'),'Pulse shell must mount Pulse Beam runtime');
 assert(!dash.includes('moor-luxe.js?v=20261006-luxe1'),'old Luxe shell must not remain active on Pulse');
 
 const env=fs.readFileSync('funnel-environment.html','utf8');
