@@ -664,7 +664,7 @@ const STAGES=[["intake","1 · Ramble"],["spec","2 · Spec"],["holes","3 · Holes
 let H=null;
 function freshH(){ return {stage:"intake",ramble:"",spec:null,holes:[],fit:[],jobs:[],
   workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],training:[],auto:false,
-  funnelReceipt:null,funnelRequestId:null,page0:null,funnelSpec:null}; }
+  funnelReceipt:null,funnelRequestId:null,page0:null,funnelSpec:null,executionClaim:null}; }
 const NAMEPOOL=["Anvil","Bishop","Cinder","Drift","Ember","Flint","Gale","Harbor","Iris","Jolt","Kestrel","Lumen","Mesa","North","Onyx","Pico"];
 function initWorkers(){ const pool=NAMEPOOL.slice();
   const mk=(role)=>{ const r=ROLESPEC[role];
@@ -677,7 +677,7 @@ function renderStages(){ $("#stages").innerHTML=STAGES.map(s=>{
   const i=STAGES.findIndex(x=>x[0]===s[0]), cur=STAGES.findIndex(x=>x[0]===H.stage);
   const cls=s[0]===H.stage?"on":(i<cur?"done":"");
   return '<button class="stg '+cls+'" data-s="'+s[0]+'">'+s[1]+'</button>'; }).join("");
-  document.querySelectorAll(".stg").forEach(b=>b.onclick=()=>{ H.stage=b.dataset.s; render(); }); }
+  document.querySelectorAll(".stg").forEach(b=>{b.disabled=true;b.title="Stage order is locked; use pipeline controls.";}); }
 
 /* ---------- stage: intake ---------- */
 const SAMPLE_RAMBLE="I want a mobile app for gym owners to track invoices and send reminders. People sign in with their phone number. Dark mode. It should work offline.";
@@ -863,9 +863,9 @@ function vLedger(){
 /* ================= SEALED FUNNEL HANDOFF ================= */
 const HARNESS_INBOX_KEY="moor-harness-inbox-v1";
 function harnessKernel(){ return window.MOORFunnelKernel||null; }
-function verifiedHarnessReceipt(input,receipt){
+function verifiedHarnessGrant(input,claim,receipt){
   const k=harnessKernel();
-  return !!(k&&receipt&&k.verifyReceipt(receipt)&&k.hash(String(input||""))===receipt.page0_hash);
+  return !!(k&&claim&&receipt&&k.verifyConsumedClaim(claim)&&claim.receipt_fingerprint===receipt.fingerprint&&k.hash(String(input||""))===receipt.page0_hash);
 }
 function specFromVerdict(packet,input){
   const fs=(packet&&packet.spec)||{}, base=compileSpec(input);
@@ -883,18 +883,23 @@ function specFromVerdict(packet,input){
   return base;
 }
 function ingestHarnessHandoff(h){
-  if(!h||h.schema!=="moor.harness-inbox"||!h.verdict_packet)return false;
-  const p=h.verdict_packet, receipt=p.funnel_receipt;
-  if(!verifiedHarnessReceipt(h.input,receipt)){log("<b>handoff refused</b> — invalid Funnel receipt");return false;}
-  H.page0=String(h.input||"");
-  H.ramble="[sealed Page 0 · "+receipt.request_id+"]";
+  if(!h||h.schema!=="moor.harness-inbox"||h.version!==2||!h.execution_claim)return false;
+  const k=harnessKernel(),claim=h.execution_claim,input=String(h.input||"");
+  if(!k||k.hash(input)!==claim.page0_hash){log("<b>handoff refused</b> — claim does not match Page 0");return false;}
+  let p=null;
+  try{p=k.consumeClaim(claim);}catch(e){log("<b>handoff refused</b> — "+esc(String(e&&e.message||e)));return false;}
+  const receipt=p.funnel_receipt;
+  if(k.hash(input)!==receipt.page0_hash){log("<b>handoff refused</b> — consumed claim/Page 0 mismatch");return false;}
+  H.page0=input;
+  H.ramble="[armored Page 0 · "+receipt.request_id+"]";
   H.spec=specFromVerdict(p,H.page0);
   H.funnelSpec=clone(p.spec||{});
   H.funnelReceipt=clone(receipt);
+  H.executionClaim=clone(p.execution_claim);
   H.funnelRequestId=receipt.request_id;
   H.stage="spec";
   try{store.remove(HARNESS_INBOX_KEY);}catch(e){}
-  log("<b>Funnel receipt verified ✓</b> — "+esc(receipt.fingerprint));
+  log("<b>Funnel execution claim consumed ✓</b> — "+esc(claim.claim_id));
   return true;
 }
 function consumeHarnessInbox(){
@@ -902,8 +907,8 @@ function consumeHarnessInbox(){
   return ingestHarnessHandoff(h);
 }
 function harnessExecutionGate(){
-  const ok=verifiedHarnessReceipt(H.page0,H.funnelReceipt);
-  if(!ok)log("<b>execution refused</b> — Harness requires a valid Funnel receipt for this exact Page 0");
+  const ok=verifiedHarnessGrant(H.page0,H.executionClaim,H.funnelReceipt);
+  if(!ok)log("<b>execution refused</b> — Harness requires one consumed Funnel claim bound to this exact Page 0");
   return ok;
 }
 async function routeRawIntakeToFunnel(raw,context){
