@@ -168,6 +168,32 @@ function ingestCrystalBundle(bundle,outputRef){
       if(from)addEdge(from.id,rr.id,'feeds','typed-output');
       if(to)addEdge(rr.id,to.id,'feeds','typed-input');
     });
+    Object.keys(snap.failures||{}).forEach(function(id){
+      var x=snap.failures[id];
+      var fr=addReference({id:id,kind:'failure',title:'Capability failure · '+(x.source_capability||x.target_capability||'relationship'),
+        summary:x.reason||'Reusable negative evidence.',status:'failed',source:sourceName,source_id:x.source_capability||sid,
+        provenance:'verified',data:x});
+      var from=S.refs.find(function(r){return r.kind==='capability'&&r.data&&r.data.capability_id===x.source_capability;});
+      var to=S.refs.find(function(r){return r.kind==='capability'&&r.data&&r.data.capability_id===x.target_capability;});
+      if(from)addEdge(from.id,fr.id,'failed_because','cumulative-memory');
+      if(to)addEdge(fr.id,to.id,'warns_against','cumulative-memory');
+    });
+    var latest=(snap.reconsiderations||[]).slice(-1)[0];
+    if(latest){
+      var rr=addReference({id:latest.reconsideration_id,kind:'learning',title:'Cumulative reconsideration',
+        summary:(latest.delta||[]).map(function(x){return x.capability_id+'@'+x.version;}).join(', ')+' reconsidered against relevant existing machinery.',
+        status:'observed',source:sourceName,source_id:'capability-memory',provenance:'procedural',data:latest});
+      (latest.candidate_ids||[]).forEach(function(cid){if(S.refs.some(function(r){return r.id===cid;}))addEdge(rr.id,cid,'surfaced_candidate','cumulative-memory');});
+      (latest.failure_ids||[]).forEach(function(fid){if(S.refs.some(function(r){return r.id===fid;}))addEdge(rr.id,fid,'recalled_failure','cumulative-memory');});
+    }
+    if(typeof window.MoorCapabilityMemory.abstractionCandidates==='function'){
+      window.MoorCapabilityMemory.abstractionCandidates().forEach(function(a){
+        var ar=addReference({id:a.abstraction_id,kind:'rule',title:'Abstraction candidate · '+a.relation_type,
+          summary:a.supporting_composition_ids.length+' verified relationships repeat this pattern. Candidate only; not law.',
+          status:'specified-not-verified',source:sourceName,source_id:'capability-memory',provenance:'inferred',data:a});
+        (a.supporting_composition_ids||[]).forEach(function(cid){if(S.refs.some(function(r){return r.id===cid;}))addEdge(cid,ar.id,'supports_abstraction','cumulative-memory');});
+      });
+    }
   }
   return bundle;
 }
