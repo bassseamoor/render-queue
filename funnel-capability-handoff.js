@@ -21,6 +21,7 @@ function publish(packetOrBundle){
   const packet=packetOrBundle&&packetOrBundle.schema==='moor.capability-handoff'?clone(packetOrBundle):makePacket(packetOrBundle);
   if(!packet.verified_capabilities.length)return {published:false,reason:'no verified capabilities',packet};
   const rs=refs(packet);try{if(root&&root.PulseReferences)rs.forEach(r=>root.PulseReferences.add(r));}catch(e){}
+  try{if(root&&root.MoorCapabilityMemory&&typeof root.MoorCapabilityMemory.recordUse==='function')root.MoorCapabilityMemory.recordUse('handoff_published',{handoff_id:packet.handoff_id,capabilities:packet.verified_capabilities.length});}catch(e){}
   try{if(root&&root.localStorage){let q=JSON.parse(root.localStorage.getItem(KEY)||'[]');if(!Array.isArray(q))q=[];if(!q.some(x=>x.handoff_id===packet.handoff_id))q.push(packet);root.localStorage.setItem(KEY,JSON.stringify(q.slice(-500)));}}catch(e){}
   try{if(root&&root.dispatchEvent)root.dispatchEvent(new CustomEvent('moor:capability-handoff',{detail:packet}));}catch(e){}
   return {published:true,packet,references:rs};
