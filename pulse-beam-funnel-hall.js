@@ -150,7 +150,7 @@ for(const e of (twinValid?(twin.routes||[]):[]).slice(0,low?36:120)){
   factoryGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve,10,.009,4,false),glow(col,state==='supersedes'?.48:.17)));
 }
 scene.add(ring(20.2,.06,GREEN,.045,low?64:128),ring(24.2,.06,AMBER,.035,low?64:128));
-/* Real work-in-progress packets. Empty plant state renders no fake activity. */
+/* Real WIP packets from FactoryTwinSnapshot. Raw plant state only enriches inspection. */
 const workOrderGroup=new THREE.Group();scene.add(workOrderGroup);
 function workColor(state){
   if(state==='NONCONFORMING')return RED;
@@ -159,17 +159,28 @@ function workColor(state){
   if(state==='IN_PROCESS'||state==='INSPECTION')return CYAN;
   return ICE;
 }
-const wipOrders=(plant.orders||[]).filter(o=>o.state!=='RELEASED').slice(0,low?12:32);
-wipOrders.forEach((o,i)=>{
-  const a=(i/Math.max(1,wipOrders.length))*Math.PI*2-Math.PI/2,r=12.65,c=workColor(o.state);
-  const g=new THREE.Group();g.position.set(Math.cos(a)*r,1.05+(i%2)*.22,Math.sin(a)*r);workOrderGroup.add(g);
-  const packet=new THREE.Mesh(new THREE.BoxGeometry(.5,.18,.32),glow(c,.72));g.add(packet);
-  g.add(beam(new THREE.Vector3(-.34,0,0),new THREE.Vector3(.34,0,0),c,.012,.62));
-  const n={id:'work-order.'+o.work_order_id,label:o.work_order_id,type:'work-order',detail:o.objective||'Software work order',work_order:o};
-  const p=new THREE.Mesh(new THREE.BoxGeometry(.9,.8,.9),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));p.userData.node=n;g.add(p);pickables.push(p);
+const rawOrderById=new Map((plant.orders||[]).map(o=>[o.work_order_id,o]));
+const workZoneRadius={intake:8.7,planning:10.6,'work-cells':12.65,qc:14.3,rework:16.2,release:18.1};
+const wipOrders=(twinValid?(twin.work_orders||[]):[]).filter(o=>o.status!=='RELEASED').slice(0,low?12:32);
+const workZones={};
+wipOrders.forEach(o=>{
+  const binding=twinBindings.get('work-order:'+o.work_order_id)||{},zone=binding.anchor_zone||o.location_hint||'planning';
+  (workZones[zone]||(workZones[zone]=[])).push(o);
 });
-if(wipOrders.length)scene.add(ring(12.65,.95,ICE,.055,low?64:128));
-
+Object.entries(workZones).forEach(([zone,orders],zi)=>{
+  const r=workZoneRadius[zone]||10.6;
+  orders.forEach((o,i)=>{
+    const a=(i/Math.max(1,orders.length))*Math.PI*2-Math.PI/2+zi*.09,col=workColor(o.status);
+    const g=new THREE.Group();g.position.set(Math.cos(a)*r,1.05+(i%2)*.22,Math.sin(a)*r);workOrderGroup.add(g);
+    const packet=new THREE.Mesh(new THREE.BoxGeometry(.5,.18,.32),glow(col,.72));g.add(packet);
+    g.add(beam(new THREE.Vector3(-.34,0,0),new THREE.Vector3(.34,0,0),col,.012,.62));
+    const raw=rawOrderById.get(o.work_order_id)||null;
+    const detail=raw||{work_order_id:o.work_order_id,state:o.status,objective:o.objective,owner:'FactoryTwinSnapshot',authorization:null,travelers:[],inspections:[],bom:null};
+    const node={id:'work-order.'+o.work_order_id,label:o.work_order_id,type:'work-order',detail:o.objective||'Software work order',work_order:detail,twin_work_order:o,twin_binding:twinBindings.get('work-order:'+o.work_order_id)||null};
+    const p=new THREE.Mesh(new THREE.BoxGeometry(.9,.8,.9),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));p.userData.node=node;g.add(p);pickables.push(p);
+  });
+  scene.add(ring(r,.95,zone==='rework'?AMBER:zone==='qc'?GREEN:ICE,.045,low?64:128));
+});
 const drones=[];if(!low)for(let i=0;i<6;i++){const g=new THREE.Group(),body=new THREE.Mesh(new THREE.OctahedronGeometry(.13,0),mats.metal),lamp=new THREE.Mesh(new THREE.BoxGeometry(.04,.04,.18),glow(i===0?GREEN:ICE,.72));g.add(body,lamp);g.userData={radius:9+i*2.3,phase:unit('drone:'+i)*Math.PI*2,height:3.2+(i%3)*1.4,speed:.028+i*.005};scene.add(g);drones.push(g)}
 const funnels=graph.nodes.filter(n=>n.type==='funnel'),law=graph.currentLaw||{},systems=maintenance.systems||[],
   gapCount=systems.filter(s=>(s.display_state||s.visual_state)==='gap').length,
