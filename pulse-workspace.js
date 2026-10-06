@@ -332,6 +332,13 @@ function init(){
 
  const pending=params.get('component')||(typeof UI!=='undefined'?UI.focus:null);
  if(pending&&comp(pending)){originalOpen(pending);}
- window.PulseFunnel={show:show,get state(){return state},selectProject:id=>{if(projectById(id)){selected=id;save();show();}},queueBeta:()=>{selected='moor-beta';save();show();},duplicate:(projectId,versionId)=>{const p=projectById(projectId),v=p&&versionById(p,versionId);if(p&&v)duplicateVersion(p,v);}};
+ window.PulseFunnel={
+  show:show,
+  get state(){return state},
+  selectProject:id=>{if(projectById(id)){selected=id;save();show();}},
+  queueBeta:()=>{selected='moor-beta';save();show();},
+  duplicate:(projectId,versionId)=>{const p=projectById(projectId),v=p&&versionById(p,versionId);if(p&&v)duplicateVersion(p,v);},
+  resolve:(input,opts)=>{opts=Object.assign({},opts||{},{input:input,source:(opts&&opts.source)||'PulseFunnel.resolve',forceFunnel:true});return window.MOOR&&MOOR.request?MOOR.request(opts):(window.PulseSpine&&PulseSpine.request?Promise.resolve({route:'funnel',status:'queued',result:PulseSpine.request(input,opts.context||{},opts.source)}):Promise.reject(new Error('MOOR request router unavailable')));}
+ };
 }
 })();
