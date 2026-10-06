@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Moor Beta — World Shell</title>
+<style>
+/* BETA-APP-CSS */
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <div id="hud-top">
+    <button id="world-chip" aria-label="Worlds"><span class="wic" data-wicon="globe"></span><span id="world-name">…</span></button>
+    <span style="display:flex;gap:8px;pointer-events:auto" id="hud-btns">
+      <button id="acct-btn" title="People" aria-label="People"><span class="wic" data-wicon="person"></span></button>
+      <button id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo">↩</button>
+      <button id="map-btn" title="Map (M)" aria-label="Map"><span class="wic" data-wicon="map"></span></button>
+      <button id="bug-btn" title="Report a problem" aria-label="Report a problem"><span class="wic" data-wicon="bug"></span></button>
+      <button id="god-btn" title="God view (G) — developer camera" aria-label="God view"><span class="wic" data-wicon="expand"></span></button>
+      <button id="reset-btn" title="Reset world" aria-label="Reset world">↺</button>
+      <span id="save-state" title="All changes saved"><span class="wic" data-wicon="check"></span></span>
+    </span>
+  </div>
+  <canvas id="minimap" aria-label="Minimap"></canvas>
+  <div id="wp-markers" aria-hidden="true"></div>
+  <div id="pretend-pill" hidden><span class="wic" data-wicon="eyeOff"></span> Pretending to be a visitor — tap to stop</div>
+  <div id="god-pill" hidden><span class="wic" data-wicon="expand"></span> God view — tap to land back on the player</div>
+  <div id="palette" hidden></div>
+  <div id="sel-pop" hidden></div>
+  <div id="move-bar" hidden></div>
+  <div id="edit-sheet" hidden></div>
+  <div id="claim-pop" hidden></div>
+  <div id="map-wrap" hidden>
+    <canvas id="map-cv"></canvas>
+    <div id="map-tools">
+      <button data-mtool="inspect" class="on" title="Inspect"><span class="wic" data-wicon="hand"></span></button>
+      <button data-mtool="path" title="Draw path"><span class="wic" data-wicon="path"></span></button>
+      <button data-mtool="claim" title="Claim land"><span class="wic" data-wicon="shield"></span></button>
+      <button data-mtool="waypoint" title="Drop waypoint"><span class="wic" data-wicon="pin"></span></button>
+      <button data-mtool="terraform" title="Terraform"><span class="wic" data-wicon="mountain"></span></button>
+      <button data-mtool="measure" title="Measure distance"><span class="wic" data-wicon="ruler"></span></button>
+      <button id="map-terr-sign" hidden title="Raise / lower">＋</button>
+      <button id="map-layers-btn" title="Layers">▤</button>
+      <button id="map-north-btn" title="North up">N</button>
+    </div>
+    <div id="map-layers" hidden></div>
+    <div id="map-labels"></div>
+    <div id="verse-label" hidden></div>
+    <div id="verse-here" hidden></div>
+    <div id="verse-head" hidden>
+      <div class="vh-title"><span class="wic" data-wicon="sparkle"></span> VERSE</div>
+      <div class="vh-sub">Every glowing sphere is a planet you can visit — tap one to travel there</div>
+      <div class="vh-legend"><span><span class="wic" data-wicon="planet"></span> planet · a visitable world</span><span><span class="wic" data-wicon="star"></span> star · a system sun</span><span class="vh-me">◉ you are here</span></div>
+    </div>
+    <div id="map-tiers">
+      <button data-tier="surface" class="on"><span class="wic" data-wicon="globe"></span> Surface</button>
+      <button data-tier="planet"><span class="wic" data-wicon="planet"></span> Planet</button>
+      <button data-tier="verse"><span class="wic" data-wicon="sparkle"></span> Verse</button>
+    </div>
+    <div id="map-read">Tap the map to read coordinates</div>
+    <button id="map-close" aria-label="Close map"><span class="wic" data-wicon="x"></span></button>
+  </div>
+  <div id="wp-pop" hidden></div>
+  <div id="npc-pop" hidden></div>
+  <div id="issue-pop" hidden></div>
+  <div id="tool-pop" hidden></div>
+  <div id="verse-pop" hidden></div>
+  <div id="door-pop" hidden></div>
+  <div id="discover-toast" hidden></div>
+  <button id="jump" hidden aria-label="Jump"><span class="wic" data-wicon="arrowUp"></span></button>
+  <button id="fly" hidden aria-label="Fly"><span class="wic" data-wicon="feather"></span></button>
+  <button id="zoomout" hidden aria-label="Zoom out to orbit"><span class="wic" data-wicon="expand"></span></button>
+  <div id="travel-wrap" hidden>
+    <div id="travel-panel">
+      <h3><span class="wic" data-wicon="compass"></span> Travel</h3>
+      <input id="travel-search" placeholder="Search 254 planets…" autocomplete="off">
+      <div id="travel-sectors"></div>
+      <div id="travel-list"></div>
+      <button id="travel-close" aria-label="Close"><span class="wic" data-wicon="x"></span></button>
+    </div>
+  </div>
+  <div id="modebar">
+    <button data-mode="build"><span class="mi wic" data-wicon="home"></span><span class="ml">Build</span></button>
+    <button data-mode="items"><span class="mi wic" data-wicon="chair"></span><span class="ml">Items</span></button>
+    <button data-mode="paths"><span class="mi wic" data-wicon="path"></span><span class="ml">Paths</span></button>
+    <button data-mode="claims"><span class="mi wic" data-wicon="shield"></span><span class="ml">Claim</span></button>
+    <button data-mode="city"><span class="mi wic" data-wicon="city"></span><span class="ml">City</span></button>
+    <button data-mode="paint" id="paint-btn"><span class="mi wic" data-wicon="brush"></span><span class="ml">Paint</span></button>
+    <button data-mode="life" id="life-btn"><span class="mi wic" data-wicon="paw"></span><span class="ml">Life</span></button>
+    <button data-mode="tools" id="tools-btn"><span class="mi wic" data-wicon="toolbox"></span><span class="ml">Tools</span></button>
+    <button data-mode="walk"><span class="mi wic" data-wicon="walk"></span><span class="ml">Walk</span></button>
+    <button data-mode="orbit" class="on"><span class="mi wic" data-wicon="eye"></span><span class="ml">Orbit</span></button>
+  </div>
+  <div id="joy" hidden><div id="joy-knob"></div></div>
+  <div id="sheet" hidden></div>
+  <div id="toast" hidden></div>
+  <div id="nogl" hidden><p>WebGL isn’t available here, so the world can’t render on this device.</p></div>
+  <div id="update-veil" hidden><div class="uv-card"><div class="uv-spin">⟳</div><div>Updating Moor Beta…<br><small>picking up the latest build, one moment</small></div></div></div>
+</div>
+<script>
+/* ===== mesh-builder.js (verbatim) ===== */
+BETA-MESH
+</script>
+<script>
+/* ===== furnish.js (IIFE-wrapped: top-level names collide with mesh-builder.js) ===== */
+(function(){
+BETA-FURNISH
+})();
+</script>
+<script>
+/* ===== struct.js STRUCT v2 (verbatim) ===== */
+BETA-STRUCT
+</script>
+<script>
+/* ===== moor-controller.js (verbatim, v0.6.0-firstpass) ===== */
+BETA-CONTROLLER
+</script>
+<script>
+/* ===== moorworld.js (verbatim, deterministic universe 8/57/254/745) ===== */
+BETA-MOORWORLD
+</script>
+<script>
+/* ===== map3d.js (verbatim, holographic 3D world map) ===== */
+BETA-MAP3D
+</script>
+<script>
+/* ===== palettes.js (verbatim, per-planet-type color tables) ===== */
+BETA-PALETTES
+</script>
+<script>
+/* ===== widgets.js (verbatim, custom laser-grid icon system) ===== */
+BETA-WIDGETS
+</script>
+<script>
+/* ===== moor beta shell app ===== */
+BETA-APP
+</script>
+<script>
+/* ===== lifeworld.js (W2: ecology/resources/weather/particles/audio, IIFE) ===== */
+BETA-LIFEWORLD
+</script>
+<script>
+/* ===== tuning.js (dev tuning panel, IIFE) ===== */
+BETA-TUNING
+</script>
+<script>
+/* ===== social.js (People panel, IIFE) ===== */
+BETA-SOCIAL
+</script>
+<script src="moor-request.js?v=20261005-request2"></script>
+</body>
+</html>
