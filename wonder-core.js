@@ -1,3 +1,4 @@
+function openCanvas(page){if(window.PulseCanvasWindow)PulseCanvasWindow.open(page);else if(parent!==window)parent.postMessage({type:'moor:open-canvas',page:page},location.origin);else location.href=page;}
 /* Wonder Feed v2 — infinite scroll through live generative wonders, now a creative instrument.
  * TAGS: tool:wonder | cat:experiences | dep:webgl dep:canvas2d dep:webaudio dep:seed-rng dep:raf dep:localstorage |
  *   prov:infinite-wonder-feed prov:spell-effects prov:3d-point-cloud prov:genome-library |
@@ -5140,13 +5141,13 @@ TYPES.push({kind:'component', icon:'\u{1F9E9}', label:'Component',
    if (comp.savedId){
      pull.textContent = '\u27F3'; pull.title = 'remix this saved component in Moor Canvas';
      pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
-       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.caps[0].id); }catch(x){}
-       window.open('more-canvas.html?loadpart='+encodeURIComponent(comp.savedId), '_blank'); };
+       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.       openCanvas('more-canvas.html?loadpart='+encodeURIComponent(comp.savedId)); };
+.savedId), '_blank'); };
    } else if (target){
      pull.textContent = '\uFF0B'; pull.title = 'pull into Moor Canvas';
      pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
-       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.caps[0].id); }catch(x){}
-       window.open('more-canvas.html?pull='+encodeURIComponent(target), '_blank'); };
+       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.       openCanvas('more-canvas.html?pull='+encodeURIComponent(target)); };
+t(target), '_blank'); };
    } else {
      pull.textContent = '\u2699'; pull.title = 'open in Pulse';
      pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();

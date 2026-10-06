@@ -256,6 +256,20 @@ var SPECIES = [
 
 TOOLS.vegetation = { mount: function(host){
   var species = SPECIES[0], seed = 7, wind = 0.35, count = 36;
+  var canvasTerrain=null;
+  function terrainAt(x,z){
+    var t=canvasTerrain;if(!t)return {y:0,wet:false};
+    var n=Math.round(Math.sqrt(t.heights.length));
+    var ix=Math.max(0,Math.min(n-1,Math.round((x/24+.5)*(n-1))));
+    var iz=Math.max(0,Math.min(n-1,Math.round((z/24+.5)*(n-1))));
+    var h=+t.heights[iz*n+ix];return {y:h/10,wet:h<(+t.water||0)};
+  }
+  function onCanvasContext(e){
+    if(e.source!==parent||e.origin!==location.origin||e.data?.type!=='moor:canvas-context')return;
+    var contexts=e.data.context||{};
+    for(var id in contexts){var t=contexts[id]?.payload?.terrain;if(t&&Array.isArray(t.heights)&&t.heights.length===6561&&t.heights.every(Number.isFinite)){canvasTerrain=t;break;}}
+  }
+  window.addEventListener('message',onCanvasContext);
   host.innerHTML =
     '<div class="t-controls"><div class="t-species" id="v-sp"></div></div>'+
     '<div class="t-controls"><label>Seed <input id="v-seed" value="7" spellcheck="false" style="width:70px"></label>'+
@@ -404,12 +418,13 @@ TOOLS.vegetation = { mount: function(host){
     // ground disc
     // (simple dark disc drawn as a flattened cylinder would need geometry; skip — plants float on gradient bg)
     geos.forEach(function(inst){
+      var ground=terrainAt(inst.x,inst.z);if(ground.wet)return;
       var B = getBufs(inst.g);
       // model matrix: scale/rot/translate folded into a per-instance MVP would need
       // a uniform; instead bake into a temporary matrix multiply here
       var c=Math.cos(inst.rot), s=Math.sin(inst.rot), k=inst.s;
       var model = new Float32Array([
-        c*k,0,-s*k,0, 0,k,0,0, s*k,0,c*k,0, inst.x,0,inst.z,1]);
+        c*k,0,-s*k,0, 0,k,0,0, s*k,0,c*k,0, inst.x,ground.y,inst.z,1]);
       gl.uniformMatrix4fv(uMVP,false,mat4mul(mvp,model));
       gl.uniform1f(uTime, t + inst.ph*10);
       [[B.p],[B.n],[B.t]].forEach(function(x){
@@ -422,7 +437,7 @@ TOOLS.vegetation = { mount: function(host){
     });
   }
   frame();
-  TOOLS.vegetation.unmount = function(){ cancelAnimationFrame(raf); };
+  TOOLS.vegetation.unmount = function(){ cancelAnimationFrame(raf);window.removeEventListener('message',onCanvasContext); };
 }};
 
 })();

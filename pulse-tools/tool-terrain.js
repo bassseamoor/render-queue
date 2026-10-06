@@ -47,6 +47,7 @@ TOOLS.terrain = {
     var biomeTint = [[0,0,0,0],[60,140,60,46],[30,90,40,70],[120,110,100,60],[230,240,250,70]];
 
     function paint(){
+      if(parent!==window){try{parent.postMessage({type:'moor:output',detail:{title:'Terrain',source:{component:'terrain-core'},payload:{terrain:TC.pack(data)}}},location.origin);}catch(_) {}}
       var d = img.data, mn=1e9, mx=-1e9;
       for (var j=0;j<81;j++) for (var i=0;i<81;i++){
         var q=j*81+i, h=data.heights[q], c=ramp(h), t=biomeTint[data.biomes[q]]||biomeTint[0];

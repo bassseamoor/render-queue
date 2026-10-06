@@ -203,7 +203,8 @@ function init(){
   status('Clipboard is unavailable here.');
  }
  function openPage(p){
-  if(!p.page){status('This project is an aggregate; expand the version to inspect its parts.');return;}
+  if(!p.page){status('This project is an aggregate; expand the version to inspect its parts.');return;  if(p.page.split('?')[0]==='more-canvas.html'&&window.PulseCanvasWindow){PulseCanvasWindow.open(p.page);return;}
+}
   window.open(new URL(p.page,location.href).href,'_blank','noopener');
  }
 
