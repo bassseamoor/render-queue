@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Moor Harness Runtime v1 — prototype</title>
+<title>Moor Harness Runtime v1 — prototype</title>\n<script src="moor-assembly-core.js"></script>
 <style>
 :root{--bg:#0b0e14;--bg2:#10141d;--card:#151b26;--line:#232c3d;--txt:#e8ecf4;--dim:#8b93a7;
 --acc:#7dd3fc;--grn:#4ade80;--amb:#fbbf24;--red:#f87171;--pur:#c084fc}
@@ -629,6 +629,30 @@ function assembleApp(jobs,spec){
    js.join("\n")+navJS()+SCRIPT_CLOSE+'</body></html>';
   return {html,theme,sections:body.length};
 }
+function seededAssemblyRandom(seed,fn){
+  seed=String(seed||'moor');var h=2166136261>>>0;for(var i=0;i<seed.length;i++){h^=seed.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
+  var old=Math.random,x=h||1;Math.random=function(){x^=x<<13;x^=x>>>17;x^=x<<5;return ((x>>>0)%1000000)/1000000;};
+  try{return fn();}finally{Math.random=old;}
+}
+function registerHarnessAssemblyExecutor(){
+  if(!window.MoorAssembly||!MoorAssembly.registerExecutor)return;
+  try{
+    MoorAssembly.registerExecutor('harness.compose.v1',async function(args){
+      args=args||{};var spec=args.spec||{},parts=args.parts||[],jobs=[];
+      seededAssemblyRandom(args.seed||MoorAssembly.hash({spec:spec,parts:parts}),function(){
+        parts.forEach(function(p,i){
+          var part=partById(p.part||p.part_id);if(!part)throw new Error('Unknown Harness part '+(p.part||p.part_id));
+          var feat={text:p.feature||part.name},built=part.build(feat,spec);
+          jobs.push({id:p.job||('assembly-'+(i+1)),kind:part.kind,feature:p.feature||part.name,part_id:part.id,status:'gated',code:built,resolution:p.resolution||'replayed'});
+        });
+      });
+      var result=assembleApp(jobs,spec);
+      return {ok:true,outputs:{app_html:result.html,theme:result.theme,sections:result.sections},jobs:jobs.map(function(j){return {id:j.id,part_id:j.part_id,kind:j.kind};})};
+    },{version:1,deterministic:true,source:'moor-harness-runtime-v1.html'});
+  }catch(e){if(String(e&&e.message||e).indexOf('already registered')<0)throw e;}
+}
+registerHarnessAssemblyExecutor();
+
 async function executeIntegration(job,spec){
   if(!harnessExecutionGate())return false;
   const parts=assembleApp(H.jobs.filter(j=>j!==job&&(j.status==="gated"||j.status==="approved")),spec);
@@ -990,6 +1014,40 @@ function emitMoorOutput(detail){
   try{window.dispatchEvent(new CustomEvent("moor:output",{detail}));}catch(e){}
   try{if(parent&&parent!==window)parent.postMessage({type:"moor:output",detail},"*");}catch(e){}
 }
+function harnessRecipe(){
+  return {spec:H.spec,parts:H.jobs.filter(function(j){return j.part_id;}).map(function(j){return {job:j.id,part:j.part_id,feature:j.feature,resolution:j.resolution||'resolved'};})};
+}
+function harnessAssemblyContract(next){
+  var recipe=harnessRecipe();
+  if(!window.MoorAssembly)return null;
+  return MoorAssembly.createContract({
+    artifact_id:'implementation:harness:'+next,version:next,source_hash:MoorAssembly.hash(recipe),
+    inputs:[],dependencies:[{id:'moor-harness-runtime-v1.html',version:'1'}],
+    operations:[{id:'compose-app',op:'harness.compose.v1',args:{spec:recipe.spec,parts:recipe.parts,seed:MoorAssembly.hash(recipe)}}],
+    required_executors:['harness.compose.v1'],outputs:[{name:'app_html',type:'moor.app.html'}],
+    verification:[{kind:'gate-suite',value:'syntax+boot+behavior+integration+regression'}],
+    rollback:{kind:'prior-canonical',version:H.canon},
+    determinism:{mode:'deterministic-source',excludes:['declared runtime randomness','external network/data']},
+    meta:{implementation_ref:'moor-harness-runtime-v1.html#v'+next}
+  });
+}
+function harnessCapabilities(next,assembly,evidence){
+  var out=[],ev='evidence:'+((window.MoorAssembly&&MoorAssembly.hash)?MoorAssembly.hash(evidence):next);
+  H.jobs.filter(function(j){return j.part_id&&(j.status==='gated'||j.status==='approved');}).forEach(function(j){
+    var p=partById(j.part_id);if(!p)return;
+    out.push({capability_id:'harness.part.'+p.id,version:'1',status:'machine-verified',
+      provides:['part:'+p.id],requires:[],input_types:[p.kind==='theme'?'moor.theme.request':'moor.feature.request'],
+      output_types:[p.kind==='theme'?'moor.ui.theme':'moor.ui.fragment'],knobs:{feature:'string'},events:[],state:{},
+      side_effects:[],compatibility:{executor:'harness.compose.v1'},implementation_ref:'moor-harness-runtime-v1.html',
+      assembly_contract_hash:assembly&&assembly.content_hash||null,evidence_refs:[ev],tags:(p.caps||[]).slice()});
+  });
+  out.push({capability_id:'harness.assemble.moor-app',version:'1',status:'machine-verified',provides:['assemble:moor-app'],
+    requires:out.filter(function(c){return c.output_types.indexOf('moor.ui.fragment')>=0;}).map(function(c){return c.capability_id;}),
+    input_types:['moor.ui.fragment','moor.ui.theme'],output_types:['moor.app.html'],knobs:{},events:[],state:{},
+    side_effects:[],compatibility:{executor:'harness.compose.v1'},implementation_ref:'moor-harness-runtime-v1.html#v'+next,
+    assembly_contract_hash:assembly&&assembly.content_hash||null,evidence_refs:[ev]});
+  return out;
+}
 function doPromote(){
   if(!harnessExecutionGate())return;
   const integ=H.jobs.find(j=>j.kind==="integration");
@@ -1016,7 +1074,7 @@ function doPromote(){
     concepts:[H.spec.app_type],status:"machine-verified",provenance:"verified",
     intent:H.spec.raw||H.spec.effective_input||"",intent_status:H.auto?"unjudged":"user-reviewed",
     intent_provenance:H.spec.input_was_empty?"fallback":"explicit",
-    recipe:{spec:H.spec,parts:H.jobs.filter(j=>j.part_id).map(j=>({job:j.id,part:j.part_id,feature:j.feature,resolution:j.resolution||"resolved"}))},
+    recipe:harnessRecipe(),\n    assembly_contract:assemblyContract,capabilities:capabilityDelta,learning_capsule:learningCapsule,
     implementation_ref:"moor-harness-runtime-v1.html#v"+next,
     payload:{version:next,canon:H.canon,jobs:H.jobs.map(j=>({id:j.id,kind:j.kind,status:j.status,part_id:j.part_id||null}))},
     evidence:evidence
