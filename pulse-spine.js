@@ -641,6 +641,11 @@ var CONTRACTS=[
   source:'funnel-kernel.js'}
 ];
 var FABRIC_DOCS=[
+ {id:'beam-rebrand-blueprint',name:'Pulse Beam Rebrand',summary:'Spatial product rebrand with permanent Beam Spaces, Funnel Hall, no-loss component migration and Beam Design Law.',source:'blueprint/pulse-beam-rebrand.blueprint.json'},
+ {id:'beam-shell',name:'Pulse Beam Spatial Shell',summary:'Gesture-aware Create/Funnel Hall shell with Library, Inspector and runnable tool dock.',source:'pulse-beam.js'},
+ {id:'beam-design-law',name:'Beam Design Law v1',summary:'Clear component standards plus compatibility → audited → Beam-native migration ladder.',source:'pulse-beam-standards.html'},
+ {id:'beam-funnel-hall',name:'Pulse Beam Funnel Hall',summary:'Permanent live 3D room generated from the current Funnel graph.',source:'pulse-beam-funnel-hall.html'},
+ {id:'beam-audit',name:'Beam Readiness Audit',summary:'No-loss parity and migration readiness records for the component estate.',source:'pulse-beam-audit.js'},
  {id:'fabric-luxe-ui',name:'Pulse Luxe Spatial UI',summary:'Shared premium spatial design law for Pulse, embedded tools and the current 3D Funnel: deep field, floating chrome, ice-white light, emerald state and mobile-safe command dock.',source:'blueprint/pulse-luxe-ui.blueprint.json'},
  {id:'fabric-luxe-law',name:'MOOR Luxe UI Law',summary:'Shared CSS/JS shell that applies the spatial visual system across Pulse and same-origin embedded tools.',source:'moor-luxe.css'},
   {
@@ -874,8 +879,8 @@ function ensureFunnelFabricProject(){
     var members=FABRIC_DOCS.map(function(b){return {kind:'funnel-fabric-asset',ref:'fabric-'+b.id,label:b.name,sourceVersion:'ultra-v1-candidate',source:b.source,detail:b.summary};});
     if(!p){
       p={id:'funnel-fabric',name:'Funnel Fabric',icon:'⌬',
-        description:'Secure Core / Elastic Society. Blueprints, law modules, recursive solver/case runtime, Foundry, receipts, tests and promotion evidence live here.',
-        members:members,page:'funnel-environment.html',queued:false,versions:[{
+        description:'Secure Core / Elastic Society inside Pulse Beam. Funnel Hall is the permanent spatial observatory; blueprints, law modules, Foundry, receipts, tests and promotion evidence remain attached.',
+        members:members,page:'pulse-beam-funnel-hall.html',queued:false,versions:[{
           id:'funnel-fabric-ultra-v1-candidate',number:'v1',title:'Ultra Funnel Law candidate',state:'candidate',createdAt:now,parentId:null,
           revision:'Parallel Citadel + Society blueprints realigned into Secure Core / Elastic Society. Candidate law is receipt-gated and remains beside v44 until promotion.',
           items:members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='new';return y;})
@@ -884,7 +889,7 @@ function ensureFunnelFabricProject(){
     }else{
       p.members=p.members||[];
       members.forEach(function(m){if(!p.members.some(function(x){return x.ref===m.ref;}))p.members.push(m);});
-      p.page='funnel-environment.html';p.queued=false;
+      p.page='pulse-beam-funnel-hall.html';p.queued=false;
       p.description='Secure Core / Elastic Society. Blueprints, law modules, recursive solver/case runtime, Foundry, receipts, tests and promotion evidence live here.';
       p.versions=p.versions||[];
       if(!p.versions.some(function(v){return v.id==='funnel-fabric-ultra-v1-candidate';})){
