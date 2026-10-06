@@ -5,7 +5,21 @@ const KEY='moor-capability-memory-v1';let mem=null;
 const A=root&&root.MoorAssembly||(typeof require==='function'?require('./moor-assembly-core.js'):null);
 function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}function hash(x){return A?A.hash(x):String(JSON.stringify(x).length);}
 function blank(){return {schema:'moor.capability-memory',version:1,bundles:{},capabilities:{},assemblies:{},compositions:{},handoffs:[],adapters:{},usage:{events:[],counts:{}},updated_at:null};}
-function read(){if(mem)return mem;try{if(root&&root.localStorage){const x=JSON.parse(root.localStorage.getItem(KEY)||'null');if(x&&x.version){if(!x.usage)x.usage={events:[],counts:{}};if(!Array.isArray(x.usage.events))x.usage.events=[];if(!x.usage.counts||typeof x.usage.counts!=='object')x.usage.counts={};return mem=x;}}catch(e){}return mem=blank();}
+function read(){
+  if(mem)return mem;
+  try{
+    if(root&&root.localStorage){
+      const x=JSON.parse(root.localStorage.getItem(KEY)||'null');
+      if(x&&x.version){
+        if(!x.usage)x.usage={events:[],counts:{}};
+        if(!Array.isArray(x.usage.events))x.usage.events=[];
+        if(!x.usage.counts||typeof x.usage.counts!=='object')x.usage.counts={};
+        mem=x;return mem;
+      }
+    }
+  }catch(e){}
+  mem=blank();return mem;
+}
 function save(){const s=read();s.updated_at=new Date().toISOString();try{if(root&&root.localStorage)root.localStorage.setItem(KEY,JSON.stringify(s));}catch(e){}return s;}
 function statusVerified(s){return s==='machine-verified'||s==='human-approved'||s==='canonical';}
 function recordUse(type,data){
@@ -56,9 +70,29 @@ function ingest(bundle){bundle=clone(bundle||{});if(!bundle.bundle_id)bundle.bun
   return {added:true,bundle:clone(bundle),candidates};
 }
 function inferCandidates(){
-  const s=read(),caps=Object.values(s.capabilities).filter(c=>statusVerified(c.status)),made=[];
-  for(const a of caps)for(const b of caps){if(a===b)continue;for(const ot of a.output_types||[])for(const it of b.input_types||[]){const m=compatibleType(ot,it,s);if(!m)continue;const id='composition:'+hash([a.content_hash,b.content_hash,ot,it,m.mode]);if(s.compositions[id])continue;s.compositions[id]={composition_id:id,status:'candidate-unverified',from:a.capability_id,to:b.capability_id,from_version:a.version,to_version:b.version,output_type:ot,input_type:it,match:m.mode,adapter_id:m.adapter&&m.adapter.adapter_id||null,tests:[{id:'contract-compatible',kind:'deterministic',status:'pending'}],created_at:new Date().toISOString()};made.push(s.compositions[id]);recordUse('candidate_composition_inferred',{composition_id:id,from:a.capability_id,to:b.capability_id,output_type:ot,input_type:it});}}
-  }save();return clone(made);
+  const s=read(),caps=Object.values(s.capabilities||{}).filter(c=>statusVerified(c.status)),made=[];
+  for(const a of caps){
+    for(const b of caps){
+      if(a===b)continue;
+      for(const ot of a.output_types||[]){
+        for(const it of b.input_types||[]){
+          const m=compatibleType(ot,it,s);if(!m)continue;
+          const id='composition:'+hash([a.content_hash,b.content_hash,ot,it,m.mode]);
+          if(s.compositions[id])continue;
+          s.compositions[id]={
+            composition_id:id,status:'candidate-unverified',from:a.capability_id,to:b.capability_id,
+            from_version:a.version,to_version:b.version,output_type:ot,input_type:it,match:m.mode,
+            adapter_id:m.adapter&&m.adapter.adapter_id||null,
+            tests:[{id:'contract-compatible',kind:'deterministic',status:'pending'}],
+            created_at:new Date().toISOString()
+          };
+          made.push(s.compositions[id]);
+          recordUse('candidate_composition_inferred',{composition_id:id,from:a.capability_id,to:b.capability_id,output_type:ot,input_type:it});
+        }
+      }
+    }
+  }
+  save();return clone(made);
 }
 function registerAdapter(a){a=clone(a||{});if(!a.from_type||!a.to_type)throw Error('adapter requires from_type/to_type');a.adapter_id=a.adapter_id||'adapter:'+hash(a);a.status=a.status||'specified';read().adapters[String(a.from_type).toLowerCase()+'→'+String(a.to_type).toLowerCase()]=a;save();return clone(a);}
 function promoteComposition(id,evidence){const s=read(),c=s.compositions[id];if(!c)throw Error('unknown composition');evidence=clone(evidence||{});if(!statusVerified(evidence.status))throw Error('verified evidence required');if(Array.isArray(evidence.tests)&&evidence.tests.some(t=>t.ok===false))throw Error('composition tests failed');c.status='machine-verified';c.evidence=evidence;c.verified_at=new Date().toISOString();recordUse('verified_composition_promoted',{composition_id:id});save();return clone(c);}
