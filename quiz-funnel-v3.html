@@ -402,8 +402,18 @@ function vRamble(){
  <div class="sub">Ramble however you want — the v2 distiller pulls out the kind, the audience, the must-haves, and the nevers. Or skip straight to the quiz.</div>
  <textarea id="ramble" placeholder="e.g. i want a thing that tracks my workouts and roasts me when i skip leg day, kind of a game, no ads ever...">${esc(S.ramble)}</textarea>
  <div class="row"><button id="distill">Distill my ramble</button><button class="ghost" id="skipR">Skip to quiz</button></div></div>`);
- el('distill').onclick = ()=>{ S.ramble = el('ramble').value.trim(); S.draft = distill(S.ramble); S.phase='spec'; save(); render(); };
- el('skipR').onclick = ()=>{ S.ramble=''; S.draft=null; S.phase='quiz'; save(); render(); };
+ el('distill').onclick = ()=>{
+  const typed=el('ramble').value.trim(); if(!typed)return;
+  const ks=ensureKernel(typed); S.ramble=ks.page0; S.draft=distill(S.ramble)||{title:'Untitled',kind:null,who:null,never:null,feats:[],domain:detectDomain(S.ramble)};
+  if(kSession().stage==='references')kAdvance('distill',{spec_draft:JSON.stringify(S.draft),raw_preserved:true},'inferred');
+  S.phase='spec'; save(); render();
+ };
+ el('skipR').onclick = ()=>{
+  const typed=el('ramble').value.trim(); if(!typed)return;
+  const ks=ensureKernel(typed); S.ramble=ks.page0; S.draft=distill(S.ramble)||{title:'Untitled',kind:null,who:null,never:null,feats:[],domain:detectDomain(S.ramble)};
+  if(kSession().stage==='references')kAdvance('distill',{spec_draft:JSON.stringify(S.draft),raw_preserved:true},'fallback');
+  S.phase='quiz'; save(); render();
+ };
 }
 function distill(t){
  if(!t) return null;
@@ -459,7 +469,7 @@ function vQuiz(){
  let i;
  if(S.backTo){ i=list.findIndex(q=>q.id===S.backTo); S.backTo=null; }
  if(i===undefined||i===null||i<0) i=list.findIndex(q=>!answered(q.id));
- if(i<0){ S.phase='verdict'; S.done=true; save(); render(); return }
+ if(i<0){ ensureDecisionStage(); S.phase='replay'; S.done=false; save(); render(); return }
  const Q=list[i];
  let optsHtml='';
  if(Q.gen==='name') Q.opts=nameOptions().map(n=>`${n}|Auto-generated, tap to edit below`);
@@ -497,6 +507,7 @@ function vQuiz(){
     const rec=Object.assign(mkAns(Q.id,Q.q,text.trim(),by),{v:v,replaces:old?{v:old.v,text:old.text}:null});
     const slot=S.answers.findIndex(a=>a.id===Q.id);
     if(slot>=0) S.answers[slot]=rec; else S.answers.push(rec);
+    kWrite('answer',{question_id:Q.id,prompt:Q.q,text:rec.text,version:rec.v,replaces:rec.replaces},by==='you'?'explicit':'inferred');
     save(); render();
    },450);
   },350);
@@ -536,7 +547,9 @@ function vQuiz(){
   while(guard++<12){
    const l2=qList(); const q=l2.find(q=>!answered(q.id)); if(!q) break;
    const v='v3.'+(S.answers.length+1);
-   S.answers.push(Object.assign(mkAns(q.id,q.q,fillTextFor(q),'filled'),{v:v,replaces:null}));
+   const rec=Object.assign(mkAns(q.id,q.q,fillTextFor(q),'filled'),{v:v,replaces:null});
+   S.answers.push(rec);
+   kWrite('answer',{question_id:q.id,prompt:q.q,text:rec.text,version:rec.v,replaces:null},'inferred');
   }
   save(); render();
  };
@@ -565,6 +578,7 @@ el('wipe').onclick=()=>{ if(confirm('Clear all versions and start over? (Export 
  document.querySelectorAll('[data-rerun]').forEach(b=> b.onclick=()=>{
   const ix=+b.dataset.rerun;
   const target=S.answers[ix];
+  const ks=kSession(); if(ks&&['decisions','replay','verdict'].includes(ks.stage))forkKernel('re-run from '+(target&&target.id||'answer'));
   S.rewound=target?{id:target.id,v:target.v,text:target.text}:null;
   S.answers=S.answers.slice(0,ix);
   S.backTo=target?target.id:null;
