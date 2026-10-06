@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MOOR · Capability Memory</title>
+<meta name="theme-color" content="#050a10">
+<style>
+:root{color-scheme:dark;--bg:#04080e;--bg2:#07111a;--panel:rgba(7,14,22,.72);--line:rgba(199,220,237,.15);--text:#eef5fa;--muted:#8497a8;--ice:#9de5ff;--green:#45e2a2;--amber:#f0c76d}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+body{background:radial-gradient(70vw 48vh at 50% -10%,rgba(54,132,175,.12),transparent 68%),linear-gradient(180deg,#071019,#03070c 52%,#02060a);padding:max(16px,env(safe-area-inset-top)) 14px max(24px,env(safe-area-inset-bottom))}
+.shell{max-width:1100px;margin:0 auto}.top{display:flex;align-items:center;gap:10px;margin-bottom:16px}.brand{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:rgba(5,11,18,.72);border-radius:999px;padding:10px 15px;backdrop-filter:blur(20px);box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 16px 42px rgba(0,0,0,.28)}.brand b{font-size:14px}.brand span{color:var(--ice);font-size:20px}.live{margin-left:auto;border:1px solid rgba(69,226,162,.25);color:#bcebd6;background:rgba(8,28,21,.45);border-radius:999px;padding:8px 11px;font-size:11px}.live i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 10px rgba(69,226,162,.7);margin-right:6px}
+.hero{padding:20px 4px 12px}.hero h1{font-size:clamp(26px,5vw,46px);letter-spacing:-.04em;margin:0 0 7px}.hero p{margin:0;color:var(--muted);max-width:760px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0}.card{border:1px solid var(--line);border-top-color:rgba(255,255,255,.17);background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.006)),var(--panel);border-radius:20px;padding:15px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 18px 50px rgba(0,0,0,.26);backdrop-filter:blur(22px)}.stat small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.12em}.stat b{display:block;font-size:28px;letter-spacing:-.03em;margin-top:5px}.stat.good b{color:#c9f6e1}.stat.ice b{color:var(--ice)}
+.section{margin-top:12px}.section-head{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 9px}.section-head h2{font-size:14px;margin:0}.section-head span{font-size:10px;color:var(--muted)}
+.two{display:grid;grid-template-columns:1.1fr .9fr;gap:10px}.list{max-height:430px;overflow:auto;scrollbar-width:none}.list::-webkit-scrollbar{display:none}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:10px 0;border-bottom:1px solid rgba(199,220,237,.08)}.row:last-child{border:0}.row strong{font-size:12px;font-weight:600}.row p{margin:3px 0 0;color:var(--muted);font-size:11px;overflow-wrap:anywhere}.badge{align-self:start;border:1px solid var(--line);border-radius:999px;padding:4px 7px;font-size:9px;color:var(--muted)}.badge.verified{border-color:rgba(69,226,162,.22);color:#a9e7ca}.badge.candidate{border-color:rgba(240,199,109,.20);color:#ddc88e}
+.bar{height:7px;border-radius:999px;background:rgba(255,255,255,.04);overflow:hidden;margin-top:8px}.bar>i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--ice),var(--green))}
+.empty{color:var(--muted);padding:22px 0;font-size:12px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.btn{border:1px solid var(--line);background:rgba(255,255,255,.02);color:var(--text);border-radius:13px;padding:9px 11px;font:inherit;font-size:11px}.btn:hover{border-color:rgba(157,229,255,.4)}.btn.primary{background:#eef5fa;color:#06101a;border-color:#fff}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.two{grid-template-columns:1fr}.stat b{font-size:24px}.card{border-radius:18px}.hero{padding-top:8px}}
+</style>
+<script src="moor-assembly-core.js"></script>
+<script src="moor-capability-memory.js"></script>
+<script src="funnel-capability-handoff.js"></script>
+</head>
+<body>
+<div class="shell">
+  <div class="top"><div class="brand"><span>◇</span><b>MOOR Refinery</b></div><div class="live"><i></i>live capability memory</div></div>
+  <div class="hero"><h1>Capability Memory</h1><p>Proof that MOOR is not only storing build knowledge. These numbers separate inventory from actual reuse: references consumed by the Funnel, deterministic assemblies, verified compositions, and work avoided.</p></div>
+  <div class="grid" id="stats"></div>
+  <div class="two">
+    <section class="card section"><div class="section-head"><h2>Recent use</h2><span>runtime events only</span></div><div class="list" id="events"></div></section>
+    <section class="card section"><div class="section-head"><h2>Capability graph</h2><span>verified + candidate</span></div><div class="list" id="graph"></div></section>
+  </div>
+  <div class="controls">
+    <button class="btn" id="refresh">Refresh</button>
+    <button class="btn" id="export">Export memory</button>
+    <button class="btn primary" id="handoff">Republish verified handoffs</button>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function fmt(n){n=Number(n)||0;if(n>=1000000)return (n/1000000).toFixed(1)+'m';if(n>=1000)return (n/1000).toFixed(1)+'k';return String(Math.round(n))}
+function pct(x){return Math.round((Number(x)||0)*100)+'%'}
+function render(){
+ const M=window.MoorCapabilityMemory;if(!M)return;
+ const s=M.stats(),snap=M.snapshot(),c=s.usage.counts||{};
+ const items=[
+  ['Verified capabilities',s.inventory.verified_capabilities,'ice'],
+  ['Verified compositions',s.inventory.verified_compositions,'good'],
+  ['Funnel handoffs consumed',s.usage.capability_handoffs_consumed,'good'],
+  ['Model-free assemblies',s.usage.model_free_assemblies_succeeded,'ice'],
+  ['Requests reused memory',s.usage.requests_reused,''],
+  ['Repeated reasoning avoided',s.usage.estimated_repeated_reasoning_avoided,'good'],
+  ['Missing executors',s.usage.missing_executors,''],
+  ['Assembly success',pct(s.usage.assembly_success_rate),'']
+ ];
+ document.getElementById('stats').innerHTML=items.map(x=>'<div class="card stat '+x[2]+'"><small>'+esc(x[0])+'</small><b>'+esc(x[1])+'</b></div>').join('');
+ const ev=s.recent||[];
+ document.getElementById('events').innerHTML=ev.length?ev.map(e=>'<div class="row"><div><strong>'+esc(e.type.replace(/_/g,' '))+'</strong><p>'+esc(JSON.stringify(e.data||{}).slice(0,240))+'</p></div><span class="badge">'+esc(new Date(e.at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))+'</span></div>').join(''):'<div class="empty">No use events yet. As Pulse retrieves capabilities, the Funnel consumes handoffs, or the assembler runs, they will appear here.</div>';
+ const caps=Object.values(snap.capabilities||{}),comps=Object.values(snap.compositions||{});
+ const rows=[
+  ...caps.sort((a,b)=>String(b.status).localeCompare(String(a.status))).slice(0,40).map(x=>({title:x.capability_id,sub:(x.output_types||[]).join(' → ')||((x.provides||[]).join(', ')),status:x.status})),
+  ...comps.slice(0,30).map(x=>({title:(x.from||'capability')+' → '+(x.to||'capability'),sub:(x.output_type||'')+' → '+(x.input_type||''),status:x.status}))
+ ];
+ document.getElementById('graph').innerHTML=rows.length?rows.map(x=>'<div class="row"><div><strong>'+esc(x.title)+'</strong><p>'+esc(x.sub)+'</p></div><span class="badge '+(x.status==='machine-verified'?'verified':'candidate')+'">'+esc(x.status)+'</span></div>').join(''):'<div class="empty">Capability graph is empty. Verified builds and blueprints will crystallize here automatically.</div>';
+}
+document.getElementById('refresh').onclick=render;
+document.getElementById('export').onclick=function(){const data=JSON.stringify(window.MoorCapabilityMemory.snapshot(),null,2),a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download='moor-capability-memory.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+document.getElementById('handoff').onclick=function(){if(!window.MoorCapabilityHandoff)return;const ps=window.MoorCapabilityHandoff.fromMemory(window.MoorCapabilityMemory);let n=0;ps.forEach(p=>{const r=window.MoorCapabilityHandoff.publish(p);if(r.published)n++});this.textContent='Published '+n;setTimeout(()=>this.textContent='Republish verified handoffs',1300);render()};
+window.addEventListener('storage',render);window.addEventListener('moor:refinery-usage',render);window.addEventListener('moor:capability-memory',render);setInterval(render,2500);render();
+})();
+</script>
+</body>
+</html>
