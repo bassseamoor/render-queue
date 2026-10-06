@@ -821,6 +821,7 @@ var FABRIC_DOCS=[
   }
 ];
 var REFINERY_DOCS=[
+ {id:'cumulative-reconsideration-blueprint',name:'Pulse Cumulative Reconsideration',summary:'Delta-driven cumulative rule: each verified CapabilityDelta reconsiders only relevant existing machines, recalls failures, and surfaces repeated verified patterns as candidate abstractions.',source:'blueprint/pulse-cumulative-reconsideration.blueprint.json'},
  {id:'creation-deck-blueprint',name:'Pulse Creation Deck',summary:'Screenshot-led spatial workspace with floating app deck, slide-over component library, progressive inspector, universal command and measured Refinery reuse.',source:'blueprint/pulse-creation-deck.blueprint.json'},
  {id:'creation-deck-runtime',name:'Pulse Creation Deck Runtime',summary:'Shell runtime that wraps existing components without changing their internals.',source:'pulse-creation-deck.js'},
  {id:'creation-deck-style',name:'Pulse Creation Deck Layout',summary:'Near-black floating spatial hierarchy based heavily on the supplied unloaded-screen reference.',source:'pulse-creation-deck.css'},
@@ -954,10 +955,10 @@ function ensureCapabilityMemoryProject(){
     var fs=PulseFunnel.state,now=new Date().toISOString(),p=fs.projects.find(function(x){return x.id==='capability-memory';});
     var members=REFINERY_DOCS.map(function(b){return {kind:'refinery-asset',ref:'refinery-'+b.id,label:b.name,sourceVersion:'v1',source:b.source,detail:b.summary};});
     if(!p){
-      p={id:'capability-memory',name:'MOOR Refinery',icon:'◇',
-        description:'Parallel capability filter. Crystallizes blueprints/builds into model-free assembly contracts and verified capability memory, then hands reference-only deltas to the singular Funnel.',
-        members:members,page:'pulse-capability-memory.html',queued:false,versions:[{id:'refinery-v1',number:'v1',title:'Parallel Refinery',state:'candidate',createdAt:now,parentId:null,
-          revision:'Separate non-authoritative capability crystallization from Funnel authority. Verified deltas hand off through the reference graph.',
+      p={id:'capability-memory',name:'MOOR Refinery · Cumulative',icon:'◇',
+        description:'Cumulative non-authoritative capability filter. Crystallizes verified deltas, reconsiders only relevant existing machinery, preserves failures, and hands reference-only evidence to the singular Funnel.',
+        members:members,page:'pulse-capability-memory.html',queued:false,versions:[{id:'refinery-v2-cumulative',number:'v2',title:'Cumulative Refinery',state:'candidate',createdAt:now,parentId:null,
+          revision:'Preserve the Refinery but replace routine all-pairs inference with delta-driven bounded reconsideration, reusable failures and candidate abstractions.',
           items:members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='new';return y;})}]};
       fs.projects.push(p);
     }else{
