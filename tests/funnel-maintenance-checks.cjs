@@ -21,7 +21,7 @@ assert.equal(agent.manufacturing.stations.observability,'pulse-beam-funnel-hall.
 for(const term of ['documented','implemented','wired','verified','receipt_backed','visualized'])
   assert(Object.prototype.hasOwnProperty.call(status.semantics,term),'maintenance semantics missing '+term);
 
-const required=['page0-v44','page0-ultra','ultra-society','ultra-capabilities','ultra-budgets','refinery-handoff','harness-gate','pulse-beam-shell','funnel-citadel','factory-accumulation','ultra-human-runtime','ultra-persistence'];
+const required=['page0-v44','page0-ultra','ultra-society','ultra-capabilities','ultra-budgets','refinery-handoff','harness-gate','pulse-beam-shell','funnel-citadel','factory-accumulation','software-factory-ledger','ultra-human-runtime','ultra-persistence'];
 for(const id of required)assert(status.systems.some(x=>x.id===id),'maintenance register missing '+id);
 for(const s of status.systems.filter(x=>x.visualized===true)){
   assert(s.visual_state,'visualized system missing visual_state '+s.id);
@@ -48,6 +48,7 @@ assert(contract.includes('Verified machinery is cumulative.'));
 assert(workflow.includes('tests/funnel-law-ultra-checks.cjs'));
 assert(workflow.includes('maintenance-sweep:'),'maintenance sweep must run independently of monolithic validation');
 assert(workflow.includes('tests/factory-accumulation-checks.cjs'));
+assert(workflow.includes('tests/moor-request-factory-checks.cjs'),'live request conveyor must be CI-gated');
 assert(pages.includes('tests/funnel-maintenance-sweep.cjs --report-only'),'Pages must publish a deploy-time QC report');
 assert(hall.includes("fetch('funnel-maintenance-status.json'"),'Citadel must read canonical maintenance truth');
 assert(hall.includes("fetch('funnel-maintenance-live.json'"),'Citadel must overlay last deploy QC');
