@@ -83,5 +83,5 @@ assert(!request.includes('arg.resolved'),'Caller-declared resolved execution byp
 assert(dash.indexOf('funnel-kernel.js')>=0&&dash.indexOf('funnel-kernel.js')<dash.indexOf('moor-request.js'),'Kernel must load before request router');
 assert(harness.includes('consumeClaim(claim)'));
 assert(harness.includes('verifyConsumedClaim'));
-assert(contract.includes('v45-armored'));
+assert(contract.includes('v46-redundant'));
 console.log('PASS: immutable Page 0, obligation-carrying verdict, deterministic proof, one-use receipt/claim/consume chain, and post-authorization staleness');
