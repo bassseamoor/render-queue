@@ -157,16 +157,16 @@ document.getElementById('hall-state').innerHTML='<b>LAW</b> <span class="emerald
 const info=document.getElementById('info');
 function inspect(n){
   if(!n)return;
-  const m=n.maintenance||null,fm=n.factory||null,qc=m&&m.qc||null;
-  document.getElementById('info-type').textContent=fm?'factory registry · '+fm.kind:m?'factory machine · '+(m.display_state||m.visual_state||'unknown'):(n.type||'node').replaceAll('-',' ');
+  const m=n.maintenance||null,fm=n.factory||null,wo=n.work_order||null,qc=m&&m.qc||null;
+  document.getElementById('info-type').textContent=wo?'work order · '+wo.state:fm?'factory registry · '+fm.kind:m?'factory machine · '+(m.display_state||m.visual_state||'unknown'):(n.type||'node').replaceAll('-',' ');
   document.getElementById('info-title').textContent=n.label||n.id;
   document.getElementById('info-copy').textContent=n.detail||'Live Funnel graph node.';
-  document.getElementById('info-status').textContent=fm?String(fm.lifecycle||fm.status||'registered').replaceAll('_',' ').toUpperCase():m?(m.display_state||m.visual_state||'unknown').replaceAll('_',' ').toUpperCase():n.type==='law-active'?'ACTIVE':n.type==='law-candidate'?'CANDIDATE':'LIVE GRAPH';
+  document.getElementById('info-status').textContent=wo?String(wo.state||'QUEUED').replaceAll('_',' ').toUpperCase():fm?String(fm.lifecycle||fm.status||'registered').replaceAll('_',' ').toUpperCase():m?(m.display_state||m.visual_state||'unknown').replaceAll('_',' ').toUpperCase():n.type==='law-active'?'ACTIVE':n.type==='law-candidate'?'CANDIDATE':'LIVE GRAPH';
   document.getElementById('info-owner').textContent=wo?(wo.owner||'software factory'):fm?'Capability Memory':m?(m.owner||'unassigned'):(n.type==='law-active'?'v44-sealed':n.type==='law-candidate'?'ultra-v1-candidate':'graph');
   document.getElementById('info-live').textContent=wo?'WIP':fm?'REGISTRY':m?(m.live_path?'YES':'NO'):'graph projection';
-  document.getElementById('info-verified').textContent=fm?((fm.status==='machine-verified'||fm.status==='human-approved'||fm.status==='canonical')?'YES':'NO'):m?(m.verified?'CONTRACT YES':'CONTRACT NO'):'—';
+  document.getElementById('info-verified').textContent=wo?(wo.inspections&&wo.inspections.length?wo.inspections.filter(x=>x.pass).length+'/'+wo.inspections.length+' QC':'PENDING QC'):fm?((fm.status==='machine-verified'||fm.status==='human-approved'||fm.status==='canonical')?'YES':'NO'):m?(m.verified?'CONTRACT YES':'CONTRACT NO'):'—';
   document.getElementById('info-receipt').textContent=wo?(wo.authorization&&wo.authorization.receipt_fingerprint||'UNAUTHORIZED'):fm?(fm.kind==='machine'?'VIA CAPABILITY PROVENANCE':'—'):m?(m.receipt_backed?'YES':'NO'):'—';
-  document.getElementById('info-evidence').textContent=fm?(fm.implementation_ref||fm.id||'registry record'):m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')+(qc?' · last QC '+(qc.pass?'PASS':'FAIL')+' '+qc.passed+'/'+qc.total:' · last QC unavailable')):'graph topology';
+  document.getElementById('info-evidence').textContent=wo?((wo.travelers||[]).length+' traveler'+((wo.travelers||[]).length===1?'':'s')+' · '+(wo.bom&&wo.bom.parts?wo.bom.parts.length:0)+' BOM parts'):fm?(fm.implementation_ref||fm.id||'registry record'):m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')+(qc?' · last QC '+(qc.pass?'PASS':'FAIL')+' '+qc.passed+'/'+qc.total:' · last QC unavailable')):'graph topology';
   info.classList.add('on');
 }
 const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();function pick(x,y){pointer.x=x/innerWidth*2-1;pointer.y=-(y/innerHeight)*2+1;ray.setFromCamera(pointer,camera);const hit=ray.intersectObjects(pickables,false)[0];if(hit)inspect(hit.object.userData.node);else info.classList.remove('on')}let yaw=0,pitch=-.03,drag=false,lastX=0,lastY=0,moved=0;renderer.domElement.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;lastY=e.clientY;moved=0;renderer.domElement.setPointerCapture?.(e.pointerId)});renderer.domElement.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;moved+=Math.abs(dx)+Math.abs(dy);yaw-=dx*.0042;pitch=Math.max(-1.08,Math.min(1.08,pitch-dy*.0036))});renderer.domElement.addEventListener('pointerup',e=>{drag=false;if(moved<8)pick(e.clientX,e.clientY)});
