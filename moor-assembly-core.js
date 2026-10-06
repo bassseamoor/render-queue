@@ -1,5 +1,5 @@
 /* MOOR Assembly Core v1 — deterministic contract executor; no language model required. */
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.MoorAssembly=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+(function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.MoorAssembly=api;})(typeof globalThis!=='undefined'?globalThis:this,function(root){
 'use strict';
 const SCHEMA='moor.assembly-contract',VERSION=1,executors=new Map();
 function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}
