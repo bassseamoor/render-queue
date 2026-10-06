@@ -114,6 +114,7 @@ function addReference(input){
   if(input.implements)addEdge(id,input.implements,'implements',input.provenance||'observed');
   if(input.verifies)addEdge(id,input.verifies,'verifies',input.provenance||'observed');
   if(input.where_used)[].concat(input.where_used).forEach(function(x){addEdge(id,x,'where_used',input.provenance||'observed');});
+  if(input.supersedes)[].concat(input.supersedes).forEach(function(x){addEdge(id,x,'supersedes',input.provenance||'observed');});
   return node;
 }
 function outputSourceId(src){
@@ -144,7 +145,7 @@ function ingestCrystalBundle(bundle,outputRef){
     var cr=addReference({id:'capability:'+hash(textOf([c.capability_id,c.version,c.content_hash])),kind:'capability',
       title:c.capability_id||'Capability',summary:(c.provides&&c.provides.length)?('Provides '+c.provides.join(', ')):'Reusable MOOR capability.',
       status:c.status||'specified-not-verified',source:sourceName,source_id:c.capability_id||sid,provenance:(c.status==='machine-verified'||c.status==='human-approved')?'verified':'procedural',
-      implementation_ref:c.implementation_ref||bundle.implementation_ref||null,data:c});
+      implementation_ref:c.implementation_ref||bundle.implementation_ref||null,supersedes:(c.supersedes||[]).map(function(ref){var prior=S.refs.find(function(r){return r.kind==='capability'&&r.data&&(r.id===ref||r.data.capability_id===ref||(r.data.capability_id+'@'+r.data.version)===ref);});return prior&&prior.id||ref;}),data:c});
     if(outputRef)addEdge(outputRef.id,cr.id,'provides','refinery');
     if(assemblyRef)addEdge(cr.id,assemblyRef.id,'assembled_by','refinery');
     (c.evidence_refs||[]).forEach(function(eid){if(S.refs.some(function(r){return r.id===eid;}))addEdge(eid,cr.id,'verifies','refinery');});
