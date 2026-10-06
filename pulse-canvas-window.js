@@ -20,6 +20,6 @@ function open(page='more-canvas.html'){
 window.PulseCanvasWindow={open};
 function install(){if(typeof openComponent!=='function')return;const original=openComponent;openComponent=function(id){if(id==='more-canvas'){open();return;}return original.apply(this,arguments);};}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>queueMicrotask(install),{once:true});else install();
-document.addEventListener('click',e=>{const a=e.target.closest('a[href]');if(!a)return;const u=new URL(a.href,location.href);if(u.origin===location.origin&&u.pathname.endsWith('/more-canvas.html')){e.preventDefault();e.stopPropagation();open(u.href);}},true);
+document.addEventListener('click',e=>{const b=e.target.closest('[data-open="more-canvas"]');if(b){e.preventDefault();e.stopImmediatePropagation();open();return;}const a=e.target.closest('a[href]');if(!a)return;const u=new URL(a.href,location.href);if(u.origin===location.origin&&u.pathname.endsWith('/more-canvas.html')){e.preventDefault();e.stopPropagation();open(u.href);}},true);
 window.addEventListener('message',e=>{if(e.origin!==location.origin||e.data?.type!=='moor:open-canvas')return;open(e.data.page);});
 })();
