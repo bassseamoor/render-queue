@@ -9,9 +9,9 @@ assert.equal(snap.authority,'read-only/no-release');
 assert(snap.completed_slices.some(x=>x.id==='BF-01'));
 assert(snap.completed_slices.some(x=>x.id==='DT-01'));
 assert(snap.divergences.some(x=>x.id==='DT-01'&&x.missing_dependencies.includes('FM-05')&&x.missing_dependencies.includes('PG-01')),'must expose implemented-ahead-of-plan evidence instead of rewriting history');
-for(const id of ['FM-03','FM-05','PG-03','WO-01','DT-02','DT-04'])assert(snap.eligible_slices.some(x=>x.id===id),'expected eligible slice '+id);
-assert.equal(snap.recommendation.slice_id,'WO-01','after PG-02, the low-risk/high-information release contract is advisory next');
+for(const id of ['FM-03','FM-05','PG-03','WO-02','WO-03','DT-02','DT-04'])assert(snap.eligible_slices.some(x=>x.id===id),'expected eligible slice '+id);
+assert.equal(snap.recommendation.slice_id,'WO-02','after WO-01, stale-base/ownership protection has the highest information value');
 assert(snap.eligible_slices.some(x=>x.id==='WO-01'),'WO-01 becomes structurally eligible once FM-02 is verified');
 assert(!snap.eligible_slices.some(x=>x.buildNow===true),'calculator may not convert old buildNow state into new release authority');
 
-console.log('PASS: choreography calculator derives eligible/blocked work from evidence, flags out-of-order implementation, advances to WO-01 advisory-only, and never releases work.');
+console.log('PASS: choreography calculator derives eligible/blocked work from evidence, flags out-of-order implementation, advances to WO-02 advisory-only, and never releases work.');
