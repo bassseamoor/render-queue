@@ -1,6 +1,14 @@
 /* MOOR Factory Twin Core v1
  * Deterministically composes machine-readable software-factory sources into one
  * semantic snapshot for 3D/UI observability. It never mints authority.
+ *
+ * Reconstructed through sealed funnel v44 (receipt df029b0349262a5b) 2026-10-06.
+ * Determinism verified: identical input -> identical snapshot_id.
+ *
+ * TAGS: tool:factorytwin | cat:interface | kind:system |
+ *       dep:maintenance dep:capability-memory dep:funnel-graph |
+ *       prov:isolated-funnel prov:sealed-funnel |
+ *       see:pulse-dashboard
  */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.MoorFactoryTwin=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';

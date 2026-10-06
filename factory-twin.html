@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Factory Twin — MOOR doctrine</title>
+<script src="factory-twin-core.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{background:#0a0e14;color:#d7e3f4;font:16px/1.65 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;padding:28px 18px 64px;max-width:760px;margin:0 auto}
+  .kicker{letter-spacing:.22em;font-size:11px;color:#7fd4ff;text-transform:uppercase;margin-bottom:10px}
+  h1{font-size:30px;line-height:1.2;letter-spacing:.01em;margin-bottom:6px}
+  .sub{color:#8fa3bd;margin-bottom:28px;font-size:15px}
+  section{background:rgba(20,32,52,.55);border:1px solid rgba(150,210,255,.14);border-top-color:rgba(255,255,255,.22);border-radius:14px;padding:18px 20px;margin-bottom:14px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#7fd4ff;margin-bottom:10px}
+  p{margin-bottom:10px;color:#c4d3e8}
+  p:last-child{margin-bottom:0}
+  ul{margin:0 0 6px 20px;color:#c4d3e8}
+  li{margin-bottom:8px}
+  b{color:#fff;font-weight:600}
+  .rule{border-left:3px solid #ffd479;background:rgba(255,212,121,.06);padding:12px 16px;border-radius:0 10px 10px 0;margin:12px 0}
+  .rule p{margin:0}
+  code{background:rgba(127,212,255,.1);padding:1px 6px;border-radius:6px;font-size:14px;color:#bfe3ff}
+  .check{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#060a10;border-radius:10px;padding:14px 16px;margin-top:10px;color:#9fb4d0;white-space:pre-wrap;word-break:break-all}
+  .pass{color:#7fe0a8;font-weight:600}
+  .foot{margin-top:26px;color:#5f7189;font-size:13px}
+</style>
+</head>
+<body>
+  <div class="kicker">MOOR system · reconstructed through the funnel</div>
+  <h1>Factory Twin</h1>
+  <div class="sub">A digital twin of the software factory. It composes machine-readable sources — maintenance systems, the capability registry, plant work orders, the funnel graph — into one deterministic semantic snapshot, so the whole build pipeline can be observed in one place. It never mints authority: observability only.</div>
+
+  <section>
+    <h2>Live self-check</h2>
+    <p>This page runs the real <code>factory-twin-core.js</code> twice on identical input and compares the snapshot hashes:</p>
+    <div class="check" id="check">running…</div>
+  </section>
+
+  <section>
+    <h2>What it tracks</h2>
+    <ul>
+      <li><b>Machines</b> — build cells, fixtures, adapters, subsystems, each with lifecycle and health (healthy-verified, candidate, degraded, quarantined).</li>
+      <li><b>Work orders</b> — every job moving through stations: intake, planning, work-cells, QC, rework, release. Receipts travel with them.</li>
+      <li><b>Routes</b> — how machines and funnel stages connect.</li>
+      <li><b>Authority versions</b> — which funnel law is production, which is candidate.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="rule">
+      <h2 style="margin-bottom:8px">Honest limits</h2>
+      <p>The twin is a <b>data layer</b>. The 3D factory floor — walking the stations, seeing the work — is not built yet. The blueprint forbids faking it: no animated busy-work, no health derived from rendering. When the physicalization lands, it shows this data and nothing else.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reconstruction note</h2>
+    <p>Built in a parallel session's isolated funnel, then run through the sealed funnel (receipt <code>df029b0349262a5b</code>) to validate and reconstruct under the rules. Determinism verified. One observation carried forward: the semantic identity object is hashed into <code>snapshot_id</code> but not exposed on the snapshot in v1.</p>
+  </section>
+
+  <div class="foot">Sealed funnel v44 · Blueprint: factory-digital-twin · Core: factory-twin-core.js v1</div>
+<script>
+(function(){
+  var el=document.getElementById('check');
+  try{
+    if(!window.MoorFactoryTwin) throw new Error('core not loaded');
+    var input={
+      generated_at:'2026-10-06T23:55:00.000Z',
+      maintenance:{systems:[{id:'pulse',name:'Pulse dashboard',display_state:'live_shared',capabilities:['render']}],current_authority:{production:'v44-sealed'}},
+      factory_graph:{nodes:[{id:'m1',kind:'machine',label:'Build cell',lifecycle:'active',status:'machine-verified'}],edges:[{from:'m1',to:'m2',type:'feeds'}],counts:{machines:1}},
+      plant:{orders:[{work_order_id:'wo-1',state:'IN_PROCESS',page0_hash:'abc',events:[{at:'2026-10-06T23:00:00.000Z'}]}]},
+      funnel_graph:{nodes:[],edges:[],currentLaw:{active:'v44-sealed'}}
+    };
+    var a=window.MoorFactoryTwin.compose(input);
+    var b=window.MoorFactoryTwin.compose(JSON.parse(JSON.stringify(input)));
+    var match=a.snapshot_id===b.snapshot_id;
+    var v=window.MoorFactoryTwin.validate(a);
+    el.innerHTML='snapshot A: '+a.snapshot_id+'\nsnapshot B: '+b.snapshot_id+
+      '\nidentity hash match: '+(match?'<span class="pass">MATCH</span>':'MISMATCH')+
+      '\nvalidate(): '+(v.ok?'<span class="pass">ok</span>':'errors: '+v.errors.join(', '))+
+      '\nmachines: '+a.metrics.machines+' · routes: '+a.metrics.routes+' · work orders: '+a.metrics.work_orders;
+  }catch(e){ el.textContent='self-check failed: '+(e.message||e); }
+})();
+window.addEventListener('error',function(e){document.title='ERR '+(e.message||'').slice(0,40)});
+</script>
+</body>
+</html>
