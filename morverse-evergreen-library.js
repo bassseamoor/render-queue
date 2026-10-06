@@ -2,7 +2,7 @@ import * as THREE from './three.module.js';
 
 const BLUEPRINT_URL='blueprints/evergreen-public-library-world.json';
 const prefersReduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const state={blueprint:null,zone:null,light:'day',yaw:Math.PI,pitch:-0.04,keys:{},moving:false,drag:false,dragMoved:0,selected:null,travel:null,last:performance.now()};
+const state={blueprint:null,zone:null,light:'day',yaw:0,pitch:-0.04,keys:{},moving:false,drag:false,dragMoved:0,selected:null,travel:null,last:performance.now()};
 const $=s=>document.querySelector(s);
 const escapeHTML=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const toast=(msg)=>{const el=$('#toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800);};
