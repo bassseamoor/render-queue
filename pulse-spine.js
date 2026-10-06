@@ -575,6 +575,8 @@ var CONTRACTS=[
   source:'funnel-kernel.js'}
 ];
 var FABRIC_DOCS=[
+ {id:'fabric-luxe-ui',name:'Pulse Luxe Spatial UI',summary:'Shared premium spatial design law for Pulse, embedded tools and the current 3D Funnel: deep field, floating chrome, ice-white light, emerald state and mobile-safe command dock.',source:'blueprint/pulse-luxe-ui.blueprint.json'},
+ {id:'fabric-luxe-law',name:'MOOR Luxe UI Law',summary:'Shared CSS/JS shell that applies the spatial visual system across Pulse and same-origin embedded tools.',source:'moor-luxe.css'},
   {
     "id": "fabric-baseline",
     "name": "Recursive Funnel Fabric",
