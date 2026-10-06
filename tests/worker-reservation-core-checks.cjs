@@ -23,8 +23,9 @@ assert(!v.ok&&v.errors.some(x=>x.includes('outside release scope')));
 v=G.validate(release,{...a,reservation_id:'r2',worker_id:'w2'},base,[a]);
 assert(!v.ok&&v.errors.some(x=>x.includes('ownership conflict')));
 
-const s1=G.normalize({...a,shared:['file:a.js'],merge_strategy:{mode:'ordered'}});
-const s2=G.normalize({...a,reservation_id:'r2',worker_id:'w2',shared:['file:a.js'],merge_strategy:{mode:'ordered'}});
+const shared=['file:a.js','interface:api:x'];
+const s1=G.normalize({...a,shared,merge_strategy:{mode:'ordered'}});
+const s2=G.normalize({...a,reservation_id:'r2',worker_id:'w2',shared,merge_strategy:{mode:'ordered'}});
 assert(G.validate(release,s2,base,[s1]).ok);
 
 assert(G.checkChange(a,base,{files:['a.js'],interfaces:['api:x']}).ok);
