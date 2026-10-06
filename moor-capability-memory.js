@@ -198,9 +198,17 @@ function factoryGraph(){
     if(to)edge(id,'cap:'+to,'feeds');
   });
   Object.entries(s.adapters||{}).forEach(([id,a])=>node('adapter:'+id,'adapter',{label:id,status:a.status||'specified'}));
-  return {schema:'moor.software-factory-graph',version:1,nodes,edges,counts:{machines:Object.keys(s.capabilities||{}).length,fixtures:Object.keys(s.assemblies||{}).length,connections:Object.keys(s.compositions||{}).length,adapters:Object.keys(s.adapters||{}).length}};
+  Object.entries(s.failures||{}).forEach(([id,f])=>{
+    node(id,'failure',{label:f.reason||id,status:'failed',evidence_refs:f.evidence_refs||[]});
+    const from=Object.keys(s.capabilities||{}).find(k=>s.capabilities[k].capability_id===f.source_capability);
+    const to=Object.keys(s.capabilities||{}).find(k=>s.capabilities[k].capability_id===f.target_capability);
+    if(from)edge('cap:'+from,id,'failed_from');if(to)edge(id,'cap:'+to,'blocks_or_warns');
+  });
+  abstractionCandidates().forEach(a=>{node(a.abstraction_id,'abstraction-candidate',{label:a.relation_type,status:a.status,support:a.supporting_composition_ids.length});a.supporting_composition_ids.forEach(id=>edge(id,a.abstraction_id,'supports_abstraction'));});
+  const latest=(s.reconsiderations||[]).at(-1);if(latest){node(latest.reconsideration_id,'reconsideration',{label:'Latest capability delta',status:'observed',created_at:latest.created_at});latest.candidate_ids.forEach(id=>edge(latest.reconsideration_id,id,'surfaced_candidate'));latest.failure_ids.forEach(id=>edge(latest.reconsideration_id,id,'recalled_failure'));}
+  return {schema:'moor.software-factory-graph',version:2,nodes,edges,counts:{machines:Object.keys(s.capabilities||{}).length,fixtures:Object.keys(s.assemblies||{}).length,connections:Object.keys(s.compositions||{}).length,failures:Object.keys(s.failures||{}).length,reconsiderations:(s.reconsiderations||[]).length,abstractions:abstractionCandidates().length,adapters:Object.keys(s.adapters||{}).length}};
 }
 function snapshot(){return clone(read());}
 function clearForTests(){mem=blank();return mem;}
-return Object.freeze({version:2,ingest,inferCandidates,registerAdapter,promoteComposition,getCapability,listCapabilities,preferredCapability,deprecateCapability,quarantineCapability,factoryGraph,snapshot,statusVerified,recordUse,stats,clearForTests,save});
+return Object.freeze({version:3,ingest,reconsiderDelta,inferCandidates,recordFailure,listFailures,abstractionCandidates,registerAdapter,promoteComposition,getCapability,listCapabilities,preferredCapability,deprecateCapability,quarantineCapability,factoryGraph,snapshot,statusVerified,recordUse,stats,clearForTests,save});
 });
