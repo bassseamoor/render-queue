@@ -164,8 +164,8 @@ const H=require('../funnel-capability-handoff.js');
 
   const dash=require('node:fs').readFileSync('pulse-dashboard.html','utf8');
   assert(dash.includes('pulse-beam.css?v=20261006-beam1'));
-  assert(dash.includes('moor-capability-memory.js?v=20261006-refinery1'));
-  assert(dash.indexOf('moor-capability-memory.js?v=20261006-refinery1')<dash.indexOf('pulse-spine.js?v=20261005-spine9'),'Refinery memory must load before Pulse reference harvest');
+  assert(dash.includes('moor-capability-memory.js?v=20261006-cumulative1'));
+  assert(dash.indexOf('moor-capability-memory.js?v=20261006-cumulative1')<dash.indexOf('pulse-spine.js?v=20261006-cumulative1'),'Refinery memory must load before Pulse reference harvest');
   assert(dash.includes('pulse-beam.js?v=20261006-beam1'));
   assert(!dash.includes('pulse-creation-deck.js?v=20261006-deck1'),'Creation Deck must be retired from live shell');
   assert(!dash.includes('moor-luxe.js?v=20261006-luxe1'),'old Luxe Pulse shell must not be active');
