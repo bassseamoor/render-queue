@@ -35,7 +35,7 @@ s=K.advance({request_id:'proof-test',stage:'distill',payload:{spec_draft:'guarde
 s=K.advance({request_id:'proof-test',stage:'decisions',payload:{locked:[],unresolved:[]}});
 const obs=K.extractObligations(raw);
 s=K.advance({request_id:'proof-test',stage:'replay',payload:{page0_verified:true,page0_hash:K.hash(raw),obligations:obs.map(o=>({...o,status:'satisfied'})),substitutions:[]}});
-s=K.advance({request_id:'proof-test',stage:'verdict',payload:{spec:{app:'guarded'},destination:'app-compiler-harness',done_criteria:['works']}});
+s=K.advance({request_id:'proof-test',stage:'verdict',payload:{spec:{app:'guarded',obligations:obs.map(o=>({...o,status:'satisfied'}))},destination:'app-compiler-harness',done_criteria:['works']}});
 const proof=K.exportProof('proof-test');
 assert.equal(validateProof(proof),true);
 const bad=JSON.parse(JSON.stringify(proof));bad.replay.obligations=[];
