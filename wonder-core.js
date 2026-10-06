@@ -5141,13 +5141,13 @@ TYPES.push({kind:'component', icon:'\u{1F9E9}', label:'Component',
    if (comp.savedId){
      pull.textContent = '\u27F3'; pull.title = 'remix this saved component in Moor Canvas';
      pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
-       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.       openCanvas('more-canvas.html?loadpart='+encodeURIComponent(comp.savedId)); };
-.savedId), '_blank'); };
+       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.caps[0].id); }catch(x){}
+       openCanvas('more-canvas.html?loadpart='+encodeURIComponent(comp.savedId)); };
    } else if (target){
      pull.textContent = '\uFF0B'; pull.title = 'pull into Moor Canvas';
      pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
-       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.       openCanvas('more-canvas.html?pull='+encodeURIComponent(target)); };
-t(target), '_blank'); };
+       try{ Attention.signalSig(genomeKey(genome),'w:component',genome.p,'pull',2,comp.caps[0].id); }catch(x){}
+       openCanvas('more-canvas.html?pull='+encodeURIComponent(target)); };
    } else {
      pull.textContent = '\u2699'; pull.title = 'open in Pulse';
      pull.onclick = function(e){ if(e&&e.stopPropagation) e.stopPropagation();
