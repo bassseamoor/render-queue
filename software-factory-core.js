@@ -112,9 +112,13 @@ function resumeMaintenance(id,input){
   const o=order(id);if(o.state!=='BLOCKED_MAINTENANCE'||!o.maintenance_block)throw Error('no maintenance block');input=clone(input||{});
   if(input.cleared!==true)throw Error('maintenance clearance required');const prior=o.maintenance_block.prior_state;o.maintenance_block={...o.maintenance_block,cleared:true,cleared_at:new Date().toISOString(),clearance_evidence:input.evidence_ref||null};return transition(o,prior,'maintenance_cleared',o.maintenance_block);
 }
+function latestInspectionsPass(o){
+  const latest=new Map();for(const x of o.inspections||[])latest.set(String(x.characteristic||x.inspection_id),x);
+  return latest.size>0&&[...latest.values()].every(x=>x.pass===true);
+}
 function release(id,input){
   const o=order(id);if(o.state!=='PASS')throw Error('release requires PASS');if(!o.authorization)throw Error('release requires authority');
-  if(o.inspections.some(x=>x.pass!==true))throw Error('all inspections must pass');
+  if(!latestInspectionsPass(o))throw Error('latest required inspections must pass');
   if(o.nonconformances.some(x=>!['use-as-is-approved','closed','rework-verified'].includes(String(x.disposition||''))))throw Error('open nonconformance blocks release');
   input=clone(input||{});if(!String(input.configuration_hash||'').trim())throw Error('configuration hash required');
   const rec={schema:'moor.software-release',version:1,work_order_id:o.work_order_id,all_required_inspections_passed:true,configuration_hash:String(input.configuration_hash),receipt_chain:[o.authorization.receipt_fingerprint].concat(o.travelers.map(x=>x.fingerprint)),released_artifacts:clone(input.released_artifacts||[]),released_at:new Date().toISOString()};
