@@ -8,15 +8,18 @@ No API key is required for the base path. If intelligence is unavailable, use lo
 
 Machine-readable entry: `/moor-agent.json`.
 
-## Sealed Funnel enforcement
+## Armored Funnel enforcement
 - Preserve `funnel-kernel.js` and load it before `moor-request.js`.
-- Build/change work may enter Harness only with a valid `moor.funnel-receipt`.
-- Never reintroduce `resolved:true`, fuzzy "already locked" execution shortcuts, or any direct builder bypass.
+- Build/change work may enter Harness only through the chain receipt → single-use execution claim → one Harness consume.
+- Never reintroduce `resolved:true`, fuzzy locked-answer execution, raw Harness compilation, stage jumping, reusable receipts/claims, or post-delivery modification reuse.
 - Page 0 is immutable. Models write only through the Kernel append API.
-- The required order is Page 0 → references → distill → decisions → Page 0 replay → verdict.
-- The replay stage must account for source-backed Page 0 obligations and explicitly approve any deferral/substitution.
-- Run `node tests/funnel-kernel-checks.cjs` before publishing Funnel/router changes.
-- Muse/Buster personality is `/BUSTER.md`; personality is advisory behavior, never execution authority.
+- Required order: Page 0 → references → distill → decisions → Page 0 replay → verdict → receipt → claim → Harness.
+- Replay must account for source-backed Page 0 obligations and explicitly approve any deferral/substitution.
+- Every non-proof PR must carry `Funnel-Proof: .funnel/proofs/<proof>.json`.
+- Protected Funnel-law changes additionally require `Funnel-Owner-Authorization: ed25519:<signature>`.
+- Never alter the kernel, validator, guardian, Harness lock, or tests merely to make the current change pass.
+- Run `node tests/funnel-kernel-checks.cjs` and `node tests/funnel-guardian-checks.cjs` before publishing Funnel/router changes.
+- Muse/Buster personality is `/BUSTER.md`; personality is behavior, never execution authority.
 
 # Pulse dashboard rebuild contract
 
