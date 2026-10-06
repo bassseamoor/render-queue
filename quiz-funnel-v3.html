@@ -106,7 +106,8 @@ pre{background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:15px;p
 </div>
 <div id="screen"></div>
 </div>
-<script src="funnel-kernel.js?v=20261005-sealed1"></script>
+<script src="funnel-usage-plan-core.js?v=20261006-plan1"></script>
+<script src="funnel-kernel.js?v=20261006-plan1"></script>
 <script>
 "use strict";
 /* Runtime shell retained at quiz-funnel-v3.html for compatibility.
@@ -183,7 +184,8 @@ function ensureKernel(raw){
  if(active&&active.page0===raw){S.kernelRequestId=active.request_id;return active}
  const id='manual:'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
  let next=k.open({request_id:id,input:raw,source:'quiz-funnel-v3',context:{page:'quiz-funnel-v3.html'}});
- if(next.stage==='page0')next=k.advance({request_id:id,stage:'references',payload:{reused:[],missing:[]},provenance:'fallback'});
+ if(next.stage==='page0')next=k.advance({request_id:id,stage:'usage_plan',payload:{plan:k.makeUsagePlan(raw,{page:'quiz-funnel-v3.html',source:'human-funnel'})},provenance:'system'});
+ if(next.stage==='usage_plan')next=k.advance({request_id:id,stage:'references',payload:{reused:[],missing:[]},provenance:'fallback'});
  S.kernelRequestId=id; return next;
 }
 function kAdvance(stage,payload,provenance){
@@ -225,6 +227,7 @@ function forkKernel(reason){
  const old=kSession(), raw=(old&&old.page0)||S.ramble;
  const id='revision:'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);
  let n=k.open({request_id:id,input:raw,source:'quiz-funnel-v3-revision',context:{parent_request_id:old&&old.request_id,reason:reason||'revision'}});
+ n=k.advance({request_id:id,stage:'usage_plan',payload:{plan:k.makeUsagePlan(raw,{page:'quiz-funnel-v3.html',parent_request_id:old&&old.request_id,reason:reason||'revision'})},provenance:'system'});
  n=k.advance({request_id:id,stage:'references',payload:{reused:old&&old.request_id?[{kind:'request',id:old.request_id,title:'prior Funnel run'}]:[],missing:[]},provenance:'learned'});
  n=k.advance({request_id:id,stage:'distill',payload:{spec_draft:JSON.stringify(S.draft||{raw:raw}),raw_preserved:true},provenance:'learned'});
  S.kernelRequestId=id; S.replay={};
@@ -741,6 +744,8 @@ window.MOORQuiz=Object.freeze({
   const quiz=this.compile(job);if(!quiz.ready)return quiz;
   const initial=await window.MOOR.request({input:job.input,source:'agent',forceFunnel:true,context:{source:'MOORQuiz.automate',provenance:'agent-supplied answers'}});
   const K=window.MOORFunnelKernel,id=initial.request_id;
+  if(K.inspect(id).stage==='page0')K.advance({request_id:id,stage:'usage_plan',payload:{plan:K.makeUsagePlan(input,{page:'quiz-funnel-v3.html',source:'quiz-automation'})},provenance:'system'});
+  if(K.inspect(id).stage==='usage_plan')K.advance({request_id:id,stage:'references',payload:{reused:job.references||[],missing:[]},provenance:'learned'});
   for(const ref of job.references||[])K.write({request_id:id,kind:'reference',value:ref,source:'quiz-automation',provenance:ref.provenance||'inferred'});
   K.advance({request_id:id,stage:'distill',payload:{spec_draft:JSON.stringify({quiz:quiz.spec,blueprint:quiz.blueprint})},provenance:'inferred'});
   K.advance({request_id:id,stage:'decisions',payload:{locked:quiz.answers,unresolved:[]},provenance:'inferred'});
