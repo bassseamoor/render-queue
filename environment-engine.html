@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MOOR Environment Engine</title>
+<style>
+:root{--bg:#05080f;--glass:rgba(8,14,24,.68);--line:rgba(205,229,255,.15);--text:#eef6ff;--muted:#9aa9ba;--accent:#7dd7ff}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+button,input,select{font:inherit}
+.stage{position:fixed;inset:0;overflow:hidden;background:#05080f}
+#envCanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.veil{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(2,5,10,.14),rgba(2,5,10,.02) 42%,rgba(2,5,10,.45));}
+.top{position:absolute;left:18px;right:18px;top:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:4}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}.mark{width:30px;height:30px;border:1px solid rgba(255,255,255,.25);border-radius:10px;display:grid;place-items:center;background:rgba(5,12,20,.48);backdrop-filter:blur(18px);font-size:15px}.brandText{min-width:0}.brandText b{display:block;font-size:13px;letter-spacing:.02em}.brandText span{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+.pill{border:1px solid var(--line);background:rgba(5,12,20,.54);backdrop-filter:blur(18px);border-radius:999px;padding:8px 11px;font-size:11px;color:#c7d5e4;white-space:nowrap}
+.pill.ok{color:#a9f3ca;border-color:rgba(127,235,179,.3)}
+.pill.bad{color:#ffbaae;border-color:rgba(255,130,110,.3)}
+.panel{position:absolute;z-index:4;border:1px solid var(--line);background:linear-gradient(160deg,rgba(8,15,25,.79),rgba(6,10,18,.57));backdrop-filter:blur(24px) saturate(120%);box-shadow:0 30px 80px rgba(0,0,0,.35);border-radius:18px}
+.left{left:18px;bottom:18px;width:min(440px,calc(100vw - 36px));padding:18px}
+.right{right:18px;bottom:18px;width:310px;padding:16px;max-height:62vh;overflow:auto;scrollbar-width:none}.right::-webkit-scrollbar{display:none}
+.eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+h1{font-size:26px;line-height:1.06;margin:0 0 9px;letter-spacing:-.035em}
+.lede{font-size:12px;color:#b5c2d0;line-height:1.55;margin:0 0 16px;max-width:390px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.055);color:#dce8f4;padding:8px 10px;border-radius:10px;cursor:pointer;font-size:11px}.btn:hover{background:rgba(255,255,255,.1)}.btn.on{border-color:rgba(125,215,255,.5);background:rgba(125,215,255,.14);color:#dff7ff}.btn.primary{background:rgba(125,215,255,.18);border-color:rgba(125,215,255,.4);color:#e8faff}
+.seed{display:flex;gap:7px;margin-top:10px}.seed input{min-width:0;flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#fff;padding:8px 10px;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.metricGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:13px}.metric{padding:9px;border-radius:11px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075)}.metric strong{display:block;font-size:15px}.metric span{display:block;font-size:9px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.08em}
+.section{padding:12px 0;border-top:1px solid rgba(255,255,255,.08)}.section:first-child{border-top:0;padding-top:0}.section h2{font-size:12px;margin:0 0 8px}.section p{font-size:10px;line-height:1.5;color:var(--muted);margin:5px 0}
+.source{display:flex;align-items:flex-start;gap:8px;margin:6px 0}.dot{width:6px;height:6px;border-radius:50%;background:#8de0ff;box-shadow:0 0 10px #72d7ff;margin-top:5px;flex:none}.source b{font-size:10px;display:block}.source span{font-size:9px;color:var(--muted);display:block;margin-top:1px}
+.gates{display:grid;gap:5px}.gate{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:#adbac8;padding:6px 7px;border-radius:8px;background:rgba(255,255,255,.035)}.gate i{font-style:normal}.gate .yes{color:#97e8bd}.gate .wait{color:#f1c98e}
+.plan{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-top:8px}.seg{height:30px;border-radius:5px;background:linear-gradient(180deg,rgba(122,218,255,.22),rgba(122,218,255,.06));border:1px solid rgba(122,218,255,.16);display:grid;place-items:center;font-size:8px;color:#cfefff}
+.mini{font-size:9px;color:var(--muted);line-height:1.5}
+.drawerToggle{position:absolute;right:18px;top:64px;z-index:5}
+.hideUI .left,.hideUI .right,.hideUI .top,.hideUI .drawerToggle{opacity:0;pointer-events:none}
+.left,.right,.top,.drawerToggle{transition:opacity .2s ease}
+@media(max-width:850px){
+ .right{display:none}.left{width:calc(100vw - 24px);left:12px;bottom:12px;padding:14px}.top{left:12px;right:12px;top:10px}.drawerToggle{right:12px;top:55px}.metricGrid{grid-template-columns:repeat(3,1fr)}h1{font-size:22px}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <canvas id="envCanvas" aria-label="Deterministic MOOR presentation environment"></canvas>
+  <div class="veil"></div>
+  <div class="top">
+    <div class="brand"><div class="mark">◇</div><div class="brandText"><b>Environment Engine</b><span>Canonical presentation advancement</span></div></div>
+    <div class="pill" id="authorityPill">Loading Funnel authority…</div>
+  </div>
+  <button class="btn drawerToggle" id="hideBtn" title="Hide interface">Clean view</button>
+  <section class="panel left">
+    <div class="eyebrow">Presentation quality kernel</div>
+    <h1>Use the studio lessons everywhere.</h1>
+    <p class="lede">A seeded, replayable presentation recipe distilled from MOOR’s ambient studios: depth, light, atmosphere, materials, motion, post, camera, ambience and long-form render discipline. The Funnel—not this screen—controls canonical advancement.</p>
+    <div class="row" id="profiles">
+      <button class="btn on" data-profile="canonical">Canonical</button>
+      <button class="btn" data-profile="workspace">Workspace</button>
+      <button class="btn" data-profile="world">World</button>
+      <button class="btn" data-profile="showcase">Showcase</button>
+      <button class="btn" id="pauseBtn">Pause</button>
+    </div>
+    <div class="seed"><input id="seedInput" value="MOOR-CANON-001" aria-label="Environment seed"><button class="btn" id="seedBtn">Apply</button><button class="btn" id="randomBtn">Random</button></div>
+    <div class="metricGrid">
+      <div class="metric"><strong id="depthVal">8</strong><span>depth planes</span></div>
+      <div class="metric"><strong id="studioVal">8</strong><span>source studios</span></div>
+      <div class="metric"><strong id="segmentVal">8×1h</strong><span>8h plan</span></div>
+    </div>
+  </section>
+  <aside class="panel right">
+    <div class="section">
+      <div class="eyebrow">Source of truth</div>
+      <h2>Funnel-backed advancement</h2>
+      <p id="authorityText">Loading the checked blueprint and current Funnel contract.</p>
+      <div class="gates" id="gateList"></div>
+    </div>
+    <div class="section">
+      <div class="eyebrow">Long-form pipeline</div>
+      <h2>8-hour deterministic plan</h2>
+      <p>The shared verified controller is bounded to one-hour jobs, so v1 preserves that boundary: eight deterministic segments, one seed, absolute time offsets.</p>
+      <div class="plan" id="renderPlan"></div>
+      <p class="mini">No fake claim of one-file 8h muxing. Concatenation remains a separate pipeline capability.</p>
+    </div>
+    <div class="section">
+      <div class="eyebrow">Inherited lessons</div>
+      <div id="sources"></div>
+    </div>
+    <div class="section">
+      <button class="btn primary" id="copyBtn">Copy presentation recipe</button>
+      <p class="mini" id="copyState">Recipe = compact state. Other MOOR surfaces can consume the same presentation contract without cloning this renderer.</p>
+    </div>
+  </aside>
+</div>
+<script src="environment-engine-core.js"></script>
+<script src="environment-engine-render.js"></script>
+<script>
+(function(){
+'use strict';
+var Engine=window.EnvironmentEngine,Render=window.EnvironmentEngineRenderer;
+var canvas=document.getElementById('envCanvas'),stage=document.getElementById('stage');
+var profile='canonical',recipe=Engine.compile({seed:'MOOR-CANON-001',profile:profile,hours:8,fps:30});
+var renderer=Render.create(canvas,recipe,{preserveDrawingBuffer:true});
+Engine.applyTokens(document.documentElement,recipe);
+
+function updateRecipe(seed,nextProfile){
+  profile=nextProfile||profile;
+  recipe=Engine.compile({seed:seed||document.getElementById('seedInput').value||'MOOR-CANON-001',profile:profile,hours:8,fps:30});
+  renderer.setRecipe(recipe);renderer.reset();Engine.applyTokens(document.documentElement,recipe);
+  document.getElementById('depthVal').textContent=recipe.composition.depthPlanes;
+  document.getElementById('studioVal').textContent=recipe.sourceStudios.length;
+  document.getElementById('segmentVal').textContent=recipe.export.segmentCount+'×1h';
+}
+document.querySelectorAll('[data-profile]').forEach(function(b){
+ b.addEventListener('click',function(){
+  document.querySelectorAll('[data-profile]').forEach(function(x){x.classList.remove('on')});
+  b.classList.add('on');updateRecipe(null,b.dataset.profile);
+ });
+});
+document.getElementById('seedBtn').onclick=function(){updateRecipe()};
+document.getElementById('randomBtn').onclick=function(){
+ var a=new Uint32Array(2);if(crypto&&crypto.getRandomValues)crypto.getRandomValues(a);else{a[0]=Date.now();a[1]=Math.random()*0xffffffff}
+ var s='MOOR-'+a[0].toString(16).toUpperCase()+'-'+a[1].toString(16).toUpperCase();document.getElementById('seedInput').value=s;updateRecipe(s);
+};
+document.getElementById('pauseBtn').onclick=function(){
+ var p=renderer.pause();this.textContent=p?'Resume':'Pause';this.classList.toggle('on',p);
+};
+document.getElementById('hideBtn').onclick=function(){
+ stage.classList.toggle('hideUI');this.textContent=stage.classList.contains('hideUI')?'Show UI':'Clean view';
+};
+document.addEventListener('keydown',function(e){if((e.key==='h'||e.key==='H')&&!/input|textarea/i.test(document.activeElement.tagName))stage.classList.toggle('hideUI')});
+document.getElementById('copyBtn').onclick=function(){
+ var t=JSON.stringify(recipe,null,2),el=document.getElementById('copyState');
+ if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){el.textContent='Recipe copied.'}).catch(function(){el.textContent='Clipboard unavailable; use the source inspector.'});
+ else el.textContent='Clipboard unavailable; use the source inspector.';
+};
+document.getElementById('renderPlan').innerHTML=recipe.export.segments.map(function(s){return '<div class="seg" title="offset '+s.offsetSeconds+'s">'+s.index+'</div>'}).join('');
+document.getElementById('sources').innerHTML=Engine.sourceMatrix().map(function(s){
+ return '<div class="source"><i class="dot"></i><div><b>'+s.label+'</b><span>'+s.lessons.slice(0,2).join(' · ')+'</span></div></div>';
+}).join('');
+
+var gateList=document.getElementById('gateList');
+Engine.requiredGates.forEach(function(g){
+ var row=document.createElement('div');row.className='gate';row.innerHTML='<span>'+g.replaceAll('_',' ')+'</span><i class="wait">required</i>';gateList.appendChild(row);
+});
+
+Promise.all([
+ fetch('blueprint/environment-engine-canonical-presentation.blueprint.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('blueprint '+r.status);return r.json()}),
+ fetch('FUNNEL.md',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('Funnel '+r.status);return r.text()})
+]).then(function(x){
+ var bp=x[0],funnel=x[1],cv=Engine.validateContract(bp.advancement_contract);
+ var law=funnel.indexOf('v44-sealed')>=0;
+ var ok=cv.ok&&law&&bp.authority&&bp.authority.executable_kernel==='funnel-kernel.js';
+ var pill=document.getElementById('authorityPill');pill.textContent=ok?'Funnel contract loaded · v44-sealed':'Advancement authority blocked';pill.className='pill '+(ok?'ok':'bad');
+ document.getElementById('authorityText').textContent=ok
+  ?'Blueprint + current FUNNEL.md agree on v44-sealed. Future presentation promotion still requires every evidence gate; this renderer cannot promote itself.'
+  :'The checked presentation contract does not match current Funnel authority. Canonical advancement is blocked.';
+}).catch(function(e){
+ var pill=document.getElementById('authorityPill');pill.textContent='Authority unavailable';pill.className='pill bad';
+ document.getElementById('authorityText').textContent='Could not load canonical Funnel sources: '+e.message;
+});
+
+window.MOOREnvironmentEngine={
+ getRecipe:function(){return JSON.parse(JSON.stringify(recipe))},
+ compile:Engine.compile,
+ planLongForm:Engine.planLongForm,
+ advancementGate:Engine.advancementGate,
+ sourceMatrix:Engine.sourceMatrix
+};
+})();
+</script>
+</body>
+</html>

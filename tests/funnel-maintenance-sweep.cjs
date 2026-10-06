@@ -70,5 +70,5 @@ const receipt=MaintenanceReceipt.compose({
 });
 if(!MaintenanceReceipt.validate(receipt).ok)throw Error('generated MaintenanceReceipt failed validation');
 fs.writeFileSync(path.join(root,'funnel-maintenance-receipt.json'),JSON.stringify(receipt,null,2)+'\n');
-console.log(JSON.stringify({overall:report.overall,counts:report.counts,failed:failed.map(x=>x.id),maintenance_receipt:receipt.snapshot_hash},null,2));
+console.log(JSON.stringify({overall:report.overall,counts:report.counts,failed:failed.map(x=>x.id),failed_details:failed.map(x=>({id:x.id,tests:x.tests.filter(t=>!t.pass).map(t=>({file:t.file,output:t.output}))})),maintenance_receipt:receipt.snapshot_hash},null,2));
 if(!reportOnly&&failed.length)process.exitCode=1;
