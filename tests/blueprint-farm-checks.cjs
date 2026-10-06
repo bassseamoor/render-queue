@@ -2,6 +2,7 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
 
 const library=require('../pulse-blueprint-farm-library.json');
 const master=require('../blueprint/blueprint-farm.blueprint.json');
+const releaseLedger=require('../pulse-slice-release-ledger.json');
 
 assert.equal(library.schema,'moor.blueprint-farm-library');
 assert.equal(library.authority.automatic_execution,false);
@@ -65,7 +66,7 @@ for(const id of ['fabric-blueprint-farm-master','fabric-blueprint-farm-index','f
 const build=fs.readFileSync('build_pulse_v2.py','utf8');
 assert(build.includes("'blueprint-farm':"),'Pulse manifest rebuild must preserve Blueprint Farm');
 const agent=JSON.parse(fs.readFileSync('moor-agent.json','utf8'));
-assert(agent.blueprint_farm&&agent.blueprint_farm.current_release==='BF-02','canonical MOOR entry must expose the latest explicit release');
+assert(agent.blueprint_farm&&agent.blueprint_farm.current_release===releaseLedger.current_release,'canonical MOOR entry must expose the latest explicit release');
 assert.equal(agent.blueprint_farm.automatic_next_slice,false,'Blueprint Farm must not auto-release later slices');
 
 const evergreen=fs.readFileSync('morverse-evergreen-library.js','utf8');
