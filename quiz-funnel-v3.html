@@ -209,6 +209,11 @@ function ensureDecisionStage(){
  if(now.stage==='distill')return kAdvance('decisions',{locked:S.answers.map(a=>({id:a.id,text:a.text,by:a.by,version:a.v})),unresolved:[]},'explicit');
  return now;
 }
+function ensureVerdictStage(spec){
+ const ks=kSession(); if(!ks||ks.error)return ks;
+ if(ks.stage==='replay')return kAdvance('verdict',{spec:spec,destination:'app-compiler-harness',done_criteria:DONE_CRITERIA},'explicit');
+ return ks;
+}
 function forkKernel(reason){
  const k=FK(); if(!k)return null;
  const old=kSession(), raw=(old&&old.page0)||S.ramble;
@@ -656,16 +661,31 @@ function vReplay(){
 function vVerdict(){
  const spec={}; S.answers.forEach(a=>spec[a.id]=a.text);
  if(S.draft) spec.working_title=S.draft.title;
+ const ks=ensureVerdictStage(spec), receipt=ks&&ks.receipt;
  const filled=S.answers.filter(a=>a.by==='filled').length, n=S.answers.length;
- const callStr='buildApp(\n  spec = '+JSON.stringify(spec,null,1)+',\n  destination = "the next builder",\n  doneCriteria = '+JSON.stringify(DONE_CRITERIA,null,1)+'\n)\n// rule 7: builders get spec + destination + done-criteria. Nothing else.';
+ const callStr='buildApp(\n  spec = '+JSON.stringify(spec,null,1)+',\n  destination = "app-compiler-harness",\n  doneCriteria = '+JSON.stringify(DONE_CRITERIA,null,1)+'\n)\n// sealed: Harness can execute only with the Kernel claim minted from this verdict.';
  const fromYouPct=n?Math.round((n-filled)/n*100):0;
  const follows=S.answers.filter(a=>{const q=QUESTIONS.find(q=>q.id===a.id);return q&&q.follow}).length;
  show(`<div class="card"><div class="q">Locked spec ${provTag('you')}</div>
  <div class="meter"><div class="bar"><i style="width:${fromYouPct}%"></i></div>${fromYouPct}% from you · ${follows} adaptive follow-ups answered</div>
  <div class="sub" style="margin-top:8px">Builders get this spec, the destination, and the done-criteria — nothing else.</div>
  <pre>${esc(callStr)}</pre>
- <div class="row"><button id="copy">Copy spec JSON</button><button class="ghost" id="dl">Download</button><button class="ghost" id="export2">Export backup</button><button class="ghost" id="keepBtn">⭐ Keep this version</button><button class="ghost" id="libSave">📚 Save to library</button><button class="ghost" id="shareBtnV">Copy share link</button><button class="ghost" id="again">New build</button></div>
+ <div class="sub" style="margin-top:8px">Receipt: <b>${esc(receipt&&receipt.fingerprint||'not minted')}</b></div>
+ <div class="row"><button id="authorizeHarness">Authorize Harness →</button><button class="ghost" id="proof">Export proof</button><button class="ghost" id="copy">Copy spec JSON</button><button class="ghost" id="dl">Download</button><button class="ghost" id="export2">Export backup</button><button class="ghost" id="keepBtn">⭐ Keep this version</button><button class="ghost" id="libSave">📚 Save to library</button><button class="ghost" id="shareBtnV">Copy share link</button><button class="ghost" id="again">New build</button></div>
  <div class="gates" id="gates"></div></div>`);
+ el('authorizeHarness').onclick=()=>{
+  const live=kSession(), r=live&&live.receipt, raw=live&&live.page0;
+  if(!r||!raw||!window.MOOR){el('gates').textContent='authorization locked — missing receipt/router';return}
+  el('gates').textContent='minting single-use execution claim…';
+  window.MOOR.request({input:raw,source:'funnel-verdict',funnel_receipt:r}).then(x=>{
+   if(x&&x.route==='harness'&&x.result&&x.result.launch_url){location.href=x.result.launch_url;return}
+   el('gates').textContent='authorization denied';
+  }).catch(e=>{el('gates').textContent='authorization denied: '+String(e&&e.message||e)});
+ };
+ el('proof').onclick=()=>{
+  const p=FK()&&FK().exportProof(S.kernelRequestId); if(!p){el('gates').textContent='proof unavailable';return}
+  const b=new Blob([JSON.stringify(p,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='funnel-proof-'+S.kernelRequestId.replace(/[^a-z0-9_-]+/gi,'-')+'.json';a.click();
+ };
  el('copy').onclick=()=>{ navigator.clipboard.writeText(JSON.stringify(spec,null,2)).then(()=>{ el('gates').textContent='copied ✓' }) };
  el('dl').onclick=()=>{ const b=new Blob([JSON.stringify(spec,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-spec.json'; a.click() };
  el('export2').onclick=()=>{ const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-v3-backup.json'; a.click() };
