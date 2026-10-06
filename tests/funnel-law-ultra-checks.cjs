@@ -35,8 +35,8 @@ assert.throws(()=>P.register({...pkg,purpose:'changed same version'}),/immutable
 // Law cannot skip stages and becomes unusable after staleness.
 const root=Law.open({case_id:'root-case',page0:'Build a recursive Funnel law.',scope:{project:'moor'}});
 assert.throws(()=>Law.transition('root-case','SOLVING',{},'worker'),/illegal transition/);
-Law.transition('root-case','REFERENCES_BOUND',{},'law');
-Law.transition('root-case','QUESTIONS_COMPILED',{},'law');
+Law.transition('root-case','REFERENCES_BOUND',{references:[]},'law');
+Law.transition('root-case','QUESTIONS_COMPILED',{questions:['How should recursion scale?']},'law');
 const rootBudget=B.envelope({case_id:'root-case',limit:{tokens:50000,worker_calls:50,storage_bytes:1000000}});
 const child=Case.spawn('root-case',{case_id:'child-case',question_id:'q1',question:'How should recursion scale?',parent_budget:rootBudget,budget_limit:{tokens:5000,worker_calls:8,storage_bytes:50000},capabilities:['read:page0','submit:ballot','consume:budget']});
 assert.equal(child.child.parent_case_id,'root-case');assert.equal(child.child_budget.limit.tokens,5000);
@@ -54,10 +54,23 @@ assert(big.max_cases>small.max_cases&&big.max_solver_calls>small.max_solver_call
 const forecast=Gov.forecast({questions:3,workers:16,max_depth:4,branch_factor:4,runs:10,storage_budget_bytes:1e6});
 assert(['green','yellow','red'].includes(forecast.status));assert(forecast.storage_bytes>0);
 
-// Receipt minting from candidate law and staleness.
-Law.transition('root-case','SOLVING',{},'law');
+// Native Ultra Page 0 fidelity, receipt order, and staleness.
+assert.throws(()=>Law.open({case_id:'root-case',page0:'Different request.',scope:{project:'moor'}}),/immutable/);
+Law.transition('root-case','SOLVING',{proposal:'Secure core / elastic society'},'law');
+assert.throws(()=>Law.mintReceipt('root-case','BlueprintReceipt',{blueprint:'too-early'},'law',[],Law.hash(rootBudget)),/cannot be minted/);
+Law.transition('root-case','CHILDREN_RUNNING',{children:[{id:'child-case'}]},'law');
+Law.transition('root-case','CONVERGING',{decision:'secure-elastic',unresolved:[]},'law');
+Law.transition('root-case','BLUEPRINT_READY',{blueprint:'candidate',hash:Law.hash({blueprint:'candidate'})},'law');
 const br=Law.mintReceipt('root-case','BlueprintReceipt',{blueprint:'candidate'},'law',[],Law.hash(rootBudget));
-assert(R.verify(br));Law.stale('root-case','Sebastian correction');assert.throws(()=>Law.mintReceipt('root-case','ExecutionReceipt',{},'law'),/invalid case/);
+assert(R.verify(br));assert(Law.verifyReceipt(br));
+const obs=Law.extractObligations('Build a recursive Funnel law.');
+assert.throws(()=>Law.transition('root-case','PAGE0_REPLAYED',{page0_verified:true,page0_hash:'wrong',obligations:obs.map(o=>({...o,status:'satisfied'})),substitutions:[]},'law'),/immutable Page 0 hash/);
+Law.transition('root-case','PAGE0_REPLAYED',{page0_verified:true,page0_hash:Law.get('root-case').page0_hash,obligations:obs.map(o=>({...o,status:'satisfied'})),substitutions:[]},'law');
+assert.throws(()=>Law.mintReceipt('root-case','ExecutionReceipt',{},'law',[br.fingerprint],Law.hash(rootBudget)),/cannot be minted/);
+Law.transition('root-case','EXECUTION_AUTHORIZED',{blueprint_receipt:br.fingerprint,destination:'Project Pulse'},'law');
+const er=Law.mintReceipt('root-case','ExecutionReceipt',{destination:'Project Pulse'},'law',[br.fingerprint],Law.hash(rootBudget));
+assert(R.verify(er));assert(Law.verifyReceipt(er));
+Law.stale('root-case','Sebastian correction');assert.equal(Law.verifyReceipt(er),false);assert.throws(()=>Law.mintReceipt('root-case','ExecutionReceipt',{},'law'),/invalid case/);
 
 // Promotion requires regression + explicit approval + PromotionReceipt.
 Promo.candidate({law_version:'ultra-v1',blueprint_hash:'bh',prior_version:'v44-sealed'});
@@ -67,4 +80,4 @@ Promo.approve('ultra-v1');
 const pr=R.mint('PromotionReceipt',{law_version:'ultra-v1',case_id:'promote',page0_hash:'p',scope_hash:'s',payload_hash:'bh',ledger_head:'l',issuer_role:'owner'});
 assert.equal(Promo.promote('ultra-v1',pr).state,'promoted');
 
-console.log('PASS: Ultra Funnel Law enforces typed receipts, least authority, conserved budgets, recursive cases, synthetic solver confidence, scale forecasts, staleness, package immutability, and gated promotion');
+console.log('PASS: Ultra Funnel Law enforces native immutable Page 0 replay, typed receipt ordering, least authority, conserved budgets, recursive cases, synthetic solver confidence, scale forecasts, staleness, package immutability, and gated promotion');
