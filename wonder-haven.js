@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const W=window.WonderFeed;if(!W)return;
-const RELEASE='20261006-scroll-repair3';
+const RELEASE='20261006-fx1';
 const policy=window.WonderScrollPolicy,limits=policy.limits;
 const failures=[];
 const lightweight=new Set(['terrain-core','terrain-field','planet-vegetation','softbody-creatures','comp-proc-vehicles','comp-furniture']);
@@ -87,14 +87,14 @@ function nativeRenderer(g){
   async capture(){const end=Date.now()+15000;while((!canvas||!signal)&&!dead&&!vis.dataset.error&&Date.now()<end)await new Promise(r=>setTimeout(r,200));if(!canvas||!mirrored||!signal)throw Error(vis.dataset.error||'This generator is still loading.');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return capture(output);},settings:()=>settings
  };
 }
-native.forEach(n=>W.genome.types.push({kind:n.id,label:n.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000)}),make:nativeRenderer}));
+native.forEach(n=>W.genome.types.push({kind:n.id,label:n.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000),...(n.recipe?{recipe:n.recipe}:{})}),make:nativeRenderer}));
 const excluded=new Set(['amalgam','component','motive','evolver','idea']);
 const kinds=W.genome.types.filter(x=>!excluded.has(x.kind)&&!x.noFeed);
 function register(descriptor){
  if(!descriptor||!/^native-[a-z0-9-]+$/.test(descriptor.id)||!descriptor.label||!descriptor.category||!(descriptor.page||descriptor.component))throw Error('Generator needs id, label, category and page or component');
  if(W.genome.types.some(t=>t.kind===descriptor.id))throw Error('Duplicate generator: '+descriptor.id);
  if(descriptor.page){const u=new URL(descriptor.page,location.href);if(u.origin!==location.origin||!/^https?:$/.test(u.protocol))throw Error('Preview must be same-origin');}
- const spec={...descriptor};native.push(spec);const t={kind:spec.id,label:spec.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000)}),make:nativeRenderer};W.genome.types.push(t);kinds.push(t);W.Haven?.kinds.push(t.kind);for(const api of instances)api.refreshRegistry();return spec.id;
+ const spec={...descriptor};native.push(spec);const t={kind:spec.id,label:spec.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000),...(spec.recipe?{recipe:spec.recipe}:{})}),make:nativeRenderer};W.genome.types.push(t);kinds.push(t);W.Haven?.kinds.push(t.kind);for(const api of instances)api.refreshRegistry();return spec.id;
 }
 const css=`
 .tool-host:has(>.wh){border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:0!important}.wh{--wh-ratio:9/16;color:#eef1f4;background:#080c10;border:0!important;border-radius:0!important;box-shadow:none!important;display:flex;flex-direction:column;height:min(82dvh,920px);min-height:400px;position:relative;font:14px/1.4 system-ui;overflow:hidden}
@@ -117,8 +117,9 @@ function mount(host,opts={}){
  const blocked=new Set(),byCard=new Map();
  let focused=null;
  const nativeKinds=new Set(native.map(n=>n.id));
- const onRegistry=()=>{for(const n of native)nativeKinds.add(n.id);picker.innerHTML='<option value="all">All generators</option>'+kinds.map(t=>'<option value="'+esc(t.kind)+'">'+esc(t.label)+'</option>').join('');picker.value=activeKind;bag=[];};
- let activeKind=localStorage.getItem('moor-wonder-generator')||'all';
+ const onRegistry=()=>{for(const n of native)nativeKinds.add(n.id);picker.innerHTML='<option value="all">All generators</option>'+kinds.map(t=>'<option value="'+esc(t.kind)+'">'+esc(t.label)+'</option>').join('');picker.value=activeKind;bag=[];if(activeKind==='all'&&requestedKind!=='all'&&kinds.some(t=>t.kind===requestedKind))setGenerator(requestedKind);};
+ const requestedKind=new URLSearchParams(location.search).get('generator')||localStorage.getItem('moor-wonder-generator')||'all';
+ let activeKind=requestedKind;
  if(!kinds.some(t=>t.kind===activeKind))activeKind='all';
  picker.value=activeKind;
  const params=new URLSearchParams(location.search),random=rng(hash(params.get('seed')||String(Date.now())));
@@ -229,8 +230,9 @@ function mount(host,opts={}){
  const first=activeKind==='all'?['terrain','native-plant','planet','forest','native-furniture','firefountain']:[activeKind];for(const type of first){const t=kinds.find(x=>x.kind===type);if(t)add({type,seed:Math.floor(random()*1e9),p:t.params(random)});}
  const api={refreshRegistry:onRegistry,stats:()=>({cards:grid.children.length,live:records.filter(r=>r.running).length,nativeLive:records.filter(r=>r.running&&nativeKinds.has(r.g.type)).length,history:records.length,failures:failures.slice()}),stopAll(){dead=true;cancelAnimationFrame(layoutTimer);clearTimeout(pollTimer);resizeObserver.disconnect();scroll.removeEventListener('scroll',onScroll);document.removeEventListener('visibilitychange',onVisibility);records.forEach(r=>stop(r,true));document.removeEventListener('fullscreenchange',onFs);document.removeEventListener('keydown',onKey);urls.forEach(u=>URL.revokeObjectURL(u));clearTimeout(statusTimer);instances.delete(api);},insertGenome(g){if(!W.genome.valid(g))throw Error('Invalid recipe');const rec=add(g);if(rec){scroll.scrollTop=scroll.scrollHeight;focused=rec;schedule();}}};host._wonderApi=api;instances.add(api);return api;
 }
-W.mount=mount;W.unmount=()=>{for(const api of [...instances])api.stopAll();};W.Haven={native,kinds:kinds.map(x=>x.kind),release:RELEASE,register,failures,limits};
+W.mount=mount;W.unmount=()=>{for(const api of [...instances])api.stopAll();};W.Haven={native,kinds:kinds.map(x=>x.kind),release:RELEASE,register,failures,limits,refreshRegistry:()=>{for(const api of instances)api.refreshRegistry();}};
 if(typeof fetch==='function')fetch('wonder-generators.json?v='+RELEASE).then(r=>{if(!r.ok)throw Error('Registry unavailable');return r.json();}).then(reg=>{if(reg.schema!=='moor.wonder-generators'||!Array.isArray(reg.generators))throw Error('Invalid registry');for(const spec of reg.generators){try{register(spec);}catch(e){failures.push({generator:spec.id,reason:e.message});}}}).catch(e=>failures.push({reason:e.message,source:'registry'}));
 if(typeof TOOLS!=='undefined')TOOLS.wonder={mount:host=>mount(host),unmount:W.unmount};
 })();
+
 
