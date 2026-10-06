@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const protectedPaths=new Set(JSON.parse(fs.readFileSync(path.join(__dirname,'funnel-protected-paths.json'),'utf8')));
+const redundancy=require('../funnel-redundancy.js');
 
 class FunnelGuardianError extends Error{
   constructor(message){super(message);this.name='FunnelGuardianError';}
@@ -20,25 +21,21 @@ function hash(x){
   return ('00000000'+a.toString(16)).slice(-8)+('00000000'+b.toString(16)).slice(-8);
 }
 function extractObligations(raw){
-  const source=String(raw||''),parts=source.split(/(?:\n+|(?<=[.!?;])\s+)/).map(x=>x.trim()).filter(Boolean),seen={},out=[];
-  const signal=/\b(must|need(?:s)?|should|have to|has to|gotta|make sure|ensure|never|cannot|can't|want(?:s)?|required?|no excuse|prevent(?:s|ed|ing)?|forbid(?:s|den|ding)?|block(?:s|ed|ing)?|lock(?:s|ed|ing)?|seal(?:s|ed|ing)?|force(?:s|d|ing)?|protect(?:s|ed|ing)?|disable(?:s|d|ing)?|require(?:s|d|ing)?|create|build|make|add|remove|fix)\b/i;
-  for(const part of parts){
-    const meaningful=part.replace(/\bi\s+(?:don't|do not)\s+know\b/ig,'').replace(/\bi(?:'m| am)\s+not\s+sure\b/ig,'').trim();
-    if(!signal.test(meaningful))continue;
-    const id='obligation:'+hash(part.toLowerCase());
-    if(!seen[id]){seen[id]=1;out.push({id,source:part});}
-  }
-  if(!out.length&&source.trim())out.push({id:'obligation:'+hash(source.trim().toLowerCase()),source:source.trim()});
-  return out;
+  return redundancy.analyze(raw).union.map(o=>({id:o.id,source:o.source,support:o.support,lenses:o.lenses}));
 }
+
 function authMessage(repo,pr,head,files){
   return ['MOOR-FUNNEL-OWNER-AUTH-V1','repo:'+repo,'pr:'+pr,'head:'+head,'files:',...files.slice().sort()].join('\n');
 }
 function validateProof(p){
   assert(p&&p.schema==='moor.funnel-proof'&&p.version===1,'missing or invalid moor.funnel-proof');
-  assert(p.law_version==='v45-armored','proof must use current Funnel law v45-armored');
+  assert(p.law_version==='v46-redundant','proof must use current Funnel law v46-redundant');
   assert(p.page0&&typeof p.page0.raw==='string'&&p.page0.raw.trim(),'proof Page 0 is empty');
   assert(p.page0.raw_hash===hash(p.page0.raw),'proof Page 0 hash mismatch');
+  const ra=redundancy.analyze(p.page0.raw);
+  assert(p.page0.redundancy&&p.page0.redundancy.fingerprint===ra.fingerprint,'proof redundant distillation fingerprint mismatch');
+  assert(Array.isArray(p.page0.redundancy.lenses)&&p.page0.redundancy.lenses.length===3,'proof must contain three isolated distillation lenses');
+  assert(stable((p.page0.redundancy.union||[]).map(x=>x.id).sort())===stable(ra.union.map(x=>x.id).sort()),'proof redundant obligation union mismatch');
   for(const stage of ['references','distill','decisions','replay','verdict'])assert(p[stage]&&p[stage].stage===stage,'proof missing '+stage+' stage');
   assert(Array.isArray(p.references.reused)&&Array.isArray(p.references.missing),'references stage malformed');
   assert(typeof p.distill.spec_draft==='string'&&p.distill.spec_draft.trim(),'distill stage lacks spec draft');
@@ -60,6 +57,7 @@ function validateProof(p){
   const r=p.receipt;
   assert(r&&r.schema==='moor.funnel-receipt'&&r.law_version===p.law_version,'receipt missing or wrong law');
   assert(r.request_id===p.request_id&&r.page0_hash===p.page0.raw_hash,'receipt request/Page 0 binding mismatch');
+  assert(r.redundancy_fingerprint===ra.fingerprint,'receipt redundant-distillation binding mismatch');
   assert(r.spec_hash===hash(p.verdict.spec),'receipt spec hash mismatch');
   assert(r.destination===p.verdict.destination,'receipt destination mismatch');
   assert(stable(r.done_criteria)===stable(p.verdict.done_criteria),'receipt done criteria mismatch');
