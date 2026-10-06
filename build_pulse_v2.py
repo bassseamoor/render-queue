@@ -162,7 +162,7 @@ out = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
        '<title>MOOR \u00B7 Project Pulse</title>\n'
        '<meta name="description" content="Interactive MOOR project workspace: real recovered software running as tools, with plain-language explanations alongside.">\n'
        '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 32 32\'%3E%3Crect width=\'32\' height=\'32\' rx=\'7\' fill=\'%2308101c\'/%3E%3Cpath d=\'M6 24V9l10 10L26 9v15\' fill=\'none\' stroke=\'%235bd8ff\' stroke-width=\'3\'/%3E%3C/svg%3E">\n'
-       '<style>\n' + full_css + '\n</style>\n</head>\n<body>' + body + '\n' + scripts + '\n</body>\n</html>\n')
+       '<style>\n' + full_css + '\n</style>\n<link rel="stylesheet" href="pulse-beam.css?v=20261006-beam1">\n</head>\n<body>' + body + '\n' + scripts + '\n<script src="pulse-beam-audit.js?v=20261006-beam1"></script>\n<script src="pulse-beam-component-adapter.js?v=20261006-beam1"></script>\n<script src="pulse-beam.js?v=20261006-beam1"></script>\n</body>\n</html>\n')
 
 with open(OUT, 'w', encoding='utf-8') as f:
     f.write(out)
@@ -247,6 +247,43 @@ for c in comps:
         ))),
     })
 
+# Platform-level items that must survive every dashboard rebuild. These are not
+# derived from the legacy COMPS inventory, so regeneration must add them explicitly.
+PRESERVED_PLATFORM_ITEMS = {
+    'pulse-beam': {
+        'label': 'Pulse Beam', 'file': 'pulse-beam.js',
+        'component': 'Pulse Beam Spatial Shell v1',
+        'component_source': 'blueprint/pulse-beam-rebrand.blueprint.json',
+        'page': 'pulse-dashboard.html',
+        'depends_on': ['pulse-beam.css','pulse-beam-audit.js','pulse-beam-component-adapter.js','pulse-beam-funnel-hall.html','pulse-beam-funnel-hall.js'],
+        'tags': ['cat:interface','cat:creation','kind:spatial-shell','prov:ultra-funnel','prov:beam']
+    },
+    'pulse-beam-funnel-hall': {
+        'label': 'Pulse Beam · Funnel Hall', 'file': 'pulse-beam-funnel-hall.js',
+        'component': 'Pulse Beam Funnel Hall v1',
+        'component_source': 'blueprint/pulse-beam-rebrand.blueprint.json',
+        'page': 'pulse-beam-funnel-hall.html',
+        'depends_on': ['three.module.js','funnel-foundry-core.js','funnel-environment-data.js'],
+        'tags': ['cat:space','cat:compdata','kind:permanent-space','prov:beam','prov:funnel-fabric']
+    },
+    'pulse-beam-standards': {
+        'label': 'Pulse Beam · Design Law', 'file': 'pulse-beam-audit.js',
+        'component': 'Beam Design Law v1',
+        'component_source': 'blueprint/pulse-beam-rebrand.blueprint.json',
+        'page': 'pulse-beam-standards.html',
+        'depends_on': ['pulse-beam.css','pulse-beam-component-adapter.js'],
+        'tags': ['cat:interface','cat:compdata','kind:design-law','prov:beam']
+    },
+    'funnel-maintenance-status': {
+        'label': 'Funnel Maintenance Status', 'file': 'funnel-maintenance-status.json',
+        'component': 'Funnel maintenance / evidence matrix',
+        'component_source': 'blueprint/funnel-ultra-v44-migration.blueprint.json',
+        'page': 'pulse-beam-funnel-hall.html',
+        'depends_on': ['funnel-kernel.js','funnel-law-core.js','.github/workflows/pulse-checks.yml'],
+        'tags': ['cat:compdata','kind:maintenance-status','prov:verified','see:funnel-fabric']
+    }
+}
+
 manifest = {
     'name': 'MOOR Project Pulse',
     'version': '2.1',
@@ -289,6 +326,8 @@ manifest = {
     },
     'tools': manifest_tools,
 }
+manifest.setdefault('items', {})
+manifest['items'].update(PRESERVED_PLATFORM_ITEMS)
 with open(REC + '/pulse-manifest.json', 'w', encoding='utf-8') as f:
     json.dump(manifest, f, indent=2, ensure_ascii=False)
 print('wrote %s (%d tools)' % (REC + '/pulse-manifest.json', len(manifest_tools)))
