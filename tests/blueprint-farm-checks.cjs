@@ -68,6 +68,8 @@ const agent=JSON.parse(fs.readFileSync('moor-agent.json','utf8'));
 assert(agent.blueprint_farm&&agent.blueprint_farm.current_release==='BF-01','canonical MOOR entry must expose BF-01');
 assert.equal(agent.blueprint_farm.automatic_next_slice,false,'Blueprint Farm must not auto-release later slices');
 
+const evergreen=fs.readFileSync('morverse-evergreen-library.js','utf8');
+assert(evergreen.includes("id:'blueprint-farm'"),'EVERGREEN Blueprint Stacks must expose the farm for physical inspection');
 const html=fs.readFileSync('blueprint-farm.html','utf8');
 assert(html.includes('pulse-blueprint-farm-library.json'));
 assert(html.includes('execution:'));
