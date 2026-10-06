@@ -771,6 +771,10 @@ var FABRIC_DOCS=[
   }
 ];
 var REFINERY_DOCS=[
+ {id:'creation-deck-blueprint',name:'Pulse Creation Deck',summary:'Screenshot-led spatial workspace with floating app deck, slide-over component library, progressive inspector, universal command and measured Refinery reuse.',source:'blueprint/pulse-creation-deck.blueprint.json'},
+ {id:'creation-deck-runtime',name:'Pulse Creation Deck Runtime',summary:'Shell runtime that wraps existing components without changing their internals.',source:'pulse-creation-deck.js'},
+ {id:'creation-deck-style',name:'Pulse Creation Deck Layout',summary:'Near-black floating spatial hierarchy based heavily on the supplied unloaded-screen reference.',source:'pulse-creation-deck.css'},
+ {id:'refinery-stats',name:'Refinery Use Telemetry',summary:'Live proof surface for capability handoffs consumed, model-free assemblies, verified compositions and repeated reasoning avoided.',source:'pulse-capability-memory.html'},
  {id:'refinery-blueprint',name:'MOOR Refinery',summary:'Parallel non-authoritative filter that crystallizes blueprints/builds into deterministic assembly contracts, verified capability deltas, compact learning and candidate compositions.',source:'blueprint/moor-refinery.blueprint.json'},
  {id:'refinery-assembly',name:'Assembly Core',summary:'Executes versioned AssemblyContracts without an LLM and fails explicitly when an executor is missing.',source:'moor-assembly-core.js'},
  {id:'refinery-core',name:'Refinery Core',summary:'Converts outputs and BLUEPRINT_READY events into Crystal Bundles.',source:'moor-capability-refinery.js'},
