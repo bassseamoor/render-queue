@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HEARTH — a Moor-built game</title>
+<style>
+  :root{ --ink:#f2e8d5; --muted:#c9b48f; --panel:#1e1710ee; --line:#4a3a26;
+         --amber:#e8a33d; --gold:#ffdf9e; }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overflow:hidden;background:#0d0a07;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    color:var(--ink); user-select:none;-webkit-user-select:none; touch-action:none;}
+  #game{position:fixed;inset:0;display:block;}
+  #hud{position:fixed;top:0;left:0;right:0;display:flex;gap:8px;align-items:center;
+    padding:10px 12px;pointer-events:none;z-index:5;}
+  .chip{pointer-events:auto;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:7px 13px;font-size:13px;white-space:nowrap;
+    backdrop-filter:blur(6px);display:flex;align-items:center;gap:6px;}
+  .chip b{color:var(--gold);}
+  #flameDot{width:12px;height:12px;border-radius:50%;background:#5aa0ff;
+    box-shadow:0 0 8px #5aa0ff;}
+  #hint{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);
+    max-width:min(92vw,520px);background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:10px 16px;font-size:14px;text-align:center;z-index:5;
+    backdrop-filter:blur(6px);transition:opacity .4s;}
+  #hint:empty{display:none;}
+  #actions{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+    display:flex;gap:10px;z-index:5;}
+  #actions button{background:var(--amber);border:0;color:#1a1208;font-weight:700;
+    border-radius:999px;padding:12px 22px;font-size:15px;cursor:pointer;
+    box-shadow:0 4px 18px #e8a33d55;}
+  #actions button.ghost{background:var(--panel);color:var(--ink);border:1px solid var(--line);
+    box-shadow:none;font-weight:500;}
+  #actions:empty{display:none;}
+  .panel{position:fixed;top:0;right:0;bottom:0;width:min(88vw,360px);z-index:10;
+    background:var(--panel);border-left:1px solid var(--line);padding:20px;
+    transform:translateX(105%);transition:transform .3s;backdrop-filter:blur(10px);
+    overflow-y:auto;}
+  .panel.open{transform:none;}
+  .panel h2{margin:0 0 4px;font-size:20px;color:var(--gold);}
+  .panel .sub{color:var(--muted);font-size:13px;margin:0 0 14px;}
+  .panel .close{position:absolute;top:14px;right:14px;background:none;border:1px solid var(--line);
+    color:var(--ink);border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;}
+  .book-entry{border-bottom:1px solid var(--line);padding:10px 0;font-size:14px;}
+  .book-entry .who{color:var(--gold);font-weight:600;}
+  .book-entry .note{color:var(--muted);font-style:italic;}
+  .book-entry .when{font-size:11px;color:#7d6c55;}
+  #toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:20;
+    background:var(--panel);border:1px solid var(--amber);border-radius:12px;
+    padding:10px 18px;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;
+    max-width:90vw;text-align:center;}
+  #toast.show{opacity:1;}
+  #vignette{position:fixed;inset:0;pointer-events:none;z-index:4;
+    background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.42) 100%);}
+  #fade{position:fixed;inset:0;background:#000;z-index:30;pointer-events:none;
+    opacity:1;transition:opacity 1.6s;}
+  .coming{position:fixed;z-index:6;background:#14100bee;border:1px dashed #6b4f2a;
+    border-radius:10px;padding:6px 10px;font-size:11px;color:var(--muted);pointer-events:none;}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+<div id="hud">
+  <div class="chip" id="chipTime">🌅 <b>Day 1</b> · Spring · 06:00</div>
+  <div class="chip">🌱 <b id="statSeeds">3</b></div>
+  <div class="chip">🍎 <b id="statFood">3</b></div>
+  <div class="chip">💛 <b id="statCare">100</b></div>
+  <div class="chip"><span id="flameDot"></span><b id="statWarmth">Ember</b></div>
+</div>
+<div id="hint"></div>
+<div id="actions"></div>
+<div id="toast"></div>
+<div class="panel" id="bookPanel">
+  <button class="close" id="bookClose">✕</button>
+  <h2>Guest Book</h2>
+  <p class="sub">Every traveler who warms at your fire signs here. Forever.</p>
+  <div id="bookEntries"></div>
+</div>
+<div id="fade"></div>
+<script>
+'use strict';
+/* ============================================================
+   HEARTH — playable slice v0.1 (Moor-built)
+   World: Luria Prime (S02-SYS02-P04), seed "moor:S02-SYS02-P04"
+   Slice scope: deeds, fire, flora, fauna(trust), sky, visitors,
+   hospitality law (guest book), warmth, persistence, onboarding,
+   phone controls. Cooking / building / crafting / festivals: COMING.
+   ============================================================ */
+const WORLD = { planetId:'S02-SYS02-P04', planetName:'Luria Prime',
+  seed:'moor:S02-SYS02-P04', kind:'hearth-slice', version:'0.1' };
+
+/* ---------- seeded rng ---------- */
+function strHash(s){ let h=2166136261; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const R = mulberry32(strHash(WORLD.seed));           // world rng (stable)
+const rr = mulberry32(strHash(WORLD.seed+'|fx'));    // fx rng
+
+/* ---------- canvas ---------- */
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){ DPR=Math.min(2,window.devicePixelRatio||1); W=window.innerWidth; H=window.innerHeight;
+  cv.width=W*DPR; cv.height=H*DPR; cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0); layout(); }
+window.addEventListener('resize', resize);
+
+/* ---------- audio (tiny, generative) ---------- */
+let AC=null, muted=false, crackleGain=null;
+function audio(){ if(!AC){ try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return AC; }
+function pluck(freq){ if(muted) return; const ac=audio(); if(!ac) return;
+  const o=ac.createOscillator(), g=ac.createGain(); o.type='triangle'; o.frequency.value=freq;
+  g.gain.setValueAtTime(0.0001,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.18,ac.currentTime+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+0.6);
+  o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+0.65); }
+function startCrackle(){ if(muted||crackleGain) return; const ac=audio(); if(!ac) return;
+  const len=ac.sampleRate*2, buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*0.5;
+  const src=ac.createBufferSource(); src.buffer=buf; src.loop=true;
+  const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=900;
+  crackleGain=ac.createGain(); crackleGain.gain.value=0.0;
+  src.connect(f).connect(crackleGain).connect(ac.destination); src.start(); }
+function setCrackle(v){ if(crackleGain) crackleGain.gain.value = muted?0:v; }
+
+/* ---------- save / load ---------- */
+const LS='hearth-save-v1';
+function save(){ try{ localStorage.setItem(LS, JSON.stringify({v:1, S})); }catch(e){} }
+let saveT=null; function saveSoon(){ clearTimeout(saveT); saveT=setTimeout(save,800); }
+function load(){ try{ const s=JSON.parse(localStorage.getItem(LS)||'null'); if(s&&s.v===1&&s.S) return s.S; }catch(e){} return null; }
+
+/* ---------- state ---------- */
+const DAY_LEN=1800; // 30 real minutes per in-game day (blueprint lock)
+let S = load() || {
+  deed:false, deedName:'', fire:'unlit',           // unlit|lit|banked
+  tMin:360, day:1,                                  // game minutes, day count (start 06:00)
+  care:100, seeds:3, food:3, warmth:0,
+  door:'shut',
+  spots:[0,0,0,0,0,0].map(()=>({st:'untilled', stage:0, water:0, grow:0})),
+  hog:{trust:0, x:0.78, dir:-1, state:'wild'},      // x in world units
+  book:[],                                          // {who,note,day}
+  onboard:0,                                        // onboarding beat index
+  px:0.5,                                           // player x
+  nextTraveler: 360+ 90,                            // game-min of next traveler
+  rested:false,
+};
+const TIERS=[[0,'Ember','#5aa0ff'],[20,'Kindling','#7fb0ff'],[45,'Hearth','#e8a33d'],[70,'Beacon','#ffd97a'],[90,'Legend','#fff6dd']];
+function tier(){ let t=TIERS[0]; for(const x of TIERS) if(S.warmth>=x[0]) t=x; return t; }
+
+/* ---------- layout (world coordinates 0..1 -> px) ---------- */
+let horizonY=0, groundY=0;
+function layout(){ horizonY=H*0.52; groundY=H*0.66; }
+const X = u => u*W, Y = v => groundY + (v)*(H-groundY);
+function toast(msg,ms){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), ms||2600); }
+function hint(msg){ document.getElementById('hint').textContent=msg||''; }
+function setActions(list){ const a=document.getElementById('actions'); a.innerHTML='';
+  for(const b of list){ const el=document.createElement('button'); el.textContent=b.label;
+    if(b.ghost) el.className='ghost'; el.onclick=b.fn; a.appendChild(el); } }
+
+/* ---------- time ---------- */
+function fmtTime(){ const h=Math.floor(S.tMin/60)%24, m=Math.floor(S.tMin%60); return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
+function dayFrac(){ return (S.tMin%1440)/1440; }              // 0=midnight
+function sunElev(){ return Math.sin((dayFrac()-0.25)*Math.PI*2); } // >0 day
+function isNight(){ return sunElev()< -0.06; }
+</script>
+<script>
+'use strict';
+/* ---------- world rendering ---------- */
+// pre-seeded scenery
+const tufts=[], flowers=[], hills=[[],[],[]], clouds=[];
+for(let i=0;i<90;i++) tufts.push({x:R(), s:0.5+R()*0.9, v:R()});
+for(let i=0;i<26;i++) flowers.push({x:R(), c:['#e86a8a','#f2d06b','#f5f0e6','#b48ae0'][Math.floor(R()*4)], s:0.7+R()*0.7});
+for(let L=0;L<3;L++){ const n=7+L*2; for(let i=0;i<=n;i++) hills[L].push(R()); }
+for(let i=0;i<7;i++) clouds.push({x:R(), y:0.08+R()*0.22, s:0.6+R()*0.9, v:0.004+R()*0.006});
+
+function lerp(a,b,t){ return a+(b-a)*t; }
+function mix(c1,c2,t){ return [lerp(c1[0],c2[0],t)|0, lerp(c1[1],c2[1],t)|0, lerp(c1[2],c2[2],t)|0]; }
+function css(c){ return `rgb(${c[0]},${c[1]},${c[2]})`; }
+const SKY={ night:[[8,10,26],[20,24,54]], dawn:[[120,90,120],[240,170,120]],
+            day:[[120,170,220],[200,225,245]], dusk:[[90,70,110],[235,140,90]] };
+function skyColors(){
+  const e=sunElev(), df=dayFrac();
+  let top,bot;
+  if(e>0.25){ top=SKY.day[0]; bot=SKY.day[1]; }
+  else if(e>0){ const t=e/0.25; top=mix(SKY.dawn[0],SKY.day[0],t); bot=mix(SKY.dawn[1],SKY.day[1],t); }
+  else if(e>-0.25){ const t=(-e)/0.25; const rising=df<0.5;
+    const edge=rising?SKY.dawn:SKY.dusk; top=mix(edge[0],SKY.night[0],t); bot=mix(edge[1],SKY.night[1],t); }
+  else { top=SKY.night[0]; bot=SKY.night[1]; }
+  return {top:css(top), bot:css(bot), e};
+}
+function drawSky(dt){
+  const {top,bot,e}=skyColors();
+  const g=ctx.createLinearGradient(0,0,0,horizonY); g.addColorStop(0,top); g.addColorStop(1,bot);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,horizonY+2);
+  // stars
+  if(e<0.1){ const a=Math.min(1,(0.1-e)*4); ctx.fillStyle=`rgba(255,255,255,${a*0.85})`;
+    for(let i=0;i<70;i++){ const sx=(i*97.3)%W, sy=(i*57.7)%(horizonY*0.8);
+      const tw=0.5+0.5*Math.sin(perf*0.002+i); ctx.globalAlpha=a*(0.35+0.65*tw);
+      ctx.fillRect(sx,sy,2,2); } ctx.globalAlpha=1; }
+  // sun / moon arc
+  const df=dayFrac(), ang=(df-0.25)*Math.PI*2;
+  const sx=W*0.5 - Math.cos(ang)*W*0.42, sy=horizonY - Math.sin(ang)*horizonY*0.72;
+  if(e>-0.12){ const glow=ctx.createRadialGradient(sx,sy,4,sx,sy,90);
+      glow.addColorStop(0,'rgba(255,220,150,0.9)'); glow.addColorStop(1,'rgba(255,220,150,0)');
+      ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(sx,sy,90,0,7); ctx.fill();
+      ctx.fillStyle='#ffedb8'; ctx.beginPath(); ctx.arc(sx,sy,26,0,7); ctx.fill(); }
+  else { ctx.fillStyle='#e8ecf5'; ctx.beginPath(); ctx.arc(sx,sy,20,0,7); ctx.fill();
+      ctx.fillStyle='rgba(180,190,220,0.25)'; ctx.beginPath(); ctx.arc(sx,sy,34,0,7); ctx.fill(); }
+  // clouds drift
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  for(const c of clouds){ c.x+=c.v*dt*(e>0?1:0.3); if(c.x>1.15) c.x=-0.15;
+    const cx=c.x*W, cy=c.y*H; ctx.beginPath();
+    ctx.ellipse(cx,cy,54*c.s,15*c.s,0,0,7); ctx.ellipse(cx+34*c.s,cy+4,36*c.s,12*c.s,0,0,7);
+    ctx.ellipse(cx-36*c.s,cy+5,32*c.s,11*c.s,0,0,7); ctx.fill(); }
+}
+function drawHills(){
+  const {e}=skyColors(); const dim=e<0?0.35:1;
+  const cols=[['#5d7a52','#425c3e'],['#48603f','#33482f'],['#37492f','#263423']];
+  for(let L=0;L<3;L++){ const base=horizonY-20-L*34, amp=26+L*16;
+    ctx.fillStyle=css(mix([93,122,82],[14,16,30], e<0?(0.75-L*0.1):0));
+    ctx.beginPath(); ctx.moveTo(0,horizonY+2);
+    const pts=hills[L], n=pts.length-1;
+    for(let i=0;i<=60;i++){ const x=i/60*W; const f=i/60*n, i0=Math.floor(f), fr=f-i0;
+      const hgt=lerp(pts[i0],pts[Math.min(n,i0+1)],fr);
+      ctx.lineTo(x, base - hgt*amp); }
+    ctx.lineTo(W,horizonY+2); ctx.closePath(); ctx.fill(); }
+  void dim; void cols;
+}
+function drawGround(){
+  const {e}=skyColors(); const dark=e<0?0.45:1;
+  const g=ctx.createLinearGradient(0,groundY,0,H);
+  g.addColorStop(0, css(mix([106,128,72],[16,20,26], e<0?0.72:0)));
+  g.addColorStop(1, css(mix([74,92,54],[10,12,18], e<0?0.72:0)));
+  ctx.fillStyle=g; ctx.fillRect(0,groundY,W,H-groundY);
+  // grass tufts + flowers (seeded, static)
+  for(const t of tufts){ const x=t.x*W, y=groundY+8+t.v*(H-groundY-16);
+    ctx.strokeStyle=e<0?'#2c3a2a':'#4d6b3f'; ctx.lineWidth=1.6;
+    for(let b=-1;b<=1;b++){ ctx.beginPath(); ctx.moveTo(x,y);
+      ctx.quadraticCurveTo(x+b*5,y-9*t.s,x+b*7,y-14*t.s); ctx.stroke(); } }
+  for(const f of flowers){ const x=f.x*W, y=groundY+14+((f.x*7)%1)*(H-groundY-30);
+    ctx.fillStyle=e<0?'#3a3f4a':f.c; ctx.beginPath(); ctx.arc(x,y,3*f.s,0,7); ctx.fill(); }
+}
+/* ---------- the hearth plot ---------- */
+const PLOT={x0:0.30,x1:0.70};
+function drawPlot(){
+  const {e}=skyColors(); const night=e<0;
+  const x0=X(PLOT.x0), x1=X(PLOT.x1), gy=groundY+26;
+  if(!S.deed){ // unclaimed: faint survey stakes
+    ctx.strokeStyle='rgba(232,163,61,0.5)'; ctx.setLineDash([6,6]); ctx.lineWidth=2;
+    ctx.strokeRect(x0,gy-6,x1-x0,44); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(232,163,61,0.8)'; ctx.font='13px system-ui'; ctx.textAlign='center';
+    ctx.fillText('surveyed open land', (x0+x1)/2, gy+58);
+    return;
+  }
+  // fence
+  ctx.strokeStyle=night?'#4a3a28':'#7a5c38'; ctx.lineWidth=5;
+  ctx.beginPath(); ctx.moveTo(x0,gy); ctx.lineTo(x0,gy-46); ctx.moveTo(x1,gy); ctx.lineTo(x1,gy-46); ctx.stroke();
+  ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(x0,gy-40); ctx.quadraticCurveTo((x0+x1)/2,gy-52,x1,gy-40); ctx.stroke();
+  // marker stone
+  const mx=X(0.335);
+  ctx.fillStyle=night?'#5a5a62':'#9a9aa2'; ctx.beginPath();
+  ctx.moveTo(mx-13,gy); ctx.lineTo(mx-10,gy-30); ctx.lineTo(mx+10,gy-30); ctx.lineTo(mx+13,gy); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=night?'#2c2c34':'#55555e'; ctx.font='bold 11px system-ui'; ctx.textAlign='center';
+  ctx.fillText(S.deedName?S.deedName.slice(0,10):'HEARTH', mx, gy-12);
+  // door sign
+  const dx=X(0.665);
+  ctx.strokeStyle=night?'#4a3a28':'#7a5c38'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(dx,gy); ctx.lineTo(dx,gy-52); ctx.stroke();
+  
+  ctx.fillStyle=night?'#3d3226':'#8a6a42'; ctx.fillRect(dx-34,gy-78,68,26);
+  ctx.fillStyle=S.door==='open'?'#9fe08a':'#e08a8a'; ctx.font='bold 12px system-ui';
+  ctx.fillText(S.door==='open'?'OPEN':'SHUT', dx, gy-60);
+  // garden spots
+  S.spots.forEach((sp,i)=>{ const sx=X(0.40)+ (i%3)*44, sy=gy+52+Math.floor(i/3)*40;
+    sp._x=sx; sp._y=sy; drawSpot(sp,sx,sy,night); });
+  // fire ring
+  drawFire(X(0.5), gy, night);
+}
+function drawSpot(sp,x,y,night){
+  if(sp.st==='untilled'){ ctx.fillStyle=night?'rgba(120,90,60,0.25)':'rgba(120,90,60,0.35)';
+    ctx.beginPath(); ctx.ellipse(x,y,17,8,0,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(232,163,61,0.35)'; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.ellipse(x,y,17,8,0,0,7); ctx.stroke(); ctx.setLineDash([]); return; }
+  ctx.fillStyle=night?'#3a2c1e':'#5d4226'; ctx.beginPath(); ctx.ellipse(x,y,17,8,0,0,7); ctx.fill();
+  ctx.strokeStyle=night?'#241a10':'#3d2c18'; ctx.lineWidth=2;
+  for(let r=-1;r<=1;r++){ ctx.beginPath(); ctx.moveTo(x-14,y+r*4); ctx.lineTo(x+14,y+r*4); ctx.stroke(); }
+  if(sp.st==='planted'||sp.st==='growing'||sp.st==='mature') drawPlant(sp,x,y-6,night);
+}
+function drawPlant(sp,x,y,night){
+  const st=sp.stage, hue=sp.hue||35;
+  ctx.strokeStyle=night?'#2f4a2c':'#3f7a34'; ctx.lineWidth=3;
+  const hgt=[6,14,24,32,34][st];
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.quadraticCurveTo(x+3,y-hgt*0.6,x,y-hgt); ctx.stroke();
+  ctx.fillStyle=night?'#2f4a2c':'#4d8a3f';
+  const leafN=st>=2?3:1;
+  for(let l=0;l<leafN;l++){ const ly=y-hgt*(0.35+l*0.25), s=(5+l*2)*(st+1)/3;
+    ctx.beginPath(); ctx.ellipse(x+(l%2?7:-7),ly,s,s*0.45,(l%2?-0.5:0.5),0,7); ctx.fill(); }
+  if(st>=3){ // bloom
+    const bc=night?'#6a6a7a':`hsl(${hue},70%,62%)`;
+    ctx.fillStyle=bc;
+    for(let p=0;p<6;p++){ const a=p/6*Math.PI*2+perf*0.0004;
+      ctx.beginPath(); ctx.arc(x+Math.cos(a)*7,y-hgt+Math.sin(a)*7,4.4,0,7); ctx.fill(); }
+    ctx.fillStyle=night?'#44444e':'#ffd97a'; ctx.beginPath(); ctx.arc(x,y-hgt,4,0,7); ctx.fill(); }
+  if(st===4){ ctx.fillStyle='rgba(245,240,230,0.85)';
+    for(let p=0;p<5;p++){ ctx.beginPath(); ctx.arc(x+(rr()-0.5)*22,y-hgt-6-rr()*10,2.2,0,7); ctx.fill(); } }
+  if(sp.water<30 && sp.st!=='mature'){ ctx.fillStyle='rgba(232,163,61,0.9)'; ctx.font='11px system-ui';
+    ctx.fillText('💧', x+16, y-hgt+4); }
+}
+/* ---------- the hearthfire ---------- */
+const parts=[];
+function drawFire(x,y,night){
+  // stone ring
+  for(let i=0;i<9;i++){ const a=i/9*Math.PI*2;
+    ctx.fillStyle=night?'#5c5c64':'#8e8e96';
+    ctx.beginPath(); ctx.arc(x+Math.cos(a)*30,y+Math.sin(a)*9,7,0,7); ctx.fill(); }
+  // logs
+  ctx.strokeStyle=night?'#3a2a1a':'#5d4226'; ctx.lineWidth=7;
+  ctx.beginPath(); ctx.moveTo(x-18,y+2); ctx.lineTo(x+18,y-4); ctx.moveTo(x-16,y-4); ctx.lineTo(x+16,y+3); ctx.stroke();
+  if(S.fire!=='lit'){
+    ctx.fillStyle='rgba(200,200,200,0.5)'; ctx.font='12px system-ui'; ctx.textAlign='center';
+    ctx.fillText(S.fire==='unlit'?'unlit — tap to kindle':'banked for the night', x, y-44);
+    return;
+  }
+  const t=tier();
+  // glow
+  const glowR=night?170:90;
+  const gl=ctx.createRadialGradient(x,y-20,6,x,y-20,glowR);
+  gl.addColorStop(0,t[2]+'55'); gl.addColorStop(1,t[2]+'00');
+  ctx.fillStyle=gl; ctx.beginPath(); ctx.arc(x,y-20,glowR,0,7); ctx.fill();
+  // flame body: layered teardrops
+  const fl=1+Math.sin(perf*0.02)*0.12+Math.sin(perf*0.043)*0.07;
+  const cols=[t[2],'#ff9a3d','#ffdf9e'];
+  for(let L=0;L<3;L++){ const w=(26-L*7)*fl, h=(52-L*13)*fl;
+    ctx.fillStyle=cols[L]; ctx.globalAlpha=0.85-L*0.18;
+    ctx.beginPath(); ctx.moveTo(x-w/2,y);
+    ctx.quadraticCurveTo(x-w/2,y-h*0.6,x+Math.sin(perf*0.008+L)*6,y-h);
+    ctx.quadraticCurveTo(x+w/2,y-h*0.6,x+w/2,y); ctx.closePath(); ctx.fill(); }
+  ctx.globalAlpha=1;
+  // embers + smoke
+  if(parts.length<70 && Math.random()<0.6) parts.push({x:x+(Math.random()-0.5)*20,y:y-30,vx:(Math.random()-0.5)*0.4,vy:-0.6-Math.random()*0.9,life:1,sz:1+Math.random()*2.4,smoke:Math.random()<0.25});
+  setCrackle(night?0.05:0.02);
+}
+function drawParts(dt){
+  for(let i=parts.length-1;i>=0;i--){ const p=parts[i];
+    p.x+=p.vx*dt*0.06; p.y+=p.vy*dt*0.06; p.life-=dt*0.0009;
+    if(p.life<=0){ parts.splice(i,1); continue; }
+    if(p.smoke){ ctx.fillStyle=`rgba(150,150,160,${p.life*0.25})`;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.sz+(1-p.life)*8,0,7); ctx.fill(); }
+    else { ctx.fillStyle=`rgba(255,${140+p.life*80|0},60,${p.life})`;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.sz*p.life,0,7); ctx.fill(); } }
+  if(S.fire!=='lit') setCrackle(0);
+}
+</script>
+<script>
+'use strict';
+/* ---------- player ---------- */
+const player={tx:0.5, speed:0.00045, face:1, bob:0};
+function drawPlayer(dt){
+  const target=S.px+(player.tx-S.px)*Math.min(1,dt*0.004);
+  if(Math.abs(player.tx-S.px)>0.002) player.face=Math.sign(player.tx-S.px)||1;
+  S.px=target; player.bob+=dt*0.008*(Math.abs(player.tx-S.px)>0.004?1:0.2);
+  const x=X(S.px), y=groundY+30, b=Math.sin(player.bob)*2.5;
+  const night=isNight();
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(x,y+2,14,5,0,0,7); ctx.fill();
+  // body: hooded traveler
+  ctx.fillStyle=night?'#3a3f52':'#5a6a8a';
+  ctx.beginPath(); ctx.moveTo(x-10,y); ctx.quadraticCurveTo(x-11,y-26+b,x,y-30+b);
+  ctx.quadraticCurveTo(x+11,y-26+b,x+10,y); ctx.closePath(); ctx.fill();
+  // hood
+  ctx.fillStyle=night?'#2c3142':'#46536e';
+  ctx.beginPath(); ctx.arc(x+player.face*2,y-30+b,9,0,7); ctx.fill();
+  // face glow (lantern at night)
+  if(night){ const lg=ctx.createRadialGradient(x+player.face*10,y-22,2,x+player.face*10,y-22,26);
+    lg.addColorStop(0,'rgba(255,200,120,0.5)'); lg.addColorStop(1,'rgba(255,200,120,0)');
+    ctx.fillStyle=lg; ctx.beginPath(); ctx.arc(x+player.face*10,y-22,26,0,7); ctx.fill();
+    ctx.fillStyle='#ffd97a'; ctx.beginPath(); ctx.arc(x+player.face*10,y-22,3.4,0,7); ctx.fill(); }
+  // feet
+  ctx.fillStyle=night?'#22242e':'#3a3f4a';
+  const f=Math.sin(player.bob)*4;
+  ctx.beginPath(); ctx.ellipse(x-5+f*0.4,y+1,4,3,0,0,7); ctx.ellipse(x+5-f*0.4,y+1,4,3,0,0,7); ctx.fill();
+}
+/* ---------- puddlehog ---------- */
+function drawHog(dt){
+  const h=S.hog; const x=X(h.x), y=groundY+44;
+  // wander
+  if(h.state!=='resident'||Math.random()<0.3){
+    h.x+=h.dir*dt*0.00003*(h.state==='resident'?0.4:1);
+    if(h.x<0.06||h.x>0.94){ h.dir*=-1; }
+    if(Math.random()<dt*0.0004) h.dir*=-1;
+    // drift toward player when trusting
+    if(h.trust>=2 && Math.random()<dt*0.0006){ h.dir=Math.sign(S.px-h.x)||1; }
+  }
+  const night=isNight(), wob=Math.sin(perf*0.012)*2;
+  ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(x,y+3,17,5,0,0,7); ctx.fill();
+  // body
+  ctx.fillStyle=night?'#5c4a3e':'#8a6a52';
+  ctx.beginPath(); ctx.ellipse(x,y-8+wob*0.3,19,13,0,0,7); ctx.fill();
+  // snout
+  ctx.fillStyle=night?'#4a3a30':'#75563f';
+  ctx.beginPath(); ctx.ellipse(x+h.dir*19,y-6+wob*0.3,7,5.5,0,0,7); ctx.fill();
+  ctx.fillStyle='#2c1f16';
+  ctx.beginPath(); ctx.arc(x+h.dir*21,y-7,1.4,0,7); ctx.arc(x+h.dir*17,y-7,1.4,0,7); ctx.fill();
+  // ears
+  ctx.fillStyle=night?'#4a3a30':'#75563f';
+  ctx.beginPath(); ctx.moveTo(x-8,y-19); ctx.lineTo(x-12,y-28); ctx.lineTo(x-4,y-21); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x+2,y-20); ctx.lineTo(x+2,y-29); ctx.lineTo(x+9,y-21); ctx.closePath(); ctx.fill();
+  // eye
+  ctx.fillStyle='#1a1210'; ctx.beginPath(); ctx.arc(x+h.dir*8,y-11,2.4,0,7); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(x+h.dir*8.8,y-11.8,0.9,0,7); ctx.fill();
+  // legs
+  ctx.strokeStyle=night?'#3e322a':'#5f4632'; ctx.lineWidth=4;
+  const lp=Math.sin(perf*0.02)*3;
+  ctx.beginPath(); ctx.moveTo(x-9,y+2); ctx.lineTo(x-9+lp,y+8); ctx.moveTo(x+9,y+2); ctx.lineTo(x+9-lp,y+8); ctx.stroke();
+  // trust hearts
+  if(h.trust>0){ ctx.font='13px system-ui'; ctx.textAlign='center';
+    for(let i=0;i<h.trust;i++) ctx.fillText('♥', x-14+i*14, y-34+Math.sin(perf*0.004+i)*3); }
+  // name tag when resident
+  if(h.state==='resident'){ ctx.fillStyle='rgba(242,232,213,0.75)'; ctx.font='11px system-ui';
+    ctx.fillText('Puddlehog · home', x, y-46); }
+}
+/* ---------- traveler ---------- */
+let traveler=null; // {x, dir, phase:'in'|'sit'|'out', sitT, name, note, gift}
+const TRAVELER_NAMES=['Wren of the Reeds','Ash the Cartwright','Mallow','Juniper Vale','Old Fen','Sable'];
+const TRAVELER_NOTES=['"Your fire is the warmest light for miles."','"I followed the smoke and found a friend."','"The garden smells like rain."','"May your seeds remember you kindly."','"I left something small by the stone."'];
+function maybeTraveler(dt){
+  if(traveler) return;
+  if(S.tMin<S.nextTraveler || S.fire!=='lit' || !S.deed) return;
+  const nm=TRAVELER_NAMES[Math.floor(rr()*TRAVELER_NAMES.length)];
+  const note=TRAVELER_NOTES[Math.floor(rr()*TRAVELER_NOTES.length)];
+  const gift=rr()<0.55 ? (rr()<0.5?{k:'seeds',n:2}:{k:'food',n:2}) : null;
+  traveler={x:rr()<0.5?-0.05:1.05, dir:0, phase:'in', sitT:0, name:nm, note, gift};
+  traveler.dir=Math.sign(0.5-traveler.x);
+  toast('A traveler approaches down the path…');
+  pluck(392);
+}
+function drawTraveler(dt){
+  maybeTraveler(dt);
+  if(!traveler) return;
+  const t=traveler, night=isNight();
+  const doorShut=S.door==='shut';
+  if(t.phase==='in'){
+    t.x+=t.dir*dt*0.00006;
+    const atDoor=Math.abs(t.x-0.62)<0.03;
+    if(doorShut && atDoor){ // knocked, turned away gently
+      toast(t.name+' knocked — but your door is shut. They bow and walk on.');
+      t.phase='out'; t.dir*=-1;
+      S.nextTraveler=S.tMin+180+rr()*240; saveSoon(); return;
+    }
+    if(!doorShut && Math.abs(t.x-0.55)<0.02){ t.phase='sit'; t.sitT=0;
+      toast(t.name+' warms at your fire.'); pluck(523); }
+  } else if(t.phase==='sit'){
+    t.sitT+=dt;
+    const mins=t.sitT/1000*0.8; // sit ~75 game-min
+    if(mins>75){ // sign, gift, leave
+      S.book.push({who:t.name, note:t.note, day:S.day});
+      if(t.gift){ if(t.gift.k==='seeds') S.seeds+=t.gift.n; else S.food+=t.gift.n;
+        toast(t.name+' left a gift: +'+t.gift.n+' '+(t.gift.k==='seeds'?'seeds':'food')+' ♥'); }
+      else toast(t.name+' signed your guest book.');
+      S.warmth=Math.min(100,S.warmth+8); pluck(659);
+      const before=tier()[1];
+      t.phase='out'; t.dir=t.x<0.5?1:-1;
+      S.nextTraveler=S.tMin+240+rr()*300; saveSoon();
+      if(tier()[1]!==before) toast('Your fire burns '+tier()[1]+' — Warmth grows.');
+    }
+  } else { t.x+=t.dir*dt*0.00006; if(t.x<-0.08||t.x>1.08) traveler=null; }
+  const x=X(t.x), y=groundY+32, sit=t.phase==='sit';
+  const fy=sit? y+6 : y;
+  ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(x,fy+2,13,4.5,0,0,7); ctx.fill();
+  ctx.fillStyle=night?'#33302e':'#6b5a48';
+  if(sit){ ctx.beginPath(); ctx.ellipse(x,fy-12,13,12,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x,fy-24,8,0,7); ctx.fill(); }
+  else { const b=Math.sin(perf*0.01)*2;
+    ctx.beginPath(); ctx.moveTo(x-9,fy); ctx.quadraticCurveTo(x-10,fy-24+b,x,fy-27+b);
+    ctx.quadraticCurveTo(x+10,fy-24+b,x+9,fy); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(x,fy-30+b,7.5,0,7); ctx.fill(); }
+  // lantern
+  ctx.fillStyle='#ffd97a'; ctx.beginPath(); ctx.arc(x+12,fy-16,3,0,7); ctx.fill();
+  const lg=ctx.createRadialGradient(x+12,fy-16,1,x+12,fy-16,22);
+  lg.addColorStop(0,'rgba(255,210,130,0.5)'); lg.addColorStop(1,'rgba(255,210,130,0)');
+  ctx.fillStyle=lg; ctx.beginPath(); ctx.arc(x+12,fy-16,22,0,7); ctx.fill();
+}
+/* ---------- coming-soon signs ---------- */
+function drawComingSoon(){
+  if(!S.deed) return;
+  const night=isNight();
+  const signs=[{x:0.16,t:'kitchen — coming'},{x:0.86,t:'workshop — coming'}];
+  ctx.font='11px system-ui'; ctx.textAlign='center';
+  for(const s of signs){ const x=X(s.x), y=groundY+10;
+    ctx.strokeStyle=night?'#4a3a28':'#7a5c38'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y-30); ctx.stroke();
+    ctx.fillStyle='rgba(20,16,14,0.85)'; ctx.strokeStyle='#6b4f2a'; ctx.lineWidth=1;
+    ctx.setLineDash([4,3]);
+    const w=ctx.measureText(s.t).width+16;
+    ctx.beginPath(); ctx.rect(x-w/2,y-52,w,20); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#b39d7d'; ctx.fillText(s.t,x,y-38); }
+}
+</script>
+<script>
+'use strict';
+/* ---------- interaction ---------- */
+function spendCare(n){ if(S.care<n){ toast('Not enough Care — rest until dawn.'); return false; } S.care-=n; saveSoon(); return true; }
+function addWarmth(n){ const b=tier()[1]; S.warmth=Math.min(100,S.warmth+n);
+  if(tier()[1]!==b){ toast('Your fire burns '+tier()[1]+'.'); pluck(784); } saveSoon(); }
+
+const BEATS=[
+  'This valley on Luria Prime is surveyed and open. Claim it — one account, one hearth, forever.',
+  'Kindle your hearthfire — the first ritual. Tap the stone ring.',
+  'Till a soil patch, then plant a seed. Tap a dotted patch.',
+  'Your sprout is thirsty. Tap it to water.',
+  'A puddlehog sniffs the air… tap it to offer food.',
+  'Hang your sign: OPEN or SHUT. Tap the signpost.',
+  'Night is coming. Tap your fire and rest until dawn.',
+  '',
+];
+function beat(){ return S.onboard<7 ? BEATS[S.onboard] : ''; }
+function advanceBeat(n){ if(S.onboard===n){ S.onboard++; saveSoon(); } hint(beat()); refreshActions(); }
+
+function doClaim(){
+  if(S.deed) return;
+  S.deed=true; S.deedName='Hearth';
+  toast('The land is yours. Drive your marker stone.'); pluck(523);
+  advanceBeat(0); save();
+}
+function doLight(){
+  if(!S.deed||S.fire==='lit') return;
+  S.fire='lit'; startCrackle();
+  toast('The hearthfire is lit. It will never go out.'); pluck(392); pluck(523);
+  advanceBeat(1); save();
+}
+function doRest(){
+  if(S.fire!=='lit') return;
+  // advance to next dawn
+  let mins=(360 - S.tMin%1440 + 1440)%1440; if(mins<60) mins+=1440;
+  growPlants(mins); S.tMin+=mins;
+  toast('You rest by the fire… dawn comes.'); advanceBeat(6); save();
+}
+function growPlants(dtMin){
+  for(const sp of S.spots){ if(sp.st==='untilled'||sp.st==='tilled') continue;
+    if(sp.water>0){ sp.grow+=dtMin; sp.water=Math.max(0,sp.water-dtMin*0.08); }
+    sp.stage=Math.min(4,Math.floor(sp.grow/150));
+    sp.st= sp.stage>=4?'mature':(sp.stage>=2?'growing':'planted'); }
+}
+function tapSpot(sp){
+  if(!S.deed) return;
+  if(sp.st==='untilled'){ if(!spendCare(5)) return; sp.st='tilled'; pluck(330); saveSoon(); }
+  else if(sp.st==='tilled'){ if(S.seeds<1){ toast('No seeds — harvest or receive a gift.'); return; }
+    S.seeds--; sp.st='planted'; sp.stage=0; sp.grow=0; sp.water=60; sp.hue=20+Math.floor(rr()*320);
+    pluck(440); advanceBeat(2); saveSoon(); }
+  else if(sp.st==='planted'||sp.st==='growing'){ sp.water=100; pluck(494); advanceBeat(3); saveSoon(); }
+  else if(sp.st==='mature'){ const fs=2, sd=1+(rr()<0.5?1:0);
+    S.food+=fs; S.seeds+=sd; Object.assign(sp,{st:'untilled',stage:0,water:0,grow:0});
+    toast('Harvest: +'+fs+' food, +'+sd+' seeds.'); pluck(587); saveSoon(); }
+}
+function tapHog(){
+  const h=S.hog;
+  if(S.food<1){ toast('No food to offer. Harvest something first.'); return; }
+  S.food--; h.trust=Math.min(3,h.trust+1); pluck(660);
+  if(h.trust>=3 && h.state!=='resident'){ h.state='resident';
+    toast('The puddlehog trusts you. It is home.'); addWarmth(4); }
+  else toast(['The puddlehog sniffs your hand.','It wags its little tail.','It stays for supper.'][h.trust-1]||'♥');
+  advanceBeat(4); saveSoon();
+}
+function tapDoor(){ S.door=S.door==='open'?'shut':'open'; pluck(S.door==='open'?523:392);
+  toast(S.door==='open'?'Door OPEN — travelers welcome.':'Door SHUT — your peace is sacred.');
+  advanceBeat(5); saveSoon(); }
+
+function hitTest(px,py){
+  const fy=groundY+26, fx=X(0.5);
+  if(Math.hypot(px-fx,py-(fy-10))<56) return {k:'fire'};
+  const dx=X(0.665);
+  if(px>dx-40&&px<dx+40&&py>fy-90&&py<fy-40) return {k:'door'};
+  for(let i=0;i<S.spots.length;i++){ const sp=S.spots[i];
+    if(sp._x&&Math.hypot(px-sp._x,py-sp._y)<26) return {k:'spot',sp}; }
+  const hx=X(S.hog.x);
+  if(Math.hypot(px-hx,py-(groundY+36))<34) return {k:'hog'};
+  if(traveler){ const tx=X(traveler.x);
+    if(Math.hypot(px-tx,py-(groundY+20))<36) return {k:'traveler'}; }
+  return {k:'ground', x:px/W};
+}
+cv.addEventListener('pointerdown', e=>{
+  audio(); // unlock on first gesture
+  const r=cv.getBoundingClientRect(), px=e.clientX-r.left, py=e.clientY-r.top;
+  const h=hitTest(px,py);
+  if(h.k==='fire'){ if(S.fire==='unlit') doLight(); else if(S.fire==='lit'){ refreshActions(); } return; }
+  if(h.k==='door'){ if(S.deed) tapDoor(); return; }
+  if(h.k==='spot'){ tapSpot(h.sp); return; }
+  if(h.k==='hog'){ tapHog(); return; }
+  if(h.k==='traveler'){ toast(traveler.name+': '+traveler.note); return; }
+  if(h.k==='ground'){ if(!S.deed){ doClaim(); return; } player.tx=Math.max(0.03,Math.min(0.97,h.x)); }
+});
+function refreshActions(){
+  if(!S.deed){ setActions([{label:'Claim this land', fn:doClaim}]); return; }
+  if(S.fire==='unlit'){ setActions([]); return; }
+  if(S.fire==='lit'&&S.onboard>=6){ setActions([{label:'Rest until dawn', ghost:true, fn:doRest}]); return; }
+  setActions([]);
+}
+document.getElementById('bookClose').onclick=()=>document.getElementById('bookPanel').classList.remove('open');
+function openBook(){
+  const el=document.getElementById('bookEntries');
+  el.innerHTML = S.book.length? S.book.slice().reverse().map(b=>
+    `<div class="book-entry"><div class="who">${b.who}</div><div class="note">${b.note}</div><div class="when">day ${b.day}</div></div>`).join('')
+    : '<p class="sub">No signatures yet. Light your fire, open your door — the travelers will come.</p>';
+  document.getElementById('bookPanel').classList.add('open');
+}
+
+/* ---------- HUD ---------- */
+const elTime=document.getElementById('chipTime'), elSeeds=document.getElementById('statSeeds'),
+      elFood=document.getElementById('statFood'), elCare=document.getElementById('statCare'),
+      elWarmth=document.getElementById('statWarmth'), elDot=document.getElementById('flameDot');
+function hud(){
+  const icons=isNight()?'🌙':(sunElev()<0.25?'🌅':'☀️');
+  elTime.innerHTML=`${icons} <b>Day ${S.day}</b> · Spring · ${fmtTime()}`;
+  elSeeds.textContent=S.seeds; elFood.textContent=S.food; elCare.textContent=S.care;
+  const t=tier(); elWarmth.textContent=t[1]; elDot.style.background=t[2]; elDot.style.boxShadow=`0 0 8px ${t[2]}`;
+}
+
+/* ---------- main loop ---------- */
+let perf=0, lastT=0, lastMin=S.tMin;
+function frame(ts){
+  requestAnimationFrame(frame);
+  const dt=Math.min(100,ts-(lastT||ts)); lastT=ts; perf=ts;
+  // time: 1 real sec = 0.8 game-min (30-min days)
+  S.tMin+=dt/1000*0.8;
+  if(Math.floor(S.tMin/1440)>Math.floor(lastMin/1440)){ S.day++; S.care=100;
+    if(S.deed) toast('Dawn of day '+S.day+'. Care restored.'); saveSoon(); }
+  else if(S.tMin%1440<360 && lastMin%1440>=360 && S.day>1){ /* crossed dawn */ }
+  lastMin=S.tMin;
+  growPlants(dt/1000*0.8);
+  // draw
+  ctx.clearRect(0,0,W,H);
+  drawSky(dt); drawHills(); drawGround();
+  drawComingSoon(); drawPlot(); drawTraveler(dt); drawHog(dt); drawPlayer(dt); drawParts(dt);
+  hud();
+}
+function init(){
+  resize(); layout(); hint(beat()); refreshActions();
+  setInterval(()=>{ // traveler clock + autosave heartbeat
+    if(S.fire==='lit'&&S.deed&&!traveler&&S.tMin>=S.nextTraveler){ /* handled in draw */ }
+  },5000);
+  document.getElementById('fade').style.opacity='0';
+  // hud action chips: tap warmth chip -> guest book
+  elWarmth.parentElement.style.pointerEvents='auto'; elWarmth.parentElement.style.cursor='pointer';
+  elWarmth.parentElement.onclick=openBook;
+  requestAnimationFrame(frame);
+}
+/* debug hook for headless verification */
+window.__hearth={ S, tier, WORLD,
+  claim:doClaim, light:doLight, rest:doRest, till:i=>tapSpot(S.spots[i]),
+  plant:i=>tapSpot(S.spots[i]), water:i=>tapSpot(S.spots[i]), harvest:i=>tapSpot(S.spots[i]),
+  feed:tapHog, door:tapDoor, book:()=>S.book,
+  forceTraveler:()=>{ S.nextTraveler=S.tMin-1; }, setTMin:m=>{ S.tMin=m; },
+  skipTraveler:()=>{ if(traveler){ traveler.x=0.56; traveler.phase='in'; } }, };
+init();
+</script>
+</body>
+</html>
