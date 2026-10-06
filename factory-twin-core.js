@@ -122,7 +122,9 @@ function compose(input){
   for(const o of work_orders)bindings.push({entity_id:'work-order:'+o.work_order_id,semantic_role:'work-order',anchor_zone:o.location_hint,layout_seed:hash(o.work_order_id),display_priority:o.status==='NONCONFORMING'||o.status==='BLOCKED_MAINTENANCE'?100:70,interaction_contract:'inspect-request-actions'});
 
   const core={schema:SCHEMA,version:VERSION,generated_at:generatedAt,authority_versions,machines,routes,work_orders,maintenance:clone(maintenance),receipts,metrics,source_hashes,spatial_bindings:bindings};
-  core.snapshot_id='twin:'+hash({...core,generated_at:undefined,snapshot_id:undefined});
+  const identity=clone(core);delete identity.generated_at;delete identity.snapshot_id;
+  (identity.work_orders||[]).forEach(o=>{delete o.queue_age_ms;});
+  core.snapshot_id='twin:'+hash(identity);
   return core;
 }
 function validate(s){
