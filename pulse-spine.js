@@ -663,6 +663,8 @@ var FABRIC_DOCS=[
  {id:'fabric-hub',name:'HUB Kind Registry',summary:'Versioned part/KIND registry: define once, instantiate by identity + parameters, refuse incompatible contexts loudly.',source:'hub.html'},
  {id:'fabric-assembly-core',name:'Assembly Core',summary:'Deterministic software work instructions with explicit operations, dependencies, outputs, verification and rollback.',source:'moor-assembly-core.js'},
  {id:'fabric-cumulative-machinery',name:'Cumulative Capability Memory',summary:'Verified capabilities accumulate as versioned machinery; deprecation preserves identity, quarantine is explicit, and preferred routing reuses active compatible machines.',source:'moor-capability-memory.js'},
+ {id:'fabric-software-factory-core',name:'Software Factory Work-Order Ledger',summary:'Persistent manufacturing conveyor: build requests become BOM-bound work orders; Funnel authorization creates travelers; Harness and verification remain visible WIP/QC states.',source:'software-factory-core.js'},
+ {id:'fabric-request-conveyor',name:'MOOR Request Factory Conveyor',summary:'Live entry wiring that resolves known machinery into the BOM, routes Funnel → Harness → Verifier, and carries work_order_id through execution handoff.',source:'moor-request.js'},
  {id:'fabric-luxe-ui',name:'Pulse Luxe Spatial UI',summary:'Shared premium spatial design law for Pulse, embedded tools and the current 3D Funnel: deep field, floating chrome, ice-white light, emerald state and mobile-safe command dock.',source:'blueprint/pulse-luxe-ui.blueprint.json'},
  {id:'fabric-luxe-law',name:'MOOR Luxe UI Law',summary:'Shared CSS/JS shell that applies the spatial visual system across Pulse and same-origin embedded tools.',source:'moor-luxe.css'},
   {
