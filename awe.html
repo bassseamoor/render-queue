@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AWE — the standing-there generator</title>
+<style>
+:root{--bg:#0d0b08;--ink:#efe3cb;--mut:#a89272;--gold:#e8a33d;--card:#161210;--line:#3a2d20}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,'Times New Roman',serif}
+.top{position:sticky;top:0;z-index:5;background:rgba(13,11,8,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.brand{font-size:20px;letter-spacing:.28em;color:var(--gold);margin-right:6px}
+.seedchip{font-family:monospace;font-size:12px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer;background:var(--card)}
+.seedchip:hover{color:var(--gold);border-color:var(--gold)}
+button.act{background:var(--gold);border:0;color:#1a1208;font-weight:700;border-radius:999px;padding:8px 18px;font-size:14px;cursor:pointer;font-family:inherit}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:999px;padding:8px 16px;font-size:14px;cursor:pointer;font-family:inherit}
+button.ghost:hover{color:var(--gold);border-color:var(--gold)}
+button.ghost.on{color:#1a1208;background:var(--gold);border-color:var(--gold)}
+.locks{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--mut);flex-wrap:wrap}
+.wrap{max-width:680px;margin:0 auto;padding:34px 20px 90px}
+.mvmt{margin:0 0 8px}
+.mvmt .num{font-size:12px;letter-spacing:.35em;color:var(--gold);margin:30px 0 4px}
+.mvmt .mtitle{font-size:15px;color:var(--mut);font-style:italic;margin:0 0 12px}
+.mvmt p{font-size:18.5px;line-height:1.75;margin:0 0 1em}
+.mvmt:first-child .num{margin-top:0}
+.mvmt p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.9;padding:2px 8px 0 0;color:var(--gold)}
+.custom{display:none;gap:8px;flex-wrap:wrap;margin:6px 0}
+.custom.open{display:flex}
+.custom select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-family:inherit;font-size:13.5px;max-width:300px}
+.saved{margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+.saved h4{font-size:12px;letter-spacing:.25em;color:var(--mut);margin:0 0 10px;font-weight:400}
+.srow{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:14px}
+.srow code{font-family:monospace;font-size:12px;color:var(--gold);cursor:pointer;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow button{background:none;border:1px solid var(--line);color:var(--mut);border-radius:8px;padding:2px 10px;cursor:pointer;font-size:12px}
+.hintline{color:var(--mut);font-size:13.5px;font-style:italic;margin:18px 0 0}
+@media(max-width:560px){.mvmt p{font-size:17px}.brand{font-size:16px}}
+</style>
+</head>
+<body>
+<div class="top">
+  <span class="brand">AWE</span>
+  <span class="seedchip" id="seedChip" title="tap to copy share link">seed …</span>
+  <button class="act" id="btnNew">New hour</button>
+  <button class="ghost" id="btnCopy">Copy</button>
+  <button class="ghost" id="btnSave">Keep</button>
+  <div class="locks">
+    <span>lock:</span>
+    <button class="ghost" id="lockPlace">place</button>
+    <button class="ghost" id="lockHour">hour</button>
+    <button class="ghost" id="lockLight">light</button>
+    <button class="ghost" id="btnCustom">customize</button>
+  </div>
+</div>
+<div class="wrap">
+  <div class="custom" id="customRow">
+    <select id="selPlace"></select>
+    <select id="selHour"></select>
+    <button class="act" id="btnApplyCustom">Stand here</button>
+  </div>
+  <div id="hour"></div>
+  <p class="hintline" id="hintline">Stand still. Read slowly. This hour is yours — keep it with the seed above.</p>
+  <div class="saved" id="savedBox" style="display:none">
+    <h4>KEPT HOURS</h4>
+    <div id="savedList"></div>
+  </div>
+</div>
+<script>
+/* AWE intent corpus v1 — distilled from Sebastian's stated taste.
+ * Sources: MEMORY.md aesthetics ("Realistic but mature", warm storybook realism,
+ * craftsmanship, beauty persuades), 2026-10-04 Pulse-as-instrument (carved stone/glass,
+ * deep shadow, moving light), Stream topics (glass art, architecture, interiors,
+ * rainy days), HEARTH (warmth, coziness, golden light, nature kept by care).
+ * RULE: every atom is implementation-free phenomenology. No tool names, no "how to
+ * build this". Only what a person standing there would perceive. */
+var AWE_INTENT = {
+version: 1,
+places: [
+{t:"a narrow cove where the cliffs lean in like the walls of a chapel, black rock gone green with moss at the waterline", v:"the cliffs rise on both sides, dark and wetly green, and between them the sea lies flat and bright as a held mirror"},
+{t:"the third terrace of an old hillside garden, where the stone steps have been worn into shallow bowls by a century of feet", v:"the terraces fall away below you in green steps, each one a different shade, down to the valley floor hazy with distance"},
+{t:"a boathouse at the far end of a still lake, its doors swung open to the water and the evening coming in", v:"the lake stretches out unbroken to the far shore, holding the sky so perfectly the world looks folded in half"},
+{t:"a clearing in a redwood grove where the light falls in columns and the ground is soft with a hundred years of needles", v:"the trunks rise like the pillars of a cathedral, going up and up until the green roof closes over the light itself"},
+{t:"the window seat of a stone cottage during a rainstorm, the glass cold against your shoulder", v:"beyond the rain-streaked glass the hillside blurs green and grey, sheep moving through it like slow punctuation"},
+{t:"a tidal rockpool at low tide, cut off from the sea and holding the whole sky", v:"all around, the exposed reef glistens dark and the sea waits beyond the rocks, patient as an animal"},
+{t:"an old stone bridge with a single arch, the river moving under it the color of bottle glass", v:"the river runs away in both directions, green and glassy, fringed with willows that trail their fingers in the current"},
+{t:"a walled courtyard garden an hour before sunset, the walls warm as bread from the day's sun", v:"the garden is a room with no ceiling: espaliered fruit trees against the walls, a fountain at the center, the sky going gold overhead"},
+{t:"the top of a coastal stair cut into the cliff, 214 steps down to a beach no road reaches", v:"below, the beach curves away empty in both directions, white sand meeting white surf under the huge open sky"},
+{t:"a greenhouse in late afternoon, humid air, the glass panes ticking as they cool", v:"through the glass the real garden glows beyond, rows of green going soft at the edges in the heat-haze"},
+{t:"a mountain hut with one lit window, seen from the dark trail as the blue hour settles", v:"the peaks stand around in their evening blue, snow catching the last pink light, the valley already dark below"},
+{t:"the shallow end of a hot spring in the woods, steam braiding up through the cedars", v:"the cedars close around in every direction, dark green and straight, steam rising between them like the forest breathing"},
+{t:"a library with a ladder and a round window, dust moving in the light like slow snow", v:"through the round window: the sea, impossibly blue, framed like the only painting the room will ever need"},
+{t:"an orchard at blossom time, the petals coming down so steadily it feels like weather", v:"the rows of trees run to the horizon in white and pink, and beyond them the hills are a soft blue-green haze"},
+{t:"a desert canyon at dawn, the walls catching fire one layer at a time from the top down", v:"the canyon opens below you in bands of red and gold, the river a green thread at the bottom, the far rim already burning"},
+{t:"a wooden footbridge over a marsh, the reeds hissing softly on both sides", v:"the marsh spreads flat to every horizon, water and reed and sky in equal thirds, birds stitching black lines across it"},
+{t:"the courtyard of a bathhouse, steam rising off the water and the stone still warm underfoot", v:"beyond the courtyard wall, cypress trees stand dark against a sky going violet, and the first star is out"},
+{t:"a lighthouse gallery at night, the lamp turning somewhere below you and the sea all around", v:"the sea is black glass to every horizon, the beam sweeping across it and catching the white manes of the waves"},
+{t:"a valley overlook after the rain has passed, the clouds torn open and the fields steaming", v:"the whole valley lies below, patched green and gold, the river stitching silver through it, steam rising off the fields"},
+{t:"a small chapel with the door left open, the sea visible through it like a painting that moves", v:"the doorway frames the sea perfectly — blue, white-maned, endless — with the altar's candles trembling in the foreground"},
+{t:"a tea house at the edge of a bamboo grove, the floor cool under your knees", v:"the bamboo rises in green ranks, stalks clicking softly, light falling through in shifting bars of gold"},
+{t:"the stern of a slow wooden boat at golden hour, the wake stitching itself closed behind you", v:"the water runs to the horizon in hammered gold, the far shore a dark line, gulls hanging motionless in the updraft"},
+{t:"a hillside of lavender at dusk, the rows running down until they blur into purple haze", v:"the purple rows flow downhill like water frozen mid-pour, and beyond them the plain shimmers in the heat of the day's end"},
+{t:"an ice cave at noon, the light coming through the ceiling blue as deep water", v:"the ice walls curve away in impossible blue, light moving through them the way it moves through deep sea"}
+],
+hours: [
+{t:"forty minutes before sunset, after a rain that washed everything clean", p:"dusk"},
+{t:"the blue hour, when the last light is the color of a held breath", p:"dusk"},
+{t:"just after dawn, the sun still below the ridge but the sky already deciding on gold", p:"dawn"},
+{t:"midnight in midsummer, the sky never fully dark, everything edged in silver", p:"night"},
+{t:"the exact middle of a thunderstorm's pause, the air electric and green", p:"day"},
+{t:"late morning in autumn, the light low and slanting and smelling of leaves", p:"day"},
+{t:"an hour past sunrise on the first cold day of the year, your breath visible", p:"dawn"},
+{t:"the long amber evening of high summer, when the sun takes hours to set", p:"dusk"},
+{t:"first light after a night of snow, the world made new and silent", p:"dawn"},
+{t:"the grey-gold hour before a storm, when the light goes strange and beautiful", p:"dusk"},
+{t:"midday in a heatwave, everything shimmering, the shade feeling like water", p:"day"},
+{t:"the violet minutes right after the sun drops below the sea", p:"dusk"},
+{t:"a windless winter afternoon, the sun low and the shadows impossibly long", p:"day"},
+{t:"the pale hour before dawn when the birds start one by one, like lights coming on", p:"dawn"},
+{t:"golden hour in spring, pollen drifting through the light like tiny lanterns", p:"dusk"},
+{t:"the deep of night during a meteor shower, the sky quietly falling", p:"night"}
+],
+light: [
+{t:"the sun comes through the rain-washed air in visible shafts, and dust hangs in them like plankton", ps:["day"]},
+{t:"light pools on the stone floor in the exact shape of the window, with the mullions drawn across it in shadow", ps:["day"]},
+{t:"everything facing west is gilded; everything facing east is already dreaming in blue", ps:["dusk"]},
+{t:"the light is low enough to rake across every surface, and suddenly you can see the texture of everything", ps:["dawn","dusk"]},
+{t:"a single shaft finds the water and turns it into hammered gold, too bright to look at directly", ps:["day"]},
+{t:"the clouds are lit from underneath, rose and amber, like coals under ash", ps:["dusk"]},
+{t:"shadows stretch impossibly long and thin, calligraphy written across the ground", ps:["dawn","dusk"]},
+{t:"the light filters through leaves and throws a thousand green coins onto the path", ps:["day"]},
+{t:"the whole scene is lit as if from inside, the way things look in the last minute of sun", ps:["dusk"]},
+{t:"moonlight lays a trembling road across the water, broken and mended with every wave", ps:["night"]},
+{t:"the fog glows from within, opal-white, and every edge in the world has gone soft", ps:["dawn","day","dusk"]},
+{t:"lantern light moves on the ceiling, water-reflected, restless as something alive", ps:["dusk","night"]}
+],
+materials: [
+"old wood, silvered by weather, the grain raised like braille under your fingertips",
+"stone worn smooth by water and hands, warm from the day even as the air cools",
+"glass, thick and slightly wavy, that bends the world into something kinder",
+"water so clear the stones on the bottom look close enough to touch, though they are fathoms down",
+"moss like green velvet, springy underfoot, holding the day's rain in a million tiny cups",
+"clay tiles, each one a slightly different red, overlapping like the scales of some patient animal",
+"copper gone green at the edges, still bright where hands have polished it for years",
+"bark peeling in scrolls, revealing the pale new wood underneath like a letter being opened",
+"sand so fine it squeaks underfoot, white as paper in the moonlight",
+"iron, black and cold, with rust blooming in the crevices like dried flowers",
+"feathers, leaves, petals — the light debris of the living world, arranged by wind into drifts"
+],
+sounds: [
+"rain on the roof, steady as breathing, with the occasional deeper note where it hits the skylight",
+"water moving over stone — not a roar, a conversation, full of small words you almost understand",
+"wind in the high leaves, a sound like the sea heard from very far away",
+"a single bird, calling and calling, as if making sure the morning is really happening",
+"the creak of old wood as the building settles, like a large animal shifting in sleep",
+"distant thunder, too far to fear, just the sky clearing its throat",
+"your own footsteps, suddenly loud in the quiet, then the quiet coming back larger than before",
+"bees working the flowers, the whole air humming at the edge of hearing",
+"a rope creaking, a sail shifting, the small honest sounds of things made by hand",
+"silence — not empty, but full: the particular silence of a place that has nothing to prove",
+"ice cracking somewhere deep, a clean blue sound like a glass being struck",
+"the fire, talking to itself in pops and sighs, in a language older than words"
+],
+smells: [
+"petrichor — rain on hot stone, the smell of the earth exhaling after holding its breath",
+"woodsmoke, thin and sweet, from a fire you cannot see",
+"cedar and damp bark, the deep green smell of the woods after rain",
+"salt air, clean and sharp, with something green underneath",
+"wet earth turned over, dark and rich as chocolate",
+"jasmine on the night air, so sweet it feels like a hand on your chest",
+"old books and beeswax, the smell of a room that has kept its promises",
+"citrus blossom, bright as a struck bell",
+"the mineral smell of cold water over stone",
+"fresh bread from somewhere nearby, impossible and wonderful",
+"bracken and leaf-mould, the autumn smell, faintly of smoke and sleep",
+"the clean nothing-smell of snow air, cold enough to feel like a taste"
+],
+air: [
+"the air is cool on your face and warm at your back, and you stand in the seam between them",
+"the air moves just enough to remind you it is there, lifting the hairs on your arms",
+"each breath feels like drinking something — the air has weight and taste here",
+"the air is so still you can hear your own heartbeat, and it seems to belong to the place",
+"warm air rises off the stone in visible waves, and walking through it feels like wading",
+"the air smells of distance — of sea, of mountains, of weather coming",
+"a breeze finds the back of your neck like a hand, and is gone",
+"the air is cold enough to sharpen everything: colors brighter, sounds closer, you more awake"
+],
+micro: [
+"a spider's web strung between two leaves, beaded with rain, holding a whole miniature rainbow",
+"the way the water curls around a single stone, the same curl repeating endlessly, never the same twice",
+"a beetle crossing the path, armored and deliberate, on business you will never understand",
+"moss growing in the letters of a carved stone, slowly editing what someone wrote a hundred years ago",
+"a single feather caught in a cobweb, turning slowly, white against the dark",
+"the grain of the wood in the doorframe, flowing like water frozen mid-thought",
+"a lizard doing push-ups on a warm rock, utterly committed to its morning",
+"raindrops racing down the windowpane, merging, splitting, the tiny drama of it",
+"the exact green of new leaves against the old dark ones — two greens that should clash and don't",
+"a crack in the stone, and in the crack, a whole garden: moss, a fern, a flower no bigger than a nail",
+"your own shadow, stretched long and strange, keeping you company",
+"the way dust moves in a shaft of light — not falling, dancing, as if the light were water",
+"a shell, perfect and empty, the sea's handwriting",
+"frost on the window, ferns of ice growing while you watch",
+"the worn dip in the stone step where ten thousand feet have landed, each one a small prayer of arrival",
+"a candle flame leaning in a draft, then straightening, then leaning again — deciding",
+"water beading on a leaf, each drop holding a tiny upside-down world",
+"the sound of your own breath, and then, underneath it, the breathing of the place"
+],
+craft: [
+"the joinery is so tight you cannot slip a fingernail between the boards — no nails, just wood understanding wood",
+"someone planed this beam by hand; you can see the long shallow scallops of the plane in the raking light",
+"the stone wall is dry-stacked, each stone chosen and turned until it found its neighbors — it has stood a hundred years without mortar",
+"the door handle is worn bright where ten thousand hands have taken hold — the metal remembers them",
+"a mended bowl, the crack filled with gold: someone loved this enough to make the wound beautiful",
+"the thatch is layered thick as a mattress, each reed laid by a hand that knew the wind",
+"the window was glazed with old glass, and the world through it ripples gently, like seen through water",
+"the steps were cut from a single stone, and the mason left his chisel marks on the risers — signed in texture",
+"the quilt on the bench is made of a hundred scraps, each one a story someone chose to keep",
+"the gate hangs true on hinges forged by a blacksmith three generations gone, and still swings silent",
+"the plaster wall was troweled in arcs; in low light you can read the plasterer's arm moving across it",
+"someone swept this courtyard this morning — the broom lines curve like contour lines on a map of care"
+],
+feelings: [
+"your chest feels too small for what is in it, in the best way",
+"you laugh once, quietly, at nothing — the laugh of someone who has been given something",
+"your shoulders drop an inch; you did not know they were up",
+"time stops being a line and becomes a room you are sitting in",
+"you feel, suddenly and completely, that you are exactly where you are supposed to be",
+"it is the feeling of being forgiven for something you didn't know you carried",
+"your eyes sting, and you are not sad — you are full",
+"you want to tell someone, and you want to tell no one, both at once",
+"the small loud worries of the morning seem to belong to a different person, far away",
+"you feel briefly, blindingly, that the world is good — not perfect, good, which is better",
+"your breathing slows without you asking it to, the way it does just before sleep, but you are wide awake",
+"gratitude arrives uninvited and sits down next to you like an old friend"
+],
+sky: [
+"the sky is washed clean, a blue so deep it feels like looking down instead of up",
+"clouds move slowly overhead, lit from below in rose and amber, like coals under ash",
+"the sky has gone the color of a pearl held up to lamplight — white, grey, and secretly pink",
+"a few high clouds trail across the blue like brushstrokes someone forgot to blend",
+"the sky is darkening from the east while the west still burns — you stand under two skies at once",
+"stars are coming out one by one, shy at first, then all at once, like guests arriving",
+"the clouds have torn open and a single shaft of sun falls through like something lowered on a rope",
+"the sky is huge and empty and blue, the kind of blue that makes you feel both tiny and held"
+],
+ground: [
+"the ground under you, springy with moss and old leaves, giving back each step a little",
+"the stone underfoot, warm from the day, holding the heat like it intends to keep it",
+"the earth under you, dark and soft, smelling faintly of rain that fell hours ago",
+"the boards underfoot, worn smooth and silvered, creaking their small honest creak",
+"the sand under you, cool now, holding the day's footprints like a guestbook",
+"the grass underfoot, thick and cool, beaded with dew that wets your ankles",
+"the gravel path under you, crunching softly, each stone placed by some patient hand",
+"the bare rock underfoot, ancient and sure, the oldest floor you will ever stand on"
+]
+};
+
+</script>
+<script>
+'use strict';
+/* ---------- seeded RNG ---------- */
+function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return function(){h=Math.imul(h^h>>>16,2246822507);h=Math.imul(h^h>>>13,3266489909);return (h^=h>>>16)>>>0;};}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function pickN(rng,arr,n,used,tag){const pool=arr.map((_,i)=>i).filter(i=>!used.has(tag+':'+i));const out=[];for(let k=0;k<n&&pool.length;k++){const j=Math.floor(rng()*pool.length);const idx=pool.splice(j,1)[0];used.add(tag+':'+idx);out.push(arr[idx]);}return out;}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+const ROMAN=['I','II','III','IV','V','VI'];
+const MTITLES=['arrival','settling','the wide look','close noticing','the deep hour','staying'];
+
+/* ---------- movement frames (prose; atoms fill the {slots}) ---------- */
+const FRAMES=[
+[ /* 1 arrival — place, hour, light0, sky */
+ p=>`You come to ${p.place} ${p.hour}. For a moment you just stand at the edge of it, not quite believing your luck \u2014 and then the believing stops mattering, because ${p.light0}.\n\nOverhead, ${p.sky}. You take one breath, then another, and feel the particular unclenching that happens when a place turns out to be real.`,
+ p=>`This is the place: ${p.place}. The time is ${p.hour}. You arrive the way you arrive at all the best things \u2014 slightly out of breath, slightly late, and exactly on time.\n\n${cap(p.light0)}. Above you, ${p.sky} \u2014 and you understand, suddenly, that you will remember this hour for the rest of your life.`,
+ p=>`${cap(p.hour)} \u2014 and here: ${p.place}. You stop walking the way you stop talking when someone says something true.\n\n${cap(p.light0)}. ${cap(p.sky)}, and the sky seems to be showing off just for you, which is ridiculous, and you don't care.`
+],
+[ /* 2 settling — air, mat0, ground */
+ p=>`${cap(p.air)}. You let your shoulders down; you hadn't realized they were up.\n\nUnder your hand, before you've decided to touch it: ${p.mat0}. Under your feet: ${p.ground}. Some things you touch the way you touch museum pieces when no one is looking \u2014 and some things you touch because they ask.`,
+ p=>`Your body takes a minute to catch up with where you are. ${cap(p.air)}.\n\nYou find a place to stand that feels like it was waiting. What meets your hand there is exactly as it should be: ${p.mat0} \u2014 present, honest, beautiful without trying. The ground under you, ${p.ground}, holds you like it means it.`,
+ p=>`${cap(p.air)}. Breath comes easier here, as if the air had been expecting you.\n\nYou lean, lightly, into ${p.mat0}, and feel the day stored in it coming back out into your palm. Beneath you, ${p.ground} \u2014 you shift your weight and feel completely, boringly, miraculously supported.`
+],
+[ /* 3 the wide look — vista, light1, mat1 */
+ p=>`Then you look up \u2014 really look \u2014 and ${p.vista}.\n\n${cap(p.light1)}. Off to one side, ${p.mat1}, catching the light and holding it a moment longer than it should, as if reluctant to give it back.`,
+ p=>`${cap(p.vista)}. You turn slowly, taking it in the way you drink water when you're truly thirsty.\n\n${cap(p.light1)} \u2014 and where it touches the ${p.mat1}, it seems lit from within, like something remembering being made.`,
+ p=>`The whole of it, all at once: ${p.vista}.\n\n${cap(p.light1)}. Somewhere in the middle distance, ${p.mat1} does something with the light that stops your breath for half a second \u2014 and then gives it back changed.`
+],
+[ /* 4 close noticing — micro x6, craft x2 */
+ p=>`The big thing is almost too much, so your eyes do what eyes do: they go small. ${cap(p.micro0)}. ${cap(p.micro1)}.\n\nAnd then \u2014 ${p.craft0} \u2014 you stop breathing for a second, because somebody's hands made that, and they cared. ${cap(p.micro4)} nearby, as if the place were showing off its jewelry, and you let it.`,
+ p=>`You crouch without deciding to. ${cap(p.micro0)}. A little further on, ${p.micro2}.\n\nAnd here is the thing that undoes you: ${p.craft0}. Not grand. Just true. ${cap(p.micro4)} \u2014 you lean closer, and closer still, until your nose nearly touches it.`,
+ p=>`Down at the level of small things, the place is even more itself. ${cap(p.micro1)}. ${cap(p.micro3)}.\n\n${cap(p.craft1)} \u2014 the kind of care you can feel in your chest like a hand. You find ${p.micro5} and look at it for a long time, the way you look at a face you love.`
+],
+[ /* 5 the deep hour — sounds x5, smells x2, light2, mat2, feel[4], feel[6] */
+ p=>`Time does something strange then. It stops passing and starts pooling. ${cap(p.snd0)}; ${p.snd1}.\n\n${cap(p.sml0)}, and underneath it, ${p.sml1}. ${cap(p.mat2)} is cool under your palm. ${cap(p.feel4)}.
+
+Somewhere in the middle of it you stop observing and start belonging. That is the whole secret, and there is no secret.`,
+ p=>`Has it been an hour? Has it been ten minutes? ${cap(p.snd2)}. The light has shifted \u2014 ${p.light2} \u2014 and the shift feels like the place turning a page just for you.\n\n${cap(p.snd4)}. ${cap(p.sml0)}. ${cap(p.feel4)} \u2014 and you realize you have been smiling for some time without knowing it.
+
+You could stay until the light goes completely, and part of you already has.`,
+ p=>`The senses stop taking turns and start arriving together: ${p.snd1} over ${p.sml0}, ${p.sml1} underneath everything like a bass note.\n\n${cap(p.light2)}. Your palm rests on ${p.mat2}, cool and real. ${cap(p.feel4)} ${cap(p.feel6)}.
+
+This is the hour you will come back to, later, when you need it. It will be here.`
+],
+[ /* 6 staying — feel[5], snd3 */
+ p=>`You don't leave. That's the whole of it \u2014 you don't leave, not yet, maybe not for a long while.\n\n${cap(p.feel5)}. The place keeps being itself, indifferent and generous at once, and you are lucky enough to be standing in it. ${cap(p.snd3)}, far off, like a door closing gently on the ordinary world.`,
+ p=>`Later you will try to describe this and fail in the particular way people fail at describing the best things.\n\nFor now there is only this: ${p.feel5}, and the knowledge, quiet as stone, that you were here. You stay.`,
+ p=>`Eventually the light will change and the hour will end, the way all hours end. But not yet.\n\n${cap(p.snd3)}. ${cap(p.feel5)}. And you stay a little longer, and then a little longer than that.`
+]
+];
+
+function picks(seedStr, locks){
+  const rng=mulberry32(xmur3(seedStr)());
+  const I=AWE_INTENT, used=new Set();
+  const one=(k)=>pickN(rng,I[k],1,used,k)[0];
+  const p={};
+  const pl = locks.place || one('places');
+  p.place = pl.t; p.vista = pl.v; p._pl = pl;
+  const hr = locks.hour || one('hours');
+  p.hour = hr.t; p.period = hr.p; p._hr = hr;
+  p.sky = one('sky'); p.ground = one('ground');
+  const lsrc=I.light.filter(l=>l.ps.includes(hr.p));
+  const lpool=(lsrc.length>=3?lsrc:I.light);
+  const lused=new Set();
+  const lpick=()=>{ const pool=lpool.map((_,i)=>i).filter(i=>!lused.has(i));
+    const j=Math.floor(rng()*pool.length); const idx=pool.splice(j,1)[0];
+    lused.add(idx); return lpool[idx].t; };
+  p.light0 = locks.light || lpick(); p.light1=lpick(); p.light2=lpick();
+  const mats=pickN(rng,I.materials,3,used,'materials'); p.mat0=mats[0]; p.mat1=mats[1]; p.mat2=mats[2];
+  const snds=pickN(rng,I.sounds,5,used,'sounds'); p.snd0=snds[0]; p.snd1=snds[1]; p.snd2=snds[2]; p.snd3=snds[3]; p.snd4=snds[4];
+  const smls=pickN(rng,I.smells,2,used,'smells'); p.sml0=smls[0]; p.sml1=smls[1];
+  p.air=one('air');
+  const micros=pickN(rng,I.micro,6,used,'micro'); p.micro0=micros[0]; p.micro1=micros[1]; p.micro2=micros[2]; p.micro3=micros[3]; p.micro4=micros[4]; p.micro5=micros[5];
+  const crafts=pickN(rng,I.craft,2,used,'craft'); p.craft0=crafts[0]; p.craft1=crafts[1];
+  const feels=pickN(rng,I.feelings,7,used,'feelings'); p.feel4=feels[4]; p.feel5=feels[5]; p.feel6=feels[6];
+  p.fi=Math.floor(rng()*FRAMES[0].length);
+  return p;
+}
+function compose(seedStr, locks){
+  const p=picks(seedStr, locks);
+  const fi=p.fi;
+  
+  const html=FRAMES.map((variants,mi)=>{
+    const text=variants[fi](p);
+    const paras=text.split(/\n\n|\.\s(?=[A-Z])/).filter(s=>s.trim().length>0);
+    return `<div class="mvmt"><div class="num">${ROMAN[mi]}</div><div class="mtitle">${MTITLES[mi]}</div>`+
+      paras.map(t=>`<p>${t.trim()}</p>`).join('')+`</div>`;
+  }).join('');
+  return {html,
+          words: html.replace(/<[^>]+>/g,' ').split(/\s+/).filter(Boolean).length};
+}
+
+/* ---------- app state ---------- */
+const S={seed:'',locks:{place:null,hour:null,light:null}};
+const $=(id)=>document.getElementById(id);
+function randSeed(){return Math.random().toString(36).slice(2,8);}
+function render(){
+  const r=compose(S.seed,S.locks);
+  $('hour').innerHTML=r.html;
+  $('seedChip').textContent='seed '+S.seed;
+  document.title='AWE · '+S.seed;
+  try{history.replaceState(null,'','?seed='+encodeURIComponent(S.seed));}catch(e){}
+  S.words=r.words;
+}
+function newHour(keepLocks){
+  if(!keepLocks) S.locks={place:null,hour:null,light:null};
+  S.seed=randSeed(); syncLockBtns(); render();
+}
+function syncLockBtns(){
+  $('lockPlace').classList.toggle('on',!!S.locks.place);
+  $('lockHour').classList.toggle('on',!!S.locks.hour);
+  $('lockLight').classList.toggle('on',!!S.locks.light);
+}
+/* locks capture current atoms: re-compose quietly to read them */
+function currentAtoms(){
+  const p=picks(S.seed,S.locks);
+  return {place:p._pl,hour:p._hr,light:p.light0};
+}
+function toggleLock(kind){
+  if(S.locks[kind]){ S.locks[kind]=null; }
+  else{ const a=currentAtoms(); S.locks[kind]=a[kind==='light'?'light':kind]; }
+  syncLockBtns(); render();
+}
+/* customize */
+function fillCustom(){
+  const sp=$('selPlace'), sh=$('selHour');
+  sp.innerHTML=AWE_INTENT.places.map((p,i)=>`<option value="${i}">${p.t.slice(0,64)}…</option>`).join('');
+  sh.innerHTML=AWE_INTENT.hours.map((h,i)=>`<option value="${i}">${h.t} (${h.p})</option>`).join('');
+}
+/* saved */
+function getSaved(){try{return JSON.parse(localStorage.getItem('awe_seeds')||'[]');}catch(e){return[];}}
+function setSaved(a){try{localStorage.setItem('awe_seeds',JSON.stringify(a));}catch(e){}}
+function renderSaved(){
+  const a=getSaved(), box=$('savedBox'), list=$('savedList');
+  box.style.display=a.length?'block':'none';
+  list.innerHTML=a.map(s=>`<div class="srow"><code data-s="${s}">seed ${s}</code><button data-d="${s}">forget</button></div>`).join('');
+  list.querySelectorAll('[data-s]').forEach(el=>el.onclick=()=>{S.seed=el.dataset.s;S.locks={place:null,hour:null,light:null};syncLockBtns();render();window.scrollTo(0,0);});
+  list.querySelectorAll('[data-d]').forEach(el=>el.onclick=()=>{setSaved(getSaved().filter(s=>s!==el.dataset.d));renderSaved();});
+}
+/* wire */
+$('btnNew').onclick=()=>newHour(true);
+$('seedChip').onclick=()=>{const u=location.origin+location.pathname+'?seed='+encodeURIComponent(S.seed);(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>{$('seedChip').textContent='copied ✓';setTimeout(()=>$('seedChip').textContent='seed '+S.seed,1200);}).catch(()=>{prompt('Share link:',u);});};
+$('btnCopy').onclick=()=>{const t=$('hour').innerText;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{$('btnCopy').textContent='copied ✓';setTimeout(()=>$('btnCopy').textContent='Copy',1200);}).catch(()=>{});};
+$('btnSave').onclick=()=>{const a=getSaved();if(!a.includes(S.seed)){a.unshift(S.seed);setSaved(a.slice(0,40));}renderSaved();$('btnSave').textContent='kept ✓';setTimeout(()=>$('btnSave').textContent='Keep',1200);};
+$('lockPlace').onclick=()=>toggleLock('place');
+$('lockHour').onclick=()=>toggleLock('hour');
+$('lockLight').onclick=()=>toggleLock('light');
+$('btnCustom').onclick=()=>{$('customRow').classList.toggle('open');$('btnCustom').classList.toggle('on');};
+$('btnApplyCustom').onclick=()=>{S.locks.place=AWE_INTENT.places[+$('selPlace').value];S.locks.hour=AWE_INTENT.hours[+$('selHour').value];S.locks.light=null;S.seed=randSeed();syncLockBtns();render();window.scrollTo(0,0);};
+/* init */
+(function init(){
+  fillCustom(); renderSaved();
+  let seed=null;
+  try{seed=new URLSearchParams(location.search).get('seed');}catch(e){}
+  S.seed=(seed&&/^[a-z0-9]{3,12}$/i.test(seed))?seed:randSeed();
+  render();
+})();
+/* debug surface */
+window.__awe={compose,seed:()=>S.seed,words:()=>S.words||0};
+</script>
+</body>
+</html>
