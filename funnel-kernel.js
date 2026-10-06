@@ -111,12 +111,33 @@ function requiredNext(s){
   if(!s.stage)return 'page0';
   var i=STAGES.indexOf(s.stage);return i<0?null:STAGES[i+1]||null;
 }
-function checkReplay(payload){
+function checkReplay(payload,s){
   if(!payload||payload.page0_verified!==true)throw Error('Replay must explicitly verify Page 0.');
+  if(payload.page0_hash!==s.stages.page0.raw_hash)throw Error('Replay must use the immutable Page 0 snapshot.');
   if(!Array.isArray(payload.obligations))throw Error('Replay requires atomic obligation results.');
-  var bad=payload.obligations.filter(function(o){return !o||!o.text||!['satisfied','explicitly-deferred'].includes(o.status);});
-  if(bad.length)throw Error('Every Page 0 obligation must be satisfied or explicitly deferred.');
+  var base=extractObligations(s.page0),byId={};
+  payload.obligations.forEach(function(o){if(o&&o.id)byId[o.id]=o;});
+  var missing=base.filter(function(o){return !byId[o.id];});
+  if(missing.length)throw Error('Replay omitted '+missing.length+' hard-coded Page 0 obligation(s).');
+  var bad=payload.obligations.filter(function(o){
+    if(!o||!o.id||!o.source||!s.page0.includes(o.source))return true;
+    if(!['satisfied','explicitly-deferred'].includes(o.status))return true;
+    if(o.status==='explicitly-deferred'&&o.approved!==true)return true;
+    return false;
+  });
+  if(bad.length)throw Error('Every Page 0 obligation must be source-backed and satisfied, or explicitly deferred with approval.');
   if(payload.substitutions&&payload.substitutions.some(function(x){return !x||x.approved!==true;}))throw Error('Unapproved substitution blocks Funnel receipt.');
+}
+function extractObligations(raw){
+  var source=text(raw),parts=source.split(/(?:\n+|(?<=[.!?;])\s+)/).map(function(x){return x.trim();}).filter(Boolean);
+  var seen={},out=[];
+  parts.forEach(function(part){
+    if(!/\b(must|need(?:s)?|should|have to|has to|make sure|ensure|never|do not|don't|cannot|can't|want(?:s)?|required?|no excuse)\b/i.test(part))return;
+    var id='obligation:'+hash(part.toLowerCase());
+    if(!seen[id]){seen[id]=1;out.push({id:id,source:part});}
+  });
+  if(!out.length&&source.trim())out.push({id:'obligation:'+hash(source.trim().toLowerCase()),source:source.trim()});
+  return out;
 }
 function receiptFor(id,verdict,head,page0Hash){
   var core={schema:RECEIPT_SCHEMA,version:VERSION,law_version:LAW_VERSION,request_id:id,page0_hash:page0Hash,spec_hash:hash(verdict.spec),destination:verdict.destination,done_criteria:clone(verdict.done_criteria),ledger_head:head,issued_at:new Date().toISOString()};
@@ -140,7 +161,7 @@ function advance(arg){
     if(!Array.isArray(payload.unresolved))payload.unresolved=[];
     if(payload.unresolved.length)throw Error('Unresolved material decisions block replay.');
   }
-  if(to==='replay')checkReplay(payload);
+  if(to==='replay')checkReplay(payload,s);
   if(to==='verdict'){
     if(!payload.spec||!text(typeof payload.spec==='string'?payload.spec:stable(payload.spec)).trim())throw Error('Verdict requires spec.');
     if(!text(payload.destination).trim())throw Error('Verdict requires destination.');
@@ -172,7 +193,7 @@ function resetForTests(){mem=blank();if(root&&root.localStorage){try{root.localS
 
 return Object.freeze({
   version:VERSION,law_version:LAW_VERSION,stages:STAGES.slice(),writable:WRITABLE.slice(),
-  open:open,write:write,advance:advance,inspect:inspect,verifyReceipt:verifyReceipt,executionPacket:executionPacket,hash:hash,
+  open:open,write:write,advance:advance,inspect:inspect,extractObligations:extractObligations,verifyReceipt:verifyReceipt,executionPacket:executionPacket,hash:hash,
   _verifyState:verifyState,_resetForTests:resetForTests
 });
 });
