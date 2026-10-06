@@ -1,0 +1,125 @@
+/* Wonder Haven: existing procedural renderers, clean windows, local-first files. */
+(function(){
+'use strict';
+const W=window.WonderFeed;if(!W)return;
+const RELEASE='20261006-wonder-haven1';
+const native=[
+ ['plant','Plant','Plants','planet-vegetation'],['field','Terrain field','Nature','terrain-field'],
+ ['heightfield','Terrain','Nature','terrain-core'],['relief','Micro relief','Nature','micro-relief'],
+ ['creatures','Creature','Models','softbody-creatures'],['vehicles','Vehicle','Models','comp-proc-vehicles'],
+ ['furniture','Furniture','Models','comp-furniture'],['garden','Living garden','Nature','living-garden'],
+ ['workshop','Planet landscape','Nature','planet-workshop'],['redwood','Redwood drive','Nature','redwood-drive'],
+ ['aquarium','Aquarium','Nature',null,'aquarium.html'],['fireplace','Fireplace','Nature',null,'fireplace.html'],
+ ['rainforest','Rainforest','Nature',null,'rainforest.html'],['molten','Molten','Nature',null,'molten.html'],
+ ['canal','Canal metropolis','Nature',null,'canal-metropolis.html'],['drowned','Drowned forest','Nature',null,'drowned-forest.html'],
+ ['strata','Canyon','Nature',null,'strata-3d.html'],['forge','Forge scene','Scenes',null,'forge-2.html'],
+ ['roads','Road atlas','Scenes',null,'road-atlas-v2.html']
+].map(([id,label,category,component,page])=>({id:'native-'+id,label,category,component,page}));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rng=seed=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return ((t^t>>>14)>>>0)/4294967296;};
+const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0;};
+const key=g=>g.type+'-'+g.seed+'-'+hash(JSON.stringify(g.p));
+const nativeFor=g=>native.find(x=>x.id===g.type);
+const category=g=>nativeFor(g)?.category||(/terrain|forest|tide|storm|daynight|rain/.test(g.type)?'Nature':/planet|galaxy|warp/.test(g.type)?'Space':/ambience|choir|drops/.test(g.type)?'Sound':'Procedural');
+let dbPromise,folder=null,instances=new Set(),recipeSettings=new Map();
+function db(){return dbPromise||(dbPromise=new Promise((resolve,reject)=>{const q=indexedDB.open('moor-wonder-files',1);q.onupgradeneeded=()=>{q.result.createObjectStore('files',{keyPath:'id'});q.result.createObjectStore('settings',{keyPath:'id'});};q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);}));}
+async function put(store,value){const d=await db();return new Promise((yes,no)=>{const t=d.transaction(store,'readwrite');t.objectStore(store).put(value);t.oncomplete=yes;t.onerror=()=>no(t.error);});}
+async function all(){const d=await db();return new Promise((yes,no)=>{const q=d.transaction('files').objectStore('files').getAll();q.onsuccess=()=>yes(q.result.sort((a,b)=>b.savedAt-a.savedAt));q.onerror=()=>no(q.error);});}
+function download(name,blob){const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),10000);}
+async function writeFile(dir,name,data){const h=await dir.getFileHandle(name,{create:true}),w=await h.createWritable();await w.write(data);await w.close();}
+const slug=s=>s.toLowerCase().replace(/[^a-z0-9-]+/g,'-').slice(0,70);
+async function toFolder(rec){if(!folder)return;let d=folder;for(const name of ['Wonder Feed',rec.category,rec.generator,new Date(rec.savedAt).toISOString().slice(0,10)])d=await d.getDirectoryHandle(slug(name),{create:true});await writeFile(d,rec.id+'.moor.json',JSON.stringify({...rec,image:undefined},null,2));if(rec.image)await writeFile(d,rec.id+'.png',rec.image);}
+function capture(canvas){return new Promise(resolve=>{if(!canvas){resolve(null);return;}try{canvas.toBlob(resolve,'image/png');}catch(_){resolve(null);}});}
+
+/* Presentation adapters retain the native drawing code. No invented scene props. */
+function nativeRenderer(g){
+ const spec=nativeFor(g),el=document.createElement('div');el.className='wd-card';
+ const vis=document.createElement('div');vis.className='wd-visual';el.append(vis);
+ let frame=null,canvas=null,settings=[],timer=0,dead=false,started=false;
+ function tune(doc){
+  const r=rng(g.seed);const scope=doc.querySelector('.tool-host')||doc;const controls=[...scope.querySelectorAll('input,select')];
+  controls.forEach(input=>{if(/seed/i.test(input.id+' '+input.name+' '+input.closest('label')?.textContent)){input.value=String(g.seed);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));}});
+  if(spec.id==='native-plant'){
+   const count=doc.querySelector('#v-count');if(count){count.min='1';count.value='1';}
+   const choices=[...doc.querySelectorAll('#v-sp button')];choices[Math.floor(r()*choices.length)]?.click();doc.querySelector('#v-grow')?.click();
+  }else{
+   for(const selector of ['#ff-types [data-t]','#ff-styles [data-s]','.veh-type [data-vt]']){const choices=[...scope.querySelectorAll(selector)];if(choices.length)choices[Math.floor(r()*choices.length)].click();}
+   controls.filter(x=>x.tagName==='SELECT'&&!/save|file|preset|project/i.test(x.id)).slice(0,2).forEach(x=>{if(x.options.length){x.selectedIndex=Math.floor(r()*x.options.length);x.dispatchEvent(new Event('change',{bubbles:true}));}});
+   const go=[...scope.querySelectorAll('button')].find(b=>/^(generate|grow|build|render|regenerate)$/i.test(b.textContent.trim()));go?.click();
+  }
+  const saved=recipeSettings.get(key(g));
+  if(saved){for(const value of saved){const input=value.id?doc.getElementById(value.id):null;if(input&&['INPUT','SELECT'].includes(input.tagName)&&!['file','password'].includes(input.type)){input.value=value.value;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));}}const go=[...scope.querySelectorAll('button')].find(b=>/^(generate|grow|build|render|regenerate)$/i.test(b.textContent.trim()));go?.click();}
+  settings=controls.filter(x=>x.type!=='file'&&x.type!=='password').map(x=>({id:x.id,name:x.name,value:x.value}));
+ }
+ function adapt(doc,depth=0){
+  if(dead||depth>2)return;
+  const nested=doc.querySelector('iframe');if(nested){nested.addEventListener('load',()=>{try{tune(nested.contentDocument);adapt(nested.contentDocument,depth+1);}catch(_){}},{once:true});try{if(nested.contentDocument?.readyState==='complete'){tune(nested.contentDocument);adapt(nested.contentDocument,depth+1);}}catch(_){}return;}
+  const cvs=[...doc.querySelectorAll('canvas')].filter(c=>c.width>10&&c.height>10&&getComputedStyle(c).display!=='none');
+  canvas=cvs.sort((a,b)=>b.width*b.height-a.width*a.height)[0];if(!canvas){timer=setTimeout(()=>adapt(doc,depth),500);return;}
+  let branch=canvas;while(branch&&branch!==doc.body){for(const sibling of branch.parentElement?.children||[])if(sibling!==branch&&!['SCRIPT','STYLE','LINK'].includes(sibling.tagName))sibling.style.setProperty('display','none','important');branch=branch.parentElement;}
+  const css=doc.createElement('style');css.textContent='html,body{margin:0!important;padding:0!important;overflow:hidden!important;width:100%!important;height:100%!important;background:#080c10!important}canvas{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;border:0!important;border-radius:0!important;object-fit:contain!important}';doc.head.append(css);
+  doc.defaultView.dispatchEvent(new Event('resize'));
+  const orientation=document.documentElement.dataset.wonderOrientation||'portrait';
+  if(spec.id==='native-plant'){canvas.width=orientation==='portrait'?480:854;canvas.height=orientation==='portrait'?854:480;}
+  vis.dataset.ready='true';
+ }
+ return {el,title:spec.label,sub:spec.category,genome:g,
+  start(){if(started)return;started=true;dead=false;frame=document.createElement('iframe');frame.title=spec.label+' generated output';frame.setAttribute('allow','autoplay');const u=new URL(spec.page||'pulse-dashboard.html',location.href);if(spec.component)u.searchParams.set('workspace-tool',spec.component);u.searchParams.set('wonder-preview',g.seed);u.searchParams.set('seed',g.seed);u.searchParams.set('release',RELEASE);frame.src=u.href;frame.onload=()=>{try{tune(frame.contentDocument);adapt(frame.contentDocument);}catch(e){vis.dataset.error='Generator unavailable';}};vis.append(frame);},
+  stop(){dead=true;started=false;clearTimeout(timer);frame?.remove();frame=null;canvas=null;},
+  async capture(){const end=Date.now()+15000;while(!canvas&&!dead&&Date.now()<end)await new Promise(r=>setTimeout(r,200));if(!canvas)throw Error('This generator is still loading.');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return capture(canvas);},settings:()=>settings
+ };
+}
+native.forEach(n=>W.genome.types.push({kind:n.id,label:n.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000)}),make:nativeRenderer}));
+const excluded=new Set(['amalgam','component','motive','evolver','idea']);
+const kinds=W.genome.types.filter(x=>!excluded.has(x.kind));
+const css=`
+.tool-host:has(>.wh){border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:0!important}.wh{--wh-ratio:9/16;color:#eef1f4;background:#080c10;border:0!important;border-radius:0!important;box-shadow:none!important;display:flex;flex-direction:column;height:min(82dvh,920px);min-height:400px;position:relative;font:14px/1.4 system-ui;overflow:hidden}
+.wh[data-orientation=landscape]{--wh-ratio:16/9}.wh button,.wh select{font:inherit;color:inherit;cursor:pointer;background:#ffffff09;border:0;border-radius:9px;min-height:38px;padding:7px 12px}.wh button:hover{background:#ffffff18}.wh button:focus-visible{outline:2px solid #c5e6df;outline-offset:2px}.wh button[aria-pressed=true]{background:#e4ecea;color:#10171a}
+.wh-top{display:flex;align-items:center;gap:8px;flex:none;min-height:54px;padding:8px 12px;z-index:5;background:#080c10}.wh-name{font-size:14px;font-weight:500;letter-spacing:.015em;margin-right:auto}.wh-orientation{display:flex;gap:2px}.wh-icon{width:38px;padding:0!important;font-size:20px!important}.wh-scroll{flex:1;min-height:0;overflow:auto;scrollbar-width:none;overscroll-behavior:contain;padding:8px 14px 20px}.wh-scroll::-webkit-scrollbar,.wh *::-webkit-scrollbar{display:none}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:18px;align-items:start}.wh[data-orientation=landscape] .wh-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))}
+.wh-card{aspect-ratio:var(--wh-ratio);position:relative;border:0;border-radius:20px;overflow:hidden;background:#0d141b;isolation:isolate}.wh-surface{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}.wh-surface>.wd-visual{width:100%;height:100%;max-width:none;margin:0;position:relative}.wh-surface canvas,.wh-surface iframe{display:block;width:100%!important;height:100%!important;max-width:none!important;aspect-ratio:auto!important;border:0!important;border-radius:0!important;object-fit:contain;pointer-events:none;background:transparent}.wh-caption{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:end;gap:8px;padding:40px 12px 12px;background:linear-gradient(transparent,#0009);pointer-events:none;z-index:3}.wh-caption small{display:block;opacity:.65;font-size:12px}.wh-caption strong{font-weight:500}.wh-caption button{margin-left:auto;pointer-events:auto;background:#080c1099;backdrop-filter:blur(12px)}.wh-caption button.saved{color:#bcf3da}.wh-wait{font-size:12px;opacity:.4}.wh-status{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:#182426;color:#e4f2ed;border-radius:10px;padding:9px 14px;z-index:30;pointer-events:none;max-width:90%;text-align:center}.wh-status:empty{display:none}
+.wh-full{position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important;z-index:100000!important;min-height:0!important}.wh-full .wh-scroll{padding:0;scroll-snap-type:y mandatory}.wh-full .wh-grid{display:block}.wh-full .wh-card{height:calc(100dvh - 70px);width:auto;aspect-ratio:var(--wh-ratio);max-width:100%;margin:8px auto 16px;scroll-snap-align:start;scroll-snap-stop:always;border-radius:18px}.wh-full[data-orientation=landscape] .wh-card{height:min(calc(100dvh - 70px),56.25vw)}
+.wh-files{position:absolute;inset:54px 0 0;z-index:10;display:flex;flex-direction:column;background:#0b1015}.wh-files[hidden]{display:none}.wh-files-top{display:flex;gap:7px;align-items:center;padding:12px;flex-wrap:wrap}.wh-files-top strong{margin-right:auto}.wh-filegrid{overflow:auto;scrollbar-width:none;flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;padding:14px;align-content:start}.wh-file{border:0;border-radius:12px;background:#121b22;overflow:hidden}.wh-file img{width:100%;aspect-ratio:9/12;object-fit:cover;display:block;background:#0c1118}.wh-file>div{padding:10px}.wh-file strong{display:block;font-weight:500}.wh-file small{display:block;opacity:.6;font-size:12px}.wh-file button{min-height:30px;padding:5px 8px;margin:6px 4px 0 0;font-size:12px}.wh-empty{opacity:.6;grid-column:1/-1;padding:20px}.wh-files-note{font-size:12px;opacity:.6;padding:0 14px 10px;margin:0}
+@media(max-width:600px){.wh{height:calc(100dvh - 110px);min-height:330px}.wh-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.wh-top{gap:4px;padding:7px}.wh-name{font-size:12px}.wh button{padding:7px 9px;font-size:12px}.wh-card{border-radius:14px}.wh-caption{padding:30px 8px 8px}.wh-caption strong{font-size:12px}.wh-caption small{display:none}.wh-caption button{min-height:32px;padding:4px 8px}.wh-full .wh-card{height:calc(100dvh - 68px)}.wh[data-orientation=landscape] .wh-grid{grid-template-columns:1fr}}
+`;
+const style=document.createElement('style');style.id='wonder-haven-style';style.textContent=css;document.head.append(style);
+function mount(host,opts={}){
+ const shell=document.createElement('section');shell.className='wh';if(opts.fullscreen)shell.style.height='100dvh';shell.dataset.orientation=localStorage.getItem('moor-wonder-orientation')||'portrait';document.documentElement.dataset.wonderOrientation=shell.dataset.orientation;
+ shell.innerHTML=`<header class="wh-top"><button class="wh-icon" data-full aria-label="Enter fullscreen" title="Fullscreen">⛶</button><span class="wh-name">Wonder Feed</span><div class="wh-orientation"><button data-orientation="portrait">Portrait</button><button data-orientation="landscape">Landscape</button></div><button data-files title="Saved files">Saved</button></header><div class="wh-scroll" tabindex="0" aria-label="Procedural generator feed"><div class="wh-grid"></div><div class="wh-more" style="height:30px"></div></div><section class="wh-files" hidden aria-label="Saved Wonder files"></section><div class="wh-status" role="status"></div>`;
+ host.replaceChildren(shell);const grid=shell.querySelector('.wh-grid'),scroll=shell.querySelector('.wh-scroll'),files=shell.querySelector('.wh-files'),records=[],urls=[];
+ let dead=false,bag=[],last='',full=false,statusTimer,visibleObserver,moreObserver;
+ const params=new URLSearchParams(location.search),random=rng(hash(params.get('seed')||String(Date.now())));
+ function notify(s){shell.querySelector('.wh-status').textContent=s;clearTimeout(statusTimer);statusTimer=setTimeout(()=>shell.querySelector('.wh-status').textContent='',3200);}
+ function next(){if(!bag.length){bag=kinds.slice();for(let i=bag.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}if(bag.at(-1)?.kind===last)[bag[0],bag[bag.length-1]]=[bag.at(-1),bag[0]];}const t=bag.pop();last=t.kind;return {type:t.kind,seed:Math.floor(random()*1e9),p:t.params(random)};}
+ function stop(rec){rec.w?.stop();rec.w=null;rec.card.querySelector('.wh-surface').replaceChildren();}
+ function start(rec){if(dead||rec.w)return;try{rec.w=W.make(rec.g);const vis=rec.w.el.querySelector('.wd-visual');if(!vis)throw Error('No visual output');rec.card.querySelector('.wh-surface').replaceChildren(vis);const cv=vis.querySelector('canvas');if(cv&&!cv._glNoFit){const box=rec.card.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,1.5);cv.width=Math.round(box.width*dpr);cv.height=Math.round(box.height*dpr);rec.w.onResize?.(cv.width,cv.height);}rec.w.start();}catch(e){rec.card.querySelector('.wh-surface').innerHTML='<span class="wh-wait">This generator could not render. Scroll for another.</span>';}}
+ async function save(rec){const btn=rec.card.querySelector('[data-save]');if(btn.disabled)return;btn.disabled=true;try{start(rec);const image=rec.w?.capture?await rec.w.capture():await capture(rec.card.querySelector('canvas'));const old=(await all()).find(x=>x.id===key(rec.g));const out={schema:'moor.wonder-file',version:1,id:key(rec.g),generator:rec.g.type,category:category(rec.g),title:rec.title,genome:rec.g,settings:rec.w?.settings?.()||[],savedAt:old?.savedAt||Date.now(),updatedAt:Date.now(),image,orientation:shell.dataset.orientation};await put('files',out);W.Library.save(rec.g,rec.title,category(rec.g));btn.classList.add('saved');btn.textContent='✓';notify('Saved · '+out.category+' / '+rec.title);if(folder){try{await toFolder(out);notify('Saved to your folder');}catch(e){notify('Saved here. Reconnect your folder to export.');}}}catch(e){notify('Could not save. Free some device storage and try again.');}finally{btn.disabled=false;}}
+ function add(g){g=g||next();const t=W.genome.types.find(x=>x.kind===g.type);if(!t)return;const card=document.createElement('article');card.className='wh-card';card.dataset.generator=g.type;card.dataset.seed=g.seed;card.innerHTML=`<div class="wh-surface"><span class="wh-wait">${esc(t.label)}</span></div><div class="wh-caption"><div><strong>${esc(t.label)}</strong><small>${g.seed}</small></div><button data-save aria-label="Save ${esc(t.label)}" title="Save generated result">＋</button></div>`;const rec={g,card,title:t.label,w:null};records.push(rec);grid.append(card);card.querySelector('[data-save]').onclick=()=>save(rec);visibleObserver.observe(card);return rec;}
+ visibleObserver=new IntersectionObserver(entries=>entries.forEach(en=>{const rec=records.find(r=>r.card===en.target);if(!rec)return;if(en.isIntersecting)start(rec);else stop(rec);}),{root:scroll,threshold:.02});
+ moreObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))for(let i=0;i<6;i++)add();},{root:scroll,rootMargin:'500px'});
+ moreObserver.observe(shell.querySelector('.wh-more'));
+ function setOrientation(mode){shell.dataset.orientation=mode;document.documentElement.dataset.wonderOrientation=mode;try{localStorage.setItem('moor-wonder-orientation',mode);}catch(_){}shell.querySelectorAll('[data-orientation]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.orientation===mode)));records.forEach(rec=>{if(rec.w){stop(rec);const b=rec.card.getBoundingClientRect(),s=scroll.getBoundingClientRect();if(b.bottom>s.top&&b.top<s.bottom)start(rec);}});}
+ setOrientation(shell.dataset.orientation);shell.querySelectorAll('[data-orientation]').forEach(b=>b.onclick=()=>setOrientation(b.dataset.orientation));
+ async function fullscreen(){full=!full;shell.classList.toggle('wh-full',full);const b=shell.querySelector('[data-full]');b.textContent=full?'×':'⛶';b.setAttribute('aria-label',full?'Exit fullscreen':'Enter fullscreen');b.title=full?'Exit fullscreen':'Fullscreen';if(full){try{await shell.requestFullscreen();}catch(_){}}else if(document.fullscreenElement===shell){try{await document.exitFullscreen();}catch(_){}}setOrientation(shell.dataset.orientation);}
+ shell.querySelector('[data-full]').onclick=fullscreen;
+ const onFs=()=>{if(!document.fullscreenElement&&full){full=false;shell.classList.remove('wh-full');shell.querySelector('[data-full]').textContent='⛶';shell.querySelector('[data-full]').setAttribute('aria-label','Enter fullscreen');setOrientation(shell.dataset.orientation);}};
+ const onKey=e=>{if(e.key==='Escape'&&full&&!document.fullscreenElement){full=false;shell.classList.remove('wh-full');shell.querySelector('[data-full]').textContent='⛶';shell.querySelector('[data-full]').setAttribute('aria-label','Enter fullscreen');}};
+ document.addEventListener('fullscreenchange',onFs);document.addEventListener('keydown',onKey);
+ async function renderFiles(filter=''){
+  urls.splice(0).forEach(u=>URL.revokeObjectURL(u));const items=await all(),cats=[...new Set(items.map(x=>x.category))];files.hidden=false;
+  files.innerHTML=`<div class="wh-files-top"><strong>Saved files</strong><select aria-label="Saved folder"><option value="">All folders</option>${cats.map(c=>`<option ${c===filter?'selected':''}>${esc(c)}</option>`).join('')}</select><button data-folder>${folder?'Export to folder':'Connect folder'}</button><button data-archive>Download recipes</button><button data-close aria-label="Close saved files">×</button></div><p class="wh-files-note">On this device · organized by generator. Connect any folder or your SSD when it’s available.</p><div class="wh-filegrid"></div>`;
+  const fg=files.querySelector('.wh-filegrid');for(const rec of items.filter(x=>!filter||x.category===filter)){const tile=document.createElement('article');tile.className='wh-file';let image='';if(rec.image){image=URL.createObjectURL(rec.image);urls.push(image);}tile.innerHTML=(image?`<img src="${image}" alt="${esc(rec.title)} saved output">`:'')+`<div><strong>${esc(rec.title)}</strong><small>${esc(rec.category)} / ${esc(rec.generator)}</small><small>${new Date(rec.savedAt).toLocaleDateString()} · ${rec.genome.seed}</small><button data-open>Open</button><button data-recipe>Recipe</button>${rec.image?'<button data-image>Image</button>':''}</div>`;fg.append(tile);tile.querySelector('[data-open]').onclick=()=>{files.hidden=true;recipeSettings.set(key(rec.genome),rec.settings||[]);const r=add(rec.genome);r?.card.scrollIntoView({block:'start'});};tile.querySelector('[data-recipe]').onclick=()=>download(rec.id+'.moor.json',new Blob([JSON.stringify({...rec,image:undefined},null,2)],{type:'application/json'}));tile.querySelector('[data-image]')?.addEventListener('click',()=>download(rec.id+'.png',rec.image));}
+  if(!fg.children.length)fg.innerHTML='<p class="wh-empty">Save a result while you scroll. It will appear here.</p>';
+  files.querySelector('[data-close]').onclick=()=>files.hidden=true;files.querySelector('select').onchange=e=>renderFiles(e.target.value);
+  files.querySelector('[data-archive]').onclick=()=>download('wonder-feed-recipes.json',new Blob([JSON.stringify({schema:'moor.wonder-files',version:1,files:items.map(x=>({...x,image:undefined}))},null,2)],{type:'application/json'}));
+  files.querySelector('[data-folder]').onclick=async()=>{try{if(!folder){if(!window.showDirectoryPicker){notify('Folder access needs a supported browser. Images and recipes can still be downloaded.');return;}folder=await showDirectoryPicker({mode:'readwrite'});await put('settings',{id:'folder',handle:folder});}else if(await folder.requestPermission({mode:'readwrite'})!=='granted')return;for(const item of items)await toFolder(item);notify(items.length+' saved files exported');renderFiles(filter);}catch(e){if(e.name!=='AbortError')notify('Folder unavailable. Your saves remain on this device.');}};
+ }
+ shell.querySelector('[data-files]').onclick=()=>renderFiles().catch(()=>notify('Device file storage is unavailable.'));
+ db().then(async d=>{const q=d.transaction('settings').objectStore('settings').get('folder');q.onsuccess=()=>folder=q.result?.handle||null;const existing=await all();for(const old of W.Library.list()){if(!existing.some(x=>x.id===key(old.genome)))await put('files',{schema:'moor.wonder-file',version:1,id:key(old.genome),genome:old.genome,generator:old.genome.type,category:category(old.genome),title:old.title,savedAt:old.savedAt||Date.now(),updatedAt:Date.now(),comment:old.comment||'',image:null});}}).catch(()=>{});
+ let shared=null;try{const m=location.hash.match(/#w=([\w-]+)/);if(m){shared=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));if(!W.genome.valid(shared))shared=null;}}catch(_){}
+ if(shared)add(shared);
+ const first=['terrain','native-plant','planet','forest','native-furniture','firefountain'];for(const type of first){const t=kinds.find(x=>x.kind===type);if(t)add({type,seed:Math.floor(random()*1e9),p:t.params(random)});}
+ const api={stopAll(){dead=true;visibleObserver.disconnect();moreObserver.disconnect();records.forEach(stop);document.removeEventListener('fullscreenchange',onFs);document.removeEventListener('keydown',onKey);urls.forEach(u=>URL.revokeObjectURL(u));clearTimeout(statusTimer);instances.delete(api);},insertGenome(g){const rec=add(g);rec?.card.scrollIntoView({block:'start'});}};host._wonderApi=api;instances.add(api);return api;
+}
+W.mount=mount;W.unmount=()=>{for(const api of [...instances])api.stopAll();};W.Haven={native,kinds:kinds.map(x=>x.kind),release:RELEASE};
+if(typeof TOOLS!=='undefined')TOOLS.wonder={mount:host=>mount(host),unmount:W.unmount};
+})();
