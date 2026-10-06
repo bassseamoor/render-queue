@@ -1,0 +1,378 @@
+{
+  "schema": "moor.seeded-procedural-toolchain-blueprint",
+  "version": 1,
+  "title": "Seeded Procedural Toolchain — Memory Without Point Clouds",
+  "page0": "Use MOOR's existing procedural generators and future generators as real factory tools. Blueprints should be able to specify generated assets without remembering every vertex, point, plant, particle or placement. Store enough deterministic information—seed, generator identity/version, recipe, parameters, upstream dependencies and semantic anchors—to reconstruct the intended result later, while allowing controlled variation and upgrades.",
+  "correctedQuestion": "What deterministic recipe and capability contract lets MOOR reconstruct complex generated artifacts from compact lineage rather than stored geometry, while preserving semantic placement, reproducibility, upgrade safety and the ability to swap in better generators later?",
+  "objective": "Make procedural generation a first-class manufacturing primitive that blueprints can call by capability and reconstruct from compact deterministic recipes.",
+  "knownEvidence": [
+    {
+      "state": "verified-existing",
+      "ref": "components/seed-rng/rng.js",
+      "claim": "Named deterministic random streams already exist."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "components/seed-codec/codec.js",
+      "claim": "Seed encoding/decoding machinery exists."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "effects-studio.html",
+      "claim": "Seeded procedural effect authoring already exists."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "wonder-feed.html",
+      "claim": "Procedural outputs can already be browsed as generated ideas/assets."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "moor-living-garden.html",
+      "claim": "Seeded/environment-driven vegetation generation exists."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "moor-planet-workshop.html",
+      "claim": "Seeded terrain/environment generation exists."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "components/struct/struct.js",
+      "claim": "Deterministic structural/furnishing machinery exists."
+    },
+    {
+      "state": "verified-existing",
+      "ref": "MoorCapabilityMemory",
+      "claim": "Verified capabilities, assemblies, compositions and supersession lineage can be retained cumulatively."
+    }
+  ],
+  "openQuestions": [
+    "What is the smallest recipe that can reconstruct an artifact without overfitting to one generator implementation?",
+    "Which parts of a generated result are semantic invariants and which parts may legitimately vary across generator upgrades?",
+    "How should recipes represent coordinate frames and anchors so downstream systems know where generated details belong without storing all positions?",
+    "When a generator version changes, when should an old recipe reproduce the old output exactly versus migrate to the new generator?",
+    "How should multi-generator compositions derive sub-seeds so adding one new branch does not reshuffle unrelated outputs?",
+    "What evidence proves two reconstructions are semantically equivalent even if their raw vertices differ?",
+    "Which generator outputs should be cached as artifacts for performance, and which should always be regenerated?",
+    "How should blueprints request capabilities like foliage, road networks, UI frames or animated faces without naming a specific generator too early?",
+    "What compatibility contract allows a better future generator to replace an old one without invalidating stored recipes?",
+    "How should a recipe encode manual art-direction overrides while preserving deterministic replay?",
+    "How should generator failure or unavailable runtime dependencies degrade without silently substituting a different visual?",
+    "What is the right boundary between procedural seed memory and ordinary asset storage?"
+  ],
+  "assumptions": [
+    "Seeds alone are insufficient; generator version, recipe and semantic anchors are required.",
+    "Exact byte-for-byte geometry reproduction is not necessary for every artifact; the blueprint must declare the required tolerance.",
+    "Existing generators remain reusable through adapters rather than forced rewrites.",
+    "Recipes are immutable by version and can supersede prior recipes."
+  ],
+  "nonGoals": [
+    "Do not delete exported meshes/textures merely because regeneration is possible.",
+    "Do not claim all current generators are deterministic until tested.",
+    "Do not force one universal generator schema onto tools whose outputs differ materially.",
+    "Do not allow new generator versions to silently reinterpret old recipes."
+  ],
+  "dataContracts": {
+    "GeneratorCapability": [
+      "generator_id",
+      "version",
+      "provides",
+      "input_types",
+      "output_types",
+      "determinism_level",
+      "seed_contract",
+      "parameter_schema",
+      "semantic_anchor_schema",
+      "dependencies",
+      "limits",
+      "verification_refs",
+      "supersedes"
+    ],
+    "ProceduralRecipe": [
+      "recipe_id",
+      "version",
+      "requested_capability",
+      "generator_binding",
+      "generator_version",
+      "root_seed",
+      "subseed_scheme",
+      "parameters",
+      "semantic_anchors",
+      "upstream_recipe_refs",
+      "manual_overrides",
+      "reconstruction_tolerance",
+      "expected_invariants",
+      "provenance",
+      "content_hash"
+    ],
+    "SemanticAnchor": [
+      "anchor_id",
+      "frame",
+      "parent_anchor",
+      "role",
+      "transform_or_constraint",
+      "stable_key"
+    ],
+    "ReconstructionReceipt": [
+      "recipe_hash",
+      "generator_hash",
+      "environment_hash",
+      "output_hash_or_signature",
+      "invariants_measured",
+      "tolerance_result",
+      "cache_ref",
+      "timestamp"
+    ]
+  },
+  "seedLaw": {
+    "root": "One human/project-level seed may derive stable named substreams.",
+    "derivation": "Sub-seeds derive from stable semantic keys, not sequence position, so inserting a new generator branch does not perturb siblings.",
+    "locality": "A generator may own internal substreams but must expose the stable root binding needed for replay.",
+    "versioning": "Changing generator algorithm without a version change is forbidden for deterministic contracts.",
+    "upgrade": "A migration recipe explicitly maps old generator/recipe versions to new ones; old replay remains available when required."
+  },
+  "determinismLevels": [
+    {
+      "id": "D0",
+      "meaning": "Non-deterministic; cannot be recipe-reconstructed. Store/export artifact."
+    },
+    {
+      "id": "D1",
+      "meaning": "Seed-stable intent but runtime/platform variation may change details."
+    },
+    {
+      "id": "D2",
+      "meaning": "Seed + recipe + version reconstructs semantically equivalent output within declared tolerance."
+    },
+    {
+      "id": "D3",
+      "meaning": "Seed + recipe + version reconstructs a stable canonical serialized output/hash on supported runtimes."
+    }
+  ],
+  "toolCandidates": [
+    {
+      "capability": "deterministic-rng",
+      "existing": [
+        "seed-rng",
+        "seed-codec"
+      ]
+    },
+    {
+      "capability": "terrain",
+      "existing": [
+        "terrain-core",
+        "terrain-field",
+        "planet-workshop",
+        "terrain-stack"
+      ]
+    },
+    {
+      "capability": "vegetation",
+      "existing": [
+        "living-garden",
+        "planet-vegetation"
+      ]
+    },
+    {
+      "capability": "structures/furniture",
+      "existing": [
+        "struct",
+        "struct-builder",
+        "struct-prefabs",
+        "wall-mirror"
+      ]
+    },
+    {
+      "capability": "materials/palette",
+      "existing": [
+        "palettes",
+        "palette-mixer"
+      ]
+    },
+    {
+      "capability": "effects",
+      "existing": [
+        "effects-studio",
+        "wonder-feed generators"
+      ]
+    },
+    {
+      "capability": "audio/ambience",
+      "existing": [
+        "ambience-engine"
+      ]
+    },
+    {
+      "capability": "maps/routes",
+      "existing": [
+        "moor-atlas",
+        "glass-map",
+        "grid-coords",
+        "transit"
+      ]
+    },
+    {
+      "capability": "performance adaptation",
+      "existing": [
+        "perf-governor"
+      ]
+    },
+    {
+      "capability": "capability/version lookup",
+      "existing": [
+        "MoorCapabilityMemory",
+        "PulseReferences",
+        "Refinery"
+      ]
+    }
+  ],
+  "interfaces": [
+    {
+      "from": "Blueprint",
+      "to": "Capability resolver",
+      "contract": "Request output capability + constraints, not a hardcoded generator unless locked."
+    },
+    {
+      "from": "Capability resolver",
+      "to": "Generator",
+      "contract": "Select verified compatible generator/version and bind recipe."
+    },
+    {
+      "from": "Generator",
+      "to": "Artifact",
+      "contract": "Emit result + ReconstructionReceipt + reusable recipe."
+    },
+    {
+      "from": "Recipe",
+      "to": "3D factory",
+      "contract": "Factory may render generated decoration but semantic machine anchors stay stable."
+    },
+    {
+      "from": "Refinery",
+      "to": "Recipe registry",
+      "contract": "Verified generator upgrades and compositions become cumulative machinery."
+    }
+  ],
+  "failureModes": [
+    {
+      "id": "seed-only-memory",
+      "risk": "A seed cannot reconstruct behavior after algorithm change.",
+      "containment": "Bind generator/version/recipe."
+    },
+    {
+      "id": "sequence-cascade",
+      "risk": "Adding one generator changes all downstream random draws.",
+      "containment": "Named semantic sub-seeds."
+    },
+    {
+      "id": "silent-upgrade",
+      "risk": "Old blueprint reconstructs differently after generator replacement.",
+      "containment": "Version pin or explicit migration contract."
+    },
+    {
+      "id": "platform-drift",
+      "risk": "GPU/browser math changes output.",
+      "containment": "Declare determinism level and semantic tolerance."
+    },
+    {
+      "id": "anchor-loss",
+      "risk": "Asset regenerates correctly but appears in the wrong place.",
+      "containment": "Stable semantic anchor contract independent of decorative point data."
+    },
+    {
+      "id": "cache-lie",
+      "risk": "Cached artifact no longer matches recipe/version.",
+      "containment": "Cache keyed by recipe + generator + environment hashes."
+    }
+  ],
+  "maintenanceModel": {
+    "inventory": "Generators registered as cumulative versioned capabilities.",
+    "verification": "Each generator declares determinism level and replay test corpus.",
+    "deprecation": "Old generator versions remain addressable for replay and lineage.",
+    "metrics": [
+      "recipe_reuse_rate",
+      "reconstruction_pass_rate",
+      "generator_upgrade_breakage",
+      "cache_hit_rate",
+      "average_recipe_bytes_vs_artifact_bytes"
+    ]
+  },
+  "observability": {
+    "human": "Blueprint inspector shows requested capability, chosen generator, seed, recipe version, determinism level and reconstruction status.",
+    "machine": "Recipe registry and ReconstructionReceipts are searchable through Pulse/Refinery.",
+    "factory": "Generator tools appear in the tool crib; generated artifacts show lineage without displaying every stored point."
+  },
+  "securityAuthority": {
+    "rule": "A generator may create artifacts but does not authorize their release; verification/Funnel rules remain separate.",
+    "unverifiedGenerators": "May produce candidates for Wonder/experimentation but cannot silently satisfy production blueprint requirements."
+  },
+  "implementationSlices": [
+    {
+      "id": "PG-01",
+      "name": "Generator capability inventory",
+      "dependsOn": [],
+      "deliverable": "Derive generator capabilities/versions from existing manifest + capability memory."
+    },
+    {
+      "id": "PG-02",
+      "name": "ProceduralRecipe contract",
+      "dependsOn": [
+        "PG-01"
+      ],
+      "deliverable": "Versioned recipe + semantic anchor + determinism-level schemas."
+    },
+    {
+      "id": "PG-03",
+      "name": "Seed derivation standard",
+      "dependsOn": [
+        "PG-02"
+      ],
+      "deliverable": "Named sub-seed scheme compatible with current seed-rng/codec."
+    },
+    {
+      "id": "PG-04",
+      "name": "Adapters for existing generators",
+      "dependsOn": [
+        "PG-02",
+        "PG-03"
+      ],
+      "deliverable": "Wrap selected terrain/vegetation/effects/struct generators without rewriting them."
+    },
+    {
+      "id": "PG-05",
+      "name": "Reconstruction verification",
+      "dependsOn": [
+        "PG-04"
+      ],
+      "deliverable": "Replay corpus and ReconstructionReceipts."
+    },
+    {
+      "id": "PG-06",
+      "name": "Blueprint capability resolver",
+      "dependsOn": [
+        "PG-01",
+        "PG-05"
+      ],
+      "deliverable": "Blueprints request output contracts and resolve verified generators."
+    },
+    {
+      "id": "PG-07",
+      "name": "Factory/Wonder integration",
+      "dependsOn": [
+        "PG-06"
+      ],
+      "deliverable": "Inspect recipe lineage in factory and browse generated candidate outputs in Wonder."
+    }
+  ],
+  "acceptance": [
+    "A complex generated artifact can be specified without storing all generated points.",
+    "The recipe identifies generator version, stable seed derivation, parameters, semantic anchors and required reconstruction tolerance.",
+    "Inserting an unrelated generator branch does not perturb existing named substreams.",
+    "Old recipes remain replayable or explicitly migrated after generator upgrades.",
+    "Blueprints can request a capability without prematurely coupling to one implementation.",
+    "Existing MOOR generators can participate through adapters.",
+    "Unverified generator outputs cannot masquerade as production-verified artifacts."
+  ],
+  "rollback": "Recipes remain additive and versioned; adapters can be removed without mutating original generators or exported artifacts."
+}
