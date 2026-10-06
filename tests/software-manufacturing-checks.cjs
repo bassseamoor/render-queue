@@ -7,6 +7,7 @@ const manifest=JSON.parse(fs.readFileSync('pulse-manifest.json','utf8'));
 const assembly=fs.readFileSync('moor-assembly-core.js','utf8');
 const hub=fs.readFileSync('hub.html','utf8');
 const objective=fs.readFileSync('objective.html','utf8');
+const request=fs.readFileSync('moor-request.js','utf8');
 
 assert.equal(bp.principle,'The 3D machine is a digital twin/HMI. Contracts, state transitions, evidence and receipts are the machine.');
 for(const rec of ['WorkOrder','PartKind','BillOfMaterials','Route','Operation','ProcessSpec','TravelerReceipt','Inspection','Nonconformance','ReworkOrder','MaintenanceRecord','ReleaseRecord'])
@@ -21,6 +22,8 @@ assert(assembly.includes('deterministic contract executor'),'Assembly Core must 
 for(const src of ['pulse-beam.css?v=20261006-beam1','pulse-beam-audit.js?v=20261006-beam1','pulse-beam-component-adapter.js?v=20261006-beam1','pulse-beam.js?v=20261006-beam1'])
   assert(dash.includes(src),'live dashboard missing protected factory HMI asset '+src);
 assert(!dash.includes('pulse-creation-deck.js?v=20261006-deck1'),'old shell may not silently replace Beam');
+assert(dash.includes('software-factory-core.js?v=20261006-factory1'),'live Pulse must load the manufacturing ledger before request routing');
+assert(request.includes('ensureFactoryOrder')&&request.includes('advanceFactoryToHarness'),'MOOR.request must convert builds into routed work orders');
 
 for(const id of ['pulse-beam','pulse-beam-funnel-hall','pulse-beam-standards','funnel-maintenance-status'])
   assert(manifest.items&&manifest.items[id],'manifest/BOM missing protected platform item '+id);
