@@ -113,11 +113,11 @@ function openKernel(req,refs){
   }
   return session;
 }
-function verifiedExecution(receipt,input){
+function claimExecution(receipt,input){
   var k=kernel();
   if(!k||!k.verifyReceipt(receipt))return null;
   if(k.hash(input)!==receipt.page0_hash)return null;
-  return k.executionPacket(receipt);
+  try{return k.claimExecution(receipt,input,receipt.destination);}catch(e){return null;}
 }
 async function request(arg){
   if(typeof arg==='string')arg={input:arg};
@@ -142,18 +142,18 @@ async function request(arg){
   if(arg.forceFunnel||buildIntent(input)){
     var refsForFunnel=referencePacket(input);
     if(arg.funnel_receipt){
-      var packet=verifiedExecution(arg.funnel_receipt,input);
-      if(packet){
+      var claim=claimExecution(arg.funnel_receipt,input);
+      if(claim){
         try{
           if(window.PulseReferences)window.PulseReferences.add({
             id:'intent:'+req.id,kind:'intent',title:'Funnel-resolved request',summary:input,status:'observed',
-            source:'MOOR.request',source_id:req.id,provenance:'verified',data:{context:ctx,packet:packet}
+            source:'MOOR.request',source_id:req.id,provenance:'verified',data:{context:ctx,claim:claim}
           });
         }catch(e){}
-        var handoff={schema:'moor.harness-inbox',version:1,at:new Date().toISOString(),input:input,context:ctx,verdict_packet:packet,references:refsForFunnel};
+        var handoff={schema:'moor.harness-inbox',version:2,at:new Date().toISOString(),input:input,context:ctx,execution_claim:claim,references:refsForFunnel};
         try{localStorage.setItem('moor-harness-inbox-v1',JSON.stringify(handoff));}catch(e){}
         try{window.dispatchEvent(new CustomEvent('moor:harness-ready',{detail:handoff}));}catch(e){}
-        return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:'verified',context:ctx,result:{verdict_packet:packet,references:refsForFunnel,harness_inbox:true}};
+        return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:'verified',context:ctx,result:{execution_claim:claim,references:refsForFunnel,harness_inbox:true}};
       }
       return {request_id:req.id,route:'funnel',status:'locked',provenance:'fallback',context:ctx,result:{error:'Invalid Funnel receipt. Execution denied.'}};
     }
