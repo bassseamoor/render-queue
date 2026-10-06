@@ -218,6 +218,12 @@ function openKernel(req,refs){
   if(!k)throw Error('Funnel Kernel unavailable. Build execution is locked.');
   var session=k.open({request_id:req.id,input:req.input,source:req.source,context:req.context});
   if(session.stage==='page0'){
+    session=k.advance({request_id:req.id,stage:'usage_plan',payload:{plan:k.makeUsagePlan(req.input,Object.assign({source:req.source},req.context||{}),{
+      execution_plan:{destination:'app-compiler-harness',reuse_before_new:true},
+      reference_plan:{inspect_existing_first:true,sources:['Pulse reference packet','verified capabilities/assemblies/compositions','locked answers','prior failures/corrections']}
+    })},provenance:'system'});
+  }
+  if(session.stage==='usage_plan'){
     var reused=[];
     ['concepts','recipes','implementations','rules','failures','evidence','intents','capabilities','assemblies','compositions','handoffs','learning'].forEach(function(kind){
       (refs&&refs[kind]||[]).forEach(function(r){reused.push({kind:kind,id:r.id||r.source_id||null,title:r.title||null});});
