@@ -45,6 +45,9 @@ const LAYER_Y={};
 for(let i=0;i<=17;i++)LAYER_Y[i]=52-i*6.2;
 
 function positionFor(n){
+  if(n.position && Number.isFinite(Number(n.position.x)) && Number.isFinite(Number(n.position.y)) && Number.isFinite(Number(n.position.z))){
+    return new THREE.Vector3(Number(n.position.x),Number(n.position.y),Number(n.position.z));
+  }
   if(n.type==='need-category'){
     const a=(n.index/13)*Math.PI*2-Math.PI/2;
     return new THREE.Vector3(Math.cos(a)*22,LAYER_Y[4],Math.sin(a)*7);
