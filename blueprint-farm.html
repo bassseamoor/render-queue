@@ -24,29 +24,31 @@ pre{white-space:pre-wrap;word-break:break-word;padding:12px;border-radius:12px;b
 </style>
 </head>
 <body>
-<header><div class="mark">⌬</div><div class="title"><strong>Blueprint Farm</strong><span>planning machinery · execution gated</span></div><div class="gate">BF-01 · library only</div></header>
+<header><div class="mark">⌬</div><div class="title"><strong>Blueprint Farm</strong><span>planning machinery · evidence driven</span></div><div class="gate">read only · release gated</div></header>
 <main>
 <aside class="sidebar"><div class="summary"><b id="count">—</b><p>Versioned blueprints. Planned work has no execution authority until separately released.</p></div><div class="list" id="list"></div></aside>
 <article class="detail" id="detail"><div class="empty">Loading Blueprint Farm…</div></article>
 </main>
+<script src="blueprint-choreography-core.js"></script><script src="blueprint-comparison-core.js"></script>
 <script>
 (function(){
 'use strict';
 const list=document.getElementById('list'),detail=document.getElementById('detail'),count=document.getElementById('count');
-let lib=null,selected=null;
+let lib=null,selected=null,farmReport=null,choreoSnapshot=null;const blueprintCache={};
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const arr=v=>Array.isArray(v)?v:[];
 function rows(items,render){if(!items.length)return '<div class="row"><p>None recorded.</p></div>';return '<div class="rows">'+items.map(render).join('')+'</div>'}
 function sec(title,body){return '<section><h2>'+esc(title)+'</h2>'+body+'</section>'}
 async function loadJson(path){const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error(path+' · '+r.status);return r.json()}
 function renderList(){
-  list.innerHTML='';count.textContent=lib.blueprints.length+' blueprints';
+  list.innerHTML='';count.textContent=lib.blueprints.length+' blueprints'+(farmReport?' · '+farmReport.summary.open_questions+' open questions':'');
+  const intel=document.createElement('button');intel.className='bp'+(selected==='__farm__'?' on':'');intel.innerHTML='<strong>Farm intelligence</strong><span>eligibility · questions · tensions · dependency truth</span><i class="pill">BF-02</i>';intel.onclick=showFarm;list.appendChild(intel);
   lib.blueprints.forEach(x=>{const b=document.createElement('button');b.className='bp'+(selected===x.id?' on':'');b.innerHTML='<strong>'+esc(x.title)+'</strong><span>'+esc(x.role)+'</span><i class="pill">'+esc(x.status)+'</i>';b.onclick=()=>select(x);list.appendChild(b)});
 }
 async function select(entry){
   selected=entry.id;renderList();detail.innerHTML='<div class="empty">Loading '+esc(entry.title)+'…</div>';
   try{
-    const bp=await loadJson(entry.path);
+    const bp=blueprintCache[entry.id]||await loadJson(entry.path);
     const questions=arr(bp.openQuestions);
     const slices=arr(bp.implementationSlices);
     const evidence=arr(bp.knownEvidence);
@@ -69,7 +71,36 @@ async function select(entry){
       sec('Rollback','<div class="row"><p>'+esc(bp.rollback||'Not specified')+'</p></div>');
   }catch(e){detail.innerHTML='<div class="empty">Could not load blueprint: '+esc(e.message)+'</div>'}
 }
-loadJson('pulse-blueprint-farm-library.json').then(x=>{lib=x;renderList();select(lib.blueprints[0])}).catch(e=>{detail.innerHTML='<div class="empty">Blueprint Farm index unavailable: '+esc(e.message)+'</div>'});
+function showFarm(){
+  selected='__farm__';renderList();
+  if(!farmReport||!choreoSnapshot){detail.innerHTML='<div class="empty">Farm intelligence unavailable.</div>';return}
+  const rec=choreoSnapshot.recommendation;
+  detail.innerHTML=
+    '<div class="eyebrow">BF-02 · read only · no release authority</div>'+
+    '<h1>Farm intelligence</h1>'+
+    '<p class="lead">Evidence-driven view of what exists, what is unresolved, what conflicts, and what is structurally safe to consider next. Recommendation is advisory; execution still requires Funnel/owner release.</p>'+
+    '<div class="meta"><span>'+farmReport.summary.open_questions+' open questions</span><span>'+choreoSnapshot.eligible_slices.length+' eligible slices</span><span>'+choreoSnapshot.blocked_slices.length+' blocked</span><span>'+choreoSnapshot.divergences.length+' plan/evidence divergences</span></div>'+
+    sec('Advisory next slice',rec?'<div class="row"><strong>'+esc(rec.slice_id)+' · '+esc(rec.name)+'</strong><p>'+esc(rec.reason)+'</p></div>':'<div class="row"><p>No dependency-satisfied slice is currently recommended.</p></div>')+
+    sec('Eligible slices',rows(choreoSnapshot.eligible_slices,x=>'<div class="row"><strong>'+esc(x.id)+' · '+esc(x.name)+'</strong><p>risk '+esc(x.risk)+' · information '+esc(x.informationValue)+' · depends on '+esc(arr(x.dependsOn).join(', ')||'none')+'</p></div>'))+
+    sec('Plan / evidence divergences',rows(choreoSnapshot.divergences,x=>'<div class="row"><strong>'+esc(x.id)+' · '+esc(x.divergence)+'</strong><p>Implemented evidence exists while old plan dependencies remain incomplete: '+esc(x.missing_dependencies.join(', '))+'</p></div>'))+
+    sec('Open-question queue',rows(farmReport.question_queue,x=>'<div class="row"><strong>'+esc(x.question_id)+' · '+esc(x.blueprint_title)+'</strong><p>'+esc(x.text)+'</p></div>'))+
+    sec('Question clusters',rows(farmReport.question_clusters.filter(x=>x.questions.length>1),x=>'<div class="row"><strong>'+esc(x.cluster_id)+' · '+x.questions.length+' related questions</strong><p>'+esc(x.canonical)+'</p></div>'))+
+    sec('Potential assumption tensions',rows(farmReport.tensions,x=>'<div class="row"><strong>'+esc(x.a)+' ↔ '+esc(x.b)+'</strong><p>'+esc(x.a_text)+' ↔ '+esc(x.b_text)+'</p></div>'))+
+    sec('Interface overlaps',rows(farmReport.interface_overlaps,x=>'<div class="row"><strong>'+esc(x.key)+'</strong><p>'+esc(x.blueprints.join(', '))+'</p></div>'))+
+    sec('Dependency defects',rows(farmReport.dependency_defects,x=>'<div class="row"><strong>'+esc(x.slice_id)+' · '+esc(x.blueprint_id)+'</strong><p>Missing dependency '+esc(x.missing_dependency)+'</p></div>'))+
+    sec('Supersession lineage',rows(farmReport.lineage,x=>'<div class="row"><strong>'+esc(x.from)+' → '+esc(x.to)+'</strong><p>'+esc(x.type)+'</p></div>'));
+}
+Promise.all([
+  loadJson('pulse-blueprint-farm-library.json'),
+  loadJson('blueprint/blueprint-choreography.blueprint.json'),
+  loadJson('blueprint-choreography-state.json')
+]).then(async values=>{
+  lib=values[0];
+  const entries=await Promise.all(lib.blueprints.map(async x=>{const bp=await loadJson(x.path);blueprintCache[x.id]=bp;return {id:x.id,title:x.title,blueprint:bp}}));
+  farmReport=window.MoorBlueprintComparison.compile(entries);
+  choreoSnapshot=window.MoorBlueprintChoreography.evaluate({choreography:values[1],evidence:values[2]});
+  renderList();showFarm();
+}).catch(e=>{detail.innerHTML='<div class="empty">Blueprint Farm intelligence unavailable: '+esc(e.message)+'</div>'});
 })();
 </script>
 </body>
