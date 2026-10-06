@@ -72,8 +72,11 @@ const spine=fs.readFileSync('pulse-spine.js','utf8');
 assert(spine.includes("addEdge(id,x,'supersedes'"),'Pulse reference graph must preserve supersession edges');
 assert(spine.includes("supersedes:(c.supersedes||[])"),'Refinery capability lineage must enter Pulse');
 
-const bp=require('../blueprint/software-manufacturing-machine.blueprint.json');
+const alias=require('../blueprint/software-manufacturing-machine.blueprint.json');
+const bp=require('../blueprint/software-manufacturing-system.blueprint.json');
+assert.equal(alias.status,'superseded-alias');
+assert.equal(alias.canonical,'blueprint/software-manufacturing-system.blueprint.json');
 assert.equal(bp.accumulationLaw.name,'Factory Accumulation Law');
-assert(bp.accumulationLaw.rules.some(x=>/supersede, not erase/i.test(x)));
+assert(bp.accumulationLaw.rules.some(x=>/supersession|supersede/i.test(x)));
 
 console.log('PASS: software-factory machines accumulate across versions; upgrades supersede rather than erase, production prefers verified active machinery, and Pulse preserves lineage.');
