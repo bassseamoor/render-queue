@@ -72,6 +72,8 @@ scene.add(ring(16.5,.08,WHITE,.055,low?64:128));
  */
 let factory={schema:'moor.software-factory-graph',nodes:[],edges:[],counts:{machines:0,fixtures:0,connections:0,adapters:0}};
 try{if(window.MoorCapabilityMemory&&typeof window.MoorCapabilityMemory.factoryGraph==='function')factory=window.MoorCapabilityMemory.factoryGraph()||factory}catch(_){}
+let plant={schema:'moor.software-plant-state',orders:[],counts:{},work_in_progress:0,released:0};
+try{if(window.MoorSoftwareFactory&&typeof window.MoorSoftwareFactory.plantSnapshot==='function')plant=window.MoorSoftwareFactory.plantSnapshot()||plant}catch(_){}
 const factoryGroup=new THREE.Group();scene.add(factoryGroup),factoryNodeMap=new Map();
 function factoryColor(n){
   if(n.kind==='machine'&&n.lifecycle==='quarantined')return RED;
@@ -125,12 +127,32 @@ for(const e of (factory.edges||[]).slice(0,low?36:120)){
 }
 scene.add(ring(20.2,.06,GREEN,.045,low?64:128),ring(22.3,.06,CYAN,.035,low?64:128),ring(24.2,.06,ICE,.025,low?64:128));
 
+/* Real work-in-progress packets. Empty plant state renders no fake activity. */
+const workOrderGroup=new THREE.Group();scene.add(workOrderGroup);
+function workColor(state){
+  if(state==='NONCONFORMING')return RED;
+  if(state==='REWORK'||state==='BLOCKED_MAINTENANCE')return AMBER;
+  if(state==='PASS'||state==='RELEASED')return GREEN;
+  if(state==='IN_PROCESS'||state==='INSPECTION')return CYAN;
+  return ICE;
+}
+const wipOrders=(plant.orders||[]).filter(o=>o.state!=='RELEASED').slice(0,low?12:32);
+wipOrders.forEach((o,i)=>{
+  const a=(i/Math.max(1,wipOrders.length))*Math.PI*2-Math.PI/2,r=12.65,c=workColor(o.state);
+  const g=new THREE.Group();g.position.set(Math.cos(a)*r,1.05+(i%2)*.22,Math.sin(a)*r);workOrderGroup.add(g);
+  const packet=new THREE.Mesh(new THREE.BoxGeometry(.5,.18,.32),glow(c,.72));g.add(packet);
+  g.add(beam(new THREE.Vector3(-.34,0,0),new THREE.Vector3(.34,0,0),c,.012,.62));
+  const n={id:'work-order.'+o.work_order_id,label:o.work_order_id,type:'work-order',detail:o.objective||'Software work order',work_order:o};
+  const p=new THREE.Mesh(new THREE.BoxGeometry(.9,.8,.9),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));p.userData.node=n;g.add(p);pickables.push(p);
+});
+if(wipOrders.length)scene.add(ring(12.65,.95,ICE,.055,low?64:128));
+
 const drones=[];if(!low)for(let i=0;i<6;i++){const g=new THREE.Group(),body=new THREE.Mesh(new THREE.OctahedronGeometry(.13,0),mats.metal),lamp=new THREE.Mesh(new THREE.BoxGeometry(.04,.04,.18),glow(i===0?GREEN:ICE,.72));g.add(body,lamp);g.userData={radius:9+i*2.3,phase:unit('drone:'+i)*Math.PI*2,height:3.2+(i%3)*1.4,speed:.028+i*.005};scene.add(g);drones.push(g)}
 const funnels=graph.nodes.filter(n=>n.type==='funnel'),law=graph.currentLaw||{},systems=maintenance.systems||[],
   gapCount=systems.filter(s=>(s.display_state||s.visual_state)==='gap').length,
   degradedCount=systems.filter(s=>(s.display_state||s.visual_state)==='degraded').length,
   candidateCount=systems.filter(s=>(s.display_state||s.visual_state)==='candidate_tested').length;
-document.getElementById('hall-count').textContent=funnels.length+' specialist funnels · '+systems.length+' maintained systems · '+((factory.counts&&factory.counts.machines)||0)+' machines';
+document.getElementById('hall-count').textContent=funnels.length+' specialist funnels · '+systems.length+' maintained systems · '+((factory.counts&&factory.counts.machines)||0)+' machines · '+(plant.work_in_progress||0)+' WIP';
 document.getElementById('hall-state').innerHTML='<b>LAW</b> <span class="emerald">'+((maintenance.current_authority&&maintenance.current_authority.production)||law.active||'unavailable')+'</span> · <b>CANDIDATE</b> <span class="ice">'+((maintenance.current_authority&&maintenance.current_authority.candidate)||law.candidate||'unavailable')+'</span>'+(degradedCount?' · <b style="color:#ff806f">'+degradedCount+' DEGRADED</b>':'')+(gapCount?' · <b style="color:#ff806f">'+gapCount+' GAP</b>':'')+(candidateCount?' · '+candidateCount+' CANDIDATE SYSTEMS':'');
 const info=document.getElementById('info');
 function inspect(n){
@@ -140,10 +162,10 @@ function inspect(n){
   document.getElementById('info-title').textContent=n.label||n.id;
   document.getElementById('info-copy').textContent=n.detail||'Live Funnel graph node.';
   document.getElementById('info-status').textContent=fm?String(fm.lifecycle||fm.status||'registered').replaceAll('_',' ').toUpperCase():m?(m.display_state||m.visual_state||'unknown').replaceAll('_',' ').toUpperCase():n.type==='law-active'?'ACTIVE':n.type==='law-candidate'?'CANDIDATE':'LIVE GRAPH';
-  document.getElementById('info-owner').textContent=fm?'Capability Memory':m?(m.owner||'unassigned'):(n.type==='law-active'?'v44-sealed':n.type==='law-candidate'?'ultra-v1-candidate':'graph');
-  document.getElementById('info-live').textContent=fm?'REGISTRY':m?(m.live_path?'YES':'NO'):'graph projection';
+  document.getElementById('info-owner').textContent=wo?(wo.owner||'software factory'):fm?'Capability Memory':m?(m.owner||'unassigned'):(n.type==='law-active'?'v44-sealed':n.type==='law-candidate'?'ultra-v1-candidate':'graph');
+  document.getElementById('info-live').textContent=wo?'WIP':fm?'REGISTRY':m?(m.live_path?'YES':'NO'):'graph projection';
   document.getElementById('info-verified').textContent=fm?((fm.status==='machine-verified'||fm.status==='human-approved'||fm.status==='canonical')?'YES':'NO'):m?(m.verified?'CONTRACT YES':'CONTRACT NO'):'—';
-  document.getElementById('info-receipt').textContent=fm?(fm.kind==='machine'?'VIA CAPABILITY PROVENANCE':'—'):m?(m.receipt_backed?'YES':'NO'):'—';
+  document.getElementById('info-receipt').textContent=wo?(wo.authorization&&wo.authorization.receipt_fingerprint||'UNAUTHORIZED'):fm?(fm.kind==='machine'?'VIA CAPABILITY PROVENANCE':'—'):m?(m.receipt_backed?'YES':'NO'):'—';
   document.getElementById('info-evidence').textContent=fm?(fm.implementation_ref||fm.id||'registry record'):m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')+(qc?' · last QC '+(qc.pass?'PASS':'FAIL')+' '+qc.passed+'/'+qc.total:' · last QC unavailable')):'graph topology';
   info.classList.add('on');
 }
