@@ -1,6 +1,13 @@
 import * as THREE from './three.module.js';
 const graph=window.FUNNEL_ENVIRONMENT_GRAPH||{nodes:[],edges:[],currentLaw:{}};
-const maintenance=window.FUNNEL_MAINTENANCE_STATE||{systems:[],legend:{},overall:'unavailable'};
+let maintenance={systems:[],current_authority:{production:'unavailable',candidate:'unavailable'},unavailable:true};
+try{
+  const mr=await fetch('funnel-maintenance-status.json',{cache:'no-store'});
+  if(!mr.ok)throw Error('maintenance status '+mr.status);
+  maintenance=await mr.json();
+}catch(e){
+  maintenance={systems:[{id:'maintenance-register',name:'Maintenance register unavailable',owner:'shared',visual_state:'gap',live_path:false,implemented:false,verified:false,receipt_backed:false,proof:[],detail:String(e&&e.message||e)}],current_authority:{production:'unavailable',candidate:'unavailable'},unavailable:true};
+}
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const low=(navigator.hardwareConcurrency||4)<=4||innerWidth<720;
 const stage=document.getElementById('stage'),scene=new THREE.Scene();scene.background=new THREE.Color(0x010409);scene.fog=new THREE.FogExp2(0x010409,low?.017:.012);
@@ -32,33 +39,35 @@ function maintenanceColor(state){
 }
 const maintenanceStations=[];
 (maintenance.systems||[]).forEach((s,i,all)=>{
-  const a=(i/Math.max(1,all.length))*Math.PI*2-Math.PI/2,r=16.5,c=maintenanceColor(s.state);
+  const a=(i/Math.max(1,all.length))*Math.PI*2-Math.PI/2,r=16.5,c=maintenanceColor(s.visual_state);
   const g=new THREE.Group();g.position.set(Math.cos(a)*r,.1,Math.sin(a)*r);g.rotation.y=-a;maintenanceGroup.add(g);
   const base=new THREE.Mesh(new THREE.CylinderGeometry(.72,.88,.32,18),mats.darkMetal);base.position.y=.16;g.add(base);
   const mast=beam(new THREE.Vector3(0,.34,0),new THREE.Vector3(0,1.85,0),c,.028,.72);g.add(mast);
-  const halo=new THREE.Mesh(new THREE.TorusGeometry(.34,.025,6,28),glow(c,s.state==='gap'?.9:.56));halo.rotation.x=Math.PI/2;halo.position.y=1.88;g.add(halo);
+  const halo=new THREE.Mesh(new THREE.TorusGeometry(.34,.025,6,28),glow(c,s.visual_state==='gap'?.9:.56));halo.rotation.x=Math.PI/2;halo.position.y=1.88;g.add(halo);
   const datum=new THREE.Mesh(new THREE.OctahedronGeometry(.09,0),glow(c,.9));datum.position.y=1.88;g.add(datum);
-  if(s.state==='gap'){const cut1=beam(new THREE.Vector3(-.25,2.15,0),new THREE.Vector3(.25,1.65,0),RED,.025,.85),cut2=beam(new THREE.Vector3(.25,2.15,0),new THREE.Vector3(-.25,1.65,0),RED,.025,.85);g.add(cut1,cut2)}
-  const n={id:'maintenance.'+s.id,label:s.label,type:'maintenance-'+s.state,detail:s.detail||'',maintenance:s};
+  if(s.visual_state==='gap'){const cut1=beam(new THREE.Vector3(-.25,2.15,0),new THREE.Vector3(.25,1.65,0),RED,.025,.85),cut2=beam(new THREE.Vector3(.25,2.15,0),new THREE.Vector3(-.25,1.65,0),RED,.025,.85);g.add(cut1,cut2)}
+  const n={id:'maintenance.'+s.id,label:s.name||s.label||s.id,type:'maintenance-'+(s.visual_state||'gap'),detail:s.detail||s.note||'',maintenance:s};
   const p=new THREE.Mesh(new THREE.BoxGeometry(1.5,2.5,1.5),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));p.position.set(0,1.15,0);p.userData.node=n;g.add(p);pickables.push(p);
   maintenanceStations.push(g);
 });
 scene.add(ring(16.5,.08,WHITE,.055,low?64:128));
 const drones=[];if(!low)for(let i=0;i<6;i++){const g=new THREE.Group(),body=new THREE.Mesh(new THREE.OctahedronGeometry(.13,0),mats.metal),lamp=new THREE.Mesh(new THREE.BoxGeometry(.04,.04,.18),glow(i===0?GREEN:ICE,.72));g.add(body,lamp);g.userData={radius:9+i*2.3,phase:unit('drone:'+i)*Math.PI*2,height:3.2+(i%3)*1.4,speed:.028+i*.005};scene.add(g);drones.push(g)}
-const funnels=graph.nodes.filter(n=>n.type==='funnel'),law=graph.currentLaw||{},systems=maintenance.systems||[],gapCount=systems.filter(s=>s.state==='gap').length,candidateCount=systems.filter(s=>s.state==='candidate_tested').length;
+const funnels=graph.nodes.filter(n=>n.type==='funnel'),law=graph.currentLaw||{},systems=maintenance.systems||[],gapCount=systems.filter(s=>s.visual_state==='gap').length,candidateCount=systems.filter(s=>s.state==='candidate_tested').length;
 document.getElementById('hall-count').textContent=funnels.length+' specialist funnels · '+systems.length+' maintained systems';
-document.getElementById('hall-state').innerHTML='<b>LAW</b> <span class="emerald">'+(law.active||'unavailable')+'</span> · <b>CANDIDATE</b> <span class="ice">'+(law.candidate||'unavailable')+'</span>'+(gapCount?' · <b style="color:#ff806f">'+gapCount+' GAP</b>':'')+(candidateCount?' · '+candidateCount+' CANDIDATE SYSTEMS':'');
+document.getElementById('hall-state').innerHTML='<b>LAW</b> <span class="emerald">'+((maintenance.current_authority&&maintenance.current_authority.production)||law.active||'unavailable')+'</span> · <b>CANDIDATE</b> <span class="ice">'+((maintenance.current_authority&&maintenance.current_authority.candidate)||law.candidate||'unavailable')+'</span>'+(gapCount?' · <b style="color:#ff806f">'+gapCount+' GAP</b>':'')+(candidateCount?' · '+candidateCount+' CANDIDATE SYSTEMS':'');
 const info=document.getElementById('info');
 function inspect(n){
   if(!n)return;
   const m=n.maintenance||null;
-  document.getElementById('info-type').textContent=m?'factory machine · '+m.state:(n.type||'node').replaceAll('-',' ');
+  document.getElementById('info-type').textContent=m?'factory machine · '+(m.visual_state||'unknown'):(n.type||'node').replaceAll('-',' ');
   document.getElementById('info-title').textContent=n.label||n.id;
   document.getElementById('info-copy').textContent=n.detail||'Live Funnel graph node.';
-  document.getElementById('info-status').textContent=m?m.state.replaceAll('_',' ').toUpperCase():n.type==='law-active'?'ACTIVE':n.type==='law-candidate'?'CANDIDATE':'LIVE GRAPH';
+  document.getElementById('info-status').textContent=m?(m.visual_state||'unknown').replaceAll('_',' ').toUpperCase():n.type==='law-active'?'ACTIVE':n.type==='law-candidate'?'CANDIDATE':'LIVE GRAPH';
   document.getElementById('info-owner').textContent=m?(m.owner||'unassigned'):(n.type==='law-active'?'v44-sealed':n.type==='law-candidate'?'ultra-v1-candidate':'graph');
   document.getElementById('info-live').textContent=m?(m.live_path?'YES':'NO'):'graph projection';
-  document.getElementById('info-evidence').textContent=m?((m.verification||[]).length+' automated reference'+((m.verification||[]).length===1?'':'s')):'graph topology';
+  document.getElementById('info-verified').textContent=m?(m.verified?'YES':'NO'):'—';
+  document.getElementById('info-receipt').textContent=m?(m.receipt_backed?'YES':'NO'):'—';
+  document.getElementById('info-evidence').textContent=m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')):'graph topology';
   info.classList.add('on');
 }
 const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();function pick(x,y){pointer.x=x/innerWidth*2-1;pointer.y=-(y/innerHeight)*2+1;ray.setFromCamera(pointer,camera);const hit=ray.intersectObjects(pickables,false)[0];if(hit)inspect(hit.object.userData.node);else info.classList.remove('on')}let yaw=0,pitch=-.03,drag=false,lastX=0,lastY=0,moved=0;renderer.domElement.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;lastY=e.clientY;moved=0;renderer.domElement.setPointerCapture?.(e.pointerId)});renderer.domElement.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;moved+=Math.abs(dx)+Math.abs(dy);yaw-=dx*.0042;pitch=Math.max(-1.08,Math.min(1.08,pitch-dy*.0036))});renderer.domElement.addEventListener('pointerup',e=>{drag=false;if(moved<8)pick(e.clientX,e.clientY)});
