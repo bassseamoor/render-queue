@@ -12,6 +12,20 @@ The mandatory chain is:
 
 The Funnel defines. The Harness builds. The Verifier proves. The Bin/Engine remembers.
 
+## Redundant deterministic distillation
+
+Page 0 is fed, unchanged, into three isolated, token-free distillers:
+
+1. **Lexical lens** — explicit requirement and action cues.
+2. **Structural lens** — clause structure, negatives, hard constraints, and action/constraint pairings.
+3. **Preservation lens** — named mechanisms and terms that are dangerous to silently drop.
+
+They do not call an LLM. They do not share mutable state. Each produces source-backed candidates from the same immutable Page 0.
+
+The Funnel records both consensus and disagreement, but replay uses the **union** of all source-backed obligations. A requirement caught by only one lens is not discarded merely because the other two missed it. Agreement raises confidence; disagreement raises scrutiny.
+
+The complete redundant analysis is fingerprinted into the Page 0 event and into the execution receipt. Recomputing the three lenses must reproduce that fingerprint before the receipt or consumed Harness authorization verifies.
+
 ## Runtime armor
 
 1. **Page 0 is immutable.** The original request is frozen verbatim under one request ID.
@@ -144,7 +158,7 @@ Without branch protection, credentials with direct write authority can still rep
 
 - Contract: `/FUNNEL.md`
 - Kernel: `/funnel-kernel.js`
-- Law: `v45-armored`
+- Law: `v46-redundant`
 - Human Funnel: `/quiz-funnel-v3.html`
 - Router: `/moor-request.js`
 - Harness: `/moor-harness-runtime-v1.html`
