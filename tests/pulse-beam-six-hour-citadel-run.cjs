@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict');
+const Law=require('../funnel-law-core.js');
+const R=require('../funnel-receipt-core.js');
+const bp=require('../blueprint/pulse-beam-six-hour-citadel.blueprint.json');
+const id='pulse-beam-six-hour-citadel-v1';
+Law.open({case_id:id,page0:bp.page0,scope:{project:'Pulse Beam',surface:'Funnel Citadel',method:'six-hour witness',migration:'no-loss'}});
+Law.transition(id,'REFERENCES_BOUND',{references:['blueprint/pulse-beam-six-hour-citadel.blueprint.json','blueprint/pulse-beam-rebrand.blueprint.json','funnel-environment-data.js','pulse-beam-funnel-hall.html','pulse-beam-funnel-hall.js','pulse-beam.css','glass-map.html','awe-intent.js']},'ultra-law');
+Law.transition(id,'QUESTIONS_COMPILED',{corrected_question:bp.correctedQuestion,questions:bp.questionBlueprint,witness_method:bp.witness.role},'ultra-law');
+Law.transition(id,'SOLVING',{decision:bp.answer.name,reason:bp.answer.thesis,observation:bp.witness.observation,map_reference:'glass-map.html — optical glass, restrained cyan, vignette, sparse readout language',awe_reference:'awe-intent.js — implementation-free phenomenology and patient standing-there observation'},'ultra-law');
+Law.transition(id,'CHILDREN_RUNNING',{children:[{id:'architecture',scope:'360-degree building, construction detail, traversal'},{id:'optics',scope:'laser glyphs, graph relationships, projection hardware'},{id:'interaction',scope:'inspection, Foundry, Refinery, return, mobile'},{id:'performance',scope:'density tiers, reduced motion, deterministic detail'},{id:'verification',scope:'truthful graph, no sphere nodes, no-loss controls'}]},'ultra-law');
+Law.transition(id,'CONVERGING',{architecture:bp.answer.name,conflicts:[],truth_source:'FUNNEL_ENVIRONMENT_GRAPH',forbidden:['sphere-node aesthetics','opaque funnel bodies','fake graph activity']},'ultra-law');
+Law.transition(id,'BLUEPRINT_READY',{blueprint:'blueprint/pulse-beam-six-hour-citadel.blueprint.json',blueprint_data:bp,hash:R.hash(bp)},'ultra-law');
+const br=Law.mintReceipt(id,'BlueprintReceipt',bp,'ultra-law',[],R.hash({citadel:true,witness:'six-hour',reference:'glass-map+awe'}));assert(R.verify(br));
+Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,obligations:bp.acceptance},'ultra-law');
+Law.transition(id,'EXECUTION_AUTHORIZED',{blueprint_receipt:br.fingerprint,destination:'Project Pulse / Pulse Beam / Funnel Citadel'},'ultra-law');
+const er=Law.mintReceipt(id,'ExecutionReceipt',{destination:'Project Pulse / Pulse Beam / Funnel Citadel',targets:bp.implementation},'ultra-law',[br.fingerprint],R.hash({targets:bp.implementation}));assert(R.verify(er));
+console.log(JSON.stringify({pass:true,case_id:id,law_version:Law.law_version,page0_hash:Law.get(id).page0_hash,blueprint_receipt:br.fingerprint,execution_receipt:er.fingerprint,state:Law.get(id).state},null,2));
