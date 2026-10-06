@@ -1,0 +1,41 @@
+name: Repair AWE inline syntax
+on:
+  push:
+    branches: [pulse-publish-repair]
+    paths: ['.github/workflows/repair-awe-inline.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pulse-publish-repair
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Remove accidental line-continuation slashes from AWE card
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const p='pulse-dashboard.html';
+          let s=fs.readFileSync(p,'utf8');
+          const a=s.indexOf("{id:'awe'");
+          if(a<0) throw new Error('AWE card not found');
+          const b=s.indexOf("{id:'comp-asset-vault'",a);
+          if(b<0) throw new Error('AWE card end not found');
+          const before=s.slice(a,b);
+          const fixed=before.replace(/\\\r?\n/g,'\n');
+          if(fixed===before) throw new Error('No accidental AWE continuations found');
+          s=s.slice(0,a)+fixed+s.slice(b);
+          fs.writeFileSync(p,s);
+          NODE
+          node tests/pulse-checks.cjs
+      - name: Commit repair
+        run: |
+          git config user.name "pulse-repair-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add pulse-dashboard.html
+          git commit -m "Repair AWE inline card syntax blocking Pulse publish"
+          git push origin HEAD:pulse-publish-repair
