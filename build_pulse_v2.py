@@ -252,6 +252,15 @@ for c in comps:
 # Platform-level items that must survive every dashboard rebuild. These are not
 # derived from the legacy COMPS inventory, so regeneration must add them explicitly.
 PRESERVED_PLATFORM_ITEMS = {
+    'environment-engine': {
+        'label': 'MOOR Environment Engine', 'file': 'environment-engine-core.js',
+        'component': 'MOOR Environment Engine v1',
+        'component_source': 'blueprint/environment-engine-canonical-presentation.blueprint.json',
+        'page': 'environment-engine.html',
+        'depends_on': ['environment-engine-render.js','FUNNEL.md','funnel-kernel.js','studios/fireplace/README.md','studios/aquarium/README.md','studios/alien-planet/README.md','studios/canal-metropolis/README.md','studios/drowned-forest/README.md','studios/molten/README.md','studios/parallax-engine/README.md','studios/rainforest/README.md'],
+        'tags': ['cat:creation','cat:compdata','cat:space','kind:presentation-engine','prov:funnel','prov:studio-lessons','prov:deterministic-render'],
+        'honest_limits': 'Presentation substrate, not a replacement for the deeper studio/world engines. Eight-hour output is planned as eight deterministic one-hour segments; final concatenation is not yet claimed.'
+    },
     'blueprint-farm': {
         'label': 'MOOR Blueprint Farm', 'file': 'blueprint-farm.html',
         'component': 'MOOR Blueprint Farm v1',
