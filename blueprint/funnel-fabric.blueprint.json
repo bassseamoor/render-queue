@@ -1,0 +1,430 @@
+{
+  "schema": "moor.funnel-fabric-blueprint",
+  "version": 1,
+  "title": "MOOR Recursive Funnel Fabric",
+  "purpose": "A recursively composable, evidence-aware, solver-driven Funnel system that can expand by configuration and resources instead of by rewriting architecture.",
+  "originalIntent": "Design the Funnel system itself so it captures the entire emerging model: immutable Page 0; open-ended non-leading questions; literal Sebastian evidence kept distinct from proposed solutions; parallel Sebastian solver workers who independently answer questions framed as direct questions from Sebastian; deliberate synthetic certainty from independent agreeing solution ballots; recursive sub-funnels for unresolved requirements; reusable packaged Funnel systems; 3D topology editing and deterministic reassembly; receipts and replay; iterative architecture experiments; verification and learning; and scaling limited primarily by configured compute/storage/retention rather than a fixed topology.",
+  "governingPrinciples": [
+    "One small kernel defines law; almost everything else is data, packages, workers or configuration.",
+    "Questions seek answers; they do not smuggle in preferred solutions.",
+    "Sebastian solver workers solve questions for Sebastian. They do not impersonate Sebastian or rewrite owner history.",
+    "Independent agreeing solver ballots intentionally increase synthetic solution confidence.",
+    "Literal owner evidence and solver consensus are separate confidence channels.",
+    "A repeated retrieval of one owner statement remains one owner fact; repeated independent solution attempts may be multiple solver votes.",
+    "Every unresolved material question may spawn a child Funnel with narrower scope.",
+    "Every child Funnel returns a compact receipt to its parent; parents do not need the child's full working set after compaction.",
+    "The logical graph is primary. 3D geometry is a renderer/editor for that graph, never the source of truth.",
+    "Resource limits are parameters and warnings, not architectural ceilings.",
+    "No amount of consensus substitutes for execution verification."
+  ],
+  "kernel": {
+    "responsibilities": [
+      "Freeze Page 0",
+      "enforce stage ordering",
+      "control allowed write types",
+      "bind versions and provenance",
+      "validate replay coverage",
+      "mint/verify receipts",
+      "reject stale receipts"
+    ],
+    "nonResponsibilities": [
+      "generate solutions",
+      "decide aesthetics",
+      "own worker personalities",
+      "store every historical ballot forever",
+      "hard-code a maximum number of funnels"
+    ]
+  },
+  "coreSchemas": {
+    "FunnelCase": [
+      "case_id",
+      "parent_case_id",
+      "page0",
+      "page0_hash",
+      "scope",
+      "budget",
+      "references",
+      "status"
+    ],
+    "Question": [
+      "question_id",
+      "case_id",
+      "prompt",
+      "scope",
+      "why_material",
+      "answer_contract",
+      "leading_risk",
+      "status"
+    ],
+    "OwnerEvidence": [
+      "evidence_id",
+      "claim",
+      "source",
+      "scope",
+      "time",
+      "supersedes",
+      "confidence"
+    ],
+    "SolverTask": [
+      "task_id",
+      "question_id",
+      "worker_id",
+      "prompt_as_from_sebastian",
+      "isolation_key",
+      "budget"
+    ],
+    "SolverBallot": [
+      "ballot_id",
+      "task_id",
+      "proposal",
+      "claims",
+      "assumptions",
+      "risks",
+      "tests",
+      "confidence",
+      "provenance"
+    ],
+    "Proposition": [
+      "proposition_id",
+      "question_id",
+      "canonical_claim",
+      "supporting_ballots",
+      "opposing_ballots"
+    ],
+    "ConsensusReceipt": [
+      "question_id",
+      "winner",
+      "vote_count",
+      "agreement_ratio",
+      "independence_score",
+      "synthetic_confidence",
+      "alternatives",
+      "unresolved"
+    ],
+    "ChildFunnelReceipt": [
+      "child_case_id",
+      "parent_question_id",
+      "verdict_hash",
+      "requirements",
+      "confidence",
+      "open_risks"
+    ],
+    "Blueprint": [
+      "blueprint_id",
+      "case_id",
+      "packages",
+      "topology",
+      "decisions",
+      "acceptance_tests",
+      "resource_plan"
+    ],
+    "FunnelReceipt": [
+      "request_id",
+      "page0_hash",
+      "spec_hash",
+      "ledger_head",
+      "done_criteria",
+      "fingerprint"
+    ],
+    "VerificationReceipt": [
+      "execution_id",
+      "tests",
+      "results",
+      "intent_match",
+      "regressions",
+      "outcome"
+    ],
+    "LearningRecord": [
+      "source_receipts",
+      "prediction",
+      "actual_outcome",
+      "calibration_delta"
+    ]
+  },
+  "runtimePipeline": [
+    "PAGE 0 / exact request",
+    "reference retrieval and locked owner facts",
+    "requirement + ambiguity extraction",
+    "open-ended material-question compiler",
+    "question router",
+    "Sebastian solver swarm fan-out",
+    "ballot normalization into propositions",
+    "synthetic consensus scoring",
+    "owner-evidence check",
+    "conflict / uncertainty gate",
+    "recursive child-Funnel spawn when needed",
+    "fan-in of child receipts",
+    "meta-convergence",
+    "blueprint assembly",
+    "Page 0 replay and obligation coverage",
+    "execution receipt",
+    "Harness execution",
+    "verification",
+    "learning/calibration",
+    "receipt compaction/archive"
+  ],
+  "systems": [
+    {
+      "id": "question-compiler",
+      "job": "Convert unresolved requirements into neutral open-ended questions.",
+      "invariants": [
+        "Do not imply a preferred answer.",
+        "Ask only questions whose answers can materially change the blueprint or execution.",
+        "Attach why_material so the system can later prove the question was worth asking."
+      ]
+    },
+    {
+      "id": "sebastian-solver-swarm",
+      "job": "Spawn N isolated solution workers per question, each receiving the question as a direct request from Sebastian.",
+      "knobs": [
+        "worker_count",
+        "model_mix",
+        "temperature_or_seed",
+        "per_worker_budget",
+        "timeout",
+        "independence_mode"
+      ],
+      "invariants": [
+        "Workers cannot see peer ballots before submitting.",
+        "Each ballot is a proposed solution, not an owner statement.",
+        "Multiple agreeing ballots intentionally count as multiple solver votes."
+      ]
+    },
+    {
+      "id": "owner-evidence-channel",
+      "job": "Maintain literal Sebastian statements, corrections, locks and scoped preferences separately from solver proposals.",
+      "invariants": [
+        "Same source retrieved N times does not become N owner facts.",
+        "Corrections can supersede older evidence without deleting history.",
+        "Scope is explicit so local preferences do not silently become global laws."
+      ]
+    },
+    {
+      "id": "proposition-normalizer",
+      "job": "Transform free-form ballots into comparable propositions before voting.",
+      "design": "Use structured ballot fields first; use a semantic normalizer only when wording differs enough that deterministic matching is insufficient.",
+      "output": "canonical propositions with supporting and opposing ballot IDs"
+    },
+    {
+      "id": "consensus-engine",
+      "job": "Turn independent solution ballots into transparent synthetic decision confidence.",
+      "confidenceChannels": {
+        "owner": "How strongly literal Sebastian evidence establishes a choice.",
+        "solver": "How strongly independent solution attempts converge.",
+        "verification": "How strongly observed execution proves the choice worked."
+      },
+      "scoringInputs": [
+        "vote_count",
+        "agreement_ratio",
+        "worker_reliability",
+        "independence/correlation",
+        "contradictions",
+        "historical calibration"
+      ],
+      "rule": "Solver consensus may authorize a provisional design decision when policy permits, but it never rewrites owner evidence."
+    },
+    {
+      "id": "recursive-funnel-spawner",
+      "job": "Create child FunnelCases for requirements/questions whose uncertainty or complexity exceeds the current case.",
+      "knobs": [
+        "max_depth",
+        "max_children_per_question",
+        "spawn_threshold",
+        "child_budget_fraction"
+      ],
+      "scalingRule": "No fixed architectural depth. Runtime budgets provide the practical limit and may be raised as resources grow.",
+      "termination": [
+        "material question resolved",
+        "budget exhausted",
+        "confidence threshold met",
+        "owner decision required",
+        "verification required instead of more reasoning"
+      ]
+    },
+    {
+      "id": "receipt-fabric",
+      "job": "Return compact, content-addressed receipts from every significant child decision to its parent.",
+      "behavior": [
+        "Child working sets may be ephemeral.",
+        "Parent stores the child verdict/receipt plus content hash.",
+        "Full traces can be retained selectively for debugging/training.",
+        "Compaction may replace old working receipts with a summary root while preserving auditability."
+      ]
+    },
+    {
+      "id": "package-library",
+      "job": "Store reusable high-level Funnel systems as declarative graph packages.",
+      "packageContract": [
+        "package_id",
+        "version",
+        "purpose",
+        "inputs",
+        "outputs",
+        "internal_nodes",
+        "internal_edges",
+        "knobs",
+        "resource_model",
+        "tests"
+      ],
+      "examples": [
+        "Fidelity",
+        "Preservation",
+        "Outcome",
+        "Needs",
+        "Value",
+        "Interview",
+        "Convergence",
+        "Replay",
+        "Execution",
+        "Learning"
+      ]
+    },
+    {
+      "id": "funnel-foundry",
+      "job": "Procedurally edit complete Funnel ecosystems as graphs.",
+      "controls": [
+        "package counts",
+        "worker counts",
+        "branch/fan-out",
+        "convergence redundancy",
+        "recursive depth budget",
+        "radial symmetry",
+        "mirror X/Y/Z",
+        "geometry spacing/twist",
+        "receipt retention",
+        "storage/compute budgets"
+      ],
+      "actions": [
+        "clone arm",
+        "mirror branch",
+        "instantiate package",
+        "save template",
+        "reassemble",
+        "stress test",
+        "export/import experiment",
+        "compare architectures",
+        "promote explicitly"
+      ]
+    },
+    {
+      "id": "resource-governor",
+      "job": "Make scale physically legible before execution.",
+      "forecasts": [
+        "graph nodes/edges",
+        "workers/run",
+        "recursive cases",
+        "tokens",
+        "CPU/GPU time",
+        "latency",
+        "storage/run",
+        "retained storage",
+        "estimated monetary cost"
+      ],
+      "statusBands": [
+        "green",
+        "yellow",
+        "red"
+      ],
+      "rule": "Red means expensive/risky, not forbidden. The user may raise the budget or proceed deliberately."
+    },
+    {
+      "id": "experiment-lab",
+      "job": "Replay the same historical request corpus through candidate Funnel architectures and compare results.",
+      "metrics": [
+        "Page 0 requirement retention",
+        "false-success rate",
+        "questions asked of Sebastian",
+        "solver agreement/calibration",
+        "execution success",
+        "user correction rate",
+        "latency",
+        "compute cost",
+        "storage growth"
+      ],
+      "promotionRule": "A candidate Funnel architecture becomes production law only through explicit promotion after regression comparison."
+    },
+    {
+      "id": "learning-calibrator",
+      "job": "Learn which workers, lenses, questions and consensus patterns predict verified outcomes.",
+      "rule": "Train weights on observed outcomes/corrections, not on model confidence alone."
+    },
+    {
+      "id": "private-ledger",
+      "job": "Store raw personal requests and owner evidence privately.",
+      "default": "local-first",
+      "options": [
+        "encrypted local store",
+        "encrypted sync",
+        "private remote backup"
+      ],
+      "separation": "Code/templates may live in GitHub; raw personal ledger does not need to."
+    },
+    {
+      "id": "3d-funnel-environment",
+      "job": "Render the logical topology as points, lines, cones and packages for inspection/editing.",
+      "rule": "Geometry carries spatial organization; logical edges remain finite explicit relationships."
+    }
+  ],
+  "scalability": {
+    "model": "recursive fan-out / fan-in over declarative graph packages",
+    "horizontalScale": "Workers and child FunnelCases are stateless jobs addressable by IDs and can run across additional processes/machines.",
+    "persistence": "Append-only event/receipt logs can be sharded by case/date/project and compacted.",
+    "cache": "Locked decisions, normalized propositions and verified package outputs are reusable by content hash.",
+    "backpressure": "Resource governor throttles creation when configured budgets are reached.",
+    "theoreticalLimit": "No fixed limit encoded in topology. Practical limits are address space, scheduler throughput, model/context limits, storage, compute, network and cost."
+  },
+  "failureContainment": [
+    "Child failure cannot mutate parent Page 0.",
+    "A failed child returns a failure receipt rather than poisoning sibling state.",
+    "A consensus loop cannot recurse indefinitely without consuming an explicit budget.",
+    "A popular solver answer is not treated as owner truth.",
+    "A valid graph is not treated as proof of semantic correctness.",
+    "A successful build is not treated as proof of intent satisfaction."
+  ],
+  "foundryResourceModel": {
+    "draftInputs": [
+      "runs_per_day",
+      "retention_days",
+      "worker_count",
+      "average_ballot_bytes",
+      "average_receipt_bytes",
+      "max_depth",
+      "branch_factor",
+      "model_cost",
+      "storage_budget",
+      "compute_budget"
+    ],
+    "derived": [
+      "expected_questions",
+      "expected_worker_calls",
+      "expected_receipts",
+      "peak_parallelism",
+      "daily_storage",
+      "retained_storage",
+      "estimated_cost",
+      "estimated_latency"
+    ],
+    "visual": "Continuously show green/yellow/red budget pressure before Reassemble and before Run."
+  },
+  "initialDefaults": {
+    "solver_workers_per_question": 4,
+    "convergence_cores": 2,
+    "replay_chains": 2,
+    "verifier_chains": 2,
+    "max_depth": 6,
+    "max_children_per_question": 8,
+    "owner_interrupt_policy": "Only material contradiction, unsupported owner-only decision, or budget/promotion decision.",
+    "ballot_retention": "compact after verified outcome; retain representative disagreements and failures"
+  },
+  "doneCriteria": [
+    "The actual Funnel kernel can issue a valid receipt for this blueprint request.",
+    "The system can spawn multiple isolated solver ballots for one open-ended question without relabeling them as owner evidence.",
+    "Agreeing solver ballots raise synthetic confidence and owner evidence remains a distinct field.",
+    "Any unresolved material question can create a child FunnelCase and return a receipt to its parent.",
+    "No fixed code change is required to increase worker count, branch factor, recursion depth or package multiplicity within supported numeric/storage limits.",
+    "Resource projections are available before recursive expansion.",
+    "The Foundry can serialize, reassemble, compare and explicitly promote topology experiments.",
+    "Historical requests can be replayed against candidate architectures for regression/calibration.",
+    "Production execution still requires Page 0 replay, receipt validation and downstream verification."
+  ]
+}
