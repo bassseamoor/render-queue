@@ -11,11 +11,12 @@
 var SCHEMA='moor.funnel-kernel-state';
 var RECEIPT_SCHEMA='moor.funnel-receipt';
 var VERSION=1;
-var LAW_VERSION='v44-sealed';
+var LAW_VERSION='v45-armored';
 var STORE='moor.funnel.kernel.v1';
 var ACTIVE='moor.funnel.active-request.v1';
 var STAGES=Object.freeze(['page0','references','distill','decisions','replay','verdict']);
 var WRITABLE=Object.freeze(['answer','evidence','failure','correction','reference','note']);
+var CLAIM_SCHEMA='moor.funnel-execution-claim';
 var mem=null;
 
 function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}
@@ -32,6 +33,15 @@ function hash(x){
     b^=(s.charCodeAt(i)+(i&255));b=Math.imul(b,2246822519)>>>0;
   }
   return ('00000000'+a.toString(16)).slice(-8)+('00000000'+b.toString(16)).slice(-8);
+}
+function nonce(){
+  try{
+    if(root&&root.crypto&&typeof root.crypto.getRandomValues==='function'){
+      var a=new Uint32Array(4);root.crypto.getRandomValues(a);
+      return Array.from(a).map(function(x){return ('00000000'+x.toString(16)).slice(-8);}).join('');
+    }
+  }catch(e){}
+  return hash(String(Date.now())+':'+String(Math.random())+':'+String(Math.random()));
 }
 function blank(){return {schema:SCHEMA,version:VERSION,law_version:LAW_VERSION,ledger:[]};}
 function readRaw(){
@@ -72,13 +82,15 @@ function append(type,requestId,payload,provenance){
 }
 function events(requestId){return state().ledger.filter(function(e){return e.request_id===requestId;});}
 function session(requestId){
-  var es=events(requestId),out={request_id:requestId,stage:null,page0:null,writes:[],stages:{},receipt:null,tainted:false};
+  var es=events(requestId),out={request_id:requestId,stage:null,page0:null,writes:[],stages:{},receipt:null,claims:[],consumed_claims:[],tainted:false};
   es.forEach(function(e){
     if(e.type==='stage'){
       out.stage=e.payload.stage;out.stages[e.payload.stage]=clone(e.payload);out.stages[e.payload.stage]._event_hash=e.hash;
       if(e.payload.stage==='page0')out.page0=e.payload.raw;
     }else if(e.type==='write')out.writes.push(clone(e.payload));
     else if(e.type==='receipt')out.receipt=clone(e.payload);
+    else if(e.type==='claim')out.claims.push(clone(e.payload));
+    else if(e.type==='consume')out.consumed_claims.push(clone(e.payload));
   });
   return out;
 }
@@ -187,17 +199,55 @@ function verifyReceipt(receipt){
   if(s.stages.verdict._event_hash!==receipt.ledger_head)return false;
   return verifyState(state());
 }
-function executionPacket(receipt){
-  if(!verifyReceipt(receipt))throw Error('Harness execution denied: missing or invalid Funnel receipt.');
-  var v=session(receipt.request_id).stages.verdict;
-  return {spec:clone(v.spec),destination:v.destination,done_criteria:clone(v.done_criteria),funnel_receipt:clone(receipt)};
+function claimExecution(receipt,input,destination){
+  if(!verifyReceipt(receipt))throw Error('Execution claim denied: missing, stale, replayed, or invalid Funnel receipt.');
+  if(hash(text(input))!==receipt.page0_hash)throw Error('Execution claim denied: input does not match immutable Page 0.');
+  if(text(destination||receipt.destination)!==text(receipt.destination))throw Error('Execution claim denied: destination differs from Funnel verdict.');
+  var id=receipt.request_id,claim={
+    schema:CLAIM_SCHEMA,version:VERSION,law_version:LAW_VERSION,
+    claim_id:'claim:'+nonce(),request_id:id,destination:receipt.destination,
+    receipt_fingerprint:receipt.fingerprint,page0_hash:receipt.page0_hash
+  };
+  append('claim',id,claim,'system');
+  return clone(claim);
+}
+function verifyClaim(claim){
+  if(!claim||claim.schema!==CLAIM_SCHEMA||claim.version!==VERSION||claim.law_version!==LAW_VERSION)return false;
+  var s=session(claim.request_id),es=events(claim.request_id),last=es[es.length-1];
+  if(!s.receipt||s.receipt.fingerprint!==claim.receipt_fingerprint)return false;
+  var hit=s.claims.find(function(x){return x.claim_id===claim.claim_id;});
+  if(!hit||stable(hit)!==stable(claim))return false;
+  if(s.consumed_claims.some(function(x){return x.claim_id===claim.claim_id;}))return false;
+  if(!last||last.type!=='claim'||!last.payload||last.payload.claim_id!==claim.claim_id)return false;
+  return verifyState(state());
+}
+function consumeClaim(claim){
+  if(!verifyClaim(claim))throw Error('Harness execution denied: claim is missing, stale, forged, or already consumed.');
+  var s=session(claim.request_id),v=s.stages.verdict;
+  append('consume',claim.request_id,{claim_id:claim.claim_id,destination:claim.destination,receipt_fingerprint:claim.receipt_fingerprint},'system');
+  return {spec:clone(v.spec),destination:v.destination,done_criteria:clone(v.done_criteria),funnel_receipt:clone(s.receipt),execution_claim:clone(claim)};
+}
+function exportProof(requestId){
+  var s=session(active(requestId));
+  if(!s||!s.page0||!s.stages.page0)return null;
+  return {
+    schema:'moor.funnel-proof',version:1,law_version:LAW_VERSION,request_id:s.request_id,
+    page0:{raw:s.page0,raw_hash:s.stages.page0.raw_hash},
+    references:clone(s.stages.references||null),
+    distill:clone(s.stages.distill||null),
+    decisions:clone(s.stages.decisions||null),
+    replay:clone(s.stages.replay||null),
+    verdict:clone(s.stages.verdict||null),
+    receipt:clone(s.receipt||null),
+    writes:clone(s.writes||[])
+  };
 }
 function inspect(requestId){var s=session(active(requestId));return clone(s);}
 function resetForTests(){mem=blank();if(root&&root.localStorage){try{root.localStorage.removeItem(STORE);root.localStorage.removeItem(ACTIVE);}catch(e){}}}
 
 return Object.freeze({
   version:VERSION,law_version:LAW_VERSION,stages:STAGES.slice(),writable:WRITABLE.slice(),
-  open:open,write:write,advance:advance,inspect:inspect,extractObligations:extractObligations,verifyReceipt:verifyReceipt,executionPacket:executionPacket,hash:hash,
+  open:open,write:write,advance:advance,inspect:inspect,extractObligations:extractObligations,verifyReceipt:verifyReceipt,claimExecution:claimExecution,verifyClaim:verifyClaim,consumeClaim:consumeClaim,exportProof:exportProof,hash:hash,
   _verifyState:verifyState,_resetForTests:resetForTests
 });
 });
