@@ -124,7 +124,7 @@ function mintReceipt(id,type,payload,issuer,inputReceipts,budgetHash){
     if(!br||!inputReceipts.includes(br.fingerprint))throw Error('ExecutionReceipt requires the verified BlueprintReceipt as an input.');
   }
   const ledger=c.events.at(-1).hash;
-  const rec=R.mint(type,{law_version:c.law_version,case_id:c.case_id,parent_case_id:c.parent_case_id,page0_hash:c.page0_hash,scope_hash:c.scope_hash,input_receipt_hashes:inputReceipts,budget_hash:budgetHash||hash({}),payload_hash:R.hash(payload||{}),ledger_head:ledger,issuer_role:issuer||'law',meta:{state:c.state}});
+  const rec=R.mint(type,{law_version:c.law_version,case_id:c.case_id,parent_case_id:c.parent_case_id,page0_hash:c.page0_hash,scope_hash:c.scope_hash,input_receipt_hashes:inputReceipts,budget_hash:budgetHash||hash({}),payload_hash:R.hash(payload||{}),ledger_head:ledger,issuer_role:issuer||'law',meta:{state:c.state,usage_plan_hash:c.usage_plan_hash}});
   c.receipts.push(rec);return rec;
 }
 function verifyReceipt(receipt){
@@ -132,6 +132,7 @@ function verifyReceipt(receipt){
   const c=cases.get(receipt.case_id);
   if(!c||c.stale||!verifyCase(c))return false;
   if(receipt.law_version!==LAW_VERSION||receipt.page0_hash!==c.page0_hash||receipt.scope_hash!==c.scope_hash)return false;
+  if(!receipt.meta||receipt.meta.usage_plan_hash!==c.usage_plan_hash)return false;
   if(!c.events.some(e=>e.hash===receipt.ledger_head))return false;
   if(!c.receipts.some(r=>r.fingerprint===receipt.fingerprint))return false;
   return true;
