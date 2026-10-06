@@ -53,6 +53,21 @@ const maint=require('../blueprint/funnel-maintenance-modernization.blueprint.jso
 assert(maint.maintenanceTaxonomy.some(x=>x.class==='maintenance-debt'));
 assert(maint.maintenanceTaxonomy.some(x=>x.class==='unknown'));
 
+const manifest=JSON.parse(fs.readFileSync('pulse-manifest.json','utf8'));
+assert(manifest.items&&manifest.items['blueprint-farm'],'Pulse manifest must expose Blueprint Farm');
+const ext=fs.readFileSync('pulse-component-extensions.js','utf8');
+assert(ext.includes('"id":"blueprint-farm"'),'Pulse component catalog must expose Blueprint Farm');
+const spine=fs.readFileSync('pulse-spine.js','utf8');
+assert(spine.includes("id:'blueprint-farm-master'"),'Pulse Spine must expose Blueprint Farm');
+const fabric=JSON.parse(fs.readFileSync('pulse-funnel-fabric-library.json','utf8'));
+for(const id of ['fabric-blueprint-farm-master','fabric-blueprint-farm-index','fabric-blueprint-farm-view','fabric-blueprint-farm-ultra'])
+  assert(fabric.documents.some(x=>x.id===id),'Funnel Fabric must index '+id);
+const build=fs.readFileSync('build_pulse_v2.py','utf8');
+assert(build.includes("'blueprint-farm':"),'Pulse manifest rebuild must preserve Blueprint Farm');
+const agent=JSON.parse(fs.readFileSync('moor-agent.json','utf8'));
+assert(agent.blueprint_farm&&agent.blueprint_farm.current_release==='BF-01','canonical MOOR entry must expose BF-01');
+assert.equal(agent.blueprint_farm.automatic_next_slice,false,'Blueprint Farm must not auto-release later slices');
+
 const html=fs.readFileSync('blueprint-farm.html','utf8');
 assert(html.includes('pulse-blueprint-farm-library.json'));
 assert(html.includes('execution:'));
