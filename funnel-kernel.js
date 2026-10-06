@@ -134,6 +134,8 @@ function checkReplay(payload,s){
   payload.obligations.forEach(function(o){if(o&&o.id)byId[o.id]=o;});
   var missing=base.filter(function(o){return !byId[o.id];});
   if(missing.length)throw Error('Replay omitted '+missing.length+' hard-coded Page 0 obligation(s).');
+  var rebound=base.filter(function(o){return byId[o.id]&&byId[o.id].source!==o.source;});
+  if(rebound.length)throw Error('Replay changed the source span for '+rebound.length+' redundant Page 0 obligation(s).');
   var bad=payload.obligations.filter(function(o){
     if(!o||!o.id||!o.source||!s.page0.includes(o.source))return true;
     if(!['satisfied','explicitly-deferred'].includes(o.status))return true;
@@ -252,6 +254,9 @@ function verifyConsumedClaim(claim){
   if(!s.consumed_claims.some(function(x){return x.claim_id===claim.claim_id&&x.receipt_fingerprint===claim.receipt_fingerprint;})){return false;}
   if(!last||last.type!=='consume'||!last.payload||last.payload.claim_id!==claim.claim_id)return false;
   if(s.stages.page0.raw_hash!==claim.page0_hash)return false;
+  var freshRedundancy;try{freshRedundancy=redundancyAnalysis(s.page0);}catch(e){return false;}
+  if(!s.stages.page0.redundancy||freshRedundancy.fingerprint!==s.stages.page0.redundancy.fingerprint)return false;
+  if(s.receipt.redundancy_fingerprint!==freshRedundancy.fingerprint)return false;
   if(hash(s.stages.verdict.spec)!==s.receipt.spec_hash)return false;
   return verifyState(state());
 }
