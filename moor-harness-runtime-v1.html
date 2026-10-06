@@ -1024,38 +1024,6 @@ function doPromote(){
 async function runMod(){
   const r=$("#modramble").value.trim(); if(!r)return;
   await routeRawIntakeToFunnel(r,{mode:"modify",base_version:H.canon});
-  return;
-  const mspec=compileSpec(r);
-  log("<b>Mod ◈</b> — compiling delta…");
-  const feats=mspec.features.length?mspec.features:[{text:r.slice(0,40),weight:6,source:"you"}];
-  const isTheme=/dark|theme|night/i.test(r);
-  const jobs=feats.slice(0,2).map((f,i)=>{
-    const ranked=PARTS.filter(p=>p.kind===(isTheme?"theme":"feature"))
-      .map(p=>({p,s:fitScore(f,p)})).sort((a,b)=>b.s-a.s);
-    return {id:"mod-"+uid("j"),kind:isTheme?"theme":"feature",label:ranked[0].p.name+" — "+f.text,
-      part_id:ranked[0].p.id,feature:f.text,weight:f.weight,deps:[],status:"planned",isMod:true,name:f.text};
-  });
-  for(const j of jobs){ await executeJob(j,H.spec);
-    if(j.status==="gated"){ j.status="approved"; H.jobs.push(j); } }
-  // reassemble everything into a new canonical version
-  const integ={id:"job-re",kind:"integration",label:"Assemble + regression (mod)",part_id:null,
-    feature:"integration",weight:8,deps:[],status:"planned",isMod:true};
-  integ.packet=buildPacket(integ,H.spec); integ.worker_id=integ.packet.issued_to.worker_id;
-  log("<b>"+esc(integ.packet.issued_to.codename)+"</b> (integrator) reassembles "+H.jobs.filter(j=>j.status==="approved").length+" approved jobs");
-  await executeIntegration(integ,H.spec);
-  if(integ.status==="gated"){
-    const next=bumpVer(H.canon); H.appHtml=integ.appHtml; H.canon=next;
-    H.versions.push({v:next,jobs:jobs.length,note:"mod: "+r.slice(0,50)});
-    const nm=jobs.map(j=>j.feature).join(", ")||"mod";
-    H.mods.push({name:nm,v:next});
-    emitMoorOutput({id:"implementation:harness:"+next,kind:"implementation",title:"Modified app v"+next,
-      summary:"Harness modification promoted after integration and regression gates.",source:{app:"app-compiler-harness",component:"app-compiler-harness",project:"harness"},
-      concepts:[H.spec.app_type],status:"machine-verified",provenance:"verified",intent:r,intent_status:"user-reviewed",
-      intent_provenance:"explicit",recipe:{base_spec:H.spec,delta:mspec,parts:jobs.map(j=>j.part_id)},implementation_ref:"moor-harness-runtime-v1.html#v"+next,
-      payload:{version:next,mod:nm},evidence:{logic:{status:"verified-working",gates:"integration+regression"},intent:{status:"user-reviewed"}}});
-    log("<b>Mod promoted ★</b> → v"+next);
-  } else log("mod integration failed — held, not promoted");
-  render();
 }
 /* ---------- auto-run: the funnel runs itself ---------- */
 async function autoRun(){
