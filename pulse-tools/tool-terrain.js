@@ -6,7 +6,7 @@
 TOOLS.terrain = {
   mount: function(host){
     var TC = window.TerrainCore;
-    var data = TC.generate('silver-coast', 'island', 38);
+    var data = TC.generate(new URLSearchParams(location.search).get('seed')||'silver-coast', 'island', 38);
     var tool = 'raise', radius = 24, strength = 4, target = 6, biome = 1;
 
     host.innerHTML =
@@ -32,6 +32,7 @@ TOOLS.terrain = {
         '</div>'+
       '</div>';
 
+    host.querySelector('#t-seed').value=data.seed;
     var cv = host.querySelector('#t-cv'), ctx = cv.getContext('2d');
     var off = document.createElement('canvas'); off.width = off.height = 81;
     var octx = off.getContext('2d'), img = octx.createImageData(81, 81);

@@ -255,7 +255,7 @@ var SPECIES = [
 ];
 
 TOOLS.vegetation = { mount: function(host){
-  var species = SPECIES[0], seed = 7, wind = 0.35, count = 36;
+  var species = SPECIES[0], seed = +(new URLSearchParams(location.search).get('seed')||7), wind = 0.35, count = 36;
   var canvasTerrain=null;
   function terrainAt(x,z){
     var t=canvasTerrain;if(!t)return {y:0,wet:false};
@@ -338,6 +338,7 @@ TOOLS.vegetation = { mount: function(host){
     }
   }
 
+  host.querySelector('#v-seed').value=String(seed);
   var sp = host.querySelector('#v-sp');
   SPECIES.forEach(function(spc){
     var b = document.createElement('button');

@@ -56,7 +56,7 @@ function render(recipe){
   if(t?.id==='more-canvas'||module.id==='more-canvas'){const msg=document.createElement('p');msg.textContent='Canvas is the host for this mix. Choose another tool for a second runtime.';tile.append(msg);continue;}
   if(!source){const msg=document.createElement('p');msg.textContent='This catalog component has no browser runtime connected. Its reference is preserved in the compiled project.';tile.append(msg);continue;}
   const frame=document.createElement('iframe');frame.title=label.textContent;
-  const u=new URL('pulse-dashboard.html',location.href);u.searchParams.set('workspace-tool',t?.id||aliases[module.id]||module.id);u.searchParams.set('seed',recipe.seed);u.searchParams.set('release','20261006-canvas-mix1');frame.src=u.href;frame.dataset.module=module.id;frame.onload=()=>seedFrame(frame,recipe.seed);tile.append(frame);frames.push(frame);
+  const u=new URL('pulse-dashboard.html',location.href);u.searchParams.set('workspace-tool',t?.id||aliases[module.id]||module.id);u.searchParams.set('seed',recipe.seed);u.searchParams.set('release','20261006-canvas-mix2');frame.src=u.href;frame.dataset.module=module.id;frame.onload=()=>seedFrame(frame,recipe.seed);tile.append(frame);frames.push(frame);
  }
  const state=document.createElement('p');state.className='mix-state';state.id='mixState';state.textContent='Shared seed · '+recipe.seed;host.append(state);
  const details=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='Compiled project';pre.textContent=JSON.stringify({compiler:recipe.compiler?.result,modules:recipe.modules,connections:recipe.connections},null,2);details.append(summary,pre);host.append(details);
