@@ -1,44 +1,47 @@
-# MOOR Funnel — sealed canonical entry
+# MOOR Funnel — armored canonical entry
 
-This file describes the public contract. The executable authority is `/funnel-kernel.js`.
+The Funnel is executable infrastructure, not prompt advice. This file is the public contract; `/funnel-kernel.js` is the runtime authority.
 
 ## Prime law
 
 For Project Pulse, a build/change request cannot become executable because a model believes it is clear, because old answers look similar, because a caller passes `resolved:true`, or because a builder is confident.
 
-A build/change becomes executable only when the sealed Funnel Kernel emits a valid `moor.funnel-receipt`.
+The mandatory chain is:
 
-Models may submit language and evidence through the Funnel doorway. They may not mint receipts, reorder stages, rewrite Funnel law, or directly authorize Harness execution.
-
-## Mandatory path
-
-1. **Page 0** — freeze the user's original request verbatim.
-2. **References** — reuse known locked answers, Bin references, verified implementations, corrections, and failures.
-3. **Distill** — convert the request into a precise candidate specification without deleting Page 0.
-4. **Decisions** — lock material choices. Unresolved material decisions block execution.
-5. **Replay** — compare the candidate back against immutable Page 0. Every explicit obligation must be satisfied or explicitly deferred with owner approval. Silent substitution is forbidden.
-6. **Verdict** — emit only:
-   - spec
-   - destination
-   - done criteria
-7. **Receipt** — the kernel binds the verdict to Page 0 and the append-only ledger.
-8. **Harness** — executes only a verdict carrying a receipt that the kernel verifies.
-9. **Verifier** — proves the requested path. Failures are written back as evidence.
+**Page 0 → References → Distill → Decisions → Page 0 Replay → Verdict → Receipt → Single-use Execution Claim → Harness → Verification**
 
 The Funnel defines. The Harness builds. The Verifier proves. The Bin/Engine remembers.
 
-## Write slot
+## Runtime armor
 
-The Funnel is a sealed box with a narrow write surface. Allowed writes are append-only inputs such as:
+1. **Page 0 is immutable.** The original request is frozen verbatim under one request ID.
+2. **The write surface is narrow and append-only.** Models may append answers, evidence, failures, corrections, references, and notes. They may not rewrite Funnel law.
+3. **Stage order is hard-coded.** Stages cannot be skipped or reordered.
+4. **Material unresolved decisions block replay.**
+5. **Page 0 is replayed in the second half.** Every source-backed obligation must be satisfied or explicitly deferred with approval. Silent substitutions block authorization.
+6. **The verdict carries the Page 0 obligation ledger.** Builders cannot receive a spec that silently drops replayed obligations.
+7. **The verdict mints a receipt.** The receipt binds Page 0, spec, destination, done criteria, law version, and verdict event.
+8. **A receipt may mint exactly one execution claim.** Minting the claim makes the receipt unusable for another claim.
+9. **The Harness consumes that claim exactly once.** A copied/replayed handoff fails.
+10. **Harness work remains gated by the consumed claim.** Any later Funnel write invalidates that authorization.
+11. **Raw Harness intake is not a build bypass.** It routes back through `MOOR.request` and the Funnel.
+12. **Harness stage labels are not navigation.** Stage jumping is disabled.
+13. **A modification is a new build/change request.** It returns through the Funnel rather than reusing prior authority.
 
-- answer
-- evidence
-- failure
-- correction
-- reference
-- note
+There is no `resolved:true` shortcut, fuzzy-lock shortcut, raw Harness compiler shortcut, reusable receipt, reusable claim, or stage-jump shortcut.
 
-These writes may influence later decisions. They do not alter Funnel law.
+## Sealed write slot
+
+Allowed agent writes:
+
+- `answer`
+- `evidence`
+- `failure`
+- `correction`
+- `reference`
+- `note`
+
+These can affect later decisions. They cannot change the constitution.
 
 ## Page 0 law
 
@@ -49,26 +52,111 @@ Explicit named mechanisms and requirement-bearing statements become atomic oblig
 - `satisfied`, or
 - `explicitly-deferred` with owner approval.
 
-If replay omits an obligation or introduces an unapproved substitution, no receipt is issued.
+The final verdict spec must carry the same obligation IDs resolved at replay. Omission, substitution, or mutation blocks the verdict.
+
+## Deterministic routing
+
+- Exact reference/system command → direct reference/action.
+- Navigation/open request with a strong known target → direct navigation.
+- Search/find/lookup → Bin/reference retrieval.
+- Any build/change without a verified receipt → Funnel.
+- Verified receipt bound to the exact Page 0 → one execution claim.
+- Harness consumes the claim once.
+- Ambiguous novel request → Funnel.
+- No LLM/API key → local fallback inside the Funnel with provenance; never a bypass.
+
+## Repository armor
+
+Runtime enforcement is insufficient if a model with repository write access can edit the enforcement code. Repository mutations therefore have a second boundary.
+
+Every non-proof pull request must include this line in its PR body:
+
+`Funnel-Proof: .funnel/proofs/<proof>.json`
+
+The trusted workflow `/.github/workflows/funnel-guardian.yml` runs with `pull_request_target` and checks out the PR's **base SHA**. The PR supplies data to the judge, but it does not supply or execute its own judge.
+
+The base-branch validator requires the proof to reproduce:
+
+- immutable Page 0 and its hash,
+- references,
+- distillation,
+- zero unresolved material decisions,
+- source-backed Page 0 replay,
+- approved deferrals/substitutions only,
+- obligation-carrying verdict,
+- destination and done criteria,
+- receipt bindings and fingerprint.
+
+### Constitution changes
+
+Files that define or enforce Funnel law are listed in `/scripts/funnel-protected-paths.json` and `/.github/CODEOWNERS`.
+
+After the owner public key is configured, any PR touching one of those files additionally requires:
+
+`Funnel-Owner-Authorization: ed25519:<signature>`
+
+The signature is bound to the exact repository, PR number, PR head SHA, and exact protected-file set. Changing the PR invalidates the signature.
+
+The private signing key is not stored. `scripts/funnel-owner-key.cjs` derives an Ed25519 private key in memory from the owner's high-entropy passphrase with scrypt, signs the exact PR authorization message, and discards the in-memory key when the process exits. Only the public key is committed.
+
+A weak password is not appropriate here: the public key permits offline guessing attempts. Use a high-entropy passphrase.
+
+### One-time owner-key bootstrap
+
+The repository initially contains `funnel-owner-public.pem` as `UNCONFIGURED`. To avoid a circular lock, the Guardian has exactly one bootstrap exception:
+
+- the only protected file changed must be `funnel-owner-public.pem`;
+- the PR must contain `Funnel-Owner-Bootstrap: I am setting the owner key`;
+- the PR and head commit must be attributable to `bassseamoor`;
+- the head commit must be GitHub-verified/signed;
+- the new file must parse as an Ed25519 **public** key;
+- private-key material is rejected.
+
+Once the base branch contains a real public key, this bootstrap path disappears automatically and future protected changes require the password-derived signature.
+
+## Owner key utility
+
+Run locally:
+
+`node scripts/funnel-owner-key.cjs bootstrap`
+
+Type the passphrase twice. The utility prints the public PEM. It does not intentionally persist the passphrase or private key.
+
+For a later protected PR:
+
+`node scripts/funnel-owner-key.cjs sign <PR-number>`
+
+The utility fetches that PR's exact head and protected files, asks for the passphrase locally, verifies it derives the configured public key, and prints the exact `Funnel-Owner-Authorization` line.
+
+## Required GitHub repository setting
+
+The final repository trust boundary requires `main` branch protection/rules so that:
+
+- changes must arrive through pull requests;
+- the `sealed-funnel` check is required;
+- direct pushes are disabled/restricted;
+- bypass permissions are minimized;
+- CODEOWNERS review can be required for constitution files.
+
+Without branch protection, credentials with direct write authority can still replace in-repository guards. Code cannot make that repository-administration fact disappear.
 
 ## Runtime identities
 
-- Public contract: `/FUNNEL.md`
-- Sealed state machine: `/funnel-kernel.js`
-- Human/runtime UI: `/quiz-funnel-v3.html`
-- Pulse Funnel project ID: `funnel`
-- Architecture contract: `/pulse-learning-spine-blueprints.json`
-- Universal request router: `/moor-request.js`
-- Browser entry: `await MOOR.request(...)`
-- Reference system: `PulseReferences`
-- Execution/Harness component: `app-compiler-harness`
+- Contract: `/FUNNEL.md`
+- Kernel: `/funnel-kernel.js`
+- Law: `v45-armored`
+- Human Funnel: `/quiz-funnel-v3.html`
+- Router: `/moor-request.js`
+- Harness: `/moor-harness-runtime-v1.html`
+- Agent entry: `/moor-agent.json`
 - Muse operating personality: `/BUSTER.md`
-
-The UI filename may retain its historical name. The current executable law version is `v44-sealed`, owned by the kernel.
+- PR guardian: `/.github/workflows/funnel-guardian.yml`
+- Proof validator: `/scripts/funnel-proof-lib.cjs`
+- Owner signer: `/scripts/funnel-owner-key.cjs`
 
 ## Agent rule
 
-If `window.MOOR.request` exists, use it. Do not type into the human request bar. Do not independently choose Bin, Funnel, Harness, Compiler, or a builder.
+If `window.MOOR.request` exists, use it. Do not type into the human global request bar and do not independently choose Funnel, Harness, Compiler, or a builder.
 
 ```js
 await MOOR.request({
@@ -78,61 +166,17 @@ await MOOR.request({
 })
 ```
 
-A model is a contributor to the Funnel, not an authority over it.
-
-## Deterministic routing
-
-- Exact reference/system command → direct reference/action.
-- Navigation/open request with a strong known target → direct navigation.
-- Search/find/lookup request → Bin/reference retrieval.
-- Any build/change request without a verified Funnel receipt → Funnel.
-- Build/change request with a kernel-verified Funnel receipt → Harness.
-- Ambiguous novel request → Funnel.
-- No intelligence/API key → local fallback inside the Funnel with provenance; never bypass the Funnel.
-
-There is no fuzzy-match or `resolved:true` execution shortcut.
+A model is a contributor to the Funnel, never the authority over whether it may bypass it.
 
 ## Learning law
 
-- One quiz, two sides: user and system answer the same decisions.
+- One quiz, two sides: user and system resolve the same decisions.
 - No wrong-answer dead end.
 - Vague/skip may reuse a proven known answer with provenance.
 - Every answer locks as a versioned page.
+- Known answers and references are reused before new intelligence is spent.
 - Provenance distinguishes explicit, inferred, learned, fallback, and verified evidence.
-- Known answers are reused; compute is spent on novelty.
 - Failed gates are durable training evidence.
 - Technical success and intent match are separate judgments.
-- Repeated bad interpretations are Funnel defects to repair, not permission to bypass it.
+- Repeated bad interpretations are Funnel defects to repair, not reasons to route around it.
 - Confirmed intent + verified logic is the strongest reusable example.
-
-## Owner/constitution boundary
-
-Normal agents may use the Funnel API but must not possess authority to modify Funnel law.
-
-The target hardened deployment is:
-
-- Funnel kernel isolated behind a separate trust boundary.
-- Build agents receive only its narrow request/write/status/receipt interface.
-- Funnel receipts are cryptographically signed by that authority.
-- The build repository stores only the public verification material.
-- Direct pushes are disabled; protected branches require the Funnel gate check.
-- Funnel-law maintenance requires a separate owner unlock and is never available to ordinary agents.
-
-A secret must never be embedded in client JavaScript or committed to the repository. A client-side password field alone is not a security boundary.
-
-## Output envelope
-
-Every `MOOR.request` call returns:
-
-```json
-{
-  "request_id": "request:...",
-  "route": "reference | navigation | funnel | harness | fallback",
-  "status": "resolved | queued | locked | ready-for-execution | fallback",
-  "provenance": "explicit | learned | inferred | verified | fallback",
-  "context": {},
-  "result": {}
-}
-```
-
-Harness packets must contain a kernel-verified `funnel_receipt`. Without it, execution is denied.
