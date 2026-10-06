@@ -130,7 +130,7 @@ except FileNotFoundError:
 # ---- 4. dashboard shell + tools ----
 # smart.js first: on-device intelligence the dashboard shell uses at render time
 parts.append('<script>\n' + read(REC + '/pulse-v2/smart.js') + '\n</script>')
-parts.append('<script>\n' + read(REC + '/pulse-v2/dashboard.js') + '\n</script>')
+parts.append('<script>\n' + read(REC + '/pulse-v2/dashboard.js') + '\n</script>')\n# cumulative software-manufacturing ledger; MOOR.request depends on this factory state\nparts.append('<script>\\n' + read(REC + '/software-factory-core.js') + '\\n</script>')
 for t in ['tool-terrain.js', 'tool-field.js', 'tool-mesh.js', 'tool-world.js',
           'tool-palettes.js', 'tool-ambience.js', 'tool-spawn.js', 'tool-perf.js',
           'tool-shared.js', 'tool-vegetation.js', 'tool-intent.js',
