@@ -94,13 +94,16 @@ try{
   window.FACTORY_TWIN_SNAPSHOT=twin;
 }
 const factoryGroup=new THREE.Group();scene.add(factoryGroup),factoryNodeMap=new Map();
+const twinValid=!!(twin&&!twin.invalid&&twin.schema==='moor.factory-twin-snapshot');
+const twinBindings=new Map((twinValid&&twin.spatial_bindings||[]).map(x=>[x.entity_id,x]));
 function factoryColor(n){
-  if(n.kind==='machine'&&n.lifecycle==='quarantined')return RED;
-  if(n.kind==='machine'&&n.lifecycle==='deprecated')return AMBER;
-  if(n.kind==='machine')return n.status==='machine-verified'||n.status==='human-approved'||n.status==='canonical'?GREEN:ICE;
+  if(n.health==='degraded'||n.lifecycle==='quarantined')return RED;
+  if(n.health==='superseded'||n.lifecycle==='deprecated')return AMBER;
+  if(n.health==='healthy-verified')return GREEN;
+  if(n.health==='candidate')return WHITE;
+  if(n.health==='shared-inherited')return CYAN;
   if(n.kind==='fixture')return CYAN;
   if(n.kind==='adapter')return ICE;
-  if(n.kind==='connection')return n.status==='machine-verified'?GREEN:WHITE;
   return 0x83a9bc;
 }
 function machineGlyph(n,c){
@@ -115,37 +118,38 @@ function machineGlyph(n,c){
   g.add(beam(new THREE.Vector3(w/2,h,-d/2),new THREE.Vector3(w/2,h,d/2),c,.012,.55));
   g.add(beam(new THREE.Vector3(0,.24,0),new THREE.Vector3(0,h+.24,0),c,.018,n.lifecycle==='quarantined'?.9:.58));
   const top=new THREE.Mesh(new THREE.OctahedronGeometry(.08,0),glow(c,.9));top.position.y=h+.2;g.add(top);
-  if(n.lifecycle==='deprecated'){
-    g.add(beam(new THREE.Vector3(-w*.38,h*.72,.31),new THREE.Vector3(w*.38,h*.22,.31),AMBER,.02,.72));
-  }
-  if(n.lifecycle==='quarantined'){
+  if(n.lifecycle==='deprecated'||n.health==='superseded')g.add(beam(new THREE.Vector3(-w*.38,h*.72,.31),new THREE.Vector3(w*.38,h*.22,.31),AMBER,.02,.72));
+  if(n.lifecycle==='quarantined'||n.health==='degraded'){
     g.add(beam(new THREE.Vector3(-w*.38,h*.76,.31),new THREE.Vector3(w*.38,h*.2,.31),RED,.024,.9));
     g.add(beam(new THREE.Vector3(w*.38,h*.76,.31),new THREE.Vector3(-w*.38,h*.2,.31),RED,.024,.9));
   }
   return g;
 }
-const factoryPriority=n=>n.kind==='machine'?(n.lifecycle==='active'?0:n.lifecycle==='deprecated'?4:5):n.kind==='fixture'?1:n.kind==='connection'?2:n.kind==='adapter'?3:6;
-const factoryNodes=(factory.nodes||[]).slice().sort((a,b)=>factoryPriority(a)-factoryPriority(b)||String(a.id).localeCompare(String(b.id)));
+const factoryPriority=n=>n.health==='healthy-verified'?0:n.kind==='fixture'?1:n.kind==='connection'?2:n.kind==='adapter'?3:n.health==='superseded'?4:5;
+const factoryNodes=(twinValid?(twin.machines||[]):[]).filter(n=>n.source==='capability-memory').slice().sort((a,b)=>factoryPriority(a)-factoryPriority(b)||String(a.machine_id).localeCompare(String(b.machine_id)));
 const factoryLimit=low?24:72,visibleFactory=factoryNodes.slice(0,factoryLimit);
-const factoryKinds={machine:[],fixture:[],connection:[],adapter:[]};visibleFactory.forEach(n=>(factoryKinds[n.kind]||factoryKinds.machine).push(n));
-for(const kind of Object.keys(factoryKinds)){
-  const arr=factoryKinds[kind],r=kind==='machine'?20.2:kind==='connection'?18.5:kind==='fixture'?22.3:24.2,y=kind==='machine'?2.15:kind==='connection'?3.05:kind==='fixture'?2.7:3.55;
+const zoneRadius={'tool-crib':20.2,archive:24.2,maintenance:16.5,planning:10.6,'work-cells':12.65,qc:14.3,rework:16.2,release:18.1,intake:8.7};
+const factoryZones={};
+visibleFactory.forEach(n=>{const binding=twinBindings.get(n.machine_id)||{},zone=binding.anchor_zone||n.location_hint||'tool-crib';(factoryZones[zone]||(factoryZones[zone]=[])).push(n)});
+Object.entries(factoryZones).forEach(([zone,arr],zi)=>{
+  const r=zoneRadius[zone]||20.2;
   arr.forEach((n,i)=>{
-    const a=(i/Math.max(1,arr.length))*Math.PI*2-Math.PI/2+(kind==='connection'?.08:kind==='fixture'?.16:kind==='adapter'?.24:0);
-    const c=factoryColor(n),g=machineGlyph(n,c);g.position.set(Math.cos(a)*r,y+(i%3)*.18,Math.sin(a)*r);g.rotation.y=-a;factoryGroup.add(g);factoryNodeMap.set(n.id,g);
-    const picked={id:'factory.'+n.id,label:n.label||n.id,type:'factory-'+n.kind,detail:(n.kind==='machine'?'Reusable capability machine. ':n.kind==='fixture'?'Deterministic assembly fixture. ':n.kind==='connection'?'Known capability routing/connection. ':'Verified or specified adapter. ')+(n.implementation_ref||''),factory:n};
+    const a=(i/Math.max(1,arr.length))*Math.PI*2-Math.PI/2+zi*.08;
+    const y=n.kind==='machine'?2.15:n.kind==='connection'?3.05:n.kind==='fixture'?2.7:3.55;
+    const col=factoryColor(n),g=machineGlyph(n,col);g.position.set(Math.cos(a)*r,y+(i%3)*.18,Math.sin(a)*r);g.rotation.y=-a;factoryGroup.add(g);factoryNodeMap.set(n.machine_id,g);
+    const evidence=(n.evidence_refs&&n.evidence_refs[0])||'';
+    const picked={id:'factory.'+n.machine_id,label:n.label||n.machine_id,type:'factory-'+n.kind,detail:(n.kind==='machine'?'Reusable capability machine. ':n.kind==='fixture'?'Deterministic assembly fixture. ':n.kind==='connection'?'Known capability routing/connection. ':'Verified or specified adapter. ')+evidence,factory:n,twin_binding:twinBindings.get(n.machine_id)||null};
     const p=new THREE.Mesh(new THREE.BoxGeometry(1.5,2.2,1.4),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));p.position.set(0,.9,0);p.userData.node=picked;g.add(p);pickables.push(p);
   });
-}
-for(const e of (factory.edges||[]).slice(0,low?36:120)){
+});
+for(const e of (twinValid?(twin.routes||[]):[]).slice(0,low?36:120)){
   const a=factoryNodeMap.get(e.from),b=factoryNodeMap.get(e.to);if(!a||!b)continue;
-  const c=e.type==='supersedes'?AMBER:e.type==='assembled_by'?CYAN:e.type==='feeds'?WHITE:0x55798d;
-  const start=a.position.clone(),end=b.position.clone(),mid=start.clone().lerp(end,.5);mid.y+=.7;
-  const curve=new THREE.QuadraticBezierCurve3(start,mid,end);
-  factoryGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve,10,.009,4,false),glow(c,e.type==='supersedes'?.48:.17)));
+  const state=e.state||'connected',col=state==='supersedes'?AMBER:state==='assembled_by'?CYAN:state==='feeds'?WHITE:0x55798d;
+  const p0=a.position.clone(),p1=b.position.clone(),mid=p0.clone().lerp(p1,.5);mid.y+=.7;
+  const curve=new THREE.QuadraticBezierCurve3(p0,mid,p1);
+  factoryGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve,10,.009,4,false),glow(col,state==='supersedes'?.48:.17)));
 }
-scene.add(ring(20.2,.06,GREEN,.045,low?64:128),ring(22.3,.06,CYAN,.035,low?64:128),ring(24.2,.06,ICE,.025,low?64:128));
-
+scene.add(ring(20.2,.06,GREEN,.045,low?64:128),ring(24.2,.06,AMBER,.035,low?64:128));
 /* Real work-in-progress packets. Empty plant state renders no fake activity. */
 const workOrderGroup=new THREE.Group();scene.add(workOrderGroup);
 function workColor(state){
