@@ -51,6 +51,10 @@ const afterWo01=JSON.parse(JSON.stringify(afterPg02));
 afterWo01.slices['WO-01']=evidence.slices['WO-01'];
 const afterReleaseContract=Ch.evaluate({choreography,evidence:afterWo01});
 assert.equal(afterReleaseContract.recommendation.slice_id,'WO-02');
+const afterWo02=JSON.parse(JSON.stringify(afterWo01));
+afterWo02.slices['WO-02']=evidence.slices['WO-02'];
+const afterGuard=Ch.evaluate({choreography,evidence:afterWo02});
+assert.equal(afterGuard.recommendation.slice_id,'FM-05');
 
 const ch02=run(
   'owner-start-building-ch02-v1',
@@ -118,4 +122,12 @@ const wo02=run(
   'Project Pulse / Worker orchestration',
   ['current base must match recorded release base','write/interface ownership conflicts are detected','scope expansion fails closed','guard itself cannot mutate Git or spawn workers']
 );
-console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,wo01_receipt:wo01.fingerprint,wo02_receipt:wo02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation,after_pg02:afterRecipe.recommendation,after_wo01:afterReleaseContract.recommendation},null,2));
+const fm05=run(
+  'owner-start-building-fm05-v1',
+  'Build FM-05: CI must emit a versioned machine-readable MaintenanceReceipt from canonical maintenance truth, mechanism inventory, exercise evidence and independent station tests; Pulse/Citadel must consume it without treating visualization as authority.',
+  [{key:'slice',value:'FM-05'},{key:'selection_basis',value:'CH-02 advisory after verified WO-02'},{key:'authority',value:'observability only'}],
+  {slice_id:'FM-05',task:'generated maintenance receipt',authority:'observability only'},
+  'Project Pulse / Funnel maintenance',
+  ['receipt records law versions and snapshot hash','mechanism/test/gap state is machine-readable','failed stations remain visible','Citadel consumes receipt evidence without creating authority']
+);
+console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,wo01_receipt:wo01.fingerprint,wo02_receipt:wo02.fingerprint,fm05_receipt:fm05.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation,after_pg02:afterRecipe.recommendation,after_wo01:afterReleaseContract.recommendation,after_wo02:afterGuard.recommendation},null,2));
