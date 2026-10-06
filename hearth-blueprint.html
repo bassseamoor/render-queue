@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HEARTH — a More-built game · the full blueprint</title>
+<style>
+  :root{
+    --bg:#14100b; --surface:#1e1710; --surface2:#262019; --line:#3a2f22;
+    --ink:#f2e8d5; --muted:#b39d7d; --faint:#7d6c55;
+    --amber:#e8a33d; --gold:#ffdf9e; --ember:#c96f2e; --leaf:#9db87a;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+    line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--gold)}
+  header.top{max-width:1200px;margin:0 auto;padding:28px 22px 10px;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;justify-content:space-between}
+  .eyebrow{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--amber);margin:0 0 6px}
+  h1{font-size:clamp(38px,6vw,64px);margin:0;letter-spacing:-.02em}
+  h1 .dot{color:var(--amber)}
+  .sub{color:var(--muted);max-width:640px;margin:8px 0 0;font-size:16px}
+  nav.top-actions{display:flex;gap:10px;flex-wrap:wrap}
+  nav.top-actions button{background:var(--surface);border:1px solid var(--line);color:var(--ink);
+    border-radius:999px;padding:10px 18px;font-size:14px;cursor:pointer}
+  nav.top-actions button:hover{border-color:var(--amber)}
+  nav.top-actions button.primary{background:var(--amber);border-color:var(--amber);color:#1a1208;font-weight:600}
+  .wrap{max-width:1200px;margin:0 auto;padding:0 22px}
+  .hero{position:relative;border-radius:var(--radius);overflow:hidden;margin:26px 0 8px;border:1px solid var(--line)}
+  .hero img{width:100%;display:block;max-height:520px;object-fit:cover}
+  .hero .cap{position:absolute;left:0;right:0;bottom:0;padding:26px 26px 20px;
+    background:linear-gradient(transparent,rgba(10,7,4,.88))}
+  .hero .cap p{margin:0;font-size:clamp(17px,2.4vw,23px);max-width:760px}
+  .hero .cap p strong{color:var(--gold)}
+  .pillars{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:18px 0}
+  .pillar{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .pillar h4{margin:0 0 6px;color:var(--gold);font-size:15px}
+  .pillar p{margin:0;color:var(--muted);font-size:13.5px}
+  .pillar .pn{font-size:11px;color:var(--faint);letter-spacing:.18em}
+  h2.sec{font-size:26px;margin:44px 0 4px;letter-spacing:-.01em}
+  p.secsub{color:var(--muted);margin:0 0 20px;max-width:760px}
+  .numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0 6px}
+  .num{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;text-align:center}
+  .num b{display:block;font-size:22px;color:var(--gold)}
+  .num span{font-size:12px;color:var(--muted)}
+  /* poster boards */
+  .boards{display:grid;grid-template-columns:repeat(auto-fill,minmax(370px,1fr));gap:16px;margin-top:18px}
+  .board{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;display:flex;flex-direction:column}
+  .board.wide{grid-column:span 2}
+  @media(max-width:860px){.board.wide{grid-column:span 1}}
+  .board-head{display:flex;gap:12px;align-items:baseline;padding:16px 18px 10px}
+  .board-head .n{font-size:12px;color:var(--amber);letter-spacing:.2em;font-weight:700;white-space:nowrap}
+  .board-head h3{margin:0;font-size:19px;letter-spacing:-.01em}
+  .board img.bimg{width:100%;display:block;max-height:230px;object-fit:cover;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .board .imgrow{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .board .imgrow img{max-height:180px}
+  .board .body{padding:6px 18px 16px;display:flex;flex-direction:column;gap:10px;font-size:13.5px}
+  .purpose{color:var(--ink);font-size:14px;margin:4px 0 0}
+  .purpose b{color:var(--gold);font-weight:600}
+  .io{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .io div{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;color:var(--muted)}
+  .io div b{display:block;font-size:10.5px;letter-spacing:.16em;color:var(--faint);margin-bottom:3px}
+  .deps{font-size:12.5px;color:var(--muted)}
+  .deps b{color:var(--faint);font-size:10.5px;letter-spacing:.16em;display:block;margin-bottom:2px}
+  .specs{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px}
+  .specs li{font-size:12.5px;color:var(--muted);padding-left:16px;position:relative}
+  .specs li::before{content:"◆";position:absolute;left:0;color:var(--ember);font-size:10px;top:2px}
+  .specs li b{color:var(--ink);font-weight:600}
+  .quizbox{background:#20180f;border:1px dashed #6b4f2a;border-radius:10px;padding:10px 12px}
+  .quizbox .qh{font-size:10.5px;letter-spacing:.16em;color:var(--amber);margin-bottom:6px;font-weight:700}
+  .quizbox .q{font-size:12.5px;margin-bottom:6px;color:var(--ink)}
+  .quizbox .q:last-child{margin-bottom:0}
+  .quizbox .a{color:var(--leaf)}
+  .lock{font-size:10px;border:1px solid var(--leaf);border-radius:4px;padding:1px 5px;margin-left:6px;letter-spacing:.08em}
+  .checks{margin:0;padding:0;list-style:none}
+  .checks li{font-size:12.5px;color:var(--muted);padding-left:20px;position:relative;margin-bottom:4px}
+  .checks li::before{content:"✓";position:absolute;left:2px;color:var(--leaf);font-weight:700}
+  .checks .ch{font-size:10.5px;letter-spacing:.16em;color:var(--faint);margin-bottom:5px;font-weight:700}
+  footer{max-width:1200px;margin:60px auto 40px;padding:22px;color:var(--faint);font-size:13px;border-top:1px solid var(--line)}
+  footer .rec{font-family:ui-monospace,monospace;font-size:12px;color:var(--muted)}
+  .funnelsteps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:16px 0}
+  .fstep{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--muted)}
+  .fstep b{display:block;color:var(--gold);margin-bottom:4px;font-size:14px}
+  .fstep .sn{font-size:11px;color:var(--amber);letter-spacing:.18em}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div>
+    <p class="eyebrow">More · a More-built game · blueprint v1</p>
+    <h1>HEARTH<span class="dot">.</span></h1>
+    <p class="sub">A persistent cozy world for the More platform. Your account is a deed to a piece of living land. Shape it, grow it, build on it — and open your door to travelers. The world remembers.</p>
+  </div>
+  <nav class="top-actions" aria-label="Blueprint pages">
+    <button onclick="location.href='moor-blueprint.html'">← The whole blueprint</button>
+    <button onclick="document.getElementById('quiz').scrollIntoView({behavior:'smooth'})">Quiz funnel</button>
+    <button class="primary" onclick="document.getElementById('pipeline').scrollIntoView({behavior:'smooth'})">Pipeline</button>
+  </nav>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <img src="hearth-images/key-art.jpg" alt="A cozy cottage at dusk with a stone-ringed hearthfire burning in the garden, endless meadows beyond">
+    <div class="cap"><p><strong>The game is the account pitch.</strong> No account, no hearth — you can wander the wilds, but nothing persists under your name. Light your fire, and the world remembers you forever.</p></div>
+  </section>
+
+  <div class="pillars">
+    <div class="pillar"><div class="pn">PILLAR 1</div><h4>The account is the deed</h4><p>Land ownership is account-bound, permanent, and visible. One account, one hearth, forever.</p></div>
+    <div class="pillar"><div class="pn">PILLAR 2</div><h4>Hospitality is the endgame</h4><p>The only status is Warmth. No combat, no PvP, no leaderboards. Kindness is the leaderboard.</p></div>
+    <div class="pillar"><div class="pn">PILLAR 3</div><h4>Slow craft</h4><p>Everything meaningful takes days. Five-minute sessions, rewarded returns. The game respects your time.</p></div>
+    <div class="pillar"><div class="pn">PILLAR 4</div><h4>The world remembers</h4><p>Nothing a deedholder makes is ever deleted. Guest books, gifts, seed vaults — permanent.</p></div>
+  </div>
+
+  <h2 class="sec">The numbers, locked</h2>
+  <p class="secsub">Every figure below is a locked blueprint decision — changeable only through a new funnel run, never silently.</p>
+  <div class="numbers">
+    <div class="num"><b>96×96m</b><span>hearth plot, 1 per account</span></div>
+    <div class="num"><b>64×64m</b><span>world chunks, endless</span></div>
+    <div class="num"><b>30 min</b><span>one in-game day</span></div>
+    <div class="num"><b>28 days</b><span>one year (4 seasons)</span></div>
+    <div class="num"><b>100/day</b><span>Care, refills at dawn</span></div>
+    <div class="num"><b>6</b><span>biomes</span></div>
+    <div class="num"><b>48</b><span>base plant species</span></div>
+    <div class="num"><b>12</b><span>genes per seed genome</span></div>
+    <div class="num"><b>14</b><span>creature species</span></div>
+    <div class="num"><b>60 / 40</b><span>cooking / crafting recipes</span></div>
+    <div class="num"><b>4 / year</b><span>festivals, 24h each</span></div>
+    <div class="num"><b>0</b><span>currencies. Gifts only.</span></div>
+  </div>
+
+  <h2 class="sec">The components — 24 poster boards</h2>
+  <p class="secsub">Every board is broken down the same way: purpose · inputs/outputs · dependencies · locked specs · quiz questions with locked answers · pipeline checks. Nothing is a slideshow — it's all here, on the board.</p>
+  <div class="boards" id="boards"></div>
+
+  <h2 class="sec" id="quiz">The HEARTH quiz funnel</h2>
+  <p class="secsub">HEARTH has its own quiz funnel — the same sealed mechanism as the main build funnel, pointed at game design. Every component above carries its questions; the funnel itself is a component (board 23). The flow:</p>
+  <div class="funnelsteps">
+    <div class="fstep"><div class="sn">STEP 1</div><b>Page 0</b>Freeze the design request verbatim. The request is never rewritten.</div>
+    <div class="fstep"><div class="sn">STEP 2</div><b>References</b>Bind locked answers: pillars, numbers, prior verdicts.</div>
+    <div class="fstep"><div class="sn">STEP 3</div><b>Distill</b>Draft the component spec from the boards.</div>
+    <div class="fstep"><div class="sn">STEP 4</div><b>Decisions</b>Lock material choices; list unresolved openly.</div>
+    <div class="fstep"><div class="sn">STEP 5</div><b>Replay</b>Spec vs Page 0 — every obligation satisfied, zero substitutions.</div>
+    <div class="fstep"><div class="sn">STEP 6</div><b>Verdict</b>Spec + destination + done criteria. Mint the receipt.</div>
+    <div class="fstep"><div class="sn">STEP 7</div><b>Build</b>Only after Sebastian reviews the blueprint. His eyes, his iPhone, his call.</div>
+  </div>
+  <p class="secsub">Locked answers are versioned, never silent: a lock changes only through a new funnel run. The builder (More) proposes answers; <b>Sebastian disposes.</b></p>
+
+  <h2 class="sec" id="pipeline">The HEARTH build pipeline</h2>
+  <p class="secsub">Proof, not promises. When the game is built, every component ships with its checks from the boards above — plus three kindness checks that are first-class citizens, not footnotes:</p>
+  <div class="pillars">
+    <div class="pillar"><div class="pn">KINDNESS CHECK 1</div><h4>No purchasable Warmth</h4><p>The build fails if any path — store, ad, shortcut — can raise Warmth. Status is earned or it is nothing.</p></div>
+    <div class="pillar"><div class="pn">KINDNESS CHECK 2</div><h4>Nothing you planted dies of neglect</h4><p>Pause, sleep, wait — never wither. The sim is fuzzed with 30-day absences; the garden must be alive on return.</p></div>
+    <div class="pillar"><div class="pn">KINDNESS CHECK 3</div><h4>No gift is ever lost</h4><p>Sync conflicts, offline queues, crashed sessions — the gift queue is tested until a gift cannot be destroyed.</p></div>
+  </div>
+  <p class="secsub">The bar, from the grass lesson: <b>pixel proof, not proxy metrics.</b> Buffers lie; pixels don't. And the final gate is always a real iPhone in Sebastian's hands.</p>
+</div>
+
+<footer>
+  <p><b style="color:var(--gold)">Blueprint only.</b> No game code has been written. This blueprint was derived through the sealed funnel (v44) — receipt <span class="rec">3400298a618a99a9</span>, 7/7 obligations satisfied, Page 0 preserved. The game gets built when Sebastian has looked through every board and says go.</p>
+  <p>Made by <b>More</b> — a More-built application, for the More platform. Everybody gets an account. This is why.</p>
+</footer>
+
+<script>
+const COMPONENTS = [];
+</script>
+<script>
+/* ---- components 1-12 ---- */
+COMPONENTS.push(
+{n:"01",t:"World Engine",img:"hearth-images/biome-sunfield.jpg",wide:true,
+ purpose:"<b>Endless, deterministic, seeded terrain</b> — the ground everything stands on. Same seed + coordinates = same bytes, forever.",
+ inp:"World seed (worldgen v1) · player position",out:"64×64m chunks: heightfield, soil map, water table, biome id, spawn tables",
+ deps:"Foundation — nothing above it",
+ specs:["Chunk <b>64×64m</b>; stream radius <b>5 chunks</b> around the player","Generation <b>&lt;8ms per chunk</b> on iPhone-class hardware","<b>6 biomes</b> blended by temperature/moisture noise: Sunfield, Meadow, Deepwood, Lakeshore, Highland, Mistmarsh","Deterministic: identical bytes for identical seed + coordinates"],
+ quiz:[["Should the world have edges?","No — endless. The wilds go on forever."],
+       ["Can worldgen change after launch?","Versioned (v1, v2…). Old claims keep their generation, always."]],
+ checks:["Regenerate 100 chunks → byte-identical","p95 gen time under 8ms","All 6 biomes reachable within 2km of spawn"]},
+{n:"02",t:"Season & Sky",
+ purpose:"<b>Time you can feel</b> — 30-minute days, weekly seasons, weather with mood.",
+ inp:"Real clock · world seed",out:"Sun/moon rig · weather state · season id · festival triggers",
+ deps:"World Engine",
+ specs:["Day = <b>30 real minutes</b>; year = <b>28 real days</b> (4 seasons × 7)","Weather is per-biome: Highland snow, Mistmarsh fog, Lakeshore rain","Festivals auto-trigger exactly on season turn"],
+ quiz:[["Should weather ever punish the player?","Never — weather is mood, not punishment."],
+       ["Can players skip the night?","No — night is when lanternfish run and the fire matters."]],
+ checks:["Light rig renders clean at 6 times of day","Season-turn trigger fires exactly on schedule","Weather never reduces Care or growth below baseline"]},
+{n:"03",t:"Hearth Deeds",
+ purpose:"<b>Account-bound land ownership</b> — the reason to have a More account, made playable.",
+ inp:"More account · surveyed plot choice",out:"Deed record (owner, bounds, hearth name, gen version) · marker stone in-world",
+ deps:"World Engine · Account & Identity",
+ specs:["Plot <b>96×96m</b>, <b>one per account</b>","Placed on surveyed open land only; ≥200m from the next hearth","Deed persists <b>forever</b> — Pillar 4"],
+ quiz:[["Should unvisited hearths decay?","Never — the world remembers. Edges may rewild softly; your work persists."],
+       ["Can a hearth be sold?","Never sold. Named succession only — you name who inherits if you go quiet."]],
+ checks:["Deed issue reserves land in the registry","Double-claim of one plot is rejected","Succession record is stored and readable"]},
+{n:"04",t:"The Hearthfire",img:"hearth-images/hearthfire.jpg",wide:true,
+ purpose:"<b>The soul of the game.</b> A stone-ringed fire that never goes out while your account lives — and shows your Warmth in its flame.",
+ inp:"Deed · Warmth tier",out:"Flame render state (color/size) · comfort buff zone · cooking station",
+ deps:"Hearth Deeds · Warmth (15)",
+ specs:["Never extinguishes while the account lives","Flame color = Warmth tier: <b>ember-blue → blue-gold → gold → gold-white → white-gold</b>","Warms visitors within <b>6m</b> (comfort buff)","All cooking happens here"],
+ quiz:[["What if the owner never returns?","The fire burns on — tended by the world. Pillar 4."],
+       ["Can a visitor put it out?","No. Only the deedholder can bank it for the night."]],
+ checks:["All 5 flame tiers render correctly","Cook interaction works at the fire","Visitor buff applies within 6m, nowhere else"]},
+{n:"05",t:"Terrain Shaping",
+ purpose:"<b>Slow, intentional landcraft</b> — raise, lower, smooth, paint. Paced by Care so hearths grow with intention.",
+ inp:"Care energy · target area",out:"Modified heightfield + paint layers · updated water flow",
+ deps:"World Engine · Hearth Deeds (your deed only)",
+ specs:["Tools: raise / lower / smooth / paint (grass, soil, sand, stone, moss)","<b>1 Care per m²</b> shaped","Water flows downhill; ponds form below the water table"],
+ quiz:[["Should shaping be instant and free?","No — Care paces it. Intention over impulse."],
+       ["Can you shape the wilds?","No — your deed only. The wilds belong to everyone."]],
+ checks:["Shape → water sim updates correctly","Care deducted exactly","Wilds reject shaping attempts"]},
+{n:"06",t:"Flora",img:"hearth-images/biome-meadow.jpg",
+ purpose:"<b>Living plants from seed genomes</b> — the game's genetics lab. Every plant is a 12-gene string.",
+ inp:"Seed genome · soil · water · season · Care (planting)",out:"Plant instances (5 growth stages) · seed drops · cross-pollinated variants",
+ deps:"World Engine · Season & Sky · Terrain Shaping (soil)",
+ specs:["<b>48 base species</b> across the 6 biomes","Genome: height, spread, hue, petals, glow, hardiness, season, scent, yield, rarity, soil love, water love","Stages: <b>seed → sprout → growing → mature → seeding</b>","Neighbors cross-pollinate into new variants; your <b>seed vault</b> keeps every genome"],
+ quiz:[["Should rare plants be buyable?","Never — discovered or gifted only."],
+       ["Do plants die of neglect?","Annuals reseed; perennials sleep in winter. Nothing you planted is ever truly lost."]],
+ checks:["Genome renders a distinct plant","Stages advance on schedule","Cross-pollination yields a valid new genome"]},
+{n:"07",t:"Fauna",imgs:["hearth-images/creature-mothdeer.jpg","hearth-images/creature-puddlehog.jpg"],
+ purpose:"<b>Wild creatures with needs</b> — befriend them. Never catch them. Trust is the only mechanic.",
+ inp:"Biome · season · time of day · player offerings",out:"Creature instances with behavior state · trust levels",
+ deps:"World Engine · Season & Sky · Flora (food)",
+ specs:["<b>14 species</b>: mothdeer, puddlehog, emberfox, lanternfish, thistlehare, cloudgoat, reedwren, mossbear, sunskink, dewdrop fawn, bracken boar, willow heron, cinder moth, burrow owl","Needs: hunger, thirst, shelter, company · day/night routines · seasonal migration","Trust ladder: feed repeatedly → visits → stays. <b>No cages, ever.</b>"],
+ quiz:[["Can creatures be caught or caged?","No — trust only. A creature stays because it wants to."],
+       ["Do creatures die?","They wander, migrate, return. The wilds are gentle."]],
+ checks:["Needs AI never stalls or loops","Trust ladder completes end-to-end","Migration triggers on season turn"]},
+{n:"08",t:"Building",
+ purpose:"<b>Snap-together building with progressive depth.</b> Plop a tent → raise walls → design a hall.",
+ inp:"Materials · Care · blueprint (optional)",out:"Structures on deed · shareable blueprints",
+ deps:"Hearth Deeds · Terrain Shaping · Crafting (materials)",
+ specs:["<b>1m snap grid</b>, generous snapping","<b>5 materials</b>: timber, stone, thatch, clay, glass","Pieces: foundations, walls, roofs, doors, windows, fences, bridges, lanterns","<b>Blueprints are gifts</b> — give a friend your hall design"],
+ quiz:[["Should building need precise placement skill?","No — beauty comes from arrangement, not dexterity."],
+       ["Can visitors build on your hearth?","Only with your raised hand — a permission toggle, default off."]],
+ checks:["Every piece snaps cleanly on grid","Structures persist across sessions","Blueprint export → import round-trips"]},
+{n:"09",t:"Farming",
+ purpose:"<b>The daily rhythm</b> — till, plant, water, harvest. Five minutes, deeply satisfying.",
+ inp:"Tilled soil · seeds · water · compost · Care",out:"Crops · compost · soil quality changes",
+ deps:"Flora · Terrain Shaping",
+ specs:["Soil quality <b>0–100</b>; compost (from cooking scraps) <b>+10</b>","<b>12 staple crops</b> + cross-pollinated variants","Harvest windows follow the seasons"],
+ quiz:[["Should crops wither if unwatered?","They pause, never die — the game respects your absence."],
+       ["Is farming required?","No — forage the wilds. Farming is a choice, not a chore."]],
+ checks:["Full till → harvest loop completes","Soil quality math verified","Neglect pauses growth; nothing dies"]},
+{n:"10",t:"Cooking",
+ purpose:"<b>Discovery at the fire.</b> 60 recipes, found by experiment — ingredient + method + heat.",
+ inp:"Ingredients · method (roast/boil/bake/steam) · heat · Hearthfire",out:"Dishes (gifts, buffs, creature-bait) · discovered recipes · scraps → compost",
+ deps:"The Hearthfire · Farming · Fauna (bait)",
+ specs:["<b>60 recipes</b>, discovered by experiment — your recipe book fills as you learn","The <b>guest table</b>: any visitor may eat — the oldest hospitality in the world","Scraps become compost; nothing wasted"],
+ quiz:[["Should recipes be listed upfront?","No — discovery is the game."],
+       ["Can food be sold?","No — food is for eating and giving."]],
+ checks:["All 60 recipes are cookable","Discovery unlocks are recorded","Guest-table eating works for visitors"]},
+{n:"11",t:"Crafting",
+ purpose:"<b>Tools, furniture, gifts — made by hand.</b> Making things always feels good; there is no fail chance.",
+ inp:"Materials (wood, stone, fiber, clay) · recipes",out:"Tools · furniture · decorations · instruments · gift wrap",
+ deps:"Flora (fiber/wood) · Building (placement)",
+ specs:["<b>40 recipes</b>","Tools: spade, watering can, shears, dibber — <b>tools are forever</b>","The flute: creatures gather to hear it","Gift wrap + cards feed the gift economy"],
+ quiz:[["Should crafting have fail chances?","Never — making things feels good, always."],
+       ["Do tools wear out?","Tools are forever. Mastery shows in what you make, not maintenance."]],
+ checks:["All 40 recipes craftable","Tool effects apply correctly","Wrap + note creates a valid gift"]},
+{n:"12",t:"Visitors",
+ purpose:"<b>Travel, knocking, guest books</b> — the social fabric of the world.",
+ inp:"Waystones · friend list · door state (open/shut)",out:"Visits · guest-book signatures · shared moments",
+ deps:"Hearth Deeds · World Engine",
+ specs:["Walk the wilds or <b>waystone-travel</b> to friends' hearths or any open door","Open door = enter freely · shut = knock, host answers","<b>Every hearth has a guest book.</b> Signatures persist forever — reading a five-year-old book is a core beat"],
+ quiz:[["Can strangers enter an open hearth?","Yes — an open door means welcome. That's the whole point."],
+       ["Should there be a block list?","Yes — safety first. Shut door + block = peace."]],
+ checks:["Waystone travel lands correctly","Knock → answer flow works","Guest-book signatures persist across sessions"]}
+);
+</script>
+<script>
+/* ---- components 13-24 ---- */
+COMPONENTS.push(
+{n:"13",t:"Hospitality Law",
+ purpose:"<b>The archaic social contract, as mechanics.</b> Old human law — a guest at your fire owes nothing — enforced by culture, not code.",
+ inp:"Host / guest actions at a hearth",out:"Warmth events · guest-book entries · cultural memory",
+ deps:"Visitors · The Hearthfire · Warmth (15)",
+ specs:["A guest who eats at your fire <b>owes nothing</b>","Turning away no traveler (when open) gains Warmth","The guest book remembers takers-without-thanks — <b>visible to hosts</b>","A shut door is respected absolutely"],
+ quiz:[["Should the game punish rude guests?","No punishment — the book remembers; culture does the rest."],
+       ["Is hospitality optional?","Entirely. A shut door is sacred."]],
+ checks:["Warmth events fire on host/guest actions","Guest-book memory visible to hosts","Shut door blocks entry cleanly"]},
+{n:"14",t:"Gift Economy",
+ purpose:"<b>Giving is the economy.</b> No currency — not even a soft one. The rarest things can only be given, never traded.",
+ inp:"Wrapped items · notes · giver / receiver",out:"Gifts with eternal provenance (giver name etched)",
+ deps:"Crafting (wrap) · Visitors",
+ specs:["Wrap + note; <b>giver name etched forever</b>","First-bloom seeds, legendary recipes, named blueprints: <b>give-only, never traded</b>","Re-gifting allowed — provenance chains grow; every giver remembered"],
+ quiz:[["Should there be any currency?","No. Not even a soft one."],
+       ["Can gifts be re-gifted?","Yes — provenance chains grow; every giver is remembered."]],
+ checks:["Wrap creates a valid gift","Give-only items reject trade attempts","Provenance chain renders fully"]},
+{n:"15",t:"Warmth",
+ purpose:"<b>The only status.</b> Earned, never bought, shown in flame. No numbers, no leaderboard — you read it in the fire.",
+ inp:"Hosting · giving · helping · festival contribution",out:"Warmth tier → Hearthfire flame color/size",
+ deps:"Hospitality Law · Gift Economy · Festivals",
+ specs:["<b>5 tiers</b>: ember-blue → blue-gold → gold → gold-white → white-gold","No numbers shown · no leaderboard","<b>Nothing that touches Warmth can be bought. Ever.</b>","Decays slowly if a hearth goes cold to visitors — warmth is a practice"],
+ quiz:[["Should Warmth be visible as a number?","Never — you read it in the flame."],
+       ["Can Warmth decay?","Slowly, if the hearth goes cold to visitors. Warmth is a practice."]],
+ checks:["Tier thresholds correct","All 5 flames render","No purchasable Warmth path exists anywhere"]},
+{n:"16",t:"Festivals",img:"hearth-images/festival-longnight.jpg",wide:true,
+ purpose:"<b>The year's heartbeat.</b> Four days when the world gathers in the Commons — community goals, shared tables, the year's stories.",
+ inp:"Season turn · the Commons (shared central land)",out:"Festival instance · community goals · year-book stories",
+ deps:"Season & Sky · Cooking · Sound & Music",
+ specs:["<b>Springplanting · Midsummer Cookfire · Harvesthome · Longnight Lanterns</b>","<b>24 hours</b> each, in the Commons","Community goals (plant 10,000 trees together) — <b>no winners, everyone belongs</b>","The year's stories told at Longnight, recorded in the year-book"],
+ quiz:[["Should festivals have winners?","No — community goals only."],
+       ["What if you miss one?","The stories are recorded; the next season comes."]],
+ checks:["Festival triggers exactly on season turn","Community goal aggregates correctly","Stories recorded to the year-book"]},
+{n:"17",t:"Sound & Music",
+ purpose:"<b>The world has a voice.</b> Generative ambience — pentatonic, biome-aware, time-aware. The world composes itself, forever.",
+ inp:"Biome · time of day · weather · festival state",out:"Adaptive music bed · procedural SFX",
+ deps:"World Engine · Season & Sky · Festivals",
+ specs:["<b>Pentatonic generative score</b> — never repeats, never grates","Fire crackle from filtered noise · footsteps per surface","The Longnight melody: <b>learnable, hummable</b>","Sleep-friendly; battery-light; full mute respected"],
+ quiz:[["Licensed music or generative?","Generative — the world composes itself, forever."],
+       ["Voice acting?","None — creatures and people speak in music and gesture."]],
+ checks:["Music adapts across a full day cycle glitch-free","SFX fire with zero errors","Mute + volume respected everywhere"]},
+{n:"18",t:"Account & Identity",
+ purpose:"<b>The More account as game identity.</b> The funnel, made playable — wanderers feel what a deed gives.",
+ inp:"More account (or none = wanderer)",out:"Deedholder vs wanderer state · name on land · seed vault · guest-book identity",
+ deps:"Platform foundation",
+ specs:["<b>Wanderers</b>: explore, gather wild seeds, visit, sign — nothing persists under their name","<b>Deedholders</b>: everything persists — land, books, vault, warmth","The game <b>shows, never tells</b>: no signup nags; the unlit fire is the pitch","One account, one hearth (second plot optional for builders)"],
+ quiz:[["Should wanderers be nagged to sign up?","Never — the hearthfire they can't light is the whole pitch."],
+       ["One account, one hearth?","Yes — one life, one hearth."]],
+ checks:["Wanderer state: zero persistence under name","Account claim issues exactly one deed","Sign-in / sign-out clean, no orphan state"]},
+{n:"19",t:"Sync & Persistence",
+ purpose:"<b>Local-first.</b> Play fully offline; your hearth sims on your device. The world keeps your place.",
+ inp:"Local sim state · network availability",out:"Synced deed state · queued visitor gifts/signatures",
+ deps:"Hearth Deeds · Visitors · Gift Economy",
+ specs:["<b>Full offline play</b>","Your land: <b>last-tended-wins</b>","Visitor gifts/signatures: <b>ordered queue, never lost</b>","Conflicts resolve toward kindness — <b>gifts always land</b>"],
+ quiz:[["What wins in a sync conflict?","Your land: last-tended. Gifts: they always land — no gift is ever lost to a conflict."],
+       ["How much is stored locally?","Your hearth + neighbors fully; the wilds stream."]],
+ checks:["Offline edits sync on reconnect","Gift queue survives crashes","Conflict cases resolve per the kindness rule"]},
+{n:"20",t:"Phone & Controls",
+ purpose:"<b>Touch-first, five-minute sessions, kind to batteries.</b> The iPhone is the primary console.",
+ inp:"Touch gestures",out:"Camera · tool selection · contextual actions",
+ deps:"Platform foundation",
+ specs:["<b>Portrait-playable</b>; one-thumb camera","<b>Contextual tap</b> — the world suggests the verb","The 5-minute loop: <b>tend → harvest → gift → close</b>","Capped-FPS battery mode","Final QA: <b>iPhone 17 Pro Max, Sebastian's eyes</b>"],
+ quiz:[["Portrait or landscape?","Both — portrait for tending, landscape for wandering."],
+       ["How long is a session meant to be?","Five minutes is a full, satisfying visit."]],
+ checks:["Touch controls pass on device","5-minute loop completable","Battery mode holds its frame budget"]},
+{n:"21",t:"Onboarding",img:"hearth-images/biome-lakeshore.jpg",
+ purpose:"<b>The first 10 minutes:</b> wake, claim, light, plant, meet, open. No text walls. The world teaches.",
+ inp:"New account · surveyed land",out:"Lit Hearthfire · planted seeds · first creature met · door decision",
+ deps:"Hearth Deeds · The Hearthfire · Flora · Fauna · Visitors",
+ specs:["<b>7 beats</b>: wake at dawn → walk your plot → drive the marker stone → <b>light the Hearthfire</b> → plant 3 seeds → meet a puddlehog → hang your door sign (OPEN/SHUT)","No text walls · <b>no popups after minute 3</b>","Veterans walk it in 3 minutes"],
+ quiz:[["Tutorial popups?","None after minute 3 — the world teaches."],
+       ["Can onboarding be skipped?","The beats are the game; veterans walk them in 3 minutes."]],
+ checks:["All 7 beats completable, no blockers","Door decision recorded","No popup appears after minute 3"]},
+{n:"22",t:"Art Direction",imgs:["hearth-images/biome-deepwood.jpg","hearth-images/biome-highland.jpg","hearth-images/biome-mistmarsh.jpg"],wide:true,
+ purpose:"<b>Storybook realism</b> — believable, but kinder than life. The fire is always the warmest light in frame.",
+ inp:"Guides all visual components",out:"Palette · light rigs · texture language · reference board",
+ deps:"Guides World, Season, Flora, Fauna, Building",
+ specs:["Soft volumetrics · painterly textures","<b>Honeyed day / lantern night</b>","The Hearthfire = <b>brightest warm pixel</b> in every test frame","Weather felt, never fought"],
+ quiz:[["Realistic or stylized?","Storybook realism — believable, but kinder than life."],
+       ["Who is final QA?","A real iPhone. Sebastian's eyes."]],
+ checks:["Reference board approved","Light rig matches spec at 6 times of day","Fire is brightest warm pixel in test frames"]},
+{n:"23",t:"HEARTH Quiz Funnel",
+ purpose:"<b>Every design decision passes through questions.</b> The funnel is a component — it governs all the others.",
+ inp:"Design questions per component",out:"Locked answers · the question bank · decision log",
+ deps:"All components — it governs them",
+ specs:["Every component carries <b>≥2 questions</b> with locked answers","Page 0 preserved verbatim; verdicts recorded","Locks are <b>versioned, never silent</b> — change requires a new funnel run","This blueprint ran the sealed funnel v44: receipt <b>3400298a618a99a9</b>"],
+ quiz:[["Should the funnel's questions ever change a locked answer?","Only through a new funnel run — never silently."],
+       ["Who answers the quiz?","The builder (More) proposes; Sebastian disposes."]],
+ checks:["Every component has ≥2 questions","Every question has a locked answer","Decision log is complete"]},
+{n:"24",t:"HEARTH Build Pipeline",
+ purpose:"<b>Proof, not promises.</b> When the game is built, every component ships with checks — including kindness checks as first-class citizens.",
+ inp:"Component implementations",out:"Check results · build verdicts",
+ deps:"All components — it verifies them",
+ specs:["Per-component checks: determinism, perf, persistence, kindness rules","Headless sim runs for world, flora, fauna, sync","The pipeline <b>verifies itself</b> (meta-check)","Bar from the grass lesson: <b>pixel proof, not proxy metrics</b>"],
+ quiz:[["What does 'done' mean?","All checks green + Sebastian's eyes on a real iPhone."],
+       ["Proxy metrics or pixel proof?","Pixel proof — buffers lie, pixels don't."]],
+ checks:["Check list matches component list 1:1","Pipeline self-verification passes","Kindness checks run first, not last"]},
+);
+</script>
+<script>
+/* ---- render poster boards ---- */
+(function(){
+  const host = document.getElementById('boards');
+  const esc = s => s;
+  host.innerHTML = COMPONENTS.map(c=>{
+    const imgs = c.imgs ? `<div class="imgrow">${c.imgs.map(i=>`<img class="bimg" src="${i}" alt="" loading="lazy">`).join('')}</div>`
+      : c.img ? `<img class="bimg" src="${c.img}" alt="" loading="lazy">` : '';
+    return `<article class="board${c.wide?' wide':''}" id="c${c.n}">
+      <div class="board-head"><span class="n">${c.n}</span><h3>${c.t}</h3></div>
+      ${imgs}
+      <div class="body">
+        <p class="purpose">${c.purpose}</p>
+        <div class="io"><div><b>IN</b>${c.inp}</div><div><b>OUT</b>${c.out}</div></div>
+        <div class="deps"><b>DEPENDS ON</b>${c.deps}</div>
+        <ul class="specs">${c.specs.map(s=>`<li>${s}</li>`).join('')}</ul>
+        <div class="quizbox"><div class="qh">QUIZ — LOCKED ANSWERS</div>
+          ${c.quiz.map(q=>`<div class="q">Q: ${q[0]}<br><span class="a">A: ${q[1]}</span><span class="lock">LOCKED</span></div>`).join('')}
+        </div>
+        <ul class="checks"><div class="ch">PIPELINE CHECKS</div>${c.checks.map(x=>`<li>${x}</li>`).join('')}</ul>
+      </div>
+    </article>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>
