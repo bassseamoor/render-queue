@@ -20,7 +20,7 @@ function validateRelease(input){
  if(!r.done_criteria.length)errors.push('done criteria required');
  if(!Object.keys(r.budget).length)errors.push('budget required');
  if(!r.release_scope.write.length&&!r.release_scope.interfaces.length)errors.push('release scope requires write file or interface ownership');
- if(input&&input.release_hash&&input.release_hash!==hash({...r,release_hash:undefined}))errors.push('release_hash mismatch');
+ if(input&&input.release_hash&&input.release_hash!==r.release_hash)errors.push('release_hash mismatch');
  return {ok:errors.length===0,errors,release:r};
 }
 function allowed(scope,item){return scope.write.includes(item)||scope.interfaces.includes(item)}
@@ -39,7 +39,7 @@ function validateJob(releaseInput,jobInput){
  if(!j.expected_outputs.length)errors.push('expected outputs required');
  if(!Object.keys(j.verification_plan).length)errors.push('verification plan required');
  if(!Object.keys(j.handoff_contract).length)errors.push('handoff contract required');
- if(jobInput&&jobInput.job_hash&&jobInput.job_hash!==hash({...j,job_hash:undefined}))errors.push('job_hash mismatch');
+ if(jobInput&&jobInput.job_hash&&jobInput.job_hash!==j.job_hash)errors.push('job_hash mismatch');
  return {ok:errors.length===0,errors,release:vr.release,job:j};
 }
 return Object.freeze({version:1,makeRelease,validateRelease,makeJob,validateJob,hash});
