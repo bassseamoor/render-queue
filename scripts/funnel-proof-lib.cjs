@@ -21,8 +21,10 @@ function hash(x){
 }
 function extractObligations(raw){
   const source=String(raw||''),parts=source.split(/(?:\n+|(?<=[.!?;])\s+)/).map(x=>x.trim()).filter(Boolean),seen={},out=[];
+  const signal=/\b(must|need(?:s)?|should|have to|has to|gotta|make sure|ensure|never|cannot|can't|want(?:s)?|required?|no excuse|prevent(?:s|ed|ing)?|forbid(?:s|den|ding)?|block(?:s|ed|ing)?|lock(?:s|ed|ing)?|seal(?:s|ed|ing)?|force(?:s|d|ing)?|protect(?:s|ed|ing)?|disable(?:s|d|ing)?|require(?:s|d|ing)?|create|build|make|add|remove|fix)\b/i;
   for(const part of parts){
-    if(!/\b(must|need(?:s)?|should|have to|has to|make sure|ensure|never|do not|don't|cannot|can't|want(?:s)?|required?|no excuse)\b/i.test(part))continue;
+    const meaningful=part.replace(/\bi\s+(?:don't|do not)\s+know\b/ig,'').replace(/\bi(?:'m| am)\s+not\s+sure\b/ig,'').trim();
+    if(!signal.test(meaningful))continue;
     const id='obligation:'+hash(part.toLowerCase());
     if(!seen[id]){seen[id]=1;out.push({id,source:part});}
   }
