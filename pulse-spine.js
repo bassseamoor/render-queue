@@ -647,6 +647,14 @@ var FABRIC_DOCS=[
  {id:'beam-design-law',name:'Beam Design Law v1',summary:'Clear component standards plus compatibility → audited → Beam-native migration ladder.',source:'pulse-beam-standards.html'},
  {id:'beam-funnel-hall',name:'Pulse Beam Funnel Hall',summary:'Permanent live 3D room generated from the current Funnel graph.',source:'pulse-beam-funnel-hall.html'},
  {id:'beam-audit',name:'Beam Readiness Audit',summary:'No-loss parity and migration readiness records for the component estate.',source:'pulse-beam-audit.js'},
+ {id:'fabric-maintenance-status',name:'Funnel Maintenance Status',summary:'Machine-readable distinction between documented, implemented, wired, verified, receipt-backed and visualized state; exposes real remaining gaps.',source:'funnel-maintenance-status.json'},
+ {id:'fabric-ultra-v44-migration',name:'v44 → Ultra Inheritance Matrix',summary:'Explicit migration status for old Funnel protections: native Ultra, stronger Ultra mechanism, shared/external, or remaining gap.',source:'blueprint/funnel-ultra-v44-migration.blueprint.json'},
+ {id:'fabric-software-manufacturing',name:'MOOR Software Manufacturing System',summary:'Maps OBJECTIVE, HUB, Funnel, Assembly, Harness, verification, receipts, Refinery and Beam into one cumulative software production line.',source:'blueprint/software-manufacturing-system.blueprint.json'},
+ {id:'fabric-grounded-readiness',name:'Grounded Readiness Law',summary:'Clear-eyed realism plus preparation: no moral exemption, optimism as readiness, bounded commitment, reciprocity and explicit stop conditions.',source:'blueprint/grounded-readiness-law.blueprint.json'},
+ {id:'fabric-objective',name:'OBJECTIVE Instrument',summary:'Outside-in requirements instrument: understand the objective before naming or shaping the machine.',source:'objective.html'},
+ {id:'fabric-hub',name:'HUB Kind Registry',summary:'Versioned part/KIND registry: define once, instantiate by identity + parameters, refuse incompatible contexts loudly.',source:'hub.html'},
+ {id:'fabric-assembly-core',name:'Assembly Core',summary:'Deterministic software work instructions with explicit operations, dependencies, outputs, verification and rollback.',source:'moor-assembly-core.js'},
+ {id:'fabric-cumulative-machinery',name:'Cumulative Capability Memory',summary:'Verified capabilities accumulate as versioned machinery; deprecation preserves identity, quarantine is explicit, and preferred routing reuses active compatible machines.',source:'moor-capability-memory.js'},
  {id:'fabric-luxe-ui',name:'Pulse Luxe Spatial UI',summary:'Shared premium spatial design law for Pulse, embedded tools and the current 3D Funnel: deep field, floating chrome, ice-white light, emerald state and mobile-safe command dock.',source:'blueprint/pulse-luxe-ui.blueprint.json'},
  {id:'fabric-luxe-law',name:'MOOR Luxe UI Law',summary:'Shared CSS/JS shell that applies the spatial visual system across Pulse and same-origin embedded tools.',source:'moor-luxe.css'},
   {
@@ -784,7 +792,7 @@ var REFINERY_DOCS=[
  {id:'refinery-blueprint',name:'MOOR Refinery',summary:'Parallel non-authoritative filter that crystallizes blueprints/builds into deterministic assembly contracts, verified capability deltas, compact learning and candidate compositions.',source:'blueprint/moor-refinery.blueprint.json'},
  {id:'refinery-assembly',name:'Assembly Core',summary:'Executes versioned AssemblyContracts without an LLM and fails explicitly when an executor is missing.',source:'moor-assembly-core.js'},
  {id:'refinery-core',name:'Refinery Core',summary:'Converts outputs and BLUEPRINT_READY events into Crystal Bundles.',source:'moor-capability-refinery.js'},
- {id:'refinery-memory',name:'Capability Memory',summary:'Typed graph of verified capabilities, assembly contracts, adapters and candidate/verified compositions.',source:'moor-capability-memory.js'},
+ {id:'refinery-memory',name:'Capability Memory',summary:'Cumulative typed graph of versioned verified capabilities, assembly contracts, adapters and candidate/verified compositions. Deprecated machines remain addressable; quarantined machines leave normal routing.',source:'moor-capability-memory.js'},
  {id:'refinery-handoff',name:'Funnel Capability Handoff',summary:'Reference-only bridge from verified Refinery capability deltas into the singular Funnel reference lane.',source:'funnel-capability-handoff.js'},
  {id:'refinery-ui',name:'Capability Memory UI',summary:'Pulse surface for inspecting crystals, capabilities, candidates, missing executors and handoffs.',source:'pulse-capability-memory.html'}
 ];
