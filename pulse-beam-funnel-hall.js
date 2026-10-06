@@ -10,6 +10,13 @@ try{
   maintenance={systems:[{id:'maintenance-register',name:'Maintenance register unavailable',owner:'shared',visual_state:'gap',live_path:false,implemented:false,verified:false,receipt_backed:false,proof:[],detail:String(e&&e.message||e)}],current_authority:{production:'unavailable',candidate:'unavailable'},unavailable:true};
 }
 try{
+  const rr=await fetch('funnel-maintenance-receipt.json',{cache:'no-store'});
+  if(rr.ok){
+    const candidate=await rr.json();
+    if(candidate&&candidate.schema==='moor.maintenance-receipt'&&candidate.snapshot_hash)liveMaintenance=candidate;
+  }
+}catch(e){}
+if(!liveMaintenance)try{
   const lr=await fetch('funnel-maintenance-live.json',{cache:'no-store'});
   if(lr.ok)liveMaintenance=await lr.json();
 }catch(e){}
@@ -17,7 +24,7 @@ const liveById=new Map((liveMaintenance&&liveMaintenance.results||[]).map(x=>[x.
 maintenance.systems=(maintenance.systems||[]).map(s=>{
   const q=liveById.get(s.id)||null;
   return Object.assign({},s,{
-    qc:q?{pass:!!q.pass,passed:q.passed,total:q.total,generated_at:liveMaintenance.generated_at,commit_sha:liveMaintenance.commit_sha}:null,
+    qc:q?{pass:!!q.pass,passed:q.passed,total:q.total,generated_at:liveMaintenance.generated_at,commit_sha:liveMaintenance.commit_sha,maintenance_receipt:liveMaintenance.schema==='moor.maintenance-receipt'?liveMaintenance.snapshot_hash:null}:null,
     display_state:q&&q.pass===false?'degraded':s.visual_state
   });
 });
@@ -178,7 +185,7 @@ function inspect(n){
   document.getElementById('info-live').textContent=wo?'WIP':fm?'REGISTRY':m?(m.live_path?'YES':'NO'):'graph projection';
   document.getElementById('info-verified').textContent=wo?(wo.inspections&&wo.inspections.length?wo.inspections.filter(x=>x.pass).length+'/'+wo.inspections.length+' QC':'PENDING QC'):fm?((fm.status==='machine-verified'||fm.status==='human-approved'||fm.status==='canonical')?'YES':'NO'):m?(m.verified?'CONTRACT YES':'CONTRACT NO'):'—';
   document.getElementById('info-receipt').textContent=wo?(wo.authorization&&wo.authorization.receipt_fingerprint||'UNAUTHORIZED'):fm?(fm.kind==='machine'?'VIA CAPABILITY PROVENANCE':'—'):m?(m.receipt_backed?'YES':'NO'):'—';
-  document.getElementById('info-evidence').textContent=wo?((wo.travelers||[]).length+' traveler'+((wo.travelers||[]).length===1?'':'s')+' · '+(wo.bom&&wo.bom.parts?wo.bom.parts.length:0)+' BOM parts'):fm?(fm.implementation_ref||fm.id||'registry record'):m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')+(qc?' · last QC '+(qc.pass?'PASS':'FAIL')+' '+qc.passed+'/'+qc.total:' · last QC unavailable')):'graph topology';
+  document.getElementById('info-evidence').textContent=wo?((wo.travelers||[]).length+' traveler'+((wo.travelers||[]).length===1?'':'s')+' · '+(wo.bom&&wo.bom.parts?wo.bom.parts.length:0)+' BOM parts'):fm?(fm.implementation_ref||fm.id||'registry record'):m?((m.proof||[]).length+' proof ref'+((m.proof||[]).length===1?'':'s')+(qc?' · last QC '+(qc.pass?'PASS':'FAIL')+' '+qc.passed+'/'+qc.total+(qc.maintenance_receipt?' · '+qc.maintenance_receipt:''):' · last QC unavailable')):'graph topology';
   info.classList.add('on');
 }
 const ray=new THREE.Raycaster(),pointer=new THREE.Vector2();function pick(x,y){pointer.x=x/innerWidth*2-1;pointer.y=-(y/innerHeight)*2+1;ray.setFromCamera(pointer,camera);const hit=ray.intersectObjects(pickables,false)[0];if(hit)inspect(hit.object.userData.node);else info.classList.remove('on')}let yaw=0,pitch=-.03,drag=false,lastX=0,lastY=0,moved=0;renderer.domElement.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;lastY=e.clientY;moved=0;renderer.domElement.setPointerCapture?.(e.pointerId)});renderer.domElement.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;moved+=Math.abs(dx)+Math.abs(dy);yaw-=dx*.0042;pitch=Math.max(-1.08,Math.min(1.08,pitch-dy*.0036))});renderer.domElement.addEventListener('pointerup',e=>{drag=false;if(moved<8)pick(e.clientX,e.clientY)});
