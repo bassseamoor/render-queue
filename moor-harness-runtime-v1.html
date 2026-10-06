@@ -583,6 +583,7 @@ async function verifyPart(part,feat,spec){
 }
 /* ================= WORKER EXECUTION (simulated contractors, real assembly, real gates) ================= */
 async function executeJob(job,spec){
+  if(!harnessExecutionGate())return false;
   job.status="building"; job.tries=(job.tries||0)+1; render();
   const pkt=buildPacket(job,spec); job.packet=pkt; job.worker_id=pkt.issued_to.worker_id;
   log("<b>"+esc(pkt.issued_to.codename)+"</b> ("+pkt.issued_to.role+") takes <b>"+esc(job.id)+"</b> — "+esc(job.label)+
@@ -629,6 +630,7 @@ function assembleApp(jobs,spec){
   return {html,theme,sections:body.length};
 }
 async function executeIntegration(job,spec){
+  if(!harnessExecutionGate())return false;
   const parts=assembleApp(H.jobs.filter(j=>j!==job&&(j.status==="gated"||j.status==="approved")),spec);
   job.code={html:"(full app)",js:"(combined)",theme:parts.theme};
   // visible-path gate: every gated job's destination section is present
