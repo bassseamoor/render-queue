@@ -66,6 +66,38 @@ If replay omits an obligation or introduces an unapproved substitution, no recei
 
 The UI filename may retain its historical name. The current executable law version is `v44-sealed`, owned by the kernel.
 
+## Authority topology and maintenance truth
+
+The current production authority remains `v44-sealed` in `/funnel-kernel.js`. The newer `ultra-v1-candidate` architecture lives in `/funnel-law-core.js` and its supporting receipt/capability/budget/case/society modules. Ultra is a candidate, not a silently promoted replacement.
+
+The migration contract is `/blueprint/funnel-ultra-v44-migration.blueprint.json`. The machine-readable maintenance register is `/funnel-maintenance-status.json`.
+
+Do not collapse these states:
+- documented — a contract says the subsystem should exist;
+- implemented — executable code exists;
+- wired — the current request/product path actually uses it;
+- verified — an executable check proves its contract;
+- receipt-backed — the relevant authority transition has verifiable receipt evidence;
+- visualized — Pulse/3D can display it.
+
+Visualization never upgrades another state. A 3D node can represent a missing or unhealthy machine.
+
+## Software manufacturing and cumulative machinery
+
+MOOR treats a verified function as capital equipment. The manufacturing blueprint is `/blueprint/software-manufacturing-system.blueprint.json`.
+
+- OBJECTIVE defines the need before solution shape.
+- HUB defines versioned KINDs/part identities, invariants and interface contracts.
+- Funnel/Ultra plan and authorize the route.
+- Assembly Core expresses deterministic work instructions.
+- Harness/builders execute authorized operations.
+- Verifier/CI inspects outputs and process characteristics.
+- Receipts provide traveler/traceability evidence.
+- Refinery + Capability Memory preserve reusable verified machinery and known compositions.
+- Pulse Beam is the HMI/digital twin of this production line, not its authority source.
+
+Verified machinery is cumulative. Before creating a new implementation, the reference stage must look for a compatible verified capability, assembly, adapter, or composition. A changed fit/form/function becomes a new version. Deprecation removes a machine from preferred routing but does not erase it. Quarantine is explicit. Silent replacement, orphaning, or repeated recreation of an already-verified capability is a process defect.
+
 ## Agent rule
 
 If `window.MOOR.request` exists, use it. Do not type into the human request bar. Do not independently choose Bin, Funnel, Harness, Compiler, or a builder.
