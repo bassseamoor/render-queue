@@ -28,7 +28,8 @@ Law.transition(id,'CONVERGING',{architecture:bp.answer.architectureName,spaces:b
 Law.transition(id,'BLUEPRINT_READY',{blueprint:'blueprint/pulse-beam-rebrand.blueprint.json',blueprint_data:bp,hash:R.hash(bp)},'ultra-law');
 const br=Law.mintReceipt(id,'BlueprintReceipt',bp,'ultra-law',[],R.hash({beam:true,migration:'no-loss'}));
 assert(R.verify(br));
-Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,obligations:bp.acceptance},'ultra-law');
+const replayObligations=Law.extractObligations(page0).map(o=>({...o,status:'satisfied'}));
+Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,page0_hash:Law.get(id).page0_hash,obligations:replayObligations,substitutions:[]},'ultra-law');
 Law.transition(id,'EXECUTION_AUTHORIZED',{blueprint_receipt:br.fingerprint,destination:'Project Pulse / Pulse Beam'},'ultra-law');
 const er=Law.mintReceipt(id,'ExecutionReceipt',{destination:'Project Pulse / Pulse Beam',targets:bp.implementation},'ultra-law',[br.fingerprint],R.hash({targets:bp.implementation}));
 assert(R.verify(er));
