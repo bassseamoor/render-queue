@@ -9562,6 +9562,9 @@ var GrassBlade = (function () {
       var crookSign = R() < 0.5 ? -1 : 1;
       /* blade facing direction: ribbon width axis from the per-blade angle */
       var faceX = Math.cos(faceA), faceZ = Math.sin(faceA);
+      /* ribbon-face normal + up bias: lighting varies per blade facing so
+         sunlight catches edges instead of lighting every blade identically */
+      var nX = -faceZ, nY = 0.35, nZ = faceX;
       /* dry blades: deterministic fraction, bladeIndex/nBlades < dry */
       var isDry = (k / nBlades) < dry;
       var baseR = isDry ? DRY_COL[0] : tuft.r;
@@ -9582,10 +9585,10 @@ var GrassBlade = (function () {
         var hw = wBase * (1 - t * 0.72) * wj;
         /* bend=t: root (t=0) is PROVABLY immobile, shader displacement * 0 = 0 */
         pushVert(arrays, cx - faceX * hw, cy, cz - faceZ * hw,
-                 0, 1, 0, shade(baseR, t), shade(baseG, t), shade(baseB, t),
+                 nX, nY, nZ, shade(baseR, t), shade(baseG, t), shade(baseB, t),
                  t, stiff, hNorm);
         pushVert(arrays, cx + faceX * hw, cy, cz + faceZ * hw,
-                 0, 1, 0, shade(baseR, t), shade(baseG, t), shade(baseB, t),
+                 nX, nY, nZ, shade(baseR, t), shade(baseG, t), shade(baseB, t),
                  t, stiff, hNorm);
       }
       /* 4 quads = 8 tris per blade */
@@ -9613,17 +9616,19 @@ var GrassBlade = (function () {
       var qa = a0 + q * (Math.PI / 3);
       var fx = Math.cos(qa), fz = Math.sin(qa);
       var lx = leanX * leanAmt, lz = leanZ * leanAmt;
+      /* ribbon-face normal + up bias, same as near rep */
+      var nX = -fz, nY = 0.35, nZ = fx;
       var base = pushVert(arrays, tuft.x - fx * hw, tuft.y, tuft.z - fz * hw,
-                          0, 1, 0, shade(baseR, 0), shade(baseG, 0), shade(baseB, 0),
+                          nX, nY, nZ, shade(baseR, 0), shade(baseG, 0), shade(baseB, 0),
                           0, stiff, 0.5);
       pushVert(arrays, tuft.x + fx * hw, tuft.y, tuft.z + fz * hw,
-               0, 1, 0, shade(baseR, 0), shade(baseG, 0), shade(baseB, 0),
+               nX, nY, nZ, shade(baseR, 0), shade(baseG, 0), shade(baseB, 0),
                0, stiff, 0.5);
       pushVert(arrays, tuft.x - fx * hw * 0.28 + lx, tuft.y + h, tuft.z - fz * hw * 0.28 + lz,
-               0, 1, 0, shade(baseR, 1), shade(baseG, 1), shade(baseB, 1),
+               nX, nY, nZ, shade(baseR, 1), shade(baseG, 1), shade(baseB, 1),
                1, stiff, 0.5);
       pushVert(arrays, tuft.x + fx * hw * 0.28 + lx, tuft.y + h, tuft.z + fz * hw * 0.28 + lz,
-               0, 1, 0, shade(baseR, 1), shade(baseG, 1), shade(baseB, 1),
+               nX, nY, nZ, shade(baseR, 1), shade(baseG, 1), shade(baseB, 1),
                1, stiff, 0.5);
       arrays.idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
     }
@@ -14257,7 +14262,7 @@ function downscaleShot(){
  * every few minutes. When the published version differs from the baked-in
  * build version, a plain-language veil shows and the page reloads itself —
  * no manual refresh, ever. Skipped on file:// (local dev). */
-var BETA_VERSION='20261005-1708';
+var BETA_VERSION='20261006-0326';
 var UPDATE_URL='moor-beta-version.txt', UPDATE_MS=180000, updateTimer=null;
 function checkUpdate(force){
   if(document.hidden&&!force) return;
