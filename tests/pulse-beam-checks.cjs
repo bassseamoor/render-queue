@@ -48,6 +48,7 @@ assert(hall.includes('funnel-foundry-core.js'));
 assert(hall.includes('funnel-environment-data.js'));
 assert(hall.includes('pulse-beam-funnel-hall.js'));
 assert(hall.includes('FOUNDRY')&&hall.includes('REFINERY'));
+assert(hall.includes('Select laser architecture'),'Citadel UI must describe the real optical graph, not ball/glass placeholders');
 const halljs=fs.readFileSync('pulse-beam-funnel-hall.js','utf8');
 assert(halljs.includes("window.FUNNEL_ENVIRONMENT_GRAPH"));
 assert(halljs.includes("graph.nodes.filter(n=>n.type==='funnel')"));
@@ -55,6 +56,19 @@ assert(halljs.includes("n.type==='law-active'"));
 assert(halljs.includes("n.type==='law-candidate'"));
 assert(halljs.includes("parent.postMessage({type:'beam:navigate',space:'create'}"));
 assert(!halljs.includes('image_gen'),'Funnel Hall must render live geometry, not generate an image');
+
+// Optical Citadel law: Funnel meaning is drawn with light, not glass balls or opaque cone props.
+assert(halljs.includes('function funnelGlyph()'),'specialist Funnels require a dedicated optical glyph');
+assert(halljs.includes('ellipse(')&&halljs.includes('beam('),'Funnel glyphs require laser contours and converging rays');
+assert(!halljs.includes('SphereGeometry'),'graph nodes must never regress to sphere/ball representation');
+assert(!halljs.includes('ConeGeometry'),'Funnel meaning must not regress to opaque/glass cone bodies');
+assert(halljs.includes('QuadraticBezierCurve3')&&halljs.includes('TubeGeometry'),'relationships must be spatial luminous paths');
+for(const architecturalEvidence of ['RingGeometry','TorusGeometry','gallery(','stairs(','planter(','projectors'])
+  assert(halljs.includes(architecturalEvidence),'Citadel must retain complete architectural system: '+architecturalEvidence);
+const witness=require('../blueprint/pulse-beam-six-hour-citadel.blueprint.json');
+assert(witness.hologram.rule.includes('No visible sphere nodes'));
+assert(witness.questionBlueprint.length>=12,'Funnel question blueprint must remain substantive');
+assert(witness.acceptance.some(x=>x.includes('No visible sphere geometry')),'blueprint must explicitly forbid ball-node regression');
 
 const core=fs.readFileSync('funnel-foundry-core.js','utf8');
 const data=fs.readFileSync('funnel-environment-data.js','utf8');
@@ -82,4 +96,4 @@ assert(manifest.items['pulse-beam-standards']);
 
 assert(fs.existsSync('pulse-creation-deck.js')&&fs.existsSync('pulse-creation-deck.css'),'prior shell must remain preserved for provenance/rollback');
 
-console.log('PASS: Pulse Beam replaces the live shell without deleting prior assets, protects component gestures/identity, provides a real current-graph Funnel Hall, and enforces no-loss migration evidence');
+console.log('PASS: Pulse Beam preserves the live shell and component estate while the Funnel Citadel is guarded as a real laser-built, graph-backed architectural place rather than a generated image or sphere-node visualization');
