@@ -29,7 +29,7 @@ function makeAssembly(d){
 function normalizeCapabilities(d,assembly){
   const status=verifiedStatus(d.status)?d.status:'specified',caps=[];
   if(Array.isArray(d.capabilities)&&d.capabilities.length){
-    d.capabilities.forEach((c,i)=>{if(typeof c==='string')c={capability_id:c,provides:[c]};c=clone(c);c.capability_id=c.capability_id||('capability:'+hash([d.id,i,c]));c.version=String(c.version||d.version||'1');c.status=verifiedStatus(c.status)?c.status:status;c.implementation_ref=c.implementation_ref||d.implementation_ref||null;c.assembly_contract_hash=assembly.content_hash;c.evidence_refs=c.evidence_refs||((d.evidence||d.evidence_id)?[d.evidence_id||('evidence:'+hash(d.evidence))]:[]);caps.push(c);});
+    d.capabilities.forEach((c,i)=>{if(typeof c==='string')c={capability_id:c,provides:[c]};c=clone(c);c.capability_id=c.capability_id||('capability:'+hash([d.id,i,c]));c.version=String(c.version||d.version||'1');c.status=verifiedStatus(c.status)?c.status:status;c.supersedes=Array.isArray(c.supersedes)?c.supersedes.slice():(Array.isArray(d.supersedes)?d.supersedes.slice():[]);c.implementation_ref=c.implementation_ref||d.implementation_ref||null;c.assembly_contract_hash=assembly.content_hash;c.evidence_refs=c.evidence_refs||((d.evidence||d.evidence_id)?[d.evidence_id||('evidence:'+hash(d.evidence))]:[]);caps.push(c);});
   }else{
     caps.push({capability_id:'capability:artifact:'+hash(d.id||d.title||assembly.content_hash),version:String(d.version||'1'),status:status,
       provides:['artifact:materialize'],requires:[],input_types:[],output_types:[d.output_type||'moor.artifact.snapshot'],knobs:{},events:[],state:{},
