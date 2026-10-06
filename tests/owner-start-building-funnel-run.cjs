@@ -31,6 +31,10 @@ afterFm01.slices['CH-02']=evidence.slices['CH-02'];
 afterFm01.slices['FM-01']=evidence.slices['FM-01'];
 const next=Ch.evaluate({choreography,evidence:afterFm01});
 assert.equal(next.recommendation.slice_id,'FM-02');
+const afterFm02=JSON.parse(JSON.stringify(afterFm01));
+afterFm02.slices['FM-02']=evidence.slices['FM-02'];
+const afterExercise=Ch.evaluate({choreography,evidence:afterFm02});
+assert.equal(afterExercise.recommendation.slice_id,'BF-02');
 
 const ch02=run(
   'owner-start-building-ch02-v1',
@@ -58,4 +62,12 @@ const fm02=run(
   'Project Pulse / Funnel maintenance',
   ['exercise map is machine-readable','real workflows name mechanisms and executable evidence','unknown/unexercised mechanisms stay explicit','no Funnel law or runtime behavior changes']
 );
-console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation},null,2));
+const bf02=run(
+  'owner-start-building-bf02-v1',
+  'Build BF-02: a read-only cross-blueprint comparison and unresolved-question inspector. It must expose assumptions, tensions, question queues, dependency defects and supersession lineage without releasing implementation work.',
+  [{key:'slice',value:'BF-02'},{key:'selection_basis',value:'CH-02 advisory after verified FM-02'},{key:'authority',value:'read-only/no-release'}],
+  {slice_id:'BF-02',task:'blueprint comparison and unresolved-question inspector',authority:'read-only'},
+  'Project Pulse / Blueprint Farm',
+  ['all farm blueprints can be compared','open questions stay attributable to source blueprints','assumption/interface/dependency tensions are visible','supersession lineage is visible when present','no release authority exists']
+);
+console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation},null,2));
