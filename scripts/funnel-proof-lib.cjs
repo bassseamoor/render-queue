@@ -52,6 +52,10 @@ function validateProof(p){
   }
   assert(!Array.isArray(p.replay.substitutions)||p.replay.substitutions.every(x=>x&&x.approved===true),'unapproved substitution in proof');
   assert(p.verdict.spec!=null&&String(typeof p.verdict.spec==='string'?p.verdict.spec:stable(p.verdict.spec)).trim(),'verdict spec is empty');
+  assert(p.verdict.spec&&Array.isArray(p.verdict.spec.obligations),'verdict spec must carry replay obligations');
+  const replayIds=p.replay.obligations.map(o=>o&&o.id).filter(Boolean).sort();
+  const verdictIds=p.verdict.spec.obligations.map(o=>o&&o.id).filter(Boolean).sort();
+  assert(stable(replayIds)===stable(verdictIds),'verdict omitted or changed replay obligations');
   assert(typeof p.verdict.destination==='string'&&p.verdict.destination.trim(),'verdict destination missing');
   assert(Array.isArray(p.verdict.done_criteria)&&p.verdict.done_criteria.length,'verdict done criteria missing');
   const r=p.receipt;
