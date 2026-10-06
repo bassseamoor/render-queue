@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const P=require('../sebastian-proxy-core.js');
+const e={surface:'chat',source_id:'m1',at:'2026-10-06T00:00:00Z',excerpt:'I want the actual funnel followed every time.'};
+const a=P.makeReceipt({proxy_id:'Sebastian-1',question_id:'q1',answer:'mandatory',stance:'explicit',confidence:.94,evidence:[e]});
+const b=P.makeReceipt({proxy_id:'Sebastian-2',question_id:'q1',answer:'mandatory',stance:'explicit',confidence:.91,evidence:[e]});
+assert(P.verifyReceipt(a)&&P.verifyReceipt(b));
+let r=P.reconcile([a,b]);
+assert.equal(r.answer,'mandatory');
+assert.equal(r.evidenceCount,1,'same Sebastian statement must count once');
+assert.equal(r.retrievalConfirmations,2,'independent retrieval confirmations should still be visible');
+const c=P.makeReceipt({proxy_id:'Sebastian-3',question_id:'q1',answer:'optional',stance:'explicit',confidence:.95,evidence:[{surface:'chat',source_id:'m2',excerpt:'Make the funnel optional.'}]});
+r=P.reconcile([a,b,c]);assert.equal(r.status,'conflict');
+const u=P.makeReceipt({proxy_id:'Sebastian-4',question_id:'q2',stance:'unknown'});assert.equal(P.reconcile([u]).status,'unknown');
+const tasks=P.packet({id:'qx',prompt:'What does Sebastian want?'},{surfaces:['chat']});assert.equal(tasks.length,4);
+console.log('PASS: Sebastian proxies require evidence, dedupe shared sources, surface conflicts, and abstain when unknown');
