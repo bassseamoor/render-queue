@@ -13,7 +13,7 @@
   {id:'magenta',label:'Magenta',fill:'#74334f'},{id:'slate',label:'Slate',fill:'#424e5c'}
  ];
  const colorIds=new Set(cardColors.map(c=>c.id));
- function colorLabel(g,id){return g.colorKey?.[id]??cardColors.find(c=>c.id===id)?.label??'';}
+ function colorLabel(g,id){return g.colorKey?.[id]??(g.funnel&&(typeof BlueprintFunnel!=='undefined'?BlueprintFunnel.grades[id]?.label:null))??cardColors.find(c=>c.id===id)?.label??'';}
  function setCardColor(g,id,colorId){const n=g.nodes.find(n=>n.id===id);if(!n)throw Error('Card no longer exists.');if(colorId==null)delete n.colorId;else{if(!colorIds.has(colorId))throw Error('Unknown card color.');n.colorId=colorId;}return g;}
  function renameColor(g,id,label){if(!colorIds.has(id))throw Error('Unknown key color.');if(typeof label!=='string'||!label.trim()||label.trim().length>80)throw Error('Color names need 1–80 characters.');g.colorKey={...(g.colorKey||{}),[id]:label.trim()};return g;}
  const types=['build','flow','related','contains','risk'];
@@ -37,6 +37,7 @@
   if(g.sources){if(!Array.isArray(g.sources)||g.sources.some(s=>typeof s.id!=='string'||typeof s.title!=='string'))throw Error('Invalid source ledger.');}
   for(const k of ['decisions','execution','inventory','tombstones','changelog'])if(g[k]!=null&&!Array.isArray(g[k]))throw Error('Invalid '+k+' collection.');
   if(g.offer&&(!Array.isArray(g.offer.parties)||!Array.isArray(g.offer.notPromises)||g.offer.parties.some(p=>!Array.isArray(p.gains)||!Array.isArray(p.costs))))throw Error('Invalid product offer.');
+  if(g.funnel){const F=typeof module==='object'&&module.exports?require('./funnel-core.js'):globalThis.BlueprintFunnel;if(!F)throw Error('Funnel validator unavailable.');F.validate(g);}
   order(g);return g;
  }
  function compatible(g,e){const a=g.nodes.find(n=>n.id===e.fromId),b=g.nodes.find(n=>n.id===e.toId);return !!(a&&b&&(e.contract==='order'||(a.ports?.out||[]).includes(e.contract)&&(b.ports?.in||[]).includes(e.contract)));}

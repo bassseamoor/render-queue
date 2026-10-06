@@ -26,3 +26,8 @@ Run `node tests/pulse-checks.cjs` before publishing Pulse changes. Escape `<` as
 - Preserve `<script src="wonder-logic.js?v=1"></script>` in both Pulse and the standalone Wonder Feed.
 - `wonder-logic.js` provides seeded idea recipes and schematics; idea genomes with `logicVersion:1` use it. Preserve legacy idea rendering for older saved genomes.
 - `?feed=ideas&seed=<text>` replays an Ideas sequence. Ideas in the default stream remain proposals, not claimed live integrations.
+
+## Continuous clarity ledger
+- Preserve `blueprint/funnel-core.js` and `blueprint/funnel-ui.js` in the standalone build. Run `node tests/funnel-checks.cjs` before publishing.
+- There is one canonical owner answer per question, with revision history. Model outputs update opinion lanes only. Never overwrite owner answers from model results. Retain ledger, opinions, snapshot IDs, review requests, resolutions, learned rules and cadence across exports/imports.
+- Green is clarity/alignment, never implementation or permanent completion. NONE performs explicit rule checks and does not claim semantic inference. External reviewer execution is manual copy/paste; cadence only queues while the page is open.
