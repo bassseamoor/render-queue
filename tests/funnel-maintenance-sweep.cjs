@@ -1,6 +1,7 @@
 const fs=require('node:fs');
 const cp=require('node:child_process');
 const path=require('node:path');
+const MaintenanceReceipt=require('../maintenance-receipt-core.js');
 
 const root=path.resolve(__dirname,'..');
 const reportOnly=process.argv.includes('--report-only');
@@ -18,6 +19,9 @@ const stations=[
   {id:'software-manufacturing',tests:['tests/software-manufacturing-checks.cjs','tests/software-manufacturing-machine-ultra-run.cjs'],critical:false},
   {id:'software-factory-ledger',tests:['tests/software-factory-core-checks.cjs','tests/moor-request-factory-checks.cjs'],critical:true},
   {id:'factory-digital-twin',tests:['tests/factory-twin-core-checks.cjs','tests/pulse-beam-laser-citadel-checks.cjs'],critical:false},
+  {id:'blueprint-planning',tests:['tests/blueprint-choreography-core-checks.cjs','tests/blueprint-comparison-core-checks.cjs','tests/slice-release-ledger-checks.cjs','tests/owner-start-building-funnel-run.cjs'],critical:false},
+  {id:'procedural-toolchain-contracts',tests:['tests/procedural-generator-inventory-checks.cjs','tests/procedural-recipe-core-checks.cjs'],critical:false},
+  {id:'worker-orchestration-contracts',tests:['tests/worker-release-core-checks.cjs','tests/worker-reservation-core-checks.cjs'],critical:false},
   {id:'ultra-human-runtime',tests:['tests/funnel-runtime-checks.cjs'],critical:false}
 ];
 
@@ -55,5 +59,15 @@ const report={
   results
 };
 fs.writeFileSync(path.join(root,'funnel-maintenance-live.json'),JSON.stringify(report,null,2)+'\n');
-console.log(JSON.stringify({overall:report.overall,counts:report.counts,failed:failed.map(x=>x.id)},null,2));
+const receipt=MaintenanceReceipt.compose({
+  status:require('../funnel-maintenance-status.json'),
+  inventory:require('../funnel-mechanism-inventory.json'),
+  exercise:require('../funnel-exercise-map.json'),
+  live:report,
+  commit_sha:report.commit_sha,
+  generated_at:report.generated_at
+});
+if(!MaintenanceReceipt.validate(receipt).ok)throw Error('generated MaintenanceReceipt failed validation');
+fs.writeFileSync(path.join(root,'funnel-maintenance-receipt.json'),JSON.stringify(receipt,null,2)+'\n');
+console.log(JSON.stringify({overall:report.overall,counts:report.counts,failed:failed.map(x=>x.id),maintenance_receipt:receipt.snapshot_hash},null,2));
 if(!reportOnly&&failed.length)process.exitCode=1;
