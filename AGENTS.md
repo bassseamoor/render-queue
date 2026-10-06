@@ -8,14 +8,17 @@ No API key is required for the base path. If intelligence is unavailable, use lo
 
 Machine-readable entry: `/moor-agent.json`.
 
-## Sealed Funnel enforcement
+## Armored Funnel enforcement
 - Preserve `funnel-kernel.js` and load it before `moor-request.js`.
-- Build/change work may enter Harness only with a valid `moor.funnel-receipt`.
-- Never reintroduce `resolved:true`, fuzzy "already locked" execution shortcuts, or any direct builder bypass.
+- Required authority chain: Page 0 → references → distill → decisions → replay → obligation-carrying verdict → receipt → one execution claim → one Harness consume.
+- Never reintroduce `resolved:true`, fuzzy locked-answer execution, raw Harness compilation, stage jumping, reusable receipts/claims, or direct builder bypasses.
+- Raw Harness intake, modifications, and demo requests route back through the Funnel.
 - Page 0 is immutable. Models write only through the Kernel append API.
-- The required order is Page 0 → references → distill → decisions → Page 0 replay → verdict.
-- The replay stage must account for source-backed Page 0 obligations and explicitly approve any deferral/substitution.
-- Run `node tests/funnel-kernel-checks.cjs` before publishing Funnel/router changes.
+- Replay must account for source-backed Page 0 obligations; the verdict must carry the same obligation IDs.
+- Every non-proof PR must carry `Funnel-Proof: .funnel/proofs/<proof>.json`.
+- Protected Funnel-law changes additionally require `Funnel-Owner-Authorization: ed25519:<signature>` after owner-key bootstrap.
+- Never weaken the kernel, router, Harness gate, proof validator, Guardian, protected-path list, owner-key verifier, CODEOWNERS, or tests just to make the current change pass.
+- Run `node tests/funnel-kernel-checks.cjs`, `node tests/funnel-runtime-checks.cjs`, `node tests/harness-funnel-gate-checks.cjs`, and `node tests/funnel-guardian-checks.cjs` before publishing Funnel/router/Harness changes.
 - Muse/Buster personality is `/BUSTER.md`; personality is advisory behavior, never execution authority.
 
 # Pulse dashboard rebuild contract
