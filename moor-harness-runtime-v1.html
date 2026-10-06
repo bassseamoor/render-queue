@@ -688,7 +688,7 @@ const STAGES=[["intake","1 · Ramble"],["spec","2 · Spec"],["holes","3 · Holes
 let H=null;
 function freshH(){ return {stage:"intake",ramble:"",spec:null,holes:[],fit:[],jobs:[],
   workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],training:[],auto:false,
-  funnelReceipt:null,funnelRequestId:null,page0:null,funnelSpec:null}; }
+  funnelReceipt:null,funnelRequestId:null,page0:null,funnelSpec:null,workOrderId:null}; }
 const NAMEPOOL=["Anvil","Bishop","Cinder","Drift","Ember","Flint","Gale","Harbor","Iris","Jolt","Kestrel","Lumen","Mesa","North","Onyx","Pico"];
 function initWorkers(){ const pool=NAMEPOOL.slice();
   const mk=(role)=>{ const r=ROLESPEC[role];
@@ -916,6 +916,7 @@ function ingestHarnessHandoff(h){
   H.funnelSpec=clone(p.spec||{});
   H.funnelReceipt=clone(receipt);
   H.funnelRequestId=receipt.request_id;
+  H.workOrderId=h.work_order_id||null;
   H.stage="spec";
   try{store.remove(HARNESS_INBOX_KEY);}catch(e){}
   log("<b>Funnel receipt verified ✓</b> — "+esc(receipt.fingerprint));
@@ -1080,6 +1081,7 @@ function doPromote(){
   };
   emitMoorOutput({
     id:"implementation:harness:"+next,kind:"implementation",title:H.spec.app_type+" v"+next,
+    work_order_id:H.workOrderId||null,
     summary:"Harness-promoted application that passed syntax, boot, behavior, integration, and regression gates.",
     source:{app:"app-compiler-harness",component:"app-compiler-harness",project:"harness"},
     concepts:[H.spec.app_type],status:"machine-verified",provenance:"verified",
