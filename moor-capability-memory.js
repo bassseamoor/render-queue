@@ -4,7 +4,7 @@
 const KEY='moor-capability-memory-v1';let mem=null;
 const A=root&&root.MoorAssembly||(typeof require==='function'?require('./moor-assembly-core.js'):null);
 function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}function hash(x){return A?A.hash(x):String(JSON.stringify(x).length);}
-function blank(){return {schema:'moor.capability-memory',version:1,bundles:{},capabilities:{},assemblies:{},compositions:{},handoffs:[],adapters:{},usage:{events:[],counts:{}},updated_at:null};}
+function blank(){return {schema:'moor.capability-memory',version:2,bundles:{},capabilities:{},assemblies:{},compositions:{},failures:{},reconsiderations:[],handoffs:[],adapters:{},usage:{events:[],counts:{}},updated_at:null};}
 function read(){
   if(mem)return mem;
   try{
@@ -14,6 +14,9 @@ function read(){
         if(!x.usage)x.usage={events:[],counts:{}};
         if(!Array.isArray(x.usage.events))x.usage.events=[];
         if(!x.usage.counts||typeof x.usage.counts!=='object')x.usage.counts={};
+        if(!x.failures||typeof x.failures!=='object')x.failures={};
+        if(!Array.isArray(x.reconsiderations))x.reconsiderations=[];
+        x.version=Math.max(Number(x.version)||1,2);
         mem=x;return mem;
       }
     }
@@ -31,11 +34,11 @@ function recordUse(type,data){
   return clone(ev);
 }
 function stats(){
-  const s=read(),counts=clone(s.usage&&s.usage.counts||{}),caps=Object.values(s.capabilities||{}),comps=Object.values(s.compositions||{});
+  const s=read(),counts=clone(s.usage&&s.usage.counts||{}),caps=Object.values(s.capabilities||{}),comps=Object.values(s.compositions||{}),fails=Object.values(s.failures||{});
   const requestsReused=(counts.capability_reference_retrieved||0)+(counts.request_resolved_from_reference||0);
   const assemblies=(counts.assembly_succeeded||0),attempts=(counts.assembly_attempted||0);
   const avoided=(counts.request_resolved_from_reference||0)+assemblies;
-  const funnelUses=counts.capability_handoff_consumed_by_funnel||0;
+  const funnelUses=counts.capability_handoff_consumed_by_funnel||0, abstractions=abstractionCandidates();
   return {
     inventory:{
       crystal_bundles:Object.keys(s.bundles||{}).length,
@@ -46,7 +49,10 @@ function stats(){
       deprecated_capabilities:caps.filter(c=>c.lifecycle==='deprecated').length,
       quarantined_capabilities:caps.filter(c=>c.lifecycle==='quarantined').length,
       candidate_compositions:comps.filter(c=>c.status==='candidate-unverified').length,
-      verified_compositions:comps.filter(c=>c.status==='machine-verified').length,
+      verified_compositions:comps.filter(c=>statusVerified(c.status)).length,
+      failure_evidence:fails.length,
+      reconsiderations:(s.reconsiderations||[]).length,
+      abstraction_candidates:abstractions.length,
       adapters:Object.keys(s.adapters||{}).length
     },
     usage:{
@@ -56,8 +62,11 @@ function stats(){
       assembly_success_rate:attempts?assemblies/attempts:0,
       deterministic_reuse_events:avoided,
       missing_executors:counts.assembly_missing_executor||0,
-      estimated_repeated_reasoning_avoided:avoided
+      estimated_repeated_reasoning_avoided:avoided,
+      bounded_reconsiderations:counts.capability_delta_reconsidered||0
     },
+    latest_reconsideration:clone((s.reconsiderations||[]).at(-1)||null),
+    abstractions,
     recent:(s.usage&&s.usage.events||[]).slice(-100).reverse(),
     updated_at:s.updated_at
   };
