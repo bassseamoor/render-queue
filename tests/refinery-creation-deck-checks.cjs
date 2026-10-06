@@ -93,26 +93,27 @@ const H=require('../funnel-capability-handoff.js');
   assert(request.includes("'capabilities','assemblies','compositions','handoffs','learning'"),'Funnel references stage must ingest Refinery lanes');
   assert(request.includes("capability_handoff_consumed_by_funnel"),'Funnel consumption must be measured');
 
-  const deckCss=require('node:fs').readFileSync('pulse-creation-deck.css','utf8');
-  assert(deckCss.includes('.pcd-top'));
-  assert(deckCss.includes('.pcd-deck'));
-  assert(deckCss.includes('.pcd-sheet.library'));
-  assert(deckCss.includes('.pcd-sheet.inspector'));
-  assert(deckCss.includes('bottom:calc(max(10px,env(safe-area-inset-bottom)) + 78px)'),'command must sit above deck');
-  const deckJs=require('node:fs').readFileSync('pulse-creation-deck.js','utf8');
-  assert(deckJs.includes('Component Library'));
-  assert(deckJs.includes('Refinery'));
-  assert(deckJs.includes('MoorCapabilityMemory.stats'));
+  const beamCss=require('node:fs').readFileSync('pulse-beam.css','utf8');
+  assert(beamCss.includes('.beam-top'));
+  assert(beamCss.includes('.beam-dock'));
+  assert(beamCss.includes('.beam-sheet.library'));
+  assert(beamCss.includes('.beam-sheet.inspector'));
+  assert(beamCss.includes('bottom:calc(max(9px,env(safe-area-inset-bottom)) + 75px)'),'command must sit above Beam dock');
+  const beamJs=require('node:fs').readFileSync('pulse-beam.js','utf8');
+  assert(beamJs.includes('Funnel Hall'));
+  assert(beamJs.includes('Library'));
+  assert(beamJs.includes("setSpace('create'"));
 
   const dash=require('node:fs').readFileSync('pulse-dashboard.html','utf8');
-  assert(dash.includes('pulse-creation-deck.css?v=20261006-deck1'));
+  assert(dash.includes('pulse-beam.css?v=20261006-beam1'));
   assert(dash.includes('moor-capability-memory.js?v=20261006-refinery1'));
   assert(dash.indexOf('moor-capability-memory.js?v=20261006-refinery1')<dash.indexOf('pulse-spine.js?v=20261005-spine9'),'Refinery memory must load before Pulse reference harvest');
-  assert(dash.includes('pulse-creation-deck.js?v=20261006-deck1'));
+  assert(dash.includes('pulse-beam.js?v=20261006-beam1'));
+  assert(!dash.includes('pulse-creation-deck.js?v=20261006-deck1'),'Creation Deck must be retired from live shell');
   assert(!dash.includes('moor-luxe.js?v=20261006-luxe1'),'old Luxe Pulse shell must not be active');
 
   const ext=require('node:fs').readFileSync('pulse-component-extensions.js','utf8');
   assert(ext.includes('"id":"capability-memory"'));
 
-  console.log('PASS: MOOR Refinery remains parallel, assemblies run model-free, unverified guesses stay out of verified handoffs, Funnel consumption is measurable, and Creation Deck preserves full component access without permanent dashboard clutter');
+  console.log('PASS: MOOR Refinery remains parallel, assemblies run model-free, unverified guesses stay out of verified handoffs, Funnel consumption is measurable, and Pulse Beam preserves component access while replacing the prior shell');
 })().catch(e=>{console.error(e);process.exit(1)});
