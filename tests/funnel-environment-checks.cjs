@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const core=fs.readFileSync('funnel-foundry-core.js','utf8');
 const data=fs.readFileSync('funnel-environment-data.js','utf8');
-const sandbox={window:{localStorage:{getItem(){return null;}}},TextEncoder};vm.createContext(sandbox);
+const sandbox={TextEncoder,localStorage:{getItem(){return null;}}};sandbox.window=sandbox;vm.createContext(sandbox);
 vm.runInContext(core,sandbox,{filename:'funnel-foundry-core.js'});
 vm.runInContext(data,sandbox,{filename:'funnel-environment-data.js'});
 const g=sandbox.window.FUNNEL_ENVIRONMENT_GRAPH;
