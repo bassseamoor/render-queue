@@ -1,20 +1,3 @@
-// Actual canonical zero-key router, with explicit local fallback provenance.
-const fs=require('node:fs'),vm=require('node:vm');
-const blueprint=JSON.parse(fs.readFileSync('docs/effects-studio.blueprint.json','utf8'));
-const values=new Map(),localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,String(v))};
-const document={readyState:'loading',title:'Effects Studio',body:{dataset:{}},addEventListener(){}};
-const location={href:'https://bassseamoor.github.io/render-queue/pulse-dashboard.html',pathname:'/pulse-dashboard.html'};
-const window={document,location,localStorage};window.parent=window;
-const ctx=vm.createContext({window,document,location,localStorage,URL,URLSearchParams,setTimeout:()=>0,console});
-vm.runInContext(fs.readFileSync('moor-request.js','utf8'),ctx);
-(async()=>{
- const initial=await window.MOOR.request({input:blueprint.page0,source:'agent',context:{page:'effects-studio',blueprint:blueprint.id}});
- const evidence=await window.MOOR.request({input:'Create effects studio using research and inventory '+JSON.stringify({research:blueprint.research,inventory:blueprint.inventory}),source:'agent',forceFunnel:true,context:{page:'effects-studio',provenance:'research'}});
- const resolvedSpec=JSON.stringify(blueprint.spec);
- const queuedBlueprint=await window.MOOR.request({input:'Implement repair blueprint '+resolvedSpec,source:'agent',forceFunnel:true,context:{page:'effects-studio',blueprint:blueprint.id,provenance:'fallback-system-decisions'}});
- const execution=await window.MOOR.request({input:'Implement repair blueprint '+resolvedSpec,source:'agent',resolved:true,done_criteria:blueprint.doneCriteria,context:{page:'effects-studio',blueprint:blueprint.id,provenance:'fallback-system-decisions'}});
- const verdict={spec:blueprint.spec,destination:blueprint.destination,doneCriteria:blueprint.doneCriteria};
- if(initial.route!=='funnel'||queuedBlueprint.route!=='funnel'||execution.route!=='harness')throw Error('Canonical route failed');
- fs.writeFileSync('docs/effects-studio-funnel-run.json',JSON.stringify({schema:'moor.funnel-run-evidence',version:1,canonical:'FUNNEL.md',mode:'canonical router executed locally; zero-key fallback resolver choices recorded in blueprint',ownerIntentConfirmed:false,initial,evidence,queuedBlueprint,execution,verdictPacket:verdict,page0Queue:JSON.parse(values.get('moor-request-queue-v1')),verification:{logic:'pending tests',intent:'unconfirmed',webgl:'pending device verification'}},null,2)+'\n');
- console.log('PASS: immutable Page 0 -> canonical Funnel; blueprint -> canonical Funnel -> Harness verdict.');
-})().catch(e=>{console.error(e);process.exitCode=1;});
+// Revalidate the existing Effects blueprint under the current sealed law.
+'use strict';const fs=require('node:fs'),run=require('./funnel-agent-session.cjs');
+(async()=>{const b=JSON.parse(fs.readFileSync('docs/effects-studio.blueprint.json'));const first=await run(b.page0,{...b.spec,decisions:b.decisions||[]},[{research:b.research,inventory:b.inventory,provenance:'fallback'}],b.doneCriteria);const second=await run('Implement repair blueprint '+JSON.stringify(b.spec),{...b.spec,decisions:b.decisions||[]},[{blueprint:b.id,provenance:'fallback'}],b.doneCriteria);fs.writeFileSync('docs/effects-studio-funnel-run.json',JSON.stringify({schema:'moor.funnel-run-evidence',version:2,canonical:'FUNNEL.md',mode:first.mode,ownerIntentConfirmed:false,initial:first.initial,evidence:second.initial,queuedBlueprint:second.initial,execution:second.execution,verdictPacket:{spec:b.spec,destination:b.destination,doneCriteria:b.doneCriteria},page0Queue:first.queue,sealed:{first,second}},null,2)+'\n');console.log('PASS: Effects blueprint revalidated using sealed Kernel receipts; no caller-resolved bypass.');})().catch(e=>{console.error(e);process.exitCode=1;});

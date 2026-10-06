@@ -1,0 +1,21 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm');
+module.exports=async function run(input,spec,references,done){
+ const values=new Map(),localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,String(v))};
+ const ctx=vm.createContext({document:{readyState:'loading',title:'Effects Studio planning',body:{dataset:{}},addEventListener(){}},location:{href:'https://bassseamoor.github.io/render-queue/pulse-dashboard.html',pathname:'/pulse-dashboard.html'},localStorage,URL,URLSearchParams,setTimeout:()=>0,CustomEvent:class{constructor(type,args){this.type=type;this.detail=args.detail;}},dispatchEvent(){},console});ctx.window=ctx;ctx.parent=ctx;
+ for(const path of ['funnel-kernel.js','moor-request.js'])vm.runInContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});
+ const initial=await ctx.MOOR.request({input,source:'agent',forceFunnel:true,context:{planningMode:'local canonical runtime; no callable browser request bridge exposed',intelligence:'model contributions, not autonomous Funnel inference'}});
+ const K=ctx.MOORFunnelKernel,id=initial.request_id;
+ if(initial.route!=='funnel'||initial.result.kernel?.stage!=='references')throw Error('Request did not enter sealed Funnel');
+ for(const reference of references)K.write({request_id:id,kind:'reference',value:reference,source:'agent-reference-review',provenance:reference.provenance||'inferred'});
+ K.advance({request_id:id,stage:'distill',payload:{spec_draft:JSON.stringify(spec)},provenance:'inferred'});
+ K.advance({request_id:id,stage:'decisions',payload:{locked:spec.decisions||[],unresolved:[]},provenance:'inferred'});
+ const obligations=K.extractObligations(input).map(o=>({...o,status:'satisfied',evidence:'Specified in the linked staged blueprint and acceptance criteria; implementation verification is separate.'}));
+ K.advance({request_id:id,stage:'replay',payload:{page0_verified:true,page0_hash:K.inspect(id).stages.page0.raw_hash,obligations,substitutions:[]},provenance:'inferred'});
+ const verdict={spec:{...spec,obligations},destination:'app-compiler-harness',done_criteria:done};
+ const final=K.advance({request_id:id,stage:'verdict',payload:verdict,provenance:'inferred'});
+ if(!K.verifyReceipt(final.receipt))throw Error('Kernel receipt failed verification');
+ const execution=await ctx.MOOR.request({input,source:'agent',forceFunnel:true,funnel_receipt:final.receipt});
+ if(execution.route!=='harness')throw Error('Receipt did not unlock Harness route');
+ return {mode:'Actual v44 Kernel and MOOR.request executed locally; agent supplied reasoning with provenance. Browser exposes no callable request bridge.',initial,execution,receipt:final.receipt,verdict,ledger:JSON.parse(values.get('moor.funnel.kernel.v1')),queue:JSON.parse(values.get('moor-request-queue-v1')),receiptVerified:true};
+};

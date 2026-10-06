@@ -83,7 +83,8 @@ function renderer(canvas){
    else{ctx.beginPath();ctx.arc(q.x,q.y,s,0,TAU);ctx.fill();if(s>1.5){ctx.fillStyle='#edffff';ctx.beginPath();ctx.arc(q.x,q.y,Math.max(.5,s*.3),0,TAU);ctx.fill();}}
   }ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';return commands.length;
  }
- return {draw,dispose(){disposed=true;sprites.clear();images.clear();},stats:()=>({cachedGlowSprites:sprites.size,cachedImages:images.size})};
+ return {async prepare(compiled){await Promise.all(compiled.layers.filter(l=>l.sprite).map(async l=>{let img=images.get(l.sprite);if(!img){img=new Image();img.src=l.sprite;images.set(l.sprite,img);}await img.decode();}));},draw,dispose(){disposed=true;sprites.clear();images.clear();},stats:()=>({cachedGlowSprites:sprites.size,cachedImages:images.size})};
 }
 return {version:1,limits:{elements:MAX_ELEMENTS,layers:MAX_LAYERS,pixels:MAX_PIXELS,fps:30},enums,defaults,bounds,hash,rng,normalize,compile,sample,project,fit,renderer};
 });
+
