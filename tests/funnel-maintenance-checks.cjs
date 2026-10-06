@@ -40,7 +40,7 @@ for(const token of ['extractObligations','PAGE0_REPLAYED','BlueprintReceipt','Ex
 
 for(const src of ['pulse-beam.css?v=20261006-beam1','pulse-beam-audit.js?v=20261006-beam1','pulse-beam-component-adapter.js?v=20261006-beam1','pulse-beam.js?v=20261006-beam1'])
   assert(dash.includes(src),'Beam wiring drift: '+src);
-for(const id of ['pulse-beam','pulse-beam-funnel-hall','pulse-beam-standards','funnel-maintenance-status'])
+for(const id of ['pulse-beam','pulse-beam-funnel-hall','pulse-beam-standards','funnel-maintenance-status','software-factory'])
   assert(manifest.items&&manifest.items[id],'manifest/BOM drift: '+id);
 
 assert(contract.includes('Visualization never upgrades another state.'));
