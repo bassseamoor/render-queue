@@ -98,11 +98,22 @@ assert(window.MOOR && typeof window.MOOR.request === 'function');
   const approved=await window.MOOR.request({input:receiptInput,source:'test',funnel_receipt:receipt});
   assert.equal(approved.route,'harness');
   assert.equal(approved.status,'ready-for-execution');
-  assert.equal(approved.result.verdict_packet.done_criteria[0],'layout works');
+  assert(approved.result.execution_claim&&approved.result.execution_claim.claim_id);
 
-  const replayAttack=await window.MOOR.request({input:'fix a different layout',source:'test',funnel_receipt:receipt});
+  const handoff=JSON.parse(store.get('moor-harness-inbox-v1'));
+  assert.equal(handoff.schema,'moor.harness-inbox');
+  assert.equal(handoff.version,2);
+  assert.equal(handoff.execution_claim.claim_id,approved.result.execution_claim.claim_id);
+
+  const replayAttack=await window.MOOR.request({input:receiptInput,source:'test',funnel_receipt:receipt});
   assert.equal(replayAttack.route,'funnel');
-  assert.equal(replayAttack.status,'locked','Receipt must be bound to exact Page 0 input');
+  assert.equal(replayAttack.status,'locked','A receipt may mint only one Harness claim');
 
-  console.log('PASS: zero-key queue, reference lookup, mandatory Funnel routing, caller-bypass denial, exact-Page-0 receipt binding, and verified Harness execution');
+  const packet=K.consumeClaim(handoff.execution_claim);
+  assert.equal(packet.done_criteria[0],'layout works');
+  assert.equal(packet.spec.obligations.length,obs.length);
+  assert.equal(K.verifyConsumedClaim(handoff.execution_claim),true);
+  assert.throws(()=>K.consumeClaim(handoff.execution_claim),/claim|consumed|denied/i);
+
+  console.log('PASS: zero-key queue, mandatory Funnel routing, caller-bypass denial, single-use Harness handoff, and claim consumption');
 })().catch(err=>{console.error(err);process.exitCode=1;});
