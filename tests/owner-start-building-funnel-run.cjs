@@ -22,8 +22,15 @@ function run(id,distill,locked,spec,destination,done){
   return s.receipt;
 }
 
-const snap=Ch.evaluate({choreography,evidence});
+const before=JSON.parse(JSON.stringify(evidence));
+delete before.slices['CH-02'];delete before.slices['FM-01'];delete before.slices['FM-02'];
+const snap=Ch.evaluate({choreography,evidence:before});
 assert.equal(snap.recommendation.slice_id,'FM-01');
+const afterFm01=JSON.parse(JSON.stringify(before));
+afterFm01.slices['CH-02']=evidence.slices['CH-02'];
+afterFm01.slices['FM-01']=evidence.slices['FM-01'];
+const next=Ch.evaluate({choreography,evidence:afterFm01});
+assert.equal(next.recommendation.slice_id,'FM-02');
 
 const ch02=run(
   'owner-start-building-ch02-v1',
@@ -43,4 +50,12 @@ const fm01=run(
   ['inventory is machine-readable','retained mechanisms name owners consumers tests and authority effects','unknowns remain explicit','no Funnel law or runtime behavior changes']
 );
 
-console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,recommendation:snap.recommendation},null,2));
+const fm02=run(
+  'owner-start-building-fm02-v1',
+  'Build FM-02: map which inventoried Funnel mechanisms are exercised by current production, capability, manufacturing, planning and observability workflows. Preserve unknown mechanisms and make no behavior changes.',
+  [{key:'slice',value:'FM-02'},{key:'selection_basis',value:'CH-02 advisory after verified FM-01'},{key:'behavior_change',value:'none'}],
+  {slice_id:'FM-02',task:'current-path exercise map',behavior_change:'none',selection_basis:'evidence-driven choreography'},
+  'Project Pulse / Funnel maintenance',
+  ['exercise map is machine-readable','real workflows name mechanisms and executable evidence','unknown/unexercised mechanisms stay explicit','no Funnel law or runtime behavior changes']
+);
+console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation},null,2));
