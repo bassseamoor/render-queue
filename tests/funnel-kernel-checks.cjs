@@ -18,6 +18,10 @@ s=K.advance({request_id:'r1',stage:'distill',payload:{spec_draft:'Preserve Page 
 assert.throws(()=>K.advance({request_id:'r1',stage:'decisions',payload:{locked:[],unresolved:['claim format']}}),/Unresolved material decisions/);
 s=K.advance({request_id:'r1',stage:'decisions',payload:{locked:[{key:'execution',value:'single-use claim'}],unresolved:[]},provenance:'explicit'});
 
+const spoken=K.extractObligations("I don't know. Please seal this off and create hard-coded logic that prevents skipping around the Funnel.");
+assert.equal(spoken.length,1);
+assert(spoken[0].source.includes('prevents skipping'),'Natural-speech filler must not become the obligation');
+
 const obs=K.extractObligations(input);
 assert(obs.length>=3);
 assert.throws(()=>K.advance({request_id:'r1',stage:'replay',payload:{page0_verified:true,page0_hash:'wrong',obligations:obs.map(o=>({...o,status:'satisfied'}))}}),/immutable Page 0/);
