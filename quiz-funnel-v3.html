@@ -627,6 +627,31 @@ function vLibrary(){
  });
 }
 
+
+/* ---- PAGE 0 REPLAY — second-half redundancy gate ---- */
+function vReplay(){
+ const k=FK(), ks=kSession();
+ if(!k||!ks||!ks.page0){show('<div class="card"><div class="q">Funnel Kernel unavailable</div><div class="sub">Execution is locked. Return to Page 0 and reopen the request.</div></div>');return}
+ ensureDecisionStage();
+ const obs=k.extractObligations(ks.page0), replay=S.replay||{};
+ const rows=obs.map(function(o,ix){
+  const r=replay[o.id]||{}, st=r.status||'unverified';
+  return '<div class="bprow"><b>'+(ix+1)+'. '+esc(o.source)+'</b><br><span class="bsub">Page 0 source-backed obligation · '+esc(st)+'</span><div class="row"><button class="ghost" data-sat="'+esc(o.id)+'">Satisfied</button><button class="ghost" data-def="'+esc(o.id)+'">Explicitly defer</button></div>'+(r.reason?'<div class="sub">Reason: '+esc(r.reason)+'</div>':'')+'</div>';
+ }).join('');
+ const remaining=obs.filter(function(o){return !replay[o.id]||!replay[o.id].status}).length;
+ show('<div class="card"><div class="q">Page 0 replay — verify intent again</div><div class="sub">This is the second pass over the immutable original request. Every hard-coded obligation must be accounted for before the Kernel can mint a receipt.</div><pre>'+esc(ks.page0)+'</pre><div class="blabel">Atomic obligations</div>'+rows+'<div class="gates '+(remaining?'warn':'')+'" id="replayGate">'+remaining+' unverified</div><div class="row"><button id="lockReplay" '+(remaining?'disabled':'')+'>Lock replay</button><button class="ghost" id="backReplay">Back to answers</button></div></div>');
+ document.querySelectorAll('[data-sat]').forEach(function(b){b.onclick=function(){S.replay[b.dataset.sat]={status:'satisfied'};save();vReplay()}});
+ document.querySelectorAll('[data-def]').forEach(function(b){b.onclick=function(){const reason=prompt('Why is this Page 0 obligation being deferred?');if(!reason||!reason.trim())return;S.replay[b.dataset.def]={status:'explicitly-deferred',approved:true,reason:reason.trim()};save();vReplay()}});
+ el('backReplay').onclick=function(){forkKernel('return from Page 0 replay');S.phase='quiz';S.done=false;save();render()};
+ el('lockReplay').onclick=function(){
+  const fresh=kSession(), obligations=obs.map(function(o){return Object.assign({id:o.id,source:o.source},S.replay[o.id]||{})});
+  try{
+   kAdvance('replay',{page0_verified:true,page0_hash:fresh.stages.page0.raw_hash,obligations:obligations,substitutions:[]},'explicit');
+   S.phase='verdict';S.done=true;save();render();
+  }catch(e){el('replayGate').textContent='gate failed: '+String(e&&e.message||e)}
+ };
+}
+
 /* ---- VERDICT ---- */
 function vVerdict(){
  const spec={}; S.answers.forEach(a=>spec[a.id]=a.text);
@@ -662,10 +687,11 @@ function render(){
  if(S.phase==='ramble') vRamble();
  else if(S.phase==='spec') vSpec();
  else if(S.phase==='quiz') vQuiz();
+ else if(S.phase==='replay') vReplay();
  else vVerdict();
 }
 el('tBuild').onclick=()=>{
- if(S.done) S.phase='verdict';
+ if(S.done) S.phase=(kSession()&&kSession().stage==='verdict')?'verdict':'replay';
  else if(S.phase==='spec') S.phase='spec';
  else if(S.draft||S.ramble||S.answers.length||S.qi>0) S.phase='quiz';
  else S.phase='ramble';
