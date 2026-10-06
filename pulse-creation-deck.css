@@ -1,0 +1,196 @@
+/* Pulse Creation Deck v1 — screenshot-led spatial creation shell.
+   This overrides shell layout only. Component/tool internals remain unchanged. */
+:root{
+  --pcd-bg:#050a10;
+  --pcd-bg-deep:#02060b;
+  --pcd-panel:rgba(7,13,20,.82);
+  --pcd-panel-soft:rgba(8,15,23,.64);
+  --pcd-line:rgba(196,220,239,.16);
+  --pcd-line-hot:rgba(174,234,255,.50);
+  --pcd-white:#f5f8fb;
+  --pcd-muted:#8d9cac;
+  --pcd-ice:#9de5ff;
+  --pcd-cyan:#37c7ff;
+  --pcd-green:#45e2a2;
+  --pcd-shadow:0 28px 75px rgba(0,0,0,.52);
+}
+html,body{background:var(--pcd-bg-deep)!important}
+body.pulse-creation-deck{
+  background:
+    radial-gradient(78vw 55vh at 50% -10%,rgba(40,100,138,.13),transparent 66%),
+    radial-gradient(45vw 40vh at 85% 32%,rgba(29,68,91,.08),transparent 72%),
+    linear-gradient(180deg,#070c12 0%,#03080e 43%,#02060a 100%)!important;
+  min-height:100dvh;overflow:hidden!important;color:var(--pcd-white)!important;
+}
+body.pulse-creation-deck::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;opacity:.34;
+  background:
+    linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.009) 1px,transparent 1px),
+    radial-gradient(circle at 70% 18%,rgba(157,229,255,.07) 0 1px,transparent 1.6px);
+  background-size:44px 44px,44px 44px,180px 180px;
+  mask-image:linear-gradient(to bottom,transparent 2%,black 18%,black 82%,transparent);
+}
+/* Retire old shell chrome; it stays in DOM/functionality but the Creation Deck owns navigation. */
+body.pulse-creation-deck header,
+body.pulse-creation-deck .nav,
+body.pulse-creation-deck #tabbar{display:none!important}
+body.pulse-creation-deck .app,
+body.pulse-creation-deck .app.activity-hidden{
+  display:block!important;height:100dvh!important;min-height:100dvh!important;padding:0!important;background:transparent!important;
+}
+body.pulse-creation-deck #main{
+  position:fixed!important;inset:0!important;height:100dvh!important;min-height:0!important;
+  overflow:auto!important;padding:84px 0 190px!important;background:transparent!important;border:0!important;box-shadow:none!important;
+  scrollbar-width:none!important;
+}
+body.pulse-creation-deck #main::-webkit-scrollbar{display:none}
+body.pulse-creation-deck #windows,
+body.pulse-creation-deck #tabview{
+  width:min(1180px,100%)!important;min-height:calc(100dvh - 274px)!important;margin:0 auto!important;
+  padding:14px clamp(12px,2.4vw,30px) 40px!important;background:transparent!important;
+}
+body.pulse-creation-deck #windows.focus-mode,
+body.pulse-creation-deck #tabview.focus-mode{width:100%!important;max-width:none!important}
+body.pulse-creation-deck .tab-head,
+body.pulse-creation-deck .bin-sec,
+body.pulse-creation-deck .inventory{border-color:var(--pcd-line)!important}
+body.pulse-creation-deck .page-open{
+  min-height:46vh!important;border:1px solid var(--pcd-line)!important;border-radius:28px!important;
+  background:linear-gradient(145deg,rgba(255,255,255,.032),rgba(255,255,255,.006)),rgba(4,10,16,.45)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),var(--pcd-shadow)!important;
+  backdrop-filter:blur(18px)!important;
+}
+body.pulse-creation-deck .focus-about{
+  width:min(900px,calc(100% - 24px))!important;margin:18px auto!important;padding:0 15px!important;
+  border:1px solid var(--pcd-line)!important;border-radius:18px!important;background:rgba(5,11,18,.58)!important;
+}
+/* Floating top utility row inspired by supplied unloaded-screen reference. */
+.pcd-top{
+  position:fixed;z-index:2147482500;top:max(12px,env(safe-area-inset-top));left:14px;right:14px;height:54px;
+  display:flex;align-items:center;gap:10px;pointer-events:none;
+}
+.pcd-brand{
+  pointer-events:auto;display:flex;align-items:center;gap:10px;min-height:48px;max-width:min(270px,46vw);
+  padding:0 16px;border-radius:999px;color:var(--pcd-white);font:650 15px/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  letter-spacing:.005em;background:rgba(5,10,16,.74);border:1px solid rgba(207,225,239,.17);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 20px 50px rgba(0,0,0,.28);backdrop-filter:blur(24px) saturate(1.18);
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+}
+.pcd-brand .pcd-brand-mark{font-size:23px;font-weight:400;color:#e8f7ff}
+.pcd-brand .pcd-brand-name{overflow:hidden;text-overflow:ellipsis}
+.pcd-top-actions{margin-left:auto;display:flex;align-items:center;gap:8px;pointer-events:auto}
+.pcd-circle,
+.pcd-tune{
+  appearance:none;border:1px solid rgba(199,218,234,.19);background:rgba(5,10,16,.72);color:#dbe9f4;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 18px 40px rgba(0,0,0,.28);backdrop-filter:blur(22px);
+  cursor:pointer;display:grid;place-items:center;
+}
+.pcd-circle{width:48px;height:48px;border-radius:50%;font-size:20px}
+.pcd-circle.on{background:#f5f7f8!important;color:#07101a!important;border-color:#fff!important;box-shadow:0 0 0 1px rgba(157,229,255,.2),0 0 26px rgba(157,229,255,.16)!important}
+.pcd-circle.live::after{content:"";position:absolute;width:5px;height:5px;border-radius:50%;background:var(--pcd-green);transform:translate(15px,-15px);box-shadow:0 0 10px rgba(69,226,162,.7)}
+.pcd-tune{
+  min-width:96px;height:46px;padding:0 17px;border-radius:14px;border-color:rgba(55,199,255,.72)!important;
+  color:var(--pcd-ice)!important;letter-spacing:.20em;font-weight:700;font-size:13px;text-indent:.20em;
+  background:rgba(4,12,20,.82)!important;
+}
+/* Creation Deck */
+.pcd-deck{
+  position:fixed;z-index:2147482400;left:50%;transform:translateX(-50%);
+  bottom:max(10px,env(safe-area-inset-bottom));width:min(860px,calc(100vw - 20px));height:66px;
+  display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:24px;
+  background:rgba(5,11,18,.80);border:1px solid rgba(199,218,234,.17);border-top-color:rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 22px 70px rgba(0,0,0,.48);backdrop-filter:blur(28px) saturate(1.18);
+}
+.pcd-deck-scroll{display:flex;align-items:center;gap:7px;min-width:0;flex:1;overflow-x:auto;scrollbar-width:none}
+.pcd-deck-scroll::-webkit-scrollbar{display:none}
+.pcd-app{
+  flex:0 0 auto;width:50px;height:50px;border-radius:17px;border:1px solid rgba(199,218,234,.12);background:rgba(255,255,255,.018);
+  color:#a9bac9;display:grid;place-items:center;position:relative;cursor:pointer;font-size:20px;
+}
+.pcd-app:hover,.pcd-app.active{border-color:rgba(157,229,255,.40);color:var(--pcd-white);background:rgba(157,229,255,.055)}
+.pcd-app.active::after{content:"";position:absolute;bottom:4px;width:4px;height:4px;border-radius:50%;background:var(--pcd-ice);box-shadow:0 0 12px rgba(157,229,255,.8)}
+.pcd-app[data-verified="1"]::before{content:"";position:absolute;right:5px;top:5px;width:4px;height:4px;border-radius:50%;background:var(--pcd-green)}
+.pcd-deck-divider{width:1px;height:30px;background:rgba(198,217,233,.12);flex:0 0 auto}
+.pcd-deck-action{
+  flex:0 0 auto;width:50px;height:50px;border-radius:17px;border:0;background:#eef5fa;color:#071019;display:grid;place-items:center;font-size:19px;cursor:pointer;
+}
+/* Command floats above app deck and never competes with it. */
+body.pulse-creation-deck #moor-request-bar{
+  bottom:calc(max(10px,env(safe-area-inset-bottom)) + 78px)!important;width:min(800px,calc(100vw - 20px))!important;z-index:2147482450!important;
+}
+body.pulse-creation-deck #moor-request-shell{
+  min-height:60px!important;padding:6px 7px 6px 19px!important;border-radius:22px!important;
+  border:1px solid rgba(199,218,234,.17)!important;background:rgba(4,10,17,.84)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 22px 65px rgba(0,0,0,.44)!important;backdrop-filter:blur(28px)!important;
+}
+body.pulse-creation-deck #moor-request-input{font-size:16px!important;color:#edf5fa!important}
+body.pulse-creation-deck #moor-request-go{width:48px!important;height:48px!important;border-radius:16px!important;background:#eff5f9!important;color:#06101a!important}
+body.pulse-creation-deck #moor-request-status{color:var(--pcd-muted)!important}
+/* Drawers */
+.pcd-scrim{
+  position:fixed;z-index:2147482600;inset:0;background:rgba(0,0,0,.38);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .18s ease;
+}
+.pcd-scrim.on{opacity:1;pointer-events:auto}
+.pcd-sheet{
+  position:fixed;z-index:2147482700;top:max(12px,env(safe-area-inset-top));bottom:max(12px,env(safe-area-inset-bottom));
+  width:min(430px,calc(100vw - 18px));background:rgba(5,11,18,.94);border:1px solid rgba(205,223,238,.17);border-top-color:rgba(255,255,255,.17);
+  box-shadow:0 30px 90px rgba(0,0,0,.65);backdrop-filter:blur(30px) saturate(1.2);transition:transform .2s cubic-bezier(.2,.8,.2,1);overflow:hidden;
+}
+.pcd-sheet.library{left:9px;border-radius:26px;transform:translateX(calc(-100% - 16px))}
+.pcd-sheet.inspector{right:9px;border-radius:26px;transform:translateX(calc(100% + 16px))}
+.pcd-sheet.on{transform:translateX(0)}
+.pcd-sheet-head{height:66px;display:flex;align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid rgba(199,218,234,.11)}
+.pcd-sheet-title{font-size:14px;font-weight:650;letter-spacing:.02em;flex:1}
+.pcd-sheet-close{width:40px;height:40px;border-radius:50%;border:1px solid rgba(199,218,234,.14);background:rgba(255,255,255,.02);color:#dce8f1;font-size:18px}
+.pcd-search{margin:12px 13px 6px;width:calc(100% - 26px);height:44px;border-radius:14px;border:1px solid rgba(199,218,234,.13)!important;background:rgba(1,6,11,.56)!important;color:#edf5fa!important;padding:0 14px!important}
+.pcd-filter-row{display:flex;gap:6px;padding:6px 13px 10px;overflow-x:auto;scrollbar-width:none}
+.pcd-filter{flex:0 0 auto;height:32px;border-radius:999px;border:1px solid rgba(199,218,234,.12);background:transparent;color:#8fa2b3;padding:0 11px;font-size:11px}
+.pcd-filter.on{color:#061019;background:#eef5f9;border-color:#fff}
+.pcd-list{overflow:auto;height:calc(100% - 132px);padding:6px 9px 24px;scrollbar-width:none}
+.pcd-list::-webkit-scrollbar{display:none}
+.pcd-row{
+  width:100%;display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:10px;text-align:left;padding:10px;
+  border:1px solid transparent;border-radius:16px;background:transparent;color:#edf4f8;cursor:pointer;
+}
+.pcd-row:hover{background:rgba(157,229,255,.035);border-color:rgba(157,229,255,.10)}
+.pcd-row-icon{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:rgba(255,255,255,.025);border:1px solid rgba(199,218,234,.10);font-size:18px}
+.pcd-row-copy{min-width:0}.pcd-row-copy strong{font-size:13px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcd-row-copy span{font-size:11px;color:#7f91a2;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.pcd-row-badge{font-size:9px;letter-spacing:.08em;color:var(--pcd-green)}
+.pcd-inspector-body{height:calc(100% - 66px);overflow:auto;padding:15px 15px 28px;scrollbar-width:none}
+.pcd-inspector-body h2{font-size:21px;line-height:1.2;margin:2px 0 8px;letter-spacing:-.02em}
+.pcd-inspector-body p{font-size:13px;line-height:1.55;color:#91a2b1}
+.pcd-inspector-section{margin-top:18px;padding-top:14px;border-top:1px solid rgba(199,218,234,.11)}
+.pcd-inspector-label{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:#718496;margin-bottom:8px}
+.pcd-kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:12px}.pcd-kv span{color:#7e91a1}.pcd-kv b{font-weight:550;color:#dce8f1;text-align:right}
+.pcd-open-btn{width:100%;height:46px;border-radius:15px;border:1px solid rgba(157,229,255,.45);background:rgba(157,229,255,.07);color:var(--pcd-ice);font-weight:650;cursor:pointer}
+/* Mini Refinery proof pill */
+.pcd-refinery{
+  position:fixed;z-index:2147482300;right:15px;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 154px);
+  min-height:34px;display:flex;align-items:center;gap:7px;padding:0 10px;border:1px solid rgba(69,226,162,.17);border-radius:999px;
+  background:rgba(4,12,17,.66);color:#87a0ad;font-size:10px;backdrop-filter:blur(18px);cursor:pointer;
+}
+.pcd-refinery i{width:5px;height:5px;border-radius:50%;background:var(--pcd-green);box-shadow:0 0 10px rgba(69,226,162,.65)}
+.pcd-refinery b{color:#bfead7;font-weight:600}
+/* Hide default browsing chrome in the spatial home state; library replaces it. */
+body.pulse-creation-deck:not(.pcd-focus) #tabview > .tab-head,
+body.pulse-creation-deck:not(.pcd-focus) #tabview > .bin-sec{display:none!important}
+@media(max-width:680px){
+  .pcd-top{left:10px;right:10px;gap:7px}.pcd-brand{max-width:41vw;padding:0 13px;min-height:46px;font-size:14px}
+  .pcd-brand .pcd-brand-mark{font-size:21px}
+  .pcd-top-actions{gap:6px}.pcd-circle{width:46px;height:46px}.pcd-circle.optional-mobile{display:none}.pcd-tune{min-width:84px;height:45px;padding:0 12px;font-size:12px}
+  body.pulse-creation-deck #main{padding-top:76px!important;padding-bottom:184px!important}
+  body.pulse-creation-deck #windows,body.pulse-creation-deck #tabview{padding:8px 9px 30px!important}
+  .pcd-deck{width:calc(100vw - 14px);bottom:max(7px,env(safe-area-inset-bottom));height:64px;padding:6px 7px;border-radius:22px}
+  .pcd-app,.pcd-deck-action{width:48px;height:48px;border-radius:16px}
+  body.pulse-creation-deck #moor-request-bar{bottom:calc(max(7px,env(safe-area-inset-bottom)) + 75px)!important;width:calc(100vw - 14px)!important}
+  body.pulse-creation-deck #moor-request-shell{min-height:58px!important}
+  .pcd-refinery{right:10px;bottom:calc(max(7px,env(safe-area-inset-bottom)) + 145px)}
+  .pcd-sheet{top:max(8px,env(safe-area-inset-top));bottom:max(8px,env(safe-area-inset-bottom));width:calc(100vw - 12px)}
+  .pcd-sheet.library{left:6px}.pcd-sheet.inspector{right:6px}
+}
+@media(min-width:1000px){
+  .pcd-deck{width:min(920px,calc(100vw - 120px))}
+  body.pulse-creation-deck #moor-request-bar{width:min(760px,calc(100vw - 120px))!important}
+}
