@@ -34,12 +34,16 @@ const COLORS={
   source:0x7edcff,gate:0x94e8ff,funnel:0x50cfff,step:0x8db8d9,ballot:0xd78cff,
   'need-category':0xb67cff,need:0x82a8c9,meta:0x7ff0c5,interview:0xe58bff,final:0x7ddcff,
   replay:0xffcf70,receipt:0xffad5a,execution:0x67d6ff,learning:0xff758c,
-  'live-requirement':0xffffff
+  'live-requirement':0xffffff,
+  'law-active':0x50e3a4,
+  'law-candidate':0xf6fbff,
+  'law-plane':0xaeeaff
 };
 const EDGE_COLORS={
   flow:0x75d9ff,route:0x75d9ff,ballot:0x8cf0bd,classify:0xe88cff,contains:0x8b9fb0,
   aggregate:0x8cf0bd,resolve:0xffb86b,branch:0xe88cff,feedback:0xff718b,
-  authorize:0xffb86b,execute:0xffb86b,evidence:0x8cf0bd
+  authorize:0xffb86b,execute:0xffb86b,evidence:0x8cf0bd,
+  governs:0x50e3a4,candidate:0xaeeaff,'contains-plane':0x63d8ff
 };
 const LAYER_Y={};
 for(let i=0;i<=17;i++)LAYER_Y[i]=52-i*6.2;
@@ -75,13 +79,13 @@ function positionFor(n){
 graph.nodes.forEach(n=>{n._pos=positionFor(n);});
 
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x05090f);
-scene.fog=new THREE.FogExp2(0x05090f,0.0065);
+scene.background=new THREE.Color(0x03070d);
+scene.fog=new THREE.FogExp2(0x03070d,0.0062);
 
-const hemi=new THREE.HemisphereLight(0xaee8ff,0x07101a,1.15);
+const hemi=new THREE.HemisphereLight(0xf6fbff,0x07111b,1.2);
 scene.add(hemi);
 const key=new THREE.DirectionalLight(0xffffff,1.6);key.position.set(-25,55,45);scene.add(key);
-const fill=new THREE.PointLight(0x69d9ff,25,180);fill.position.set(18,15,30);scene.add(fill);
+const fill=new THREE.PointLight(0x63d8ff,24,180);fill.position.set(18,15,30);scene.add(fill);
 
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
@@ -158,8 +162,8 @@ function makeNode(n){
     mesh=new THREE.Mesh(geom,mat);
   }else{
     let r=0.46;
-    if(['source','receipt'].includes(n.type))r=0.72;
-    if(['gate','meta','final','replay','execution','learning','ballot'].includes(n.type))r=0.58;
+    if(['source','receipt','law-active','law-candidate'].includes(n.type))r=0.72;
+    if(['gate','meta','final','replay','execution','learning','ballot','law-plane'].includes(n.type))r=0.58;
     if(n.type==='need-category')r=0.55;
     if(n.type==='need')r=0.22;
     if(n.type==='live-requirement')r=0.3;
