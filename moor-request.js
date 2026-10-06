@@ -113,9 +113,10 @@ function openKernel(req,refs){
   }
   return session;
 }
-function verifiedExecution(receipt){
+function verifiedExecution(receipt,input){
   var k=kernel();
   if(!k||!k.verifyReceipt(receipt))return null;
+  if(k.hash(input)!==receipt.page0_hash)return null;
   return k.executionPacket(receipt);
 }
 async function request(arg){
@@ -141,7 +142,7 @@ async function request(arg){
   if(arg.forceFunnel||buildIntent(input)){
     var refsForFunnel=referencePacket(input);
     if(arg.funnel_receipt){
-      var packet=verifiedExecution(arg.funnel_receipt);
+      var packet=verifiedExecution(arg.funnel_receipt,input);
       if(packet){
         try{
           if(window.PulseReferences)window.PulseReferences.add({
