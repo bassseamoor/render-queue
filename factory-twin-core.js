@@ -50,7 +50,7 @@ function machineFromFactoryNode(n,edges){
   return {
     machine_id:n.id,kind:n.kind||'machine',label:n.label||n.id,owner:'Capability Memory',
     lifecycle:n.lifecycle||'active',health:healthFromCapability(n),live_path:n.lifecycle!=='quarantined',
-    evidence_refs:n.implementation_ref?[n.implementation_ref]:[],capabilities:clone(n.capabilities||[]),
+    evidence_refs:[n.implementation_ref||n.id].filter(Boolean),capabilities:clone(n.capabilities||[]),
     supersedes,location_hint:machineZone(n),status:n.status||null,version:n.version||null,source:'capability-memory'
   };
 }
