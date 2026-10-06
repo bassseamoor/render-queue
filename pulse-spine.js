@@ -574,7 +574,135 @@ var CONTRACTS=[
   summary:'Build/change execution requires immutable Page 0, ordered Funnel stages, second-half replay, builder-facing obligation preservation, and a kernel-issued receipt. Harness independently verifies the receipt.',
   source:'funnel-kernel.js'}
 ];
-function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS);}
+var FABRIC_DOCS=[
+  {
+    "id": "fabric-baseline",
+    "name": "Recursive Funnel Fabric",
+    "summary": "Baseline recursive Funnel architecture: child cases, solver swarms, receipts, resource budgets and Foundry.",
+    "source": "blueprint/funnel-fabric.blueprint.json"
+  },
+  {
+    "id": "fabric-citadel",
+    "name": "Funnel Citadel Law",
+    "summary": "Parallel blueprint optimized for integrity, least authority, auditability, fault containment and safe promotion.",
+    "source": "blueprint/funnel-law-citadel.blueprint.json"
+  },
+  {
+    "id": "fabric-society",
+    "name": "Funnel Society Fabric",
+    "summary": "Parallel blueprint optimized for recursive scale, package ecosystems, scheduling, sharding, caching and compaction.",
+    "source": "blueprint/funnel-law-society.blueprint.json"
+  },
+  {
+    "id": "fabric-realignment",
+    "name": "Citadel × Society Realignment",
+    "summary": "Resolves security-versus-scale conflicts into Secure Core / Elastic Society.",
+    "source": "blueprint/funnel-law-realignment.blueprint.json"
+  },
+  {
+    "id": "fabric-ultra",
+    "name": "MOOR Ultra Funnel Law",
+    "summary": "Amalgamated candidate law: Secure Core / Elastic Society with typed receipts, capabilities, budgets, recursion and Pulse observability.",
+    "source": "blueprint/funnel-law-ultra.blueprint.json"
+  },
+  {
+    "id": "fabric-library",
+    "name": "Funnel Fabric Pulse Library",
+    "summary": "Index of the complete Funnel Fabric blueprint, law, runtime, Foundry, test and contract corpus.",
+    "source": "pulse-funnel-fabric-library.json"
+  },
+  {
+    "id": "fabric-receipts",
+    "name": "Typed Receipt Core",
+    "summary": "Content-addressed authority receipts for questions, ballots, consensus, child Funnels, execution, verification, learning and promotion.",
+    "source": "funnel-receipt-core.js"
+  },
+  {
+    "id": "fabric-capabilities",
+    "name": "Capability Core",
+    "summary": "Least-authority scoped grants; workers can act only inside explicit case/question/reference/package scope.",
+    "source": "funnel-capability-core.js"
+  },
+  {
+    "id": "fabric-budgets",
+    "name": "Budget Core",
+    "summary": "Conserved hierarchical envelopes for tokens, compute, storage, worker calls, parallelism, money and deadlines.",
+    "source": "funnel-budget-core.js"
+  },
+  {
+    "id": "fabric-law-core",
+    "name": "Ultra Law Core",
+    "summary": "Candidate deterministic authority state machine with strict ordered transitions, staleness and receipt minting.",
+    "source": "funnel-law-core.js"
+  },
+  {
+    "id": "fabric-cases",
+    "name": "Recursive Case Runtime",
+    "summary": "Spawns child Funnel cases from parent questions with delegated scope, capabilities and sub-budgets.",
+    "source": "funnel-case-runtime.js"
+  },
+  {
+    "id": "fabric-solver",
+    "name": "Sebastian Solver Core",
+    "summary": "Independent open-ended solution ballots framed as direct questions from Sebastian; agreement raises labeled synthetic confidence.",
+    "source": "sebastian-solver-core.js"
+  },
+  {
+    "id": "fabric-consensus",
+    "name": "Consensus Core",
+    "summary": "Keeps owner evidence, solver convergence and verification confidence distinct while preserving dissent.",
+    "source": "funnel-consensus-core.js"
+  },
+  {
+    "id": "fabric-society-runtime",
+    "name": "Funnel Society Runtime",
+    "summary": "Plans solver swarms, convergence and recursive branching from configurable scale parameters.",
+    "source": "funnel-society-core.js"
+  },
+  {
+    "id": "fabric-packages",
+    "name": "Funnel Package Registry",
+    "summary": "Immutable versioned declarative system packages with compatibility and scoped reuse.",
+    "source": "funnel-package-registry.js"
+  },
+  {
+    "id": "fabric-promotion",
+    "name": "Promotion Core",
+    "summary": "Candidate → regression-tested → owner-approved → promoted law lifecycle with rollback target.",
+    "source": "funnel-promotion-core.js"
+  },
+  {
+    "id": "fabric-resources",
+    "name": "Resource Governor",
+    "summary": "Forecasts case count, worker calls, receipts, tokens, storage and cost with green/yellow/red pressure.",
+    "source": "funnel-resource-governor.js"
+  },
+  {
+    "id": "fabric-foundry",
+    "name": "Funnel Foundry Core",
+    "summary": "Procedural topology generator for packages, redundancy, symmetry and experimental Funnel ecosystems.",
+    "source": "funnel-foundry-core.js"
+  },
+  {
+    "id": "fabric-environment",
+    "name": "Funnel 3D Environment",
+    "summary": "Interactive finite node/edge/cone renderer for inspecting and tracing Funnel relationships.",
+    "source": "funnel-environment.html"
+  },
+  {
+    "id": "fabric-meta-receipt",
+    "name": "Ultra Funnel Meta-Run",
+    "summary": "Executable test that routes the amalgamated Ultra Funnel blueprint through the sealed v44 kernel and verifies its receipt.",
+    "source": "tests/funnel-law-ultra-meta-run.cjs"
+  },
+  {
+    "id": "fabric-tests",
+    "name": "Ultra Funnel Adversarial Checks",
+    "summary": "Invariant tests for receipts, capabilities, budgets, child cases, consensus, scale, staleness, packages and promotion.",
+    "source": "tests/funnel-law-ultra-checks.cjs"
+  }
+];
+function blueprintDocs(){return BLUEPRINTS.concat(CONTRACTS,FABRIC_DOCS);}
 
 function ensureFunnelProject(){
   try{
@@ -652,6 +780,38 @@ function ensureFunnelProject(){
           parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
           revision:'Execution authority moved out of model personality and into a deterministic receipt-gated Funnel Kernel with immutable Page 0 replay.',
           items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.ref!=='contract-sealed-funnel';y.change=x.ref==='contract-sealed-funnel'?'new':'inherited';return y;})});
+      }
+    }
+    try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
+  }catch(e){}
+}
+
+
+function ensureFunnelFabricProject(){
+  try{
+    if(!window.PulseFunnel||!PulseFunnel.state||!Array.isArray(PulseFunnel.state.projects))return;
+    var fs=PulseFunnel.state,now=new Date().toISOString(),p=fs.projects.find(function(x){return x.id==='funnel-fabric';});
+    var members=FABRIC_DOCS.map(function(b){return {kind:'funnel-fabric-asset',ref:'fabric-'+b.id,label:b.name,sourceVersion:'ultra-v1-candidate',source:b.source,detail:b.summary};});
+    if(!p){
+      p={id:'funnel-fabric',name:'Funnel Fabric',icon:'⌬',
+        description:'Secure Core / Elastic Society. Blueprints, law modules, recursive solver/case runtime, Foundry, receipts, tests and promotion evidence live here.',
+        members:members,page:'funnel-environment.html',queued:false,versions:[{
+          id:'funnel-fabric-ultra-v1-candidate',number:'v1',title:'Ultra Funnel Law candidate',state:'candidate',createdAt:now,parentId:null,
+          revision:'Parallel Citadel + Society blueprints realigned into Secure Core / Elastic Society. Candidate law is receipt-gated and remains beside v44 until promotion.',
+          items:members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=false;y.change='new';return y;})
+        }]};
+      fs.projects.push(p);
+    }else{
+      p.members=p.members||[];
+      members.forEach(function(m){if(!p.members.some(function(x){return x.ref===m.ref;}))p.members.push(m);});
+      p.page='funnel-environment.html';p.queued=false;
+      p.description='Secure Core / Elastic Society. Blueprints, law modules, recursive solver/case runtime, Foundry, receipts, tests and promotion evidence live here.';
+      p.versions=p.versions||[];
+      if(!p.versions.some(function(v){return v.id==='funnel-fabric-ultra-v1-candidate';})){
+        p.versions.push({id:'funnel-fabric-ultra-v1-candidate',number:'v1',title:'Ultra Funnel Law candidate',state:'candidate',createdAt:now,
+          parentId:p.versions.length?p.versions[p.versions.length-1].id:null,
+          revision:'Parallel Citadel + Society blueprints realigned into Secure Core / Elastic Society. Candidate law is receipt-gated and remains beside v44 until promotion.',
+          items:p.members.map(function(x){var y={};Object.keys(x).forEach(function(k){y[k]=x[k];});y.inherited=x.kind!=='funnel-fabric-asset';y.change=x.kind==='funnel-fabric-asset'?'new':'inherited';return y;})});
       }
     }
     try{localStorage.setItem('moor-pulse-funnel-projects-v1',JSON.stringify(fs));}catch(e){}
@@ -933,6 +1093,7 @@ window.PulseSpine={
   harvest:harvest,
   blueprints:BLUEPRINTS.slice(),
   contracts:CONTRACTS.slice(),
+  fabric:FABRIC_DOCS.slice(),
   get training(){return S.training.slice();},
   get trainingLessons(){return S.trainingLessons.slice();},
   findTraining:function(q){return relatedTraining({title:q||'',payload:q||''},8);},
@@ -969,6 +1130,7 @@ syncReferenceGraph();
 save();
 scheduleLocalBinSync();
 ensureFunnelProject();
+ensureFunnelFabricProject();
 ensureTabbar();
 if(typeof renderStage==='function')renderStage();
 decorateFunnel();
