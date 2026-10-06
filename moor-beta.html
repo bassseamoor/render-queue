@@ -14107,10 +14107,20 @@ function renderTravelList(){
     r.querySelector('.go').addEventListener('click',function(){ travelToPlanet(r.dataset.pid); });
   });
 }
+/* ===== verse-occupants.js — planets taken by games (generated from verse-worlds.json; do not hand-edit) ===== */
+var VERSE_OCCUPANTS={"S02-SYS02-P04":{game:"hearth",name:"HEARTH",page:"hearth.html",seed:"moor:S02-SYS02-P04",planet_name:"Luria Prime"}};
 function travelToPlanet(pid){
   var p=null;
   try{ p=MoorWorld.getPlanet(pid); }catch(_){}
   if(!p) return;
+  try{ if(typeof VERSE_OCCUPANTS!=='undefined'&&VERSE_OCCUPANTS[pid]){
+    var occ=VERSE_OCCUPANTS[pid];
+    try{ MoorWorld.logEvent('user','visit-occupied',pid,{game:occ.game}); }catch(_){}
+    try{ toast('\u2665 Entering '+occ.name+'\u2026'); }catch(_){}
+    try{ $('travel-wrap').hidden=true; $('sheet').hidden=true; }catch(_){}
+    setTimeout(function(){ location.href=occ.page+'?pid='+encodeURIComponent(pid); },700);
+    return;
+  }}catch(_){}
   var seed='moor:'+pid, w=null, i;
   for(i=0;i<store.worlds.length;i++) if(store.worlds[i].seed===seed) w=store.worlds[i];
   if(!w) w=makeWorld(p.name, seed, pid);
@@ -14666,7 +14676,10 @@ function mapFlyTo(which,quiet){
 function mapAltDist(air){ return air<120?430:air<600?5200:95000; }
 function showVersePop(x,y,pl){
   var el=$('verse-pop');
-  el.innerHTML='<b>\u25C9 '+esc(pl.name)+'</b><br><small>A planet in the '+esc(pl.sec||'verse')+' sector.<br>Travel visits it as a full world you can walk on.</small>'+
+  el.innerHTML='<b>\u25C9 '+esc(pl.name)+'</b>'+
+    (typeof VERSE_OCCUPANTS!=='undefined'&&VERSE_OCCUPANTS[pl.id]?
+      ' <span style="color:#e8a33d">\u2665 '+esc(VERSE_OCCUPANTS[pl.id].name)+'</span>':'')+
+    '<br><small>A planet in the '+esc(pl.sec||'verse')+' sector.<br>Travel visits it as a full world you can walk on.</small>'+
     '<div class="prow"><button data-v="go">Travel \u2192</button><button data-v="x">\u2715</button></div>';
   el.hidden=false;
   el.style.left=Math.min(window.innerWidth-230,Math.max(8,x-100))+'px';

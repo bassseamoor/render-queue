@@ -68,6 +68,7 @@
   <div class="chip">🍎 <b id="statFood">3</b></div>
   <div class="chip">💛 <b id="statCare">100</b></div>
   <div class="chip"><span id="flameDot"></span><b id="statWarmth">Ember</b></div>
+  <div class="chip" id="chipPlanet" style="cursor:pointer" title="See your planet">⤴ <b>Luria&nbsp;Prime</b></div>
 </div>
 <div id="hint"></div>
 <div id="actions"></div>
@@ -79,6 +80,18 @@
   <div id="bookEntries"></div>
 </div>
 <div id="fade"></div>
+<div id="planetView" style="display:none;position:fixed;inset:0;z-index:8;background:#04060c;">
+  <canvas id="planetCanvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;"></canvas>
+  <div style="position:absolute;top:14px;left:0;right:0;text-align:center;pointer-events:none;">
+    <div style="font-size:11px;letter-spacing:.22em;color:#e8a33d;">MOOR VERSE · YOU ARE HERE</div>
+    <div style="font-size:24px;color:#f2e8d5;font-weight:700;">Luria Prime</div>
+    <div style="font-size:12px;color:#b39d7d;">universe:prime/sector:S02/system:S02-SYS02/planet:S02-SYS02-P04 · seed moor:S02-SYS02-P04</div>
+  </div>
+  <div style="position:absolute;bottom:26px;left:0;right:0;text-align:center;">
+    <div style="font-size:13px;color:#b39d7d;margin-bottom:10px;">drag to spin · the warm light is your hearthfire</div>
+    <button id="descendBtn" style="background:#e8a33d;border:0;color:#1a1208;font-weight:700;border-radius:999px;padding:13px 30px;font-size:16px;cursor:pointer;">Descend ⤵</button>
+  </div>
+</div>
 <script>
 'use strict';
 /* ============================================================
@@ -629,6 +642,7 @@ function frame(ts){
   growPlants(dt/1000*0.8);
   // draw
   ctx.clearRect(0,0,W,H);
+  if(planetView){ planetRender(ts); hud(); return; }
   drawSky(dt); drawHills(); drawGround();
   drawComingSoon(); drawPlot(); drawTraveler(dt); drawHog(dt); drawPlayer(dt); drawParts(dt);
   hud();
@@ -642,6 +656,8 @@ function init(){
   // hud action chips: tap warmth chip -> guest book
   elWarmth.parentElement.style.pointerEvents='auto'; elWarmth.parentElement.style.cursor='pointer';
   elWarmth.parentElement.onclick=openBook;
+  document.getElementById('chipPlanet').onclick=()=>setPlanetView(true);
+  document.getElementById('descendBtn').onclick=()=>setPlanetView(false);
   requestAnimationFrame(frame);
 }
 /* debug hook for headless verification */
@@ -653,5 +669,148 @@ window.__hearth={ S, tier, WORLD,
   skipTraveler:()=>{ if(traveler){ traveler.x=0.56; traveler.phase='in'; } }, };
 init();
 </script>
+<script>
+'use strict';
+/* ---------- 3D LURIA PRIME — the planet you are standing on ----------
+ * Dependency-free WebGL ray-sphere. Desert palette from the planet's canonical
+ * DESERT WORLD type. Sun synced to the game clock. One pulsing hearth marker
+ * fixed to the surface — one fire on the whole planet. */
+let planetView=false, planetRot=0, planetGL=null;
+
+const PLANET_VERT=`
+attribute vec2 p; varying vec2 vUv;
+void main(){ vUv=p*0.5+0.5; gl_Position=vec4(p,0.0,1.0); }`;
+
+const PLANET_FRAG=`
+precision mediump float;
+varying vec2 vUv;
+uniform float uTime; uniform float uAspect; uniform float uSeed;
+uniform vec3 uSunDir; uniform vec3 uMarker; uniform float uRot;
+float hash13(vec3 p){ p=fract(p*0.1031); p+=dot(p,p.zyx+31.32); return fract((p.x+p.y)*p.z); }
+float vnoise(vec3 p){
+  vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  float n000=hash13(i), n100=hash13(i+vec3(1,0,0)), n010=hash13(i+vec3(0,1,0)), n110=hash13(i+vec3(1,1,0));
+  float n001=hash13(i+vec3(0,0,1)), n101=hash13(i+vec3(1,0,1)), n011=hash13(i+vec3(0,1,1)), n111=hash13(i+vec3(1,1,1));
+  return mix(mix(mix(n000,n100,f.x),mix(n010,n110,f.x),f.y),mix(mix(n001,n101,f.x),mix(n011,n111,f.x),f.y),f.z);
+}
+float fbm(vec3 p){ float v=0.0,a=0.5; for(int i=0;i<4;i++){ v+=a*vnoise(p); p*=2.03; a*=0.5; } return v; }
+void main(){
+  vec2 uv=vUv*2.0-1.0; uv.x*=uAspect;
+  vec3 ro=vec3(0.0,0.0,2.7);
+  vec3 rd=normalize(vec3(uv,-1.7));
+  float b=dot(ro,rd), c=dot(ro,ro)-1.0, h=b*b-c;
+  vec3 col;
+  if(h>0.0){
+    float t=-b-sqrt(h);
+    vec3 pos=ro+rd*t;
+    vec3 n=normalize(pos);
+    float ang=uTime*0.04+uRot;
+    float ca=cos(ang), sa=sin(ang);
+    vec3 sp=vec3(ca*pos.x+sa*pos.z, pos.y, -sa*pos.x+ca*pos.z);
+    float m=fbm(sp*3.0+uSeed);
+    float m2=fbm(sp*7.5-uSeed*1.7);
+    vec3 sand=vec3(0.78,0.60,0.40);
+    vec3 dark=vec3(0.50,0.34,0.20);
+    vec3 rock=vec3(0.63,0.47,0.31);
+    vec3 alb=mix(sand,dark,smoothstep(0.28,0.78,m));
+    alb=mix(alb,rock,smoothstep(0.55,0.92,m2)*0.55);
+    alb*=0.93+0.07*sin(sp.y*8.0+m*5.0);
+    float dif=max(dot(n,normalize(uSunDir)),0.0);
+    float term=smoothstep(-0.06,0.28,dif);
+    vec3 dayC=alb*(0.22+1.15*dif);
+    vec3 nightC=alb*vec3(0.10,0.13,0.22);
+    col=mix(nightC,dayC,term);
+    float mdot=dot(normalize(sp),normalize(uMarker));
+    float pulse=0.55+0.45*sin(uTime*2.6);
+    float glow=smoothstep(0.9982,0.9998,mdot)*pulse;
+    col+=vec3(1.0,0.52,0.18)*glow*(1.2+3.2*(1.0-term));
+    vec3 vd=normalize(ro-pos);
+    float rim=pow(1.0-max(dot(n,vd),0.0),2.6);
+    col+=vec3(0.50,0.32,0.18)*rim*(0.20+0.80*term);
+  } else {
+    vec3 sd=normalize(vec3(uv,-1.7));
+    vec3 cell=floor(sd*230.0);
+    float s=hash13(cell);
+    float star=step(0.9965,s);
+    float tw=0.5+0.5*sin(uTime*2.0+s*40.0);
+    col=vec3(0.015,0.02,0.045)+vec3(0.85,0.9,1.0)*star*(0.25+0.75*tw);
+  }
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+function planetInit(){
+  if(planetGL) return !!planetGL.gl;
+  const pc=document.getElementById('planetCanvas');
+  const gl=pc.getContext('webgl',{antialias:false,alpha:false,preserveDrawingBuffer:true})||pc.getContext('experimental-webgl');
+  if(!gl){ planetGL={gl:null}; return false; }
+  function sh(type,src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+  const pr=gl.createProgram();
+  gl.attachShader(pr,sh(gl.VERTEX_SHADER,PLANET_VERT));
+  gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,PLANET_FRAG));
+  gl.linkProgram(pr);
+  if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+  gl.useProgram(pr);
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+  const loc=gl.getAttribLocation(pr,'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  const U={};
+  ['uTime','uAspect','uSeed','uSunDir','uMarker','uRot'].forEach(n=>U[n]=gl.getUniformLocation(pr,n));
+  planetGL={gl,pr,U,pc};
+  // drag to spin
+  let dragging=false,lx=0;
+  pc.addEventListener('pointerdown',e=>{dragging=true;lx=e.clientX;pc.setPointerCapture(e.pointerId);});
+  pc.addEventListener('pointermove',e=>{ if(dragging){ planetRot+=(e.clientX-lx)*0.008; lx=e.clientX; }});
+  pc.addEventListener('pointerup',()=>dragging=false);
+  return true;
+}
+function planetResize(){
+  if(!planetGL||!planetGL.gl) return;
+  const d=Math.min(2,window.devicePixelRatio||1);
+  planetGL.pc.width=W*d; planetGL.pc.height=H*d;
+  planetGL.gl.viewport(0,0,planetGL.pc.width,planetGL.pc.height);
+}
+function planetRender(now){
+  if(!planetGL||!planetGL.gl) return;
+  const {gl,U}=planetGL;
+  const df=dayFrac(), sa=(df-0.25)*Math.PI*2;
+  const sun=[Math.cos(sa), Math.sin(sa)*0.9+0.12, 0.35];
+  const sl=Math.hypot(sun[0],sun[1],sun[2]);
+  // hearth valley marker: lat ~20N, lon ~35E (surface-fixed)
+  const mlat=0.35, mlon=0.6;
+  const marker=[Math.cos(mlat)*Math.cos(mlon), Math.sin(mlat), Math.cos(mlat)*Math.sin(mlon)];
+  gl.uniform1f(U.uTime, now/1000);
+  gl.uniform1f(U.uAspect, W/H);
+  gl.uniform1f(U.uSeed, (strHash(WORLD.seed)%1000)/10.0);
+  gl.uniform3f(U.uSunDir, sun[0]/sl, sun[1]/sl, sun[2]/sl);
+  gl.uniform3f(U.uMarker, marker[0], marker[1], marker[2]);
+  gl.uniform1f(U.uRot, planetRot);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+/* planet overlay UI */
+function setPlanetView(on){
+  planetView=on;
+  document.getElementById('planetView').style.display=on?'block':'none';
+  document.getElementById('hud').style.display=on?'none':'flex';
+  document.getElementById('hint').style.display=on?'none':'block';
+  document.getElementById('actions').style.display=on?'none':'flex';
+  if(on){ if(planetInit()) planetResize(); hint(''); }
+  else { hint(beat()); refreshActions(); }
+}
+/* ?pid= arrival param */
+(function(){
+  try{
+    const q=new URLSearchParams(location.search);
+    const pid=q.get('pid');
+    if(pid){ S.arrivalPid=pid; console.log('[hearth] arrived via verse pid', pid); saveSoon(); }
+  }catch(e){}
+})();
+window.__hearth.planet=setPlanetView;
+window.__hearth.planetCanvas=()=>planetGL&&planetGL.pc;
+</script>
+
 </body>
 </html>

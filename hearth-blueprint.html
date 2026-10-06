@@ -135,6 +135,10 @@
   <p class="secsub">Every board is broken down the same way: purpose · inputs/outputs · dependencies · locked specs · quiz questions with locked answers · pipeline checks. Nothing is a slideshow — it's all here, on the board.</p>
   <div class="boards" id="boards"></div>
 
+  <h2 class="sec">Taking Luria Prime — the planet takeover</h2>
+  <p class="secsub">The first attempt at "occupying a world" was a JSON file claiming one — bureaucracy, not occupation. Discarded. This is the real blueprint: <b>when you travel to Luria Prime (S02-SYS02-P04), you arrive in HEARTH.</b> A planet is five things — canonical data, a body in the verse, a destination, a surface, a story — and HEARTH takes all five. Design doc: HEARTH-TAKEOVER.md.</p>
+  <div class="boards" id="takeover-boards"></div>
+
   <h2 class="sec" id="quiz">The HEARTH quiz funnel</h2>
   <p class="secsub">HEARTH has its own quiz funnel — the same sealed mechanism as the main build funnel, pointed at game design. Every component above carries its questions; the funnel itself is a component (board 23). The flow:</p>
   <div class="funnelsteps">
@@ -393,5 +397,76 @@ COMPONENTS.push(
   }).join('');
 })();
 </script>
+<script>
+'use strict';
+/* ---- planet takeover poster boards (T1-T6) ---- */
+const TAKEOVER=[
+{n:"T1",t:"Occupant Registry",
+ purpose:"<b>One source of truth.</b> verse-worlds.json is the canonical record; verse-occupants.js is the compiled beta-readable form — generated, never hand-synced.",
+ inp:"verse-worlds.json",out:"verse-occupants.js (VERSE_OCCUPANTS map)",
+ deps:"moorworld (pid validity)",
+ specs:["Fields: <b>game, page, pid, seed, planet_name, occupied, receipt</b>","Seed format <b>moor:&lt;pid&gt;</b>; pid must exist in moorworld","First occupant: <b>HEARTH on Luria Prime (S02-SYS02-P04)</b>"],
+ quiz:[["Should the registry be hand-edited?","Never — generated from the JSON. One source of truth."],
+       ["Can a planet have two occupants?","No. One planet, one occupant. The map is 1:1."]],
+ checks:["JSON validates: required fields present","pid resolves in moorworld","generated JS matches JSON byte-for-byte in content"]},
+{n:"T2",t:"Travel Hook (beta)",
+ purpose:"<b>The road to Luria Prime ends at the fire.</b> travelToPlanet checks the occupants first; taken planets route to their experience.",
+ inp:"pid from verse tap / travel list",out:"Occupant page (hearth.html?pid=…) OR normal world boot",
+ deps:"Occupant Registry · beta travelToPlanet",
+ specs:["<b>≤10 lines</b>, at the top of travelToPlanet after planet lookup","Occupied popup shows <b>hearthfire mark + 'Occupied by HEARTH'</b>","Applied <b>surgically to the live build</b> — local beta-shell tree is stale; rebuilding would regress the beta"],
+ quiz:[["Should the hook change normal travel?","Not one line of it — unoccupied pids boot exactly as before."],
+       ["Why surgical, not rebuilt?","The live beta was built from newer sources than the local tree. Rebuilding regresses."]],
+ checks:["travelToPlanet('S02-SYS02-P04') routes to hearth.html","travelToPlanet('<other>') still boots the shell","popup shows occupation mark"]},
+{n:"T3",t:"3D Luria Prime",img:"hearth-images/planet-luria.jpg",wide:true,
+ purpose:"<b>The planet itself, in 3D.</b> Dependency-free WebGL ray-sphere: the world you're standing on, seen from outside — with your fire visible on it.",
+ inp:"Planet canonical data (DESERT WORLD) · game clock",out:"Rendered planet · hearth valley marker · rotation",
+ deps:"Occupant Registry (planet identity)",
+ specs:["<b>Ray-sphere fragment shader</b>, zero dependencies","Desert palette from canonical type (seeded fbm); <b>sun synced to game time</b>","Atmosphere rim + procedural starfield","<b>One pulsing warm marker</b> fixed to the surface — brightest on the night side. One fire on the whole planet."],
+ quiz:[["Why ray-sphere instead of a mesh?","40 lines, no geometry bugs, perfect silhouette — elegance over machinery."],
+       ["Should other hearths show as markers?","There are none. One planet, one hearth, one fire."]],
+ checks:["Canvas non-blank (readPixels variance)","Marker pixel warm-bright on night side","Drag rotates; no errors"]},
+{n:"T4",t:"Verse ↔ Surface",
+ purpose:"<b>Two views of one world.</b> SURFACE is the game; PLANET is the world from outside. Same seed, same clock, same save.",
+ inp:"HUD ⤴ · planet 'Descend ⤵'",out:"View switch (surface ⇄ planet)",
+ deps:"3D Luria Prime · surface game",
+ specs:["<b>⤴ in the HUD</b> opens the planet; <b>'Descend ⤵'</b> returns","Planet header shows <b>verse address</b>: universe:prime/sector:S02/…/planet:S02-SYS02-P04","State (deed, fire, time) shared — nothing resets"],
+ quiz:[["Should the planet view pause the game?","No — time moves on Luria Prime whether you watch it or not."],
+       ["What proves it's a planet, not a level?","You can see the world you're standing on, from outside it."]],
+ checks:["⤴ opens planet; ⤵ returns to surface","Clock keeps running in planet view","No state loss across switches"]},
+{n:"T5",t:"Arrival",
+ purpose:"<b>The descent IS the onboarding.</b> First arrival: from the verse, you fall into your valley at dawn and the fire is unlit.",
+ inp:"?pid= param · fresh save",out:"Onboarding beats 1–7 on the surface",
+ deps:"Verse ↔ Surface · surface game",
+ specs:["Fresh save + arrival → <b>7-beat onboarding</b> (already built)","<b>?pid= accepted and logged</b>; the game is always Luria Prime's surface","Dawn arrival: 06:00, birdsong-equivalent, unlit fire"],
+ quiz:[["What if someone arrives with a claimed save?","They descend into their living hearth — fire lit, garden growing."],
+       ["Should arrival be skippable?","The descent is 3 seconds. The game is the destination."]],
+ checks:["?pid=S02-SYS02-P04 logs arrival","Fresh save starts onboarding at dawn","Claimed save resumes intact"]},
+{n:"T6",t:"Takeover Verification",
+ purpose:"<b>Pixel proof that the planet is taken.</b> Not a claim — a set of checks that fail if the occupation isn't real.",
+ inp:"Built files",out:"Green checks or no ship",
+ deps:"All T1–T5",
+ specs:["Planet canvas <b>non-blank</b> (readPixels)","Marker <b>warm-bright on night side</b>","Beta hook: occupied pid routes, <b>unoccupied pid unaffected</b>","Registry validates; <b>all files MD5-verified live</b>"],
+ quiz:[["What does 'taken' mean, measurably?","Travel to the pid → HEARTH boots. Anything less is the trash again."],
+       ["Who is final QA?","Sebastian — tap Luria Prime in the verse on his iPhone and fall into his hearth."]],
+ checks:["All T6 checks green","Live bytes match","Sebastian's eyes on the descent"]},
+];
+(function(){
+  const host=document.getElementById('takeover-boards');
+  host.innerHTML=TAKEOVER.map(c=>{
+    const img=c.img?`<img class="bimg" src="${c.img}" alt="" loading="lazy">`:'';
+    return `<article class="board${c.wide?' wide':''}" id="t${c.n}">
+      <div class="board-head"><span class="n">${c.n}</span><h3>${c.t}</h3></div>${img}
+      <div class="body"><p class="purpose">${c.purpose}</p>
+      <div class="io"><div><b>IN</b>${c.inp}</div><div><b>OUT</b>${c.out}</div></div>
+      <div class="deps"><b>DEPENDS ON</b>${c.deps}</div>
+      <ul class="specs">${c.specs.map(s=>`<li>${s}</li>`).join('')}</ul>
+      <div class="quizbox"><div class="qh">QUIZ — LOCKED ANSWERS</div>
+      ${c.quiz.map(q=>`<div class="q">Q: ${q[0]}<br><span class="a">A: ${q[1]}</span><span class="lock">LOCKED</span></div>`).join('')}</div>
+      <ul class="checks"><div class="ch">PIPELINE CHECKS</div>${c.checks.map(x=>`<li>${x}</li>`).join('')}</ul>
+      </div></article>`;
+  }).join('');
+})();
+</script>
+
 </body>
 </html>
