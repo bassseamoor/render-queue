@@ -7,7 +7,7 @@ This file is the single repository doorway for the MOOR decision resolver.
 Do not search around for a different Funnel implementation and do not invent a parallel questionnaire.
 
 1. Treat the user's original request as immutable Page 0 input.
-2. Resolve the request through the canonical v43 rules below.
+2. Resolve the request through the canonical sealed Funnel law below.
 3. Reuse known locked answers and Bin references before spending new intelligence.
 4. Resolve only missing, changed, conflicting, or downstream-affected decisions.
 5. Preserve every explicit named mechanism as its own requirement.
@@ -29,7 +29,7 @@ Do not search around for a different Funnel implementation and do not invent a p
 - Reference system: `PulseReferences`
 - Execution/Harness component: `app-compiler-harness`
 
-The filename `quiz-funnel-v3.html` is a runtime shell name. The canonical decision contract is Funnel v43.
+The filename `quiz-funnel-v3.html` is a runtime shell name. The enforcement contract is `funnel-kernel.js`, law version `v44-sealed`.
 
 ## Model rule
 
@@ -52,10 +52,30 @@ MOOR chooses Bin/reference lookup, navigation, Funnel resolution, or resolved ex
 1. Exact reference/system command → direct reference/action.
 2. Navigation/open request with a strong known target → direct navigation.
 3. Search/find/lookup request → Bin/reference retrieval.
-4. Build/change request with already locked decisions → Harness/execution route.
-5. Build/change request with unresolved intent → Funnel.
-6. Ambiguous novel request → Funnel.
-7. No intelligence available → local fallback with provenance; no dead end.
+4. Any build/change request → open immutable Page 0 in the Funnel Kernel.
+5. Reuse references and locked decisions inside the Funnel; never bypass it because a request appears familiar.
+6. Harness/execution route is allowed only when the caller presents a valid `moor.funnel-receipt` minted by the Kernel.
+7. Ambiguous novel request → Funnel.
+8. No intelligence available → local fallback with provenance; no dead end.
+
+## Hard-coded sealed-box enforcement
+
+The Funnel is implemented as a deterministic state machine in `/funnel-kernel.js`.
+
+Models and tools have one write slot. They may append answers, references, evidence, failures, corrections, and notes. They cannot mutate Funnel law, rewrite Page 0, skip stage order, or mint execution authority.
+
+Locked stage order:
+
+1. `page0` — immutable verbatim user request.
+2. `references` — reuse known Bin references, locked answers, verified implementations, failures, and evidence.
+3. `distill` — produce a working spec draft without replacing Page 0.
+4. `decisions` — lock all material decisions; unresolved material decisions block progress.
+5. `replay` — feed the immutable Page 0 back through the second half of the Funnel and account for every hard-coded source-backed obligation. Silent substitutions block progress.
+6. `verdict` — spec + destination + done criteria only. The Kernel emits the receipt here.
+
+Harness must reject any build/change packet that lacks a valid receipt. `resolved:true`, fuzzy matching to an old version, model confidence, personality, or a builder's claim are never substitutes for a receipt.
+
+The append-only ledger is replayed and integrity-checked before receipts are accepted. The browser implementation is designed to prevent accidental/model bypass; it is not a cryptographic trust boundary against arbitrary same-origin code. Strong adversarial tamper resistance would require a separate trusted process/server boundary.
 
 ## Canonical Funnel laws
 
@@ -95,3 +115,8 @@ Every call returns a structured envelope:
   "result": {}
 }
 ```
+
+
+## Buster / Muse operating personality
+
+Muse's MOOR operator personality is defined in `/BUSTER.md`. Personality can improve behavior, but it never grants authority. The Kernel outranks Buster.
