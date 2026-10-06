@@ -6,7 +6,7 @@ vm.runInContext(core,sandbox,{filename:'funnel-foundry-core.js'});
 vm.runInContext(data,sandbox,{filename:'funnel-environment-data.js'});
 const g=sandbox.window.FUNNEL_ENVIRONMENT_GRAPH;
 assert(g&&g.schema==='moor.funnel-environment-graph');
-assert.equal(g.version,2);
+assert.equal(g.version,3);\nassert.equal(g.currentLaw.active,'v44-sealed');\nassert.equal(g.currentLaw.candidate,'ultra-v1-candidate');
 assert.equal(g.nodes.filter(n=>n.type==='need').length,130,'Default Foundry graph must contain all 130 need points');
 for(const key of ['fidelity','preservation','outcome','needs','value'])
   assert(g.nodes.some(n=>n.type==='funnel'&&n.systemKey===key),'Missing specialist system '+key);
