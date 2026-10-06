@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>EVERGROVE — the happiness cultivator</title>
+<style>
+:root{--bg:#0a0e08;--ink:#eee7cf;--mut:#a9a07f;--grn:#9fd08a;--gold:#e8c33d;--card:#12160e;--line:#2e3a22}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,'Times New Roman',serif}
+.top{position:sticky;top:0;z-index:5;background:rgba(10,14,8,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.brand{font-size:18px;letter-spacing:.22em;color:var(--grn);margin-right:4px}
+.sub{font-size:11px;color:var(--mut);letter-spacing:.12em;margin-right:6px}
+.seedchip{font-family:monospace;font-size:12px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer;background:var(--card)}
+.seedchip:hover{color:var(--grn);border-color:var(--grn)}
+button.act{background:var(--grn);border:0;color:#101408;font-weight:700;border-radius:999px;padding:8px 18px;font-size:14px;cursor:pointer;font-family:inherit}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:999px;padding:8px 16px;font-size:14px;cursor:pointer;font-family:inherit}
+button.ghost:hover{color:var(--grn);border-color:var(--grn)}
+button.ghost.on{color:#101408;background:var(--grn);border-color:var(--grn)}
+.locks{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--mut);flex-wrap:wrap}
+.wrap{max-width:700px;margin:0 auto;padding:30px 20px 90px}
+.mvmt{margin:0 0 8px}
+.mvmt .num{font-size:12px;letter-spacing:.35em;color:var(--grn);margin:30px 0 4px}
+.mvmt .mtitle{font-size:15px;color:var(--mut);font-style:italic;margin:0 0 12px}
+.mvmt p{font-size:18.5px;line-height:1.75;margin:0 0 1em}
+.mvmt:first-child .num{margin-top:0}
+.mvmt p:first-of-type::first-letter{font-size:2.6em;float:left;line-height:.9;padding:2px 8px 0 0;color:var(--grn)}
+.custom{display:none;gap:8px;flex-wrap:wrap;margin:6px 0}
+.custom.open{display:flex}
+.custom select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-family:inherit;font-size:13.5px;max-width:320px}
+.bp{margin-top:34px;border:1px solid var(--line);border-radius:16px;background:var(--card);padding:22px 22px 18px}
+.bp h3{margin:0 0 4px;font-size:20px;color:var(--grn);letter-spacing:.02em}
+.bp .bprecap{color:var(--mut);font-style:italic;font-size:14.5px;margin:0 0 16px}
+.bp h5{margin:18px 0 6px;font-size:12px;letter-spacing:.25em;color:var(--gold);font-weight:400}
+.bp p,.bp li{font-size:15.5px;line-height:1.7}
+.bp ul{margin:6px 0;padding-left:20px}
+.bp li{margin-bottom:6px}
+.bp .nonob{color:var(--grn);font-weight:700}
+.bp .why{color:var(--mut);font-size:14px}
+.saved{margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
+.saved h4{font-size:12px;letter-spacing:.25em;color:var(--mut);margin:0 0 10px;font-weight:400}
+.srow{display:flex;gap:8px;align-items:center;margin:8px 0;font-size:14px}
+.srow .ttl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);cursor:pointer}
+.srow .ttl:hover{color:var(--grn)}
+.srow code{font-family:monospace;font-size:11.5px;color:var(--gold)}
+.srow button{background:none;border:1px solid var(--line);color:var(--mut);border-radius:8px;padding:2px 10px;cursor:pointer;font-size:12px;font-family:inherit}
+.srow button:hover{color:var(--grn);border-color:var(--grn)}
+.hintline{color:var(--mut);font-size:13.5px;font-style:italic;margin:18px 0 0}
+@media(max-width:560px){.mvmt p{font-size:17px}.brand{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="top">
+  <span class="brand">EVERGROVE</span>
+  <span class="sub">Moor-built</span>
+  <span class="seedchip" id="seedChip" title="tap to copy share link">seed …</span>
+  <button class="act" id="btnNew">New situation</button>
+  <button class="ghost" id="btnCopy">Copy</button>
+  <button class="ghost" id="btnKeep">Keep</button>
+  <div class="locks">
+    <span>lock:</span>
+    <button class="ghost" id="lockSit">situation</button>
+    <button class="ghost" id="lockNeed">need</button>
+    <button class="ghost" id="btnCustom">customize</button>
+  </div>
+</div>
+<div class="wrap">
+  <div class="custom" id="customRow">
+    <select id="selNeed"></select>
+    <select id="selSit"></select>
+    <button class="act" id="btnApplyCustom">Grow this</button>
+  </div>
+  <div id="situation"></div>
+  <div class="bp" id="bpBox">
+    <h3 id="bpTitle"></h3>
+    <p class="bprecap" id="bpRecap"></p>
+    <h5>OBJECTIVES</h5>
+    <ul id="bpObj"></ul>
+    <h5>CAPABILITIES LEVERAGED</h5>
+    <ul id="bpCaps"></ul>
+    <h5>EVERGREEN VALUE</h5>
+    <p id="bpEver"></p>
+    <h5>ACCEPTANCE CRITERIA</h5>
+    <ul id="bpAcc"></ul>
+    <div style="margin-top:14px"><button class="ghost" id="btnCopyBp">Copy blueprint</button></div>
+  </div>
+  <p class="hintline" id="hintline">Walk in. Read slowly. The blueprint below is how this good hour becomes something lasting.</p>
+  <div class="saved" id="savedBox" style="display:none">
+    <h4>KEPT BLUEPRINTS</h4>
+    <div id="savedList"></div>
+  </div>
+</div>
+<script>
+/* EVERGROVE intent corpus v1 — distilled from Sebastian's stated needs, flipped to other people.
+ * Sources: intake 2026-10-06 (zone-2 cardio, moor-into-income, animations/situations,
+ * architecture/interiors incl. bathrooms, glass panels/art, rainy days, motivation,
+ * cozy warm places, making things by hand, being seen/sharing) + standing record.
+ * RULE: every atom is plain, warm, implementation-free phenomenology. No tool names,
+ * no how-to-build language. Only what a person inside the happy situation perceives. */
+var EVG_INTENT = {
+version: 1,
+needs: [
+{t:"Gentle daily movement",flip:"For people whose doctors said 'move gently' \u2014 a morning walk so pleasant it becomes the best part of the day.",tags:["move","cozy","nature","rain"]},
+{t:"Craft that pays back",flip:"For people who make things in spare hours \u2014 a way for the things they make to pay them back.",tags:["hands","money","make"]},
+{t:"A good laugh on demand",flip:"For people who need to laugh \u2014 a goofy little world that greets them like an old friend.",tags:["joy","play"]},
+{t:"One small beautiful room",flip:"For people with one small room \u2014 make it beautiful without spending much.",tags:["home","interior","hands"]},
+{t:"The long soak",flip:"For people who do their best thinking in the bath \u2014 a soaking ritual worth looking forward to.",tags:["cozy","water","home"]},
+{t:"Light through color",flip:"For people in a dark season \u2014 colored light moving across the room, made by hand.",tags:["beauty","hands","light"]},
+{t:"Rain as entertainment",flip:"For people stuck inside a week of rain \u2014 the rain itself becomes the show.",tags:["rain","cozy","home"]},
+{t:"A win that stacks",flip:"For people starting over \u2014 one small daily win that stacks into a streak they protect.",tags:["joy","growth"]},
+{t:"A warm pocket",flip:"For people who feel the cold \u2014 a warm pocket of the world that holds them.",tags:["cozy","home"]},
+{t:"Busy hands, calm mind",flip:"For people whose hands need work \u2014 something real to make, slowly.",tags:["hands","make","joy"]},
+{t:"A stage that looks back",flip:"For people with something to show \u2014 a stage where people actually stop and look.",tags:["share","joy"]},
+{t:"Guests at the door",flip:"For people who light up when guests arrive \u2014 a welcome worth walking toward.",tags:["cozy","share","home"]},
+{t:"Studying that feels good",flip:"For people with exams ahead \u2014 a study corner where the hours feel kind.",tags:["home","cozy","growth"]},
+{t:"A workday with air",flip:"For people working from home \u2014 a workday with air and light in it.",tags:["home","interior","growth"]}
+],
+situations: [
+{n:0,t:"The morning loop",place:"a loop path through the park that smells of cut grass, with a coffee cart at the halfway bench",vista:"the whole green loop curves away in front of you, joggers and old dogs and one very serious heron all doing their rounds"},
+{n:0,t:"The five-minute hill",place:"a gentle hill at the end of the street, just steep enough to warm your cheeks",vista:"from the top, the rooftops run to the river in a patchwork of chimneys and TV aerials and one red balloon caught in a tree"},
+{n:1,t:"The bread oven morning",place:"a shared kitchen where the bread is already rising when you arrive, flour on every surface like first snow",vista:"through the kitchen window the street is waking up, and every passerby slows a little at the smell"},
+{n:1,t:"The mending table",place:"a long table in a sunny shopfront where people bring torn things and leave with fixed things",vista:"the shop window frames the street like a stage, and the street keeps stopping to watch"},
+{n:2,t:"The giggle arcade",place:"a tiny arcade of hand-painted games where everything wobbles and nothing takes itself seriously",vista:"through the open door you can see the queue outside, people already laughing before they come in"},
+{n:2,t:"The silly parade",place:"a courtyard where a parade of paper animals marches past every hour, led by a very proud goose",vista:"balconies all around are full of people leaning over the railings, waving at the goose"},
+{n:3,t:"The one-room wonder",place:"a single small room someone made beautiful with paint, plants, and things found at the curb",vista:"from the doorway the whole room reads like a painting \u2014 every corner placed, nothing wasted, everything loved"},
+{n:3,t:"The corner that changed everything",place:"a neglected corner of a flat turned into a reading nook with a lamp, a cushion, and a shelf",vista:"the window behind the nook looks onto the fire escape, where someone has hung a string of tiny lights"},
+{n:4,t:"The candlelit soak",place:"a bathroom turned into a small sanctuary \u2014 candles on the tub's edge, steam on the mirror, the door locked against the world",vista:"the little window is cracked open to the night air, and the steam rises past it in slow ribbons"},
+{n:5,t:"The glass-light room",place:"a studio where panes of colored glass lean against the windows, throwing red and gold and green across the floor",vista:"across the room the light has made a second, brighter room out of pure color, and it moves as the sun moves"},
+{n:6,t:"The rain theater",place:"a porch with a deep awning, a rocking chair, and the best seat for the storm rolling in",vista:"beyond the porch rail the rain is coming down in silver sheets, and the street has gone beautifully empty"},
+{n:6,t:"The puddle parade",place:"a courtyard built for rain \u2014 channels, spouts, and little waterwheels that only wake up in a downpour",vista:"from the covered walkway you watch the whole courtyard turn into a working water machine, gleaming and splashing"},
+{n:7,t:"The streak garden",place:"a community plot where every day you plant exactly one thing and ring the little bell",vista:"the beds stretch out in a patchwork of tiny flags, each one somebody's unbroken streak"},
+{n:8,t:"The warm corner",place:"a corner of the big room kept deliberately warm \u2014 a thick rug, a low chair, a blanket that smells of cedar",vista:"through the frosted window the winter street glitters, and you are very glad to be on this side of it"},
+{n:9,t:"The clay afternoon",place:"a pottery shed where the wheel hums and your hands finally have something honest to do",vista:"the drying shelves are full of lopsided, glorious things, each one better than the last"},
+{n:9,t:"The whittling bench",place:"a bench under the awning with a pile of soft wood and shavings curling at your feet like woodsmoke made solid",vista:"beyond the awning the garden goes on being itself, unbothered and green, while you work"},
+{n:10,t:"The pocket stage",place:"a tiny stage in the market square, just big enough for one person and their brave idea",vista:"the crowd gathers in a loose half-circle, shopping bags at their feet, faces turned up and ready"},
+{n:10,t:"The gallery wall",place:"a long white wall in the community hall where anyone can hang one thing they made",vista:"the wall runs the whole length of the room, a hundred small acts of courage in a row"},
+{n:11,t:"The welcome hearth",place:"a house where the door is always a little open and the kettle is always a little on",vista:"from the kitchen you can see the path to the gate, and you find yourself watching it, hoping"},
+{n:12,t:"The kind study",place:"a study corner with a deep chair, a lamp that flatters every page, and a window for thinking-stares",vista:"the desk faces the garden, where the light moves across the grass like a slow hand turning pages"},
+{n:13,t:"The airy office",place:"a home office with the desk facing the window, plants on the sill, and a strict no-meeting plant-watering hour",vista:"outside the window the whole street goes about its day, and your work feels like part of it, not apart from it"},
+{n:13,t:"The lunch-break roof",place:"a rooftop garden above the home office, where lunch is eaten among the tomato vines",vista:"the city spreads out below in a hum of rooftops and pigeons, and the tomatoes are winning"}
+],
+money: [
+{t:"The corner bread stand",how:"the extra loaves from the shared oven sell out at the corner every morning, and the money pays for next week's flour",tags:["hands","money","home"]},
+{t:"The paid walking club",how:"a slow morning walking group charges a small weekly fee, and people pay gladly because the route is beautiful and the coffee is free",tags:["move","money","cozy"]},
+{t:"The mending shop",how:"torn jackets come in, fixed jackets go out, and each repair carries a fair price and a handwritten note",tags:["hands","money","make"]},
+{t:"The giggle arcade tokens",how:"the wobbly hand-painted games take tokens, and the tokens keep the paint fresh and the goose fed",tags:["joy","money","play"]},
+{t:"The beautiful-room hour",how:"the one beautiful room rents by the hour for photos and quiet thinking, and it pays for the plants",tags:["home","money","interior"]},
+{t:"The colored-light commissions",how:"neighbors commission window panels of colored glass, each one a small paid artwork that brightens a whole room",tags:["beauty","money","hands"]},
+{t:"The rain-walk guide",how:"a guide leads the famous rain walk at dusk for a small fee, umbrellas provided, wonder guaranteed",tags:["rain","money","cozy"]},
+{t:"The streak seedlings",how:"unbroken streaks earn seedlings to take home, and a few extra seedlings sell at the gate for the garden fund",tags:["growth","money","nature"]},
+{t:"The warm-corner subscription",how:"the warmest corner in the neighborhood is bookable by the evening, and the bookings keep the firewood stacked",tags:["cozy","money","home"]},
+{t:"The clay shelf",how:"the best of the afternoon's pots sell from the shed shelf, each one signed and slightly lopsided and loved",tags:["hands","money","make"]},
+{t:"The pocket-stage hat",how:"the hat goes around after every pocket-stage set, and the coins in it have sent three buskers to the big stage",tags:["share","money","joy"]},
+{t:"The rooftop lunch club",how:"the rooftop lunch club sells a few extra seats to neighbors, and the tomatoes fund themselves",tags:["home","money","growth"]}
+],
+caps: [
+{k:"living-garden",label:"the Living Garden",plain:"grows seeded plants and trees people can walk among",tags:["nature","cozy","growth","move"]},
+{k:"ambience-engine",label:"the Ambience Engine",plain:"living soundscapes \u2014 rain on roofs, fire crackle, market murmur",tags:["cozy","rain","joy"]},
+{k:"hearth",label:"HEARTH",plain:"warm persistent homes with a fire at the center",tags:["cozy","home","share"]},
+{k:"awe",label:"AWE",plain:"places so beautiful they stop people in their tracks",tags:["beauty","joy"]},
+{k:"comp-furniture",label:"the Furniture Foundry",plain:"furniture people design and build themselves",tags:["hands","home","interior","make"]},
+{k:"moorworld",label:"Moorworld",plain:"the explorer of connected worlds",tags:["explore","share"]},
+{k:"stream",label:"the Stream",plain:"the endless scroll that lands you inside real places",tags:["explore","joy"]},
+{k:"more-canvas",label:"the Moor Canvas",plain:"the open canvas where people build and share",tags:["make","share"]},
+{k:"wonder-feed",label:"Wonder Feed",plain:"an endless feed of wonders to fall into",tags:["joy","explore","share"]},
+{k:"land-claim",label:"Land Claim",plain:"your own permanent piece of ground",tags:["home","cozy"]},
+{k:"comp-tablets",label:"the Tablet Painters",plain:"painting on floating panels of light",tags:["hands","beauty","light"]},
+{k:"sign-shop",label:"the Sign Shop",plain:"hand-painted signs and lettering for little shops",tags:["hands","money","make"]},
+{k:"palette-mixer",label:"the Palette Mixer",plain:"color sets that make places feel right",tags:["beauty","interior","home"]},
+{k:"creature-lab",label:"the Creature Lab",plain:"gentle creatures people befriend",tags:["nature","joy","cozy"]},
+{k:"evergreen-public-library",label:"the EVERGREEN Library",plain:"a public library world of shared blueprints",tags:["share","growth"]},
+{k:"effects-studio",label:"the Effects Studio",plain:"fireflies, drifting petals, light that feels alive",tags:["beauty","cozy","joy"]},
+{k:"seed-lab",label:"the Seed Lab",plain:"seeds you save, name, and share",tags:["share","growth"]},
+{k:"component-distiller",label:"the Component Distiller",plain:"saves anything good as a reusable piece",tags:["make","hands"]},
+{k:"comp-holopanel",label:"HoloPanel",plain:"floating panels of warm light for rooms",tags:["interior","home","beauty"]},
+{k:"wrangler-catalog",label:"the App Wrangler",plain:"the catalog every shipped thing is registered in",tags:["share"]},
+{k:"comp-proc-vehicles",label:"the Vehicle Builder",plain:"little vehicles people ride for fun",tags:["joy","play","move"]},
+{k:"planet-workshop",label:"Planet Workshop",plain:"whole little worlds with real hills and weather",tags:["nature","explore","rain"]},
+{k:"pad-garden",label:"the Pad Garden",plain:"small garden pads anyone can tend",tags:["nature","cozy","home"]}
+],
+times: [
+{t:"early morning, the light still deciding what kind of day it will be",p:"dawn"},
+{t:"mid-morning, when the sun has made up its mind and everything agrees",p:"day"},
+{t:"the long golden afternoon, when time stretches like warm honey",p:"day"},
+{t:"an hour before sunset, when the light goes amber and generous",p:"dusk"},
+{t:"the blue hour, when the lamps come on one by one like fireflies",p:"dusk"},
+{t:"a rainy afternoon, the grey outside making the inside glow warmer",p:"day"},
+{t:"just after dawn on a cold clear day, your breath making small clouds",p:"dawn"},
+{t:"late evening, when the day is done and nobody is in a hurry",p:"night"},
+{t:"the first warm evening of spring, windows open, the air full of promise",p:"dusk"},
+{t:"a slow Sunday morning, the kind with nowhere to be",p:"day"},
+{t:"golden hour, when everything looks like it is being remembered fondly",p:"dusk"},
+{t:"midnight in summer, the sky holding onto the light like it can't let go",p:"night"},
+{t:"the pale hour before a storm, the air electric and green",p:"day"},
+{t:"a crisp autumn morning, the light low and the leaves doing their show",p:"dawn"}
+],
+light: [
+{t:"the sun comes through in visible shafts, and dust hangs in them like tiny lanterns",ps:["dawn","day"]},
+{t:"everything facing the sun is gilded; everything else is resting in soft blue",ps:["dawn","dusk"]},
+{t:"the light is low enough to rake across every surface, and suddenly you can see the texture of everything",ps:["dawn","dusk"]},
+{t:"lamplight pools in warm circles, and the edges of the world go soft and kind",ps:["dusk","night"]},
+{t:"sunlight filters through leaves and throws a thousand green coins at your feet",ps:["day"]},
+{t:"the rain-washed air turns the light to silver, and every wet surface gleams",ps:["day"]},
+{t:"candlelight moves on the walls, restless and warm as something alive",ps:["night","dusk"]},
+{t:"the whole scene is lit as if from inside, the way things look in the last minute of sun",ps:["dusk"]},
+{t:"colored light from the glass panes lies across the floor in long bright ribbons",ps:["day","dusk"]},
+{t:"moonlight finds the water and lays a trembling road across it",ps:["night"]},
+{t:"the fog glows from within, opal-white, and every edge has gone soft",ps:["dawn","day"]},
+{t:"shadows stretch long and thin across the ground, calligraphy written in gold",ps:["dawn","dusk"]}
+],
+sky: [
+"the sky is washed clean, a blue so deep it feels like looking down instead of up",
+"clouds move slowly overhead, lit underneath in rose and amber like coals under ash",
+"the sky has gone the color of a pearl held to lamplight \u2014 white, grey, and secretly pink",
+"a few high clouds trail across the blue like brushstrokes someone forgot to blend",
+"the sky is darkening in the east while the west still burns \u2014 you stand under two skies at once",
+"stars are coming out one by one, shy at first, then all at once, like guests arriving",
+"the clouds have torn open and a single shaft of sun falls through like something lowered on a rope",
+"the sky is huge and empty and blue, the kind of blue that makes you feel both tiny and held",
+"swallows are stitching black lines across the evening sky, fast and joyful",
+"the sky is the soft grey of a rain that means it, and it is beautiful in its own serious way"
+],
+air: [
+"the air is cool on your face and warm at your back, and you stand in the seam between them",
+"the air moves just enough to remind you it is there, lifting the hairs on your arms",
+"each breath feels like drinking something \u2014 the air has weight and taste here",
+"the air is so still you can hear your own heartbeat, and it seems to belong to the place",
+"warm air rises off the stones in visible waves, and walking through it feels like wading",
+"the air smells of distance \u2014 of bread, of rain, of dinner being cooked somewhere",
+"a breeze finds the back of your neck like a friendly hand, and is gone",
+"the air is cold enough to sharpen everything: colors brighter, sounds closer, you more awake",
+"the air is thick with the smell of growing things, green and sweet and slightly wild",
+"the air hums, very faintly, with the sound of people being happy nearby"
+],
+textures: [
+"old wood, silvered by weather, the grain raised like braille under your fingertips",
+"a hand-thrown mug, still warm, the glaze pooling thick where the potter's thumb rested",
+"stone worn smooth by water and hands, warm from the day even as the air cools",
+"a quilt made of a hundred scraps, each one a story someone chose to keep",
+"bread crust, crackling faintly as it cools, the smell doing half the work of happiness",
+"clay, cool and forgiving, taking the shape your hands have been dreaming of",
+"glass, thick and slightly wavy, that bends the world into something kinder",
+"a wool blanket, heavy and honest, smelling faintly of cedar and clean laundry",
+"paper, thick and toothy, waiting for the first brave line of a drawing",
+"copper gone green at the edges, still bright where hands have polished it for years",
+"paint, still tacky, the brushstrokes visible like the path of someone's arm",
+"leaves, glossy from the rain, each one holding a bead of water like a jewel",
+"a chalkboard menu, the writing in looping chalk, slightly smudged where someone changed the price",
+"dough, soft and alive under your palms, pushing back just a little"
+],
+ground: [
+"the ground under you, springy with moss and old leaves, giving back each step a little",
+"the stone underfoot, warm from the day, holding the heat like it intends to keep it",
+"the earth under you, dark and soft, smelling faintly of rain that fell hours ago",
+"the boards underfoot, worn smooth and silvered, creaking their small honest creak",
+"the gravel path under you, crunching softly, each stone placed by some patient hand",
+"the grass underfoot, thick and cool, beaded with dew that wets your ankles",
+"the tile floor under you, cool and clean, patterned in blue and white like a story",
+"the rug underfoot, thick enough to lose your toes in, in colors that should clash and don't",
+"the packed earth of the path, stamped firm by a thousand happy feet before yours",
+"the wooden deck under you, warm from the sun, smelling of summer and sawdust"
+],
+sounds: [
+"laughter from the next table over \u2014 not at you, with you, the inclusive kind",
+"rain on the awning, steady as breathing, with the occasional deeper note where it hits the gutter",
+"the kettle starting its low talk, then its whistle, then the pour",
+"a dog dreaming on the rug, paws twitching, chasing something wonderful",
+"the squeak of the swing, the thump of small feet landing in the sand",
+"someone humming in the next room, tuneless and completely content",
+"the bell over the shop door, announcing another neighbor",
+"water moving over stone \u2014 not a roar, a conversation",
+"the pop and sigh of a fire settling into itself",
+"pages turning, slow and deliberate, in the reading corner",
+"the clink of mugs, the scrape of chairs, the small orchestra of a full table",
+"a child explaining something very important to a very patient cat",
+"the market murmur outside, rising and falling like a tide of good news",
+"your own footsteps on the path, and then the quiet coming back larger than before"
+],
+smells: [
+"fresh bread, impossible and wonderful, doing half the work of happiness by itself",
+"rain on hot stone \u2014 the smell of the earth exhaling after holding its breath",
+"woodsmoke, thin and sweet, from a fire you cannot see",
+"coffee, dark and promising, with the milk steaming beside it",
+"cut grass, green and sharp, the smell of Saturday morning",
+"wet earth turned over, dark and rich as chocolate",
+"cinnamon and warm sugar from the oven, a smell that hugs you",
+"old books and beeswax, the smell of a room that has kept its promises",
+"citrus blossom, bright as a struck bell",
+"the mineral smell of cold water over stone",
+"tomato vines in the sun, green and peppery and alive",
+"paint and turpentine, the sharp clean smell of something being made",
+"jasmine on the evening air, so sweet it feels like a hand on your chest",
+"the clean nothing-smell of cold air, cold enough to feel like a taste"
+],
+people: [
+"a kid doing a victory dance over a won game, arms up, utterly unselfconscious",
+"an old man tending his roses with the tenderness of someone greeting old friends",
+"a woman laughing so hard she has to put her mug down, and the whole table laughs with her",
+"a teenager teaching a grandparent the steps to a silly dance, both of them terrible at it, both delighted",
+"a baker sliding a tray out of the oven, flour on his forearms like medals",
+"a girl reading aloud to a circle of smaller kids, doing all the voices",
+"two strangers discovering they grew up on the same street, mid-conversation, mid-joy",
+"a man playing an accordion badly and beautifully, hat on the ground filling with coins",
+"a grandmother wrapping a scarf around a grandchild's neck with practiced, loving hands",
+"a painter stepping back from the wall, head tilted, seeing it finished at last"
+],
+micro: [
+"a spider's web strung between two leaves, beaded with rain, holding a whole miniature rainbow",
+"steam rising off a mug in a slow spiral, visible only in the shaft of sun",
+"the way the chalk price on the board has been changed three times, each in a different hand",
+"a single flower in a jam jar on the table, doing more work than the whole flower shop",
+"the worn dip in the step where ten thousand feet have landed, each one a small prayer of arrival",
+"a tip jar with a hand-drawn sun on it, already half full of coins and one button",
+"raindrops racing down the windowpane, merging, splitting, the tiny drama of it",
+"the exact green of new leaves against the old dark ones \u2014 two greens that should clash and don't",
+"a crack in the stone, and in the crack, a whole garden: moss, a fern, a flower no bigger than a nail",
+"your own shadow, stretched long and strange, keeping you company",
+"a candle flame leaning in a draft, then straightening, then leaning again \u2014 deciding",
+"the queue at the counter, patient and cheerful, nobody checking their watch",
+"a dog asleep under the bench, one ear up, on duty even in dreams",
+"the first star out, small and certain, above the rooftops",
+"water beading on a leaf, each drop holding a tiny upside-down world",
+"a child's drawing taped to the wall: this place, but bigger, and with a dragon"
+],
+craft: [
+"the joinery is so tight you cannot slip a fingernail between the boards \u2014 no nails, just wood understanding wood",
+"someone planed this bench by hand; you can see the long shallow scallops of the plane in the raking light",
+"the sign over the door was painted by hand, the letters slightly uneven, which is exactly why it is perfect",
+"a mended jacket, the patch stitched in bright thread: someone loved this enough to make the repair beautiful",
+"the window was glazed with old glass, and the world through it ripples gently, like seen through water",
+"the quilt on the bench is made of a hundred scraps, each one a story someone chose to keep",
+"the gate hangs true on hinges forged three generations gone, and still swings silent",
+"someone swept this courtyard this morning \u2014 the broom lines curve like contour lines on a map of care",
+"the pots on the shelf are all a little lopsided, and that is how you know a person made them",
+"the mural on the wall was painted by the whole street, one square each, and you can tell which square is the kid's",
+"the bread is scored with a pattern \u2014 a leaf, a wave \u2014 the baker's signature in crust",
+"the shelf brackets are bent iron, hammered by hand, each one slightly different, all of them strong",
+"the cushions were sewn from old curtains, and the pattern doesn't match, and nobody cares",
+"the little bell by the door was cast with a name on it, and it rings a clear true note"
+],
+feelings: [
+"your chest feels too small for what is in it, in the best way",
+"you laugh once, quietly, at nothing \u2014 the laugh of someone who has been given something",
+"your shoulders drop an inch; you did not know they were up",
+"time stops being a line and becomes a room you are sitting in",
+"you feel, suddenly and completely, that you are exactly where you are supposed to be",
+"your eyes sting, and you are not sad \u2014 you are full",
+"you want to tell someone, and you want to tell no one, both at once",
+"the small loud worries of the morning seem to belong to a different person, far away",
+"you feel briefly, blindingly, that the world is good \u2014 not perfect, good, which is better",
+"your breathing slows without you asking it to, the way it does just before sleep, but you are wide awake",
+"gratitude arrives uninvited and sits down next to you like an old friend",
+"you catch yourself smiling at a stranger, and the stranger smiles back, and the day is made",
+"it is the feeling of being exactly on time for your own life",
+"a quiet pride warms you \u2014 not the loud kind, the kind that says: I helped make this"
+]
+};
+</script>
+<script>
+'use strict';
+/* ---------- seeded RNG ---------- */
+function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return function(){h=Math.imul(h^h>>>16,2246822507);h=Math.imul(h^h>>>13,3266489909);return (h^=h>>>16)>>>0;};}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function pickN(rng,arr,n,used,tag){const pool=arr.map((_,i)=>i).filter(i=>!used.has(tag+':'+i));const out=[];for(let k=0;k<n&&pool.length;k++){const j=Math.floor(rng()*pool.length);const idx=pool.splice(j,1)[0];used.add(tag+':'+idx);out.push(arr[idx]);}return out;}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+const ROMAN=['I','II','III','IV','V','VI'];
+const MTITLES=['arrival','settling in','the living scene','close noticing','the deep hour','staying'];
+
+/* ---------- movement frames (prose; atoms fill the {slots}) ---------- */
+const FRAMES=[
+[ /* 1 arrival — place, time, light0, sky */
+ p=>`You come to ${p.place} ${p.time}. For a moment you just stand at the edge of it, taking it all in \u2014 and then the taking-it-in stops being a choice, because ${p.light0}.\n\nOverhead, ${p.sky}. You take one breath, then another, and feel the particular unclenching that happens when a good hour turns out to be real.`,
+ p=>`This is the place: ${p.place}. The time is ${p.time}. You arrive the way you arrive at all the best things \u2014 slightly out of breath, slightly late, and exactly on time.\n\n${cap(p.light0)}. Above you, ${p.sky} \u2014 and you understand, suddenly, that you will remember this hour for the rest of your life.`,
+ p=>`${cap(p.time)} \u2014 and here: ${p.place}. You stop walking the way you stop talking when someone says something true.\n\n${cap(p.light0)}. ${cap(p.sky)}, and the sky seems to be showing off just for you, which is ridiculous, and you don't care.`
+],
+[ /* 2 settling in — air, tex0, ground */
+ p=>`${cap(p.air)}. You let your shoulders down; you hadn't realized they were up.\n\nUnder your hand, before you've decided to touch it: ${p.tex0}. Under your feet: ${p.ground}. Some things you touch the way you touch museum pieces when no one is looking \u2014 and some things you touch because they ask.`,
+ p=>`Your body takes a minute to catch up with where you are. ${cap(p.air)}.\n\nYou find a place to stand that feels like it was waiting. What meets your hand there is exactly as it should be: ${p.tex0} \u2014 present, honest, beautiful without trying. Beneath you, ${p.ground}, holding you like it means it.`,
+ p=>`${cap(p.air)}. Breath comes easier here, as if the air had been expecting you.\n\nYou lean, lightly, into ${p.tex0}, and feel the day stored in it coming back out into your palm. The ground under you, ${p.ground} \u2014 you shift your weight and feel completely, simply, wonderfully supported.`
+],
+[ /* 3 the living scene — per0, per1, vista, light1 */
+ p=>`Then you look around \u2014 really look \u2014 and the place is alive with it. ${cap(p.per0)}. A little further on, ${p.per1}.\n\n${cap(p.vista)}. ${cap(p.light1)} \u2014 and the whole scene seems lit from within, like something remembering being made.`,
+ p=>`The people make it. ${cap(p.per0)} \u2014 you watch for a full minute, grinning like a fool. ${cap(p.per1)}, and you realize you are part of the scene now, not just watching it.\n\n${cap(p.vista)}. ${cap(p.light1)}.`,
+ p=>`This is not a place that sits still for you. ${cap(p.per0)}. ${cap(p.per1)} \u2014 and somewhere in the middle of watching, you stop being a visitor.\n\n${cap(p.vista)}. ${cap(p.light1)}, and you feel the particular warmth of being exactly where the good thing is happening.`
+],
+[ /* 4 close noticing — micro x4, craft0, tex1 */
+ p=>`The big thing is almost too much, so your eyes do what eyes do: they go small. ${cap(p.micro0)}. ${cap(p.micro1)}.\n\nAnd then \u2014 ${p.craft0} \u2014 you stop breathing for a second, because somebody's hands made that, and they cared. ${cap(p.tex1)} nearby, as if the place were showing off its jewelry, and you let it.`,
+ p=>`You crouch without deciding to. ${cap(p.micro0)}. A little further on, ${p.micro2}.\n\nAnd here is the thing that undoes you: ${p.craft0}. Not grand. Just true. ${cap(p.micro3)} \u2014 you lean closer, and closer still, until your nose nearly touches it.`,
+ p=>`Down at the level of small things, the place is even more itself. ${cap(p.micro1)}. ${cap(p.micro3)}.\n\n${cap(p.craft0)} \u2014 the kind of care you can feel in your chest like a hand. You find ${p.tex1} and hold it for a long time, the way you hold a face you love.`
+],
+[ /* 5 the deep hour — snd x5, sml x2, light2, feel4, feel6, money */
+ p=>`Time does something strange then. It stops passing and starts pooling. ${cap(p.snd0)}; ${p.snd1}.\n\n${cap(p.sml0)}, and underneath it, ${p.sml1}. ${cap(p.feel4)}.\n\nAnd here is the quiet money in it: ${p.money_t} \u2014 ${p.money_how}. Nobody here is getting rich. Everybody here is getting something better than rich: a good hour that pays for the next good hour.`,
+ p=>`Has it been an hour? Has it been ten minutes? ${cap(p.snd2)}. The light has shifted \u2014 ${p.light2} \u2014 and the shift feels like the place turning a page just for you.\n\n${cap(p.snd4)}. ${cap(p.sml0)}. ${cap(p.feel4)} \u2014 and you realize you have been smiling for some time without knowing it.\n\nThe money side is simple and honest: ${p.money_t} \u2014 ${p.money_how}.`,
+ p=>`The senses stop taking turns and start arriving together: ${p.snd1} over ${p.sml0}, ${p.sml1} underneath everything like a bass note.\n\n${cap(p.light2)}. ${cap(p.feel4)} ${cap(p.feel6)}.\n\nSomeone has figured out the economics of joy here: ${p.money_t} \u2014 ${p.money_how}. The good hour funds itself, and that is why it keeps happening.`
+],
+[ /* 6 staying — feel5, snd3 */
+ p=>`You don't leave. That's the whole of it \u2014 you don't leave, not yet, maybe not for a long while.\n\n${cap(p.feel5)}. The place keeps being itself, generous and unbothered, and you are lucky enough to be standing in it. ${cap(p.snd3)}, far off, like a door closing gently on the ordinary world.`,
+ p=>`Later you will try to describe this and fail in the particular way people fail at describing the best things.\n\nFor now there is only this: ${p.feel5}, and the knowledge, quiet as stone, that you were here. You stay.`,
+ p=>`Eventually the light will change and the hour will end, the way all hours end. But not yet.\n\n${cap(p.snd3)}. ${cap(p.feel5)}. And you stay a little longer, and then a little longer than that.`
+]
+];
+
+const WHYS={
+move:"this situation runs on gentle movement, and it answers it in the body, not in words",
+cozy:"this situation lives or dies on warmth, and it carries warmth the way a good coat does",
+nature:"this situation needs living green things around it, and it grows them",
+rain:"rain is half the show here, and it makes rain feel like weather worth watching",
+hands:"someone's hands have to make this real, and it puts tools in those hands",
+money:"this situation has to pay for itself, and it gives the money side a home",
+make:"this situation is built, not bought, and it is built for building",
+joy:"the whole point here is delight, and it is engineered for exactly that",
+play:"this situation only works if people feel silly and safe, and it keeps the silliness coming",
+home:"this is someone's place, someone's corner, and it treats it like sacred ground",
+interior:"the room itself is the experience, and it knows how to make a room sing",
+water:"water is the ritual here, and it honors water",
+beauty:"this situation has to be beautiful to work, and beauty is its native language",
+light:"light does half the emotional work here, and it paints with light",
+share:"this situation only matters if other people see it, and it puts it in front of people",
+growth:"this compounds \u2014 a streak, a season, a shelf of seedlings \u2014 and it is built to compound",
+explore:"people have to find their way in, and it makes finding your way feel like play",
+create:"someone here becomes a maker, and it hands them the first honest tool",
+library:"nothing good should get lost, and it remembers everything",
+sound:"the soundscape is the atmosphere here, and it scores it",
+art:"this situation is someone's artwork, and it treats it like one",
+place:"the place is the product, and it builds places worth standing in",
+ease:"this has to be easy or nobody comes, and it removes every hoop",
+own:"someone needs to own a piece of this, and it gives them ground to stand on"
+};
+
+function picks(seedStr, locks){
+  const rng=mulberry32(xmur3(seedStr)());
+  const I=EVG_INTENT, used=new Set();
+  const one=(k)=>pickN(rng,I[k],1,used,k)[0];
+  const p={};
+  /* situation first — everything hangs off it */
+  const sit = locks.sit || one('situations');
+  p.sitTitle=sit.t; p.place=sit.place; p.vista=sit.vista; p._sit=sit;
+  const nd = locks.need || I.needs[sit.n];
+  p.needTitle=nd.t; p.needFlip=nd.flip; p.needTags=nd.tags.slice(); p._nd=nd;
+  /* money situation keyed to the need's tags */
+  const mpool=I.money.map((m,i)=>({m,i,s:m.tags.filter(t=>nd.tags.includes(t)).length}))
+    .sort((a,b)=>b.s-a.s||a.i-b.i);
+  const mj=mpool[Math.floor(rng()*Math.min(3,mpool.length))].m;
+  p.money_t=mj.t.charAt(0).toLowerCase()+mj.t.slice(1); p.money_how=mj.how;
+  /* atoms in fixed order */
+  const tm = one('times');
+  p.time=tm.t; p.period=tm.p; p._tm=tm;
+  p.sky=one('sky'); p.ground=one('ground');
+  const lsrc=I.light.filter(l=>l.ps.includes(tm.p));
+  const lpool=(lsrc.length>=3?lsrc:I.light);
+  const lused=new Set();
+  const lpick=()=>{const pool=lpool.map((_,i)=>i).filter(i=>!lused.has(i));
+    const j=Math.floor(rng()*pool.length);const idx=pool.splice(j,1)[0];
+    lused.add(idx);return lpool[idx].t;};
+  p.light0=lpick(); p.light1=lpick(); p.light2=lpick();
+  const tex=pickN(rng,I.textures,2,used,'textures'); p.tex0=tex[0]; p.tex1=tex[1];
+  p.air=one('air');
+  const snd=pickN(rng,I.sounds,5,used,'sounds'); p.snd0=snd[0];p.snd1=snd[1];p.snd2=snd[2];p.snd3=snd[3];p.snd4=snd[4];
+  const sml=pickN(rng,I.smells,2,used,'smells'); p.sml0=sml[0];p.sml1=sml[1];
+  const per=pickN(rng,I.people,2,used,'people'); p.per0=per[0];p.per1=per[1];
+  const mic=pickN(rng,I.micro,4,used,'micro'); p.micro0=mic[0];p.micro1=mic[1];p.micro2=mic[2];p.micro3=mic[3];
+  p.craft0=one('craft');
+  const fl=pickN(rng,I.feelings,7,used,'feelings'); p.feel4=fl[4];p.feel5=fl[5];p.feel6=fl[6];
+  p.fi=Math.floor(rng()*FRAMES[0].length);
+  /* capabilities: top 2 by tag overlap, then one non-obvious pick */
+  const scored=I.caps.map(c=>({c,s:c.tags.filter(t=>nd.tags.includes(t)).length}))
+    .sort((a,b)=>b.s-a.s||(a.c.k<b.c.k?-1:1));
+  const chosen=[scored[0].c,scored[1].c];
+  const quietPool=scored.filter(e=>!chosen.includes(e.c)&&e.s>0);
+  const nonob=quietPool.length?quietPool[Math.floor(rng()*quietPool.length)].c:scored[2].c;
+  chosen.push(nonob);
+  p.caps=chosen.map((c,idx)=>{
+    const ov=c.tags.find(t=>nd.tags.includes(t));
+    return {k:c.k,label:c.label,plain:c.plain,obvious:idx<2,
+      why:WHYS[ov]||"it fits the shape of this situation like a hand in a glove"};
+  });
+  p.everIx=Math.floor(rng()*3);
+  return p;
+}
+
+/* ---------- blueprint emitter ---------- */
+const EVER_T=[
+(s,m)=>`Every time someone walks back into \u201c${s}\u201d, it pays twice: once in the good hour itself, and once in the habit it builds. ${m} grows by word of mouth, not by advertising \u2014 one person brings a friend, the friend brings a neighbor. Seasons change the scene without changing its soul, so it never goes stale. And the money side compounds too: a regular crowd, a saved seed, a shelf of things made here \u2014 each visit makes the next visit richer.`,
+(s,m)=>`\u201c${s}\u201d is built to be revisited, not consumed. People come back because it gets better: the streak grows, the regulars become friends, the place accumulates small improvements like a garden accumulates seasons. ${m} is the same \u2014 it doesn't spike and fade, it deepens. A year from now this is still giving, and giving more than it does today.`,
+(s,m)=>`The evergreen secret of \u201c${s}\u201d is that it is a practice, not an event. Practices compound: the tenth visit is richer than the first, the hundredth richer still. ${m} rides the same curve \u2014 regulars, rituals, and things made here keep paying long after the novelty would have worn off. It is built around the evergreen, not around the launch.`
+];
+const ACCEPT=[
+"Read the scene aloud to a stranger. They can picture exactly where to stand and what they would hear.",
+"Open the same seed on two different days, on two different screens: the same words, the same blueprint, every time.",
+"Name the three capabilities out loud and point to where each one shows up in the scene \u2014 no capability may be decoration.",
+"The money line is real: a real person could do it this week, with things they already have.",
+"The scene makes someone want to go, and the blueprint makes someone know how to build it."
+];
+
+function emitBlueprint(p){
+  const obj=[
+    {h:"The need it answers",t:p.needFlip},
+    {h:"The happiness it grows",t:`\u201c${p.sitTitle}\u201d \u2014 a detailed, specific good hour: ${p.place}.`},
+    {h:"The money it can make",t:`${cap(p.money_t)}: ${p.money_how}.`}
+  ];
+  const ever=EVER_T[p.everIx](p.sitTitle,cap(p.money_t));
+  const acc=ACCEPT.slice();
+  return {title:p.sitTitle, recap:p.needTitle+" \u00b7 "+p.time, obj, caps:p.caps, ever, acc};
+}
+
+function compose(seedStr, locks){
+  const p=picks(seedStr, locks);
+  const fi=p.fi;
+  const html=FRAMES.map((variants,mi)=>{
+    const text=variants[fi](p);
+    const paras=text.split(/\n\n/).filter(s=>s.trim().length>0);
+    return `<div class="mvmt"><div class="num">${ROMAN[mi]}</div><div class="mtitle">${MTITLES[mi]}</div>`+
+      paras.map(t=>`<p>${t.trim()}</p>`).join('')+`</div>`;
+  }).join('');
+  const bp=emitBlueprint(p);
+  const bpText=["EVERGROVE BLUEPRINT \u2014 "+bp.title, bp.recap,"",
+    "OBJECTIVES:"].concat(bp.obj.map(o=>"\u00b7 "+o.h+": "+o.t)).concat(["",
+    "CAPABILITIES LEVERAGED:"]).concat(bp.caps.map(c=>
+    "\u00b7 "+c.label+" ("+c.k+") \u2014 "+c.plain+". Why: "+c.why+(c.obvious?"":" [not the obvious pick]"))).concat(["",
+    "EVERGREEN VALUE:", bp.ever,"",
+    "ACCEPTANCE CRITERIA:"]).concat(bp.acc.map((a,i)=>(i+1)+". "+a)).join("\n");
+  return {html, bp, bpText,
+    words: html.replace(/<[^>]+>/g,' ').split(/\s+/).filter(Boolean).length};
+}
+</script>
+<script>
+'use strict';
+/* ---------- app state ---------- */
+const S={seed:'',locks:{sit:null,need:null}};
+const $=(id)=>document.getElementById(id);
+function randSeed(){return Math.random().toString(36).slice(2,8);}
+/* guarded storage — blob: iframes throw on raw localStorage, so never touch it raw */
+const mem={};
+function storeGet(k){try{return localStorage.getItem(k);}catch(e){return mem[k]||null;}}
+function storeSet(k,v){try{localStorage.setItem(k,v);}catch(e){mem[k]=v;}}
+function getLib(){try{return JSON.parse(storeGet('evergrove_blueprints')||'[]');}catch(e){return[];}}
+function setLib(a){storeSet('evergrove_blueprints',JSON.stringify(a));}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function renderBp(bp){
+  $('bpTitle').textContent=bp.title;
+  $('bpRecap').textContent=bp.recap;
+  $('bpObj').innerHTML=bp.obj.map(o=>`<li><b>${esc(o.h)}:</b> ${esc(o.t)}</li>`).join('');
+  $('bpCaps').innerHTML=bp.caps.map(c=>`<li><b>${esc(c.label)}</b> <span class="why">(${esc(c.k)}) \u2014 ${esc(c.plain)}</span><br><span class="why">Why: ${esc(c.why)}${c.obvious?'':' <span class="nonob">\u2014 not the obvious pick, which is exactly the point.</span>'}</span></li>`).join('');
+  $('bpEver').textContent=bp.ever;
+  $('bpAcc').innerHTML=bp.acc.map(a=>`<li>${esc(a)}</li>`).join('');
+}
+function render(){
+  const r=compose(S.seed,S.locks);
+  $('situation').innerHTML=r.html;
+  renderBp(r.bp);
+  $('seedChip').textContent='seed '+S.seed;
+  document.title='EVERGROVE \u00b7 '+S.seed;
+  try{history.replaceState(null,'','?seed='+encodeURIComponent(S.seed));}catch(e){}
+  S.cur=r; S.words=r.words;
+}
+function newSituation(keepLocks){
+  if(!keepLocks) S.locks={sit:null,need:null};
+  S.seed=randSeed(); syncLockBtns(); render();
+}
+function syncLockBtns(){
+  $('lockSit').classList.toggle('on',!!S.locks.sit);
+  $('lockNeed').classList.toggle('on',!!S.locks.need);
+}
+function currentAtoms(){
+  const p=picks(S.seed,S.locks);
+  return {sit:p._sit,need:p._nd};
+}
+function toggleLock(kind){
+  if(S.locks[kind]){ S.locks[kind]=null; }
+  else{ const a=currentAtoms(); S.locks[kind]=a[kind]; }
+  syncLockBtns(); render();
+}
+/* customize */
+function fillCustom(){
+  $('selNeed').innerHTML=EVG_INTENT.needs.map((n,i)=>`<option value="${i}">${esc(n.t)}</option>`).join('');
+  $('selSit').innerHTML=EVG_INTENT.situations.map((s,i)=>`<option value="${i}">${esc(s.t)}</option>`).join('');
+}
+/* blueprint library */
+function renderLib(){
+  const a=getLib(), box=$('savedBox'), list=$('savedList');
+  box.style.display=a.length?'block':'none';
+  list.innerHTML=a.map((b,i)=>`<div class="srow"><span class="ttl" data-l="${i}">${esc(b.title)}</span><code>${esc(b.seed)}</code><button data-c="${i}">copy</button><button data-d="${i}">forget</button></div>`).join('');
+  list.querySelectorAll('[data-l]').forEach(el=>el.onclick=()=>{const b=getLib()[+el.dataset.l];if(!b)return;S.seed=b.seed;S.locks={sit:null,need:null};syncLockBtns();render();window.scrollTo(0,0);});
+  list.querySelectorAll('[data-c]').forEach(el=>el.onclick=()=>{const b=getLib()[+el.dataset.c];if(!b)return;copyText(b.bpText,el);});
+  list.querySelectorAll('[data-d]').forEach(el=>el.onclick=()=>{const a=getLib();a.splice(+el.dataset.d,1);setLib(a);renderLib();});
+}
+function copyText(t,btn){
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{
+    const old=btn.textContent;btn.textContent='copied \u2713';setTimeout(()=>{btn.textContent=old;},1200);
+  }).catch(()=>{prompt('Copy:',t.slice(0,2000));});
+}
+/* wire */
+$('btnNew').onclick=()=>newSituation(true);
+$('seedChip').onclick=()=>{const u=location.origin+location.pathname+'?seed='+encodeURIComponent(S.seed);copyText(u,$('seedChip'));};
+$('btnCopy').onclick=()=>copyText($('situation').innerText,$('btnCopy'));
+$('btnCopyBp').onclick=()=>copyText(S.cur?S.cur.bpText:'',$('btnCopyBp'));
+$('btnKeep').onclick=()=>{
+  const a=getLib();
+  if(!a.some(b=>b.seed===S.seed)){
+    a.unshift({seed:S.seed,title:S.cur.bp.title,bpText:S.cur.bpText,savedAt:new Date().toISOString()});
+    setLib(a.slice(0,60));
+  }
+  renderLib();
+  $('btnKeep').textContent='kept \u2713';setTimeout(()=>{$('btnKeep').textContent='Keep';},1200);
+};
+$('lockSit').onclick=()=>toggleLock('sit');
+$('lockNeed').onclick=()=>toggleLock('need');
+$('btnCustom').onclick=()=>{$('customRow').classList.toggle('open');$('btnCustom').classList.toggle('on');};
+$('btnApplyCustom').onclick=()=>{
+  S.locks.need=EVG_INTENT.needs[+$('selNeed').value];
+  S.locks.sit=EVG_INTENT.situations[+$('selSit').value];
+  S.seed=randSeed();syncLockBtns();render();window.scrollTo(0,0);
+};
+/* init */
+(function init(){
+  fillCustom(); renderLib();
+  let seed=null;
+  try{seed=new URLSearchParams(location.search).get('seed');}catch(e){}
+  S.seed=(seed&&/^[a-z0-9]{3,12}$/i.test(seed))?seed:randSeed();
+  render();
+})();
+/* debug surface */
+window.__evg={compose,picks,seed:()=>S.seed,locks:()=>({sit:!!S.locks.sit,need:!!S.locks.need}),words:()=>S.words||0,lib:getLib};
+</script>
+</body>
+</html>
