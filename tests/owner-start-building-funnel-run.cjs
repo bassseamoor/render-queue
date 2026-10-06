@@ -23,7 +23,7 @@ function run(id,distill,locked,spec,destination,done){
 }
 
 const before=JSON.parse(JSON.stringify(evidence));
-delete before.slices['CH-02'];delete before.slices['FM-01'];delete before.slices['FM-02'];
+for(const id of ['CH-02','FM-01','FM-02','BF-02','PG-01','PG-02'])delete before.slices[id];
 const snap=Ch.evaluate({choreography,evidence:before});
 assert.equal(snap.recommendation.slice_id,'FM-01');
 const afterFm01=JSON.parse(JSON.stringify(before));
@@ -35,6 +35,14 @@ const afterFm02=JSON.parse(JSON.stringify(afterFm01));
 afterFm02.slices['FM-02']=evidence.slices['FM-02'];
 const afterExercise=Ch.evaluate({choreography,evidence:afterFm02});
 assert.equal(afterExercise.recommendation.slice_id,'BF-02');
+const afterBf02=JSON.parse(JSON.stringify(afterFm02));
+afterBf02.slices['BF-02']=evidence.slices['BF-02'];
+const afterCompare=Ch.evaluate({choreography,evidence:afterBf02});
+assert.equal(afterCompare.recommendation.slice_id,'PG-01');
+const afterPg01=JSON.parse(JSON.stringify(afterBf02));
+afterPg01.slices['PG-01']=evidence.slices['PG-01'];
+const afterGenerators=Ch.evaluate({choreography,evidence:afterPg01});
+assert.equal(afterGenerators.recommendation.slice_id,'PG-02');
 
 const ch02=run(
   'owner-start-building-ch02-v1',
@@ -70,4 +78,20 @@ const bf02=run(
   'Project Pulse / Blueprint Farm',
   ['all farm blueprints can be compared','open questions stay attributable to source blueprints','assumption/interface/dependency tensions are visible','supersession lineage is visible when present','no release authority exists']
 );
-console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation},null,2));
+const pg01=run(
+  'owner-start-building-pg01-v1',
+  'Build PG-01: inventory MOOR procedural generators as reusable versioned factory machines with capabilities, input/output contracts, source/evidence references and conservative determinism levels.',
+  [{key:'slice',value:'PG-01'},{key:'selection_basis',value:'CH-02 advisory after verified BF-02'},{key:'overclaim_rule',value:'no unproven D3 determinism'}],
+  {slice_id:'PG-01',task:'procedural generator capability inventory',authority:'inventory only'},
+  'Project Pulse / Procedural toolchain',
+  ['generator identities and versions are stable','capabilities and I/O contracts are machine-readable','determinism claims remain evidence-scoped','existing tools are referenced rather than rewritten']
+);
+const pg02=run(
+  'owner-start-building-pg02-v1',
+  'Build PG-02: implement the versioned ProceduralRecipe, SemanticAnchor and ReconstructionReceipt contracts as executable validation machinery without yet adapting every generator.',
+  [{key:'slice',value:'PG-02'},{key:'selection_basis',value:'CH-02 advisory after verified PG-01'},{key:'scope',value:'contracts and validation only'}],
+  {slice_id:'PG-02',task:'procedural recipe contract',authority:'non-release validation'},
+  'Project Pulse / Procedural toolchain',
+  ['recipe/anchor/receipt schemas are versioned','generator binding and version are mandatory','anchors are stable and validatable','no generator is silently upgraded or substituted']
+);
+console.log(JSON.stringify({pass:true,law_version:K.law_version,ch02_receipt:ch02.fingerprint,fm01_receipt:fm01.fingerprint,fm02_receipt:fm02.fingerprint,bf02_receipt:bf02.fingerprint,pg01_receipt:pg01.fingerprint,pg02_receipt:pg02.fingerprint,initial_recommendation:snap.recommendation,after_fm01:next.recommendation,after_fm02:afterExercise.recommendation,after_bf02:afterCompare.recommendation,after_pg01:afterGenerators.recommendation},null,2));
