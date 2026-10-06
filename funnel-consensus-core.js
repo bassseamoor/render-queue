@@ -1,0 +1,12 @@
+/* MOOR Ultra Funnel Consensus Core — separate owner, solver, verification confidence. */
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.FunnelConsensusCore=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+'use strict';
+function clamp(x){x=Number(x);return Number.isFinite(x)?Math.max(0,Math.min(1,x)):0;}
+function reconcile(ballots,opts){opts=opts||{};ballots=(ballots||[]).filter(b=>b&&b.proposition_key&&b.worker_id);if(!ballots.length)return {status:'unknown',owner_confidence:clamp(opts.owner_confidence),solver_confidence:0,verification_confidence:clamp(opts.verification_confidence),winner:null,alternatives:[]};
+  const total=ballots.length,groups=new Map();for(const b of ballots){if(!groups.has(b.proposition_key))groups.set(b.proposition_key,[]);groups.get(b.proposition_key).push(b);}
+  const ranked=[...groups].map(([key,bs])=>{const indep=new Set(bs.map(b=>b.independence_key||b.worker_id)).size,models=new Set(bs.map(b=>b.model_id||b.worker_id)).size,v=bs.length,agree=v/total,mean=bs.reduce((s,b)=>s+clamp(b.confidence),0)/v;const corrPenalty=indep/v;const hetero=Math.min(1,models/Math.max(1,v));const effective=Math.max(1,indep*(.7+.3*hetero));const solver=1-Math.pow(1-Math.min(.97,mean*corrPenalty),effective);return {proposition_key:key,proposal:bs[0].proposal||key,vote_count:v,independent_votes:indep,agreement_ratio:agree,solver_confidence:solver,ballots:bs};}).sort((a,b)=>b.vote_count-a.vote_count||b.solver_confidence-a.solver_confidence);
+  const winner=ranked[0],runner=ranked[1],tie=runner&&runner.vote_count===winner.vote_count;
+  const status=!tie&&winner.vote_count>=(opts.min_votes||2)&&winner.solver_confidence>=(opts.threshold||.72)?'resolved':'disputed';
+  return {status,winner,alternatives:ranked.slice(1),owner_confidence:clamp(opts.owner_confidence),solver_confidence:winner.solver_confidence,verification_confidence:clamp(opts.verification_confidence),minority_report:ranked.slice(1).filter(x=>x.vote_count/total>=(opts.minority_threshold||.2)).map(x=>({proposition_key:x.proposition_key,proposal:x.proposal,votes:x.vote_count,confidence:x.solver_confidence}))};}
+return Object.freeze({version:1,reconcile});
+});
