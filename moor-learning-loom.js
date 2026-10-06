@@ -87,6 +87,8 @@ function complete(thread,quality,at){const x=clone(thread);x.completed_at=at||ne
 function contribution(input){
  input=clone(input||{});const scope=input.consent_scope;
  if(!['pulse-contribution','public-reusable'].includes(scope))throw Error('Explicit non-private contribution scope required.');
+ if(input.confirm!==true)throw Error('Explicit contribution confirmation required.');
+ if(input.sensitive_excluded!==true)throw Error('Confirm private/sensitive details were excluded.');
  if(!String(input.learner_text||'').trim())throw Error('Contribution text required.');
  const c={schema:'moor.learning-contribution',version:1,capsule_id:'learning-contribution:'+hashStr(JSON.stringify(input)+'|'+Date.now()).toString(16),
   thread_id:input.thread_id||null,concept_id:input.concept_id||null,learner_text:String(input.learner_text).trim(),
