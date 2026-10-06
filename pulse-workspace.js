@@ -103,7 +103,7 @@ function init(){
   return {kind:'component',ref:id,label:c.label||id,sourceVersion:c.version||'current',source:c.source||c.page||c.toolSrc||'Pulse manifest'};
  }
  function pageItem(ref,label,page,detail){return {kind:'page',ref:ref,label:label,page:page,sourceVersion:'current',source:page,detail:detail||''};}
- function virtualItem(ref,label,detail){return {kind:'system',ref:ref,label:label,sourceVersion:'v43',source:'The Moor Funnel Prompt — v43',detail:detail||''};}
+ function virtualItem(ref,label,detail){return {kind:'system',ref:ref,label:label,sourceVersion:'v44-sealed',source:'MOOR sealed Funnel law — v44',detail:detail||''};}
 
  function funnelMembers(){
   return [
@@ -131,7 +131,7 @@ function init(){
  function seeds(){
   return [
    seedProject('moor-whole-blueprint','MOOR Whole Blueprint','◇','The whole-product blueprint: audited offer, 645 cards, dependency order, editable connections, reference previews and complete context export.',[pageItem('moor-whole-blueprint','MOOR Whole Blueprint','moor-blueprint.html','Audited baseline and editable versions.'),pageItem('moor-whole-blueprint-data','Complete graph data','blueprint/moor-blueprint-data.json','Source ledger, specifications and build dependencies.')],'moor-blueprint.html',false),
-   seedProject('funnel','Funnel','🌀','The full v43 Funnel system itself: quiz resolver, pages, workers, verification, Engine, Foundry, and versions.',funnelMembers(),'quiz-funnel-v3.html',false),
+   seedProject('funnel','Funnel','🌀','The sealed v44 Funnel system: immutable Page 0, references, distill, decisions, replay, verdict receipts, workers, verification, Engine, Foundry, and versions.',funnelMembers(),'quiz-funnel-v3.html',false),
    seedProject('project-pulse','Project Pulse','◈','The Project Pulse environment itself — inventory, tools, projects, and the Funnel surface.',[componentItem('project-pulse')],'pulse-dashboard.html',false),
    seedProject('procedural-generators','Procedural Generators','⚙','Every current Pulse component explicitly tagged as a generator, kept together as one heavyweight generator project.',generatorMembers(),null,false),
    seedProject('render-studio','Render Studio','◫','The unified rendering/creative studio as a complete project.',[componentItem('render-studio')],comp('render-studio')?.page||null,false),
