@@ -1,4 +1,5 @@
 import {sample,normalize,MAX_OBJECTS} from './core.mjs';
+import {softwareViewport} from './software.mjs';
 import {CAUSTIC_GLSL} from './aquarium-math.mjs';
 /* Host owns THREE, scene, clock and lifetime. No private copy of the world. */
 export function createAssetScene(THREE,input){
@@ -15,7 +16,7 @@ const mesh=new THREE.InstancedMesh(geo,material,MAX_OBJECTS);mesh.instanceMatrix
  return {root,update,setRecipe(value){recipe=normalize(value);},setImage(texture){clear();image?.dispose();image=texture;},dispose(){clear();for(const g of Object.values(geometry))g.dispose();waterMaterial.dispose();image?.dispose();},getRecipe:()=>normalize(recipe)};
 }
 export function createViewport(THREE,canvas,input){
- const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true,powerPreference:'low-power'});renderer.setPixelRatio(1);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.setClearColor(0x090f15,0);
+ let renderer;try{renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true,powerPreference:'low-power'});}catch{return softwareViewport(canvas,input);}renderer.setPixelRatio(1);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.setClearColor(0x090f15,0);
  const scene=new THREE.Scene();const rig=createAssetScene(THREE,input);scene.add(rig.root);scene.add(new THREE.HemisphereLight(0xbceeff,0x1e1727,2));const key=new THREE.DirectionalLight(0xffefd7,2.2);key.position.set(4,6,8);scene.add(key);const fill=new THREE.DirectionalLight(0x84bcff,1.2);fill.position.set(-5,2,-4);scene.add(fill);
  const camera=new THREE.PerspectiveCamera(42,1,.01,1000),ortho=new THREE.OrthographicCamera(-3,3,3,-3,.01,1000);let view={yaw:.38,pitch:.2,zoom:1,projection:'perspective'},last=0;
  function draw(time,lod='medium'){last=time;const rect=canvas.getBoundingClientRect(),w=Math.max(1,Math.round(rect.width)),h=Math.max(1,Math.round(rect.height)),ratio=Math.min(1,Math.sqrt(750000/(w*h)));renderer.setSize(Math.round(w*ratio),Math.round(h*ratio),false);const d=Math.max(...rig.getRecipe().dimensions),distance=d*2.1/view.zoom,active=view.projection==='orthographic'?ortho:camera;camera.aspect=w/h;ortho.left=-d*w/h/view.zoom*.68;ortho.right=-ortho.left;ortho.top=d/view.zoom*.68;ortho.bottom=-ortho.top;active.position.set(Math.sin(view.yaw)*Math.cos(view.pitch)*distance,Math.sin(view.pitch)*distance,Math.cos(view.yaw)*Math.cos(view.pitch)*distance);active.lookAt(0,0,0);active.updateProjectionMatrix();const frame=rig.update(time,lod);renderer.render(scene,active);return frame;}
