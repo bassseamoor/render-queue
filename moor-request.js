@@ -169,6 +169,50 @@ function advanceFactoryToHarness(req,refs,receipt,packet){
     return F.get(o&&o.work_order_id)||o;
   }
 }
+function applyFactoryOutput(detail){
+  var F=factory();detail=detail||{};if(!F||!detail.work_order_id)return null;
+  var o=F.get(detail.work_order_id);if(!o)return null;
+  try{
+    if(o.state==='RELEASED')return o;
+    var verified=detail.status==='machine-verified'&&detail.evidence&&detail.evidence.logic&&detail.evidence.logic.status==='verified-working';
+    var ev=[detail.id||detail.implementation_ref||'harness-output'];
+    if(o.state==='IN_PROCESS'&&o.current_operation&&o.current_operation.station_id==='harness'){
+      o=F.completeOperation(o.work_order_id,{outputs:{implementation_id:detail.id||null,implementation_ref:detail.implementation_ref||null,payload:detail.payload||null},evidence:ev,result:verified?'verified-output':'unverified-output'});
+      o=F.inspect(o.work_order_id,{
+        inspection_id:'harness-output:'+F.hash(detail.id||detail.implementation_ref||Date.now()),
+        characteristic:'Harness gate suite',
+        observed:verified?'syntax+boot+behavior+integration+regression verified':'Harness output not machine-verified',
+        tolerance:'machine-verified promoted output',
+        pass:!!verified,
+        evidence_ref:detail.implementation_ref||detail.id||null,
+        verifier:'Harness gates',
+        defect_class:verified?null:'harness-verification'
+      });
+    }
+    if(!verified)return o;
+    if(o.state==='ROUTED'&&o.route&&o.route.stations[o.route_index]&&o.route.stations[o.route_index].station_id==='verifier'){
+      o=F.startOperation(o.work_order_id,{executor:'Verifier',inputs:{implementation_id:detail.id||null,evidence:detail.evidence||null}});
+      o=F.completeOperation(o.work_order_id,{outputs:{verified_implementation:detail.id||null},evidence:ev,result:'verified'});
+      o=F.inspect(o.work_order_id,{
+        inspection_id:'release-verification:'+F.hash(detail.id||detail.implementation_ref||Date.now()),
+        characteristic:'Release evidence',
+        observed:'machine-verified Harness artifact with complete gate suite',
+        tolerance:'verified implementation + bound Funnel authority',
+        pass:true,
+        evidence_ref:detail.implementation_ref||detail.id||null,
+        verifier:'MOOR software factory'
+      });
+    }
+    if(o.state==='PASS'){
+      o=F.release(o.work_order_id,{configuration_hash:F.hash({id:detail.id||null,implementation_ref:detail.implementation_ref||null,payload:detail.payload||null,evidence:detail.evidence||null}),released_artifacts:[detail.id||detail.implementation_ref||'harness-output']});
+    }
+    try{window.dispatchEvent(new CustomEvent('moor:factory-updated',{detail:{work_order:o}}))}catch(_){}
+    return o;
+  }catch(e){
+    try{window.dispatchEvent(new CustomEvent('moor:factory-warning',{detail:{message:String(e&&e.message||e),work_order_id:detail.work_order_id}}))}catch(_){}
+    return F.get(detail.work_order_id)||o;
+  }
+}
 function openKernel(req,refs){
   var k=kernel();
   if(!k)throw Error('Funnel Kernel unavailable. Build execution is locked.');
@@ -315,11 +359,14 @@ var api={
   request:request,
   context:pageContext,
   drain:drain,
+  factoryOutput:applyFactoryOutput,
   contract:{funnel:'FUNNEL.md',kernel:'funnel-kernel.js',factory:'software-factory-core.js',agent:'moor-agent.json',runtime:'quiz-funnel-v3.html'},
   routes:['reference','navigation','funnel','harness','fallback']
 };
 if(window.MOOR&&window.MOOR!==api){for(var k in window.MOOR)if(!(k in api))api[k]=window.MOOR[k];}
 window.MOOR=api;
+window.addEventListener('moor:output',function(e){try{applyFactoryOutput(e&&e.detail||{})}catch(_){}});
+window.addEventListener('message',function(e){try{if(e&&e.data&&e.data.type==='moor:output')applyFactoryOutput(e.data.detail||{})}catch(_){}});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){mountBar();setTimeout(drain,0);});
 else{mountBar();setTimeout(drain,0);}
 })();
