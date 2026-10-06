@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const W=window.WonderFeed;if(!W)return;
-const RELEASE='20261006-scroll-repair1';
+const RELEASE='20261006-scroll-repair2';
 const policy=window.WonderScrollPolicy,limits=policy.limits;
 const failures=[];
 const lightweight=new Set(['terrain-core','terrain-field','planet-vegetation','softbody-creatures','comp-proc-vehicles','comp-furniture']);
@@ -23,6 +23,8 @@ const rng=seed=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>
 const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0;};
 const key=g=>g.type+'-'+g.seed+'-'+hash(JSON.stringify(g.p));
 const nativeFor=g=>native.find(x=>x.id===g.type);
+const webglRequired=new Set(['native-plant','native-field','native-creatures','native-vehicles','native-furniture','native-garden','native-workshop','native-redwood','native-canal','native-drowned','native-strata']);
+let webglAvailable;function supportsWebGL(){if(webglAvailable===undefined){const c=document.createElement('canvas');try{const gl=c.getContext('webgl')||c.getContext('webgl2');webglAvailable=!!gl;gl?.getExtension('WEBGL_lose_context')?.loseContext();}catch(_){webglAvailable=false;}}return webglAvailable;}
 const category=g=>nativeFor(g)?.category||(/terrain|forest|tide|storm|daynight|rain/.test(g.type)?'Nature':/planet|galaxy|warp/.test(g.type)?'Space':/ambience|choir|drops/.test(g.type)?'Sound':'Procedural');
 let dbPromise,folder=null,instances=new Set(),recipeSettings=new Map();
 function db(){return dbPromise||(dbPromise=new Promise((resolve,reject)=>{const q=indexedDB.open('moor-wonder-files',1);q.onupgradeneeded=()=>{q.result.createObjectStore('files',{keyPath:'id'});q.result.createObjectStore('settings',{keyPath:'id'});};q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);}));}
@@ -38,7 +40,7 @@ function capture(canvas){return new Promise(resolve=>{if(!canvas){resolve(null);
 function nativeRenderer(g){
  const spec=nativeFor(g),el=document.createElement('div');el.className='wd-card';
  const vis=document.createElement('div');vis.className='wd-visual';el.append(vis);
- let frame=null,canvas=null,output=null,frameTick=0,settings=[],timer=0,dead=false,started=false,attempts=0,mirrored=false,lastCopy=0,tunedDocs=new WeakSet();
+ let frame=null,canvas=null,output=null,sample=null,signal=false,frameTick=0,settings=[],timer=0,dead=false,started=false,attempts=0,mirrored=false,lastCopy=0,tunedDocs=new WeakSet();
  function tune(doc){
   if(tunedDocs.has(doc))return;
   const bridge=doc.defaultView.WonderPreview;
@@ -73,16 +75,16 @@ function nativeRenderer(g){
  function mirror(now=0){
   if(dead||!canvas||!output)return;
   if(now-lastCopy>=1000/limits.fps||!mirrored){
-   try{const size=policy.fit(canvas.width,canvas.height);if(output.width!==size.width||output.height!==size.height){output.width=size.width;output.height=size.height;}output.getContext('2d').drawImage(canvas,0,0,output.width,output.height);mirrored=true;vis.dataset.ready='true';lastCopy=now;}catch(_){}
+   try{const size=policy.fit(canvas.width,canvas.height);if(output.width!==size.width||output.height!==size.height){output.width=size.width;output.height=size.height;}output.getContext('2d').drawImage(canvas,0,0,output.width,output.height);mirrored=true;if(!sample)sample=document.createElement('canvas');sample.width=16;sample.height=16;const sx=sample.getContext('2d',{willReadFrequently:true});sx.drawImage(output,0,0,16,16);signal=policy.hasSignal(sx.getImageData(0,0,16,16).data);if(signal)vis.dataset.ready='true';lastCopy=now;}catch(_){}
   }
   frameTick=(canvas.ownerDocument?.defaultView||window).requestAnimationFrame(mirror);
  }
  function release(){try{canvas?.ownerDocument?.defaultView?.WonderPreview?.dispose?.();}catch(_){}dead=true;started=false;clearTimeout(timer);try{(canvas?.ownerDocument?.defaultView||window).cancelAnimationFrame(frameTick);}catch(_){}frameTick=0;frame?.remove();frame=null;canvas=null;}
 
  return {el,title:spec.label,sub:spec.category,genome:g,
-  start(){if(started)return;started=true;dead=false;attempts=0;mirrored=false;lastCopy=0;tunedDocs=new WeakSet();delete vis.dataset.error;delete vis.dataset.ready;output=document.createElement('canvas');output.className='wd-native-output';output.setAttribute('aria-label',spec.label+' generated output');vis.replaceChildren(output);frame=document.createElement('iframe');frame.title=spec.label+' renderer';frame.setAttribute('aria-hidden','true');frame.setAttribute('allow','autoplay');const box=vis.getBoundingClientRect(),size=policy.fit(Math.max(240,box.width),Math.max(240,box.height));frame.style.cssText='position:fixed;left:-10000px;top:-10000px;width:'+size.width+'px;height:'+size.height+'px;opacity:0;pointer-events:none';const bare=lightweight.has(spec.component);const u=new URL(spec.page||(bare?'wonder-preview.html':'pulse-dashboard.html'),location.href);if(spec.component)u.searchParams.set(bare?'component':'workspace-tool',spec.component);u.searchParams.set('wonder-preview',g.seed);u.searchParams.set('seed',g.seed);u.searchParams.set('release',RELEASE);frame.src=u.href;frame.onload=()=>{try{if(dead)return;tune(frame.contentDocument);adapt(frame.contentDocument);}catch(e){vis.dataset.error='Generator unavailable';}};document.body.append(frame);},
-  stop(){release();},dispose(){release();output=null;vis.replaceChildren();},ready:()=>mirrored,error:()=>vis.dataset.error,
-  async capture(){const end=Date.now()+15000;while(!canvas&&!dead&&!vis.dataset.error&&Date.now()<end)await new Promise(r=>setTimeout(r,200));if(!canvas||!mirrored)throw Error(vis.dataset.error||'This generator is still loading.');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return capture(output);},settings:()=>settings
+  start(){if(started)return;started=true;dead=false;attempts=0;mirrored=false;signal=false;lastCopy=0;tunedDocs=new WeakSet();delete vis.dataset.error;delete vis.dataset.ready;output=document.createElement('canvas');output.className='wd-native-output';output.setAttribute('aria-label',spec.label+' generated output');vis.replaceChildren(output);frame=document.createElement('iframe');frame.title=spec.label+' renderer';frame.setAttribute('aria-hidden','true');frame.setAttribute('allow','autoplay');const box=vis.getBoundingClientRect(),size=policy.fit(Math.max(240,box.width),Math.max(240,box.height));frame.style.cssText='position:fixed;left:-10000px;top:-10000px;width:'+size.width+'px;height:'+size.height+'px;opacity:0;pointer-events:none';const bare=lightweight.has(spec.component);const u=new URL(spec.page||(bare?'wonder-preview.html':'pulse-dashboard.html'),location.href);if(spec.component)u.searchParams.set(bare?'component':'workspace-tool',spec.component);u.searchParams.set('wonder-preview',g.seed);u.searchParams.set('seed',g.seed);u.searchParams.set('release',RELEASE);frame.src=u.href;frame.onload=()=>{try{if(dead)return;tune(frame.contentDocument);adapt(frame.contentDocument);}catch(e){vis.dataset.error='Generator unavailable';}};document.body.append(frame);},
+  stop(){release();},dispose(){release();output=null;vis.replaceChildren();},ready:()=>mirrored&&signal,error:()=>vis.dataset.error,
+  async capture(){const end=Date.now()+15000;while((!canvas||!signal)&&!dead&&!vis.dataset.error&&Date.now()<end)await new Promise(r=>setTimeout(r,200));if(!canvas||!mirrored||!signal)throw Error(vis.dataset.error||'This generator is still loading.');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return capture(output);},settings:()=>settings
  };
 }
 native.forEach(n=>W.genome.types.push({kind:n.id,label:n.label,icon:'◇',params:r=>({variant:Math.floor(r()*100000)}),make:nativeRenderer}));
@@ -142,6 +144,7 @@ function mount(host,opts={}){
   if(dead||rec.failed||rec.running)return;
   try{
    if(!rec.w){
+    if((webglRequired.has(rec.g.type)||nativeFor(rec.g)?.requires==='webgl')&&!supportsWebGL())throw Error('WebGL unavailable on this device');
     if(rec.settings?.length)recipeSettings.set(key(rec.g),rec.settings);
     rec.w=W.make(rec.g);const vis=rec.w.el.querySelector('.wd-visual');if(!vis)throw Error('No visual output');
     rec.card.querySelector('.wh-surface').replaceChildren(vis);

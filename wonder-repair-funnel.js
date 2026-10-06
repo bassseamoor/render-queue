@@ -7,7 +7,7 @@ async function install(){
  if(!window.MOOR?.request||!window.PulseReferences)return;
  try{
   if(localStorage.getItem(marker))return;
-  const response=await fetch('docs/wonder-scroll-repair.blueprint.json?v=20261006-scroll-repair1');if(!response.ok)throw Error('Repair blueprint unavailable');const b=await response.json();
+  const response=await fetch('docs/wonder-scroll-repair.blueprint.json?v=20261006-scroll-repair2');if(!response.ok)throw Error('Repair blueprint unavailable');const b=await response.json();
   const input=await MOOR.request({input:b.page0,source:'agent-repair-evidence',context:{page:'wonder-feed',blueprint:b.id}});
   const queued=await MOOR.request({input:'Implement repair blueprint '+JSON.stringify(b.spec),source:'agent-repair-evidence',forceFunnel:true,context:{page:'wonder-feed',blueprint:b.id,provenance:'fallback-system-decisions'}});
   const execution=await MOOR.request({input:'Implement repair blueprint '+JSON.stringify(b.spec),source:'agent-repair-evidence',resolved:true,done_criteria:b.doneCriteria,context:{page:'wonder-feed',blueprint:b.id,provenance:'fallback-system-decisions'}});

@@ -22,3 +22,5 @@ new vm.Script(read('wonder-repair-funnel.js'));
 const run=JSON.parse(read('docs/wonder-scroll-funnel-run.json'));assert.equal(run.initial.route,'funnel');assert.equal(run.queuedBlueprint.route,'funnel');assert.equal(run.execution.route,'harness');assert.equal(run.ownerIntentConfirmed,false);
 assert.deepEqual(Object.keys(run.verdictPacket).sort(),['destination','doneCriteria','spec']);assert.equal(run.page0Queue[0].input,JSON.parse(read('docs/wonder-scroll-repair.blueprint.json')).page0);
 console.log('PASS: 100k-history virtualization, pixel/aspect limits, automatic registration, invalid/duplicate rejection, isolated bundles, and canonical Funnel round-trip.');
+
+assert.equal(P.hasSignal(new Uint8ClampedArray(1024)),false);const pixels=new Uint8ClampedArray(1024);for(let i=0;i<1024;i+=4){pixels[i]=i%256;pixels[i+3]=255;}assert.equal(P.hasSignal(pixels),true);
