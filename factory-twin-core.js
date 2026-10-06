@@ -122,8 +122,27 @@ function compose(input){
   for(const o of work_orders)bindings.push({entity_id:'work-order:'+o.work_order_id,semantic_role:'work-order',anchor_zone:o.location_hint,layout_seed:hash(o.work_order_id),display_priority:o.status==='NONCONFORMING'||o.status==='BLOCKED_MAINTENANCE'?100:70,interaction_contract:'inspect-request-actions'});
 
   const core={schema:SCHEMA,version:VERSION,generated_at:generatedAt,authority_versions,machines,routes,work_orders,maintenance:clone(maintenance),receipts,metrics,source_hashes,spatial_bindings:bindings};
-  const identity=clone(core);delete identity.generated_at;delete identity.snapshot_id;
-  (identity.work_orders||[]).forEach(o=>{delete o.queue_age_ms;});
+  // Twin identity is semantic equipment/process identity, not observation time.
+  // Build it positively from stable fields instead of cloning the render envelope
+  // and trying to remember every volatile field that may be added later.
+  const semantic_work_orders=work_orders.map(o=>({
+    work_order_id:o.work_order_id,page0_hash:o.page0_hash,stage:o.stage,station:o.station,status:o.status,
+    required_actions:clone(o.required_actions||[]),receipts:clone(o.receipts||[]),
+    bom_hash:o.bom_hash||null,route_id:o.route_id||null,ncr_open:clone(o.ncr_open||[]),
+    location_hint:o.location_hint||null,objective:o.objective||''
+  }));
+  const identity={
+    schema:SCHEMA,version:VERSION,
+    authority_versions:clone(authority_versions),
+    machines:clone(machines),
+    routes:clone(routes),
+    work_orders:semantic_work_orders,
+    maintenance:clone(maintenance),
+    receipts:clone(receipts),
+    metrics:clone(metrics),
+    source_hashes:clone(source_hashes),
+    spatial_bindings:clone(bindings)
+  };
   core.snapshot_id='twin:'+hash(identity);
   return core;
 }
