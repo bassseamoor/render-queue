@@ -150,7 +150,10 @@ async function request(arg){
             source:'MOOR.request',source_id:req.id,provenance:'verified',data:{context:ctx,packet:packet}
           });
         }catch(e){}
-        return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:'verified',context:ctx,result:{verdict_packet:packet,references:refsForFunnel}};
+        var handoff={schema:'moor.harness-inbox',version:1,at:new Date().toISOString(),input:input,context:ctx,verdict_packet:packet,references:refsForFunnel};
+        try{localStorage.setItem('moor-harness-inbox-v1',JSON.stringify(handoff));}catch(e){}
+        try{window.dispatchEvent(new CustomEvent('moor:harness-ready',{detail:handoff}));}catch(e){}
+        return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:'verified',context:ctx,result:{verdict_packet:packet,references:refsForFunnel,harness_inbox:true}};
       }
       return {request_id:req.id,route:'funnel',status:'locked',provenance:'fallback',context:ctx,result:{error:'Invalid Funnel receipt. Execution denied.'}};
     }

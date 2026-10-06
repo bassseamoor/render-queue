@@ -34,7 +34,7 @@ s=K.advance({request_id:'r1',stage:'replay',payload:{
 assert.equal(s.stage,'replay');
 
 s=K.advance({request_id:'r1',stage:'verdict',payload:{
-  spec:{router:'MOOR.request',page0:'immutable',receipt:'required'},
+  spec:{router:'MOOR.request',page0:'immutable',receipt:'required',obligations:obs.map(o=>({...o,status:'satisfied'}))},
   destination:'app-compiler-harness',
   done_criteria:['A build cannot reach Harness without a valid Funnel receipt.']
 },provenance:'verified'});
@@ -43,6 +43,7 @@ assert(s.receipt);
 assert.equal(K.verifyReceipt(s.receipt),true);
 const packet=K.executionPacket(s.receipt);
 assert.equal(packet.destination,'app-compiler-harness');
+assert.equal(packet.spec.obligations.length,obs.length);
 assert.equal(packet.funnel_receipt.fingerprint,s.receipt.fingerprint);
 
 const tampered={...s.receipt,destination:'somewhere-else'};

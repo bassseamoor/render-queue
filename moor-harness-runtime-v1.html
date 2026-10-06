@@ -65,6 +65,7 @@ iframe.appview{width:100%;height:520px;border:1px solid var(--line);border-radiu
 </div>
 <div id="main"></div>
 
+<script src="funnel-kernel.js?v=20261005-sealed1"></script>
 <script>
 /* ================= utils ================= */
 const $=s=>document.querySelector(s);
@@ -497,6 +498,7 @@ function buildPacket(job,spec){
     role_briefing:ROLESPEC[worker.role].blurb,
     spec_slice:{app:spec.app_type,audience:spec.audience,feature:job.feature,weight:job.weight,
       constraints:spec.constraints.map(c=>c.text),
+      obligations:clone(spec.funnel_obligations||[]),
       provenance:{app:spec.app_type_src,audience:spec.audience_src,feature:job.kind==="feature"?(job.fallback?"fallback":"resolved"):"resolved",
         deep:spec.deep&&spec.deep.src||"unknown",resolution:job.resolution||"resolved"}},
     destination:dest,
@@ -581,6 +583,7 @@ async function verifyPart(part,feat,spec){
 }
 /* ================= WORKER EXECUTION (simulated contractors, real assembly, real gates) ================= */
 async function executeJob(job,spec){
+  if(!harnessExecutionGate())return false;
   job.status="building"; job.tries=(job.tries||0)+1; render();
   const pkt=buildPacket(job,spec); job.packet=pkt; job.worker_id=pkt.issued_to.worker_id;
   log("<b>"+esc(pkt.issued_to.codename)+"</b> ("+pkt.issued_to.role+") takes <b>"+esc(job.id)+"</b> — "+esc(job.label)+
@@ -627,6 +630,7 @@ function assembleApp(jobs,spec){
   return {html,theme,sections:body.length};
 }
 async function executeIntegration(job,spec){
+  if(!harnessExecutionGate())return false;
   const parts=assembleApp(H.jobs.filter(j=>j!==job&&(j.status==="gated"||j.status==="approved")),spec);
   job.code={html:"(full app)",js:"(combined)",theme:parts.theme};
   // visible-path gate: every gated job's destination section is present
@@ -659,7 +663,8 @@ async function executeIntegration(job,spec){
 const STAGES=[["intake","1 · Ramble"],["spec","2 · Spec"],["holes","3 · Holes"],["fit","4 · Fit"],["jobs","5 · Jobs"],["build","6 · Build"],["review","7 · Review"],["promote","8 · Promote"],["deliver","9 · Deliver"],["ledger","10 · Ledger"]];
 let H=null;
 function freshH(){ return {stage:"intake",ramble:"",spec:null,holes:[],fit:[],jobs:[],
-  workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],training:[],auto:false}; }
+  workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],training:[],auto:false,
+  funnelReceipt:null,funnelRequestId:null,page0:null,funnelSpec:null}; }
 const NAMEPOOL=["Anvil","Bishop","Cinder","Drift","Ember","Flint","Gale","Harbor","Iris","Jolt","Kestrel","Lumen","Mesa","North","Onyx","Pico"];
 function initWorkers(){ const pool=NAMEPOOL.slice();
   const mk=(role)=>{ const r=ROLESPEC[role];
@@ -854,6 +859,61 @@ function vLedger(){
   <p class="note">The deal, briefed up front: paid per verified job · failed verification pays 0 · ${ECON.strikes_to_retire} strikes → public failure mark + retirement + deletion.</p></div>`;
 }
 
+
+/* ================= SEALED FUNNEL HANDOFF ================= */
+const HARNESS_INBOX_KEY="moor-harness-inbox-v1";
+function harnessKernel(){ return window.MOORFunnelKernel||null; }
+function verifiedHarnessReceipt(input,receipt){
+  const k=harnessKernel();
+  return !!(k&&receipt&&k.verifyReceipt(receipt)&&k.hash(String(input||""))===receipt.page0_hash);
+}
+function specFromVerdict(packet,input){
+  const fs=(packet&&packet.spec)||{}, base=compileSpec(input);
+  const map={"A mobile app":"mobile app","A web app":"web app","A game":"game","A handy tool":"web app"};
+  if(fs.kind&&map[fs.kind]){base.app_type=map[fs.kind];base.app_type_src="funnel";base.app_type_conf="high";}
+  if(fs.who){base.audience=fs.who;base.audience_src="funnel";}
+  const feats=[];
+  if(fs.core)feats.push({text:String(fs.core),weight:10,source:"funnel"});
+  (fs.must_haves||[]).forEach(function(x){if(x&&!feats.some(function(f){return f.text===x}))feats.push({text:String(x),weight:8,source:"funnel"});});
+  if(feats.length)base.features=feats.slice(0,6);
+  base.funnel_obligations=clone(fs.obligations||[]);
+  base.funnel_spec=clone(fs);
+  base.effective_input=JSON.stringify(fs);
+  base.provenance_mode="funnel-receipt";
+  return base;
+}
+function ingestHarnessHandoff(h){
+  if(!h||h.schema!=="moor.harness-inbox"||!h.verdict_packet)return false;
+  const p=h.verdict_packet, receipt=p.funnel_receipt;
+  if(!verifiedHarnessReceipt(h.input,receipt)){log("<b>handoff refused</b> — invalid Funnel receipt");return false;}
+  H.page0=String(h.input||"");
+  H.ramble="[sealed Page 0 · "+receipt.request_id+"]";
+  H.spec=specFromVerdict(p,H.page0);
+  H.funnelSpec=clone(p.spec||{});
+  H.funnelReceipt=clone(receipt);
+  H.funnelRequestId=receipt.request_id;
+  H.stage="spec";
+  try{store.remove(HARNESS_INBOX_KEY);}catch(e){}
+  log("<b>Funnel receipt verified ✓</b> — "+esc(receipt.fingerprint));
+  return true;
+}
+function consumeHarnessInbox(){
+  let h=null; try{h=JSON.parse(store.get(HARNESS_INBOX_KEY)||"null");}catch(e){}
+  return ingestHarnessHandoff(h);
+}
+function harnessExecutionGate(){
+  const ok=verifiedHarnessReceipt(H.page0,H.funnelReceipt);
+  if(!ok)log("<b>execution refused</b> — Harness requires a valid Funnel receipt for this exact Page 0");
+  return ok;
+}
+async function routeRawIntakeToFunnel(raw,context){
+  if(!window.MOOR||typeof MOOR.request!=="function"){log("<b>intake locked</b> — MOOR.request unavailable");return null;}
+  const r=await MOOR.request({input:raw,source:"app-compiler-harness",context:context||{},forceFunnel:true});
+  if(r.route==="harness"){consumeHarnessInbox();render();}
+  else log("<b>sent to Funnel</b> — raw intake cannot compile directly");
+  return r;
+}
+
 /* ================= RENDER ================= */
 function render(){
   renderStages();
@@ -865,8 +925,8 @@ function render(){
 function wire(){
   const on=(id,fn)=>{ const e=$(id); if(e)e.onclick=fn; };
   on("#usesample",()=>{ $("#ramble").value=SAMPLE_RAMBLE; });
-  on("#compile",()=>{ const r=$("#ramble").value.trim();
-    H.ramble=r; H.spec=compileSpec(r); H.stage="spec"; render(); });
+  on("#compile",async()=>{ const r=$("#ramble").value.trim(); if(!r)return;
+    await routeRawIntakeToFunnel(r,{mode:"build"}); });
   on("#gospec",()=>{ const pl=H.workers.find(w=>w.role==="planner"&&w.status==="active");
     if(pl){const p=payWorker(pl,8); log("planner "+esc(pl.codename)+" paid "+p.net+" — spec compiled");}
     H.holes=pokeHoles(H.spec); H.stage="holes"; render(); });
@@ -902,6 +962,7 @@ function wire(){
 }
 /* ================= ORCHESTRATION ================= */
 async function runBuild(){
+  if(!harnessExecutionGate())return;
   for(const job of H.jobs){
     if(job.status==="gated"||job.status==="approved")continue;
     const depsOk=job.deps.every(d=>{ const dj=H.jobs.find(x=>x.id===d); return dj&&(dj.status==="gated"||dj.status==="approved"); });
@@ -913,6 +974,7 @@ async function runBuild(){
   render();
 }
 async function reviseJob(jid){
+  if(!harnessExecutionGate())return;
   const job=H.jobs.find(x=>x.id===jid); if((job.tries||0)>=3){ log("max tries — needs a human"); return; }
   if(job.kind==="feature"){
     const ranked=PARTS.filter(p=>p.kind==="feature")
@@ -929,6 +991,7 @@ function emitMoorOutput(detail){
   try{if(parent&&parent!==window)parent.postMessage({type:"moor:output",detail},"*");}catch(e){}
 }
 function doPromote(){
+  if(!harnessExecutionGate())return;
   const integ=H.jobs.find(j=>j.kind==="integration");
   if(!integ||integ.status!=="approved"||!integ.appHtml){ log("<b>promotion refused</b> — integration not verified"); return; }
   const next=H.canon==="—"?"1.0":bumpVer(H.canon);
@@ -962,62 +1025,18 @@ function doPromote(){
 }
 async function runMod(){
   const r=$("#modramble").value.trim(); if(!r)return;
-  const mspec=compileSpec(r);
-  log("<b>Mod ◈</b> — compiling delta…");
-  const feats=mspec.features.length?mspec.features:[{text:r.slice(0,40),weight:6,source:"you"}];
-  const isTheme=/dark|theme|night/i.test(r);
-  const jobs=feats.slice(0,2).map((f,i)=>{
-    const ranked=PARTS.filter(p=>p.kind===(isTheme?"theme":"feature"))
-      .map(p=>({p,s:fitScore(f,p)})).sort((a,b)=>b.s-a.s);
-    return {id:"mod-"+uid("j"),kind:isTheme?"theme":"feature",label:ranked[0].p.name+" — "+f.text,
-      part_id:ranked[0].p.id,feature:f.text,weight:f.weight,deps:[],status:"planned",isMod:true,name:f.text};
-  });
-  for(const j of jobs){ await executeJob(j,H.spec);
-    if(j.status==="gated"){ j.status="approved"; H.jobs.push(j); } }
-  // reassemble everything into a new canonical version
-  const integ={id:"job-re",kind:"integration",label:"Assemble + regression (mod)",part_id:null,
-    feature:"integration",weight:8,deps:[],status:"planned",isMod:true};
-  integ.packet=buildPacket(integ,H.spec); integ.worker_id=integ.packet.issued_to.worker_id;
-  log("<b>"+esc(integ.packet.issued_to.codename)+"</b> (integrator) reassembles "+H.jobs.filter(j=>j.status==="approved").length+" approved jobs");
-  await executeIntegration(integ,H.spec);
-  if(integ.status==="gated"){
-    const next=bumpVer(H.canon); H.appHtml=integ.appHtml; H.canon=next;
-    H.versions.push({v:next,jobs:jobs.length,note:"mod: "+r.slice(0,50)});
-    const nm=jobs.map(j=>j.feature).join(", ")||"mod";
-    H.mods.push({name:nm,v:next});
-    emitMoorOutput({id:"implementation:harness:"+next,kind:"implementation",title:"Modified app v"+next,
-      summary:"Harness modification promoted after integration and regression gates.",source:{app:"app-compiler-harness",component:"app-compiler-harness",project:"harness"},
-      concepts:[H.spec.app_type],status:"machine-verified",provenance:"verified",intent:r,intent_status:"user-reviewed",
-      intent_provenance:"explicit",recipe:{base_spec:H.spec,delta:mspec,parts:jobs.map(j=>j.part_id)},implementation_ref:"moor-harness-runtime-v1.html#v"+next,
-      payload:{version:next,mod:nm},evidence:{logic:{status:"verified-working",gates:"integration+regression"},intent:{status:"user-reviewed"}}});
-    log("<b>Mod promoted ★</b> → v"+next);
-  } else log("mod integration failed — held, not promoted");
-  render();
+  await routeRawIntakeToFunnel(r,{mode:"modify",base_version:H.canon});
 }
 /* ---------- auto-run: the funnel runs itself ---------- */
 async function autoRun(){
   H.auto=true;
   $("#ramble")&&($("#ramble").value=SAMPLE_RAMBLE);
-  H.ramble=SAMPLE_RAMBLE; H.spec=compileSpec(SAMPLE_RAMBLE); H.stage="spec"; render();
-  await new Promise(r=>setTimeout(r,600));
-  const pl=H.workers.find(w=>w.role==="planner"&&w.status==="active"); if(pl)payWorker(pl,8);
-  const hp=H.workers.find(w=>w.role==="hole-poker"&&w.status==="active"); if(hp)payWorker(hp,6);
-  H.holes=pokeHoles(H.spec);
-  // auto-resolve holes locally, but keep fallback provenance honest
-  resolveOpenHolesByFallback();
-  H.fit=fitCheck(H.spec);
-  acceptFitFallbacks();
-  H.jobs=buildJobs(H.spec,H.fit); H.stage="build"; render();
-  await runBuild();
-  for(const j of H.jobs){ if(j.status==="failed"&&j.kind!=="integration"&&(j.tries||0)<3){ await reviseJob(j.id); } }
-  await runBuild();
-  H.jobs.forEach(j=>{ if(j.status==="gated")j.status="approved"; });
-  H.stage="review"; render(); await new Promise(r=>setTimeout(r,600));
-  H.stage="promote"; render(); await new Promise(r=>setTimeout(r,600));
-  doPromote(); H.auto=false;
+  await routeRawIntakeToFunnel(SAMPLE_RAMBLE,{mode:"demo"});
+  H.auto=false;
 }
 /* ================= INIT ================= */
-H=freshH(); initWorkers();
+H=freshH(); initWorkers(); consumeHarnessInbox();
+window.addEventListener("storage",function(e){if(e.key===HARNESS_INBOX_KEY&&e.newValue){if(consumeHarnessInbox())render();}});
 $("#autorun").onclick=()=>{ H=freshH(); initWorkers(); H.stage="intake"; render();
   setTimeout(()=>{ $("#ramble").value=SAMPLE_RAMBLE; },50); setTimeout(autoRun,400); };
 $("#cycle").onclick=()=>{ runUpkeepCycle(); render(); };

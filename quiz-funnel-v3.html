@@ -199,7 +199,18 @@ function kWrite(kind,value,provenance){
 }
 function currentSpec(){
  const spec={}; S.answers.forEach(a=>spec[a.id]=a.text);
- if(S.draft)spec.working_title=S.draft.title;
+ if(S.draft){
+  spec.working_title=S.draft.title;
+  spec.must_haves=(S.draft.feats||[]).slice();
+ }
+ const k=FK(), ks=kSession();
+ if(k&&ks&&ks.page0){
+  spec.obligations=k.extractObligations(ks.page0).map(function(o){
+   const r=(S.replay||{})[o.id]||{};
+   return {id:o.id,source:o.source,status:r.status||'unverified',approved:r.approved===true,reason:r.reason||''};
+  });
+  spec.funnel_law_version=k.law_version;
+ }
  return spec;
 }
 function ensureDecisionStage(){
@@ -574,7 +585,7 @@ function vVersions(){
  el('importBtn').onclick=()=>el('import').click();
  el('import').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ S=JSON.parse(r.result); save(); render() }catch(_){ alert('bad backup file') } }; r.readAsText(f) };
  el('shareBtnV2').onclick=function(){ copyShare(this); };
-el('wipe').onclick=()=>{ if(confirm('Clear all versions and start over? (Export a backup first if you want to keep them.)')){ const lib=S.library||[]; const xa=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:lib,extraApps:xa}; save(); render() } };
+el('wipe').onclick=()=>{ if(confirm('Clear all versions and start over? (Export a backup first if you want to keep them.)')){ const lib=S.library||[]; const xa=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:lib,extraApps:xa,kernelRequestId:null,replay:{}}; save(); render() } };
  document.querySelectorAll('[data-rerun]').forEach(b=> b.onclick=()=>{
   const ix=+b.dataset.rerun;
   const target=S.answers[ix];
@@ -612,7 +623,7 @@ function vLibrary(){
   e.stopPropagation(); e.preventDefault();
   S.extraApps.splice(+b.dataset.xdel,1); save(); vLibrary();
  });
- el('libNew').onclick=()=>{ const l2=S.library||[]; const xa2=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:l2,extraApps:xa2}; save(); render() };
+ el('libNew').onclick=()=>{ const l2=S.library||[]; const xa2=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:l2,extraApps:xa2,kernelRequestId:null,replay:{}}; save(); render() };
  document.querySelectorAll('[data-open]').forEach(b=> b.onclick=()=>{
   const e=S.library[+b.dataset.open]; if(!e) return;
   S.answers=JSON.parse(JSON.stringify(e.answers));
@@ -654,19 +665,34 @@ function vReplay(){
 
 /* ---- VERDICT ---- */
 function vVerdict(){
- const spec={}; S.answers.forEach(a=>spec[a.id]=a.text);
- if(S.draft) spec.working_title=S.draft.title;
+ const spec=currentSpec();
+ let ks=kSession(), receipt=null, kernelError='';
+ try{
+  if(ks&&ks.stage==='replay')ks=kAdvance('verdict',{spec:spec,destination:'app-compiler-harness',done_criteria:DONE_CRITERIA},'verified');
+  receipt=ks&&ks.receipt||null;
+ }catch(e){kernelError=String(e&&e.message||e)}
  const filled=S.answers.filter(a=>a.by==='filled').length, n=S.answers.length;
- const callStr='buildApp(\n  spec = '+JSON.stringify(spec,null,1)+',\n  destination = "the next builder",\n  doneCriteria = '+JSON.stringify(DONE_CRITERIA,null,1)+'\n)\n// rule 7: builders get spec + destination + done-criteria. Nothing else.';
+ const callStr='buildApp(\n  spec = '+JSON.stringify(spec,null,1)+',\n  destination = "app-compiler-harness",\n  doneCriteria = '+JSON.stringify(DONE_CRITERIA,null,1)+'\n)\n// sealed v44: Harness also requires the kernel-issued Funnel receipt.';
  const fromYouPct=n?Math.round((n-filled)/n*100):0;
  const follows=S.answers.filter(a=>{const q=QUESTIONS.find(q=>q.id===a.id);return q&&q.follow}).length;
  show(`<div class="card"><div class="q">Locked spec ${provTag('you')}</div>
  <div class="meter"><div class="bar"><i style="width:${fromYouPct}%"></i></div>${fromYouPct}% from you · ${follows} adaptive follow-ups answered</div>
  <div class="sub" style="margin-top:8px">Builders get this spec, the destination, and the done-criteria — nothing else.</div>
  <pre>${esc(callStr)}</pre>
- <div class="row"><button id="copy">Copy spec JSON</button><button class="ghost" id="dl">Download</button><button class="ghost" id="export2">Export backup</button><button class="ghost" id="keepBtn">⭐ Keep this version</button><button class="ghost" id="libSave">📚 Save to library</button><button class="ghost" id="shareBtnV">Copy share link</button><button class="ghost" id="again">New build</button></div>
+ <div class="sub" style="margin-top:8px">Kernel receipt: <b>${receipt?esc(receipt.fingerprint):'LOCKED'}</b>${kernelError?' · '+esc(kernelError):''}</div>
+ <div class="row"><button id="copy">Copy spec JSON</button><button id="sendHarness" ${receipt?'':'disabled'}>Send to Harness</button><button class="ghost" id="dl">Download</button><button class="ghost" id="export2">Export backup</button><button class="ghost" id="keepBtn">⭐ Keep this version</button><button class="ghost" id="libSave">📚 Save to library</button><button class="ghost" id="shareBtnV">Copy share link</button><button class="ghost" id="again">New build</button></div>
  <div class="gates" id="gates"></div></div>`);
  el('copy').onclick=()=>{ navigator.clipboard.writeText(JSON.stringify(spec,null,2)).then(()=>{ el('gates').textContent='copied ✓' }) };
+ const sh=el('sendHarness'); if(sh)sh.onclick=async()=>{
+  if(!receipt){el('gates').textContent='execution locked — no Funnel receipt';return}
+  let api=window.MOOR; try{if(window.parent&&window.parent!==window&&window.parent.MOOR)api=window.parent.MOOR}catch(e){}
+  if(!api||typeof api.request!=='function'){el('gates').textContent='MOOR.request unavailable';return}
+  el('gates').textContent='sending verified packet…';
+  try{
+   const r=await api.request({input:kSession().page0,source:'funnel-runtime',funnel_receipt:receipt});
+   el('gates').textContent=r.route==='harness'?'Harness ready ✓':'blocked · '+(r.status||r.route);
+  }catch(e){el('gates').textContent='handoff failed · '+String(e&&e.message||e)}
+ };
  el('dl').onclick=()=>{ const b=new Blob([JSON.stringify(spec,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-spec.json'; a.click() };
  el('export2').onclick=()=>{ const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='funnel-v3-backup.json'; a.click() };
  el('again').onclick=()=>{ const lib=S.library||[]; const xa=S.extraApps||[]; S={phase:'ramble',ramble:'',draft:null,answers:[],done:false,learned:{},blueprint:null,kept:null,rewound:null,library:lib,extraApps:xa}; save(); render() };
