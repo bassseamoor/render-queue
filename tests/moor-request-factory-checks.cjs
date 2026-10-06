@@ -54,5 +54,18 @@ window.PulseSpine={references:[],request:(input,ctx,source)=>({id:'queued',input
   assert.equal(persisted.travelers.length,1,'Funnel completion must create a traveler before Harness');
   assert(persisted.authorization&&persisted.authorization.receipt_fingerprint===s.receipt.fingerprint);
 
-  console.log('PASS: build requests automatically become routed software work orders, reuse known machinery in the BOM, bind Funnel authority, emit a Funnel traveler, and enter Harness as visible WIP');
+  const released=window.MOOR.factoryOutput({
+    work_order_id:persisted.work_order_id,
+    id:'implementation:test:1',
+    implementation_ref:'test-output.html#v1',
+    status:'machine-verified',
+    payload:{version:'1'},
+    evidence:{logic:{status:'verified-working',gates:'syntax+boot+behavior+integration+regression'}}
+  });
+  assert.equal(released.state,'RELEASED','machine-verified Harness output must close the production traveler');
+  assert.equal(released.travelers.length,3,'Funnel, Harness and Verifier must each leave a traveler');
+  assert.equal(released.inspections.length,3,'Funnel, Harness and release verification must each be inspected');
+  assert(released.release&&released.release.fingerprint,'released work order must carry a release record');
+
+  console.log('PASS: build requests become routed software work orders, reuse known machinery in the BOM, bind Funnel authority, travel through Funnel/Harness/Verifier, and release only from verified Harness output');
 })().catch(err=>{console.error(err);process.exitCode=1;});
