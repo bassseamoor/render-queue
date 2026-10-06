@@ -23,7 +23,7 @@ function run(id,distill,locked,spec,destination,done){
 }
 
 const before=JSON.parse(JSON.stringify(evidence));
-for(const id of ['CH-02','FM-01','FM-02','BF-02','PG-01','PG-02'])delete before.slices[id];
+for(const id of ['CH-02','FM-01','FM-02','BF-02','PG-01','PG-02','WO-01','WO-02','FM-05','DT-02'])delete before.slices[id];
 const snap=Ch.evaluate({choreography,evidence:before});
 assert.equal(snap.recommendation.slice_id,'FM-01');
 const afterFm01=JSON.parse(JSON.stringify(before));
