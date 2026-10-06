@@ -74,6 +74,18 @@ let factory={schema:'moor.software-factory-graph',nodes:[],edges:[],counts:{mach
 try{if(window.MoorCapabilityMemory&&typeof window.MoorCapabilityMemory.factoryGraph==='function')factory=window.MoorCapabilityMemory.factoryGraph()||factory}catch(_){}
 let plant={schema:'moor.software-plant-state',orders:[],counts:{},work_in_progress:0,released:0};
 try{if(window.MoorSoftwareFactory&&typeof window.MoorSoftwareFactory.plantSnapshot==='function')plant=window.MoorSoftwareFactory.plantSnapshot()||plant}catch(_){}
+let twin=null;
+try{
+  if(window.MoorFactoryTwin&&typeof window.MoorFactoryTwin.compose==='function'){
+    twin=window.MoorFactoryTwin.compose({maintenance,factory_graph:factory,plant,funnel_graph:graph});
+    const verdict=window.MoorFactoryTwin.validate(twin);
+    if(!verdict.ok)throw Error('factory twin invalid: '+verdict.errors.join(', '));
+    window.FACTORY_TWIN_SNAPSHOT=twin;
+  }
+}catch(e){
+  twin={schema:'moor.factory-twin-snapshot',version:1,invalid:true,error:String(e&&e.message||e),metrics:{machines:0,work_in_progress:0,gaps:1}};
+  window.FACTORY_TWIN_SNAPSHOT=twin;
+}
 const factoryGroup=new THREE.Group();scene.add(factoryGroup),factoryNodeMap=new Map();
 function factoryColor(n){
   if(n.kind==='machine'&&n.lifecycle==='quarantined')return RED;
@@ -152,7 +164,7 @@ const funnels=graph.nodes.filter(n=>n.type==='funnel'),law=graph.currentLaw||{},
   gapCount=systems.filter(s=>(s.display_state||s.visual_state)==='gap').length,
   degradedCount=systems.filter(s=>(s.display_state||s.visual_state)==='degraded').length,
   candidateCount=systems.filter(s=>(s.display_state||s.visual_state)==='candidate_tested').length;
-document.getElementById('hall-count').textContent=funnels.length+' specialist funnels · '+systems.length+' maintained systems · '+((factory.counts&&factory.counts.machines)||0)+' machines · '+(plant.work_in_progress||0)+' WIP';
+document.getElementById('hall-count').textContent=funnels.length+' specialist funnels · '+systems.length+' maintained systems · '+((twin&&twin.metrics&&twin.metrics.registered_capability_machines)||((factory.counts&&factory.counts.machines)||0))+' machines · '+((twin&&twin.metrics&&twin.metrics.work_in_progress)||(plant.work_in_progress||0))+' WIP';
 document.getElementById('hall-state').innerHTML='<b>LAW</b> <span class="emerald">'+((maintenance.current_authority&&maintenance.current_authority.production)||law.active||'unavailable')+'</span> · <b>CANDIDATE</b> <span class="ice">'+((maintenance.current_authority&&maintenance.current_authority.candidate)||law.candidate||'unavailable')+'</span>'+(degradedCount?' · <b style="color:#ff806f">'+degradedCount+' DEGRADED</b>':'')+(gapCount?' · <b style="color:#ff806f">'+gapCount+' GAP</b>':'')+(candidateCount?' · '+candidateCount+' CANDIDATE SYSTEMS':'');
 const info=document.getElementById('info');
 function inspect(n){
