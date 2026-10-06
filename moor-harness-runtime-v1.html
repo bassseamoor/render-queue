@@ -654,10 +654,47 @@ async function executeIntegration(job,spec){
   render(); return job.verify.allOk;
 }
 </script>
+<script src="funnel-kernel.js?v=20261006-armored1"></script>
 <script>
 /* ================= STATE + PIPELINE ================= */
 const STAGES=[["intake","1 · Ramble"],["spec","2 · Spec"],["holes","3 · Holes"],["fit","4 · Fit"],["jobs","5 · Jobs"],["build","6 · Build"],["review","7 · Review"],["promote","8 · Promote"],["deliver","9 · Deliver"],["ledger","10 · Ledger"]];
-let H=null;
+let H=null, AUTH=null, AUTH_ERROR="";
+function funnelKernel(){try{return window.MOORFunnelKernel||(parent&&parent!==window&&parent.MOORFunnelKernel)||null}catch(e){return window.MOORFunnelKernel||null}}
+function claimId(){try{return new URLSearchParams(location.search).get("claim")||""}catch(e){return ""}}
+function readClaim(id){
+  if(!id)return null;
+  let raw=null;
+  try{raw=sessionStorage.getItem("moor.harness.claim."+id)}catch(e){}
+  if(!raw){try{if(parent&&parent!==window)raw=parent.sessionStorage.getItem("moor.harness.claim."+id)}catch(e){}}
+  if(!raw)return null;
+  try{return JSON.parse(raw)}catch(e){return null}
+}
+function clearClaim(id){
+  try{sessionStorage.removeItem("moor.harness.claim."+id)}catch(e){}
+  try{if(parent&&parent!==window)parent.sessionStorage.removeItem("moor.harness.claim."+id)}catch(e){}
+}
+function adaptVerdictSpec(packet){
+  const v=packet&&packet.spec;
+  if(v&&typeof v==="object"&&v.app_type&&Array.isArray(v.features))return JSON.parse(JSON.stringify(v));
+  const txt=typeof v==="string"?v:Object.entries(v||{}).map(([k,x])=>k+": "+String(x)).join(". ");
+  const s=compileSpec(txt||"Funnel-authorized build");
+  s.raw="[sealed Funnel verdict]";
+  s.effective_input=txt;
+  s.funnel_authorized=true;
+  return s;
+}
+function initAuthorization(){
+  const id=claimId(),k=funnelKernel(),claim=readClaim(id);
+  if(!id){AUTH_ERROR="Funnel execution claim required.";return false}
+  if(!k){AUTH_ERROR="Sealed Funnel Kernel unavailable.";return false}
+  if(!claim){AUTH_ERROR="Execution claim not found or already cleared.";return false}
+  try{
+    AUTH=k.consumeClaim(claim);
+    clearClaim(id);
+    return true;
+  }catch(e){AUTH_ERROR=String(e&&e.message||e);return false}
+}
+function deny(action){log("<b>DENIED</b> — "+esc(action||AUTH_ERROR||"Funnel authorization required"));return false}
 function freshH(){ return {stage:"intake",ramble:"",spec:null,holes:[],fit:[],jobs:[],
   workers:[],cycles:0,versions:[],canon:"—",appHtml:"",mods:[],training:[],auto:false}; }
 const NAMEPOOL=["Anvil","Bishop","Cinder","Drift","Ember","Flint","Gale","Harbor","Iris","Jolt","Kestrel","Lumen","Mesa","North","Onyx","Pico"];
@@ -672,17 +709,14 @@ function renderStages(){ $("#stages").innerHTML=STAGES.map(s=>{
   const i=STAGES.findIndex(x=>x[0]===s[0]), cur=STAGES.findIndex(x=>x[0]===H.stage);
   const cls=s[0]===H.stage?"on":(i<cur?"done":"");
   return '<button class="stg '+cls+'" data-s="'+s[0]+'">'+s[1]+'</button>'; }).join("");
-  document.querySelectorAll(".stg").forEach(b=>b.onclick=()=>{ H.stage=b.dataset.s; render(); }); }
+  document.querySelectorAll(".stg").forEach(b=>{b.disabled=true;b.title="Stage order is locked; use the pipeline controls.";}); }
 
 /* ---------- stage: intake ---------- */
 const SAMPLE_RAMBLE="I want a mobile app for gym owners to track invoices and send reminders. People sign in with their phone number. Dark mode. It should work offline.";
-function vIntake(){ return `<div class="card"><h2>Ramble the goal</h2>
-  <p class="sub">Dump everything — huge block, no structure needed. The compiler turns it into a spec; you confirm it before anything builds. Nothing you write here ever reaches a builder raw.</p>
-  <textarea class="inp" id="ramble" placeholder="What are we building? Who's it for? What does it do?"></textarea>
-  <div class="row" style="margin-top:10px">
-    <button class="btn" id="compile">Compile spec →</button>
-    <button class="ghost" id="usesample">Use sample ramble</button>
-  </div></div>
+function vIntake(){
+  if(!AUTH)return `<div class="card"><h2>Harness locked</h2><p class="sub">This builder cannot accept raw requests. A single-use Funnel execution claim is required.</p><div class="job fail"><b>Denied</b><br>${esc(AUTH_ERROR||"Resolve the request through the Funnel first.")}</div><div class="row"><button class="btn" id="openfunnel">Open Funnel</button></div></div>`;
+  return `<div class="card"><h2>Authorized intake</h2>
+  <p class="sub">Authorization was minted by the sealed Funnel. Raw intake is disabled here.</p></div>
   <div class="card"><h3>Adapters</h3><div class="kv">
    <dt>Brain</dt><dd>${esc(BRAIN.label)} · heuristic, local, transparent <span class="pill ok">$0</span></dd>
    <dt>Storage</dt><dd>localStorage with in-memory fallback · offline-first</dd>
@@ -864,9 +898,9 @@ function render(){
 }
 function wire(){
   const on=(id,fn)=>{ const e=$(id); if(e)e.onclick=fn; };
+  on("#openfunnel",()=>{location.href="quiz-funnel-v3.html";});
   on("#usesample",()=>{ $("#ramble").value=SAMPLE_RAMBLE; });
-  on("#compile",()=>{ const r=$("#ramble").value.trim();
-    H.ramble=r; H.spec=compileSpec(r); H.stage="spec"; render(); });
+  on("#compile",()=>deny("Raw Harness compilation is disabled. Use the Funnel."));
   on("#gospec",()=>{ const pl=H.workers.find(w=>w.role==="planner"&&w.status==="active");
     if(pl){const p=payWorker(pl,8); log("planner "+esc(pl.codename)+" paid "+p.net+" — spec compiled");}
     H.holes=pokeHoles(H.spec); H.stage="holes"; render(); });
@@ -902,6 +936,7 @@ function wire(){
 }
 /* ================= ORCHESTRATION ================= */
 async function runBuild(){
+  if(!AUTH)return deny("Build requires a consumed Funnel execution claim.");
   for(const job of H.jobs){
     if(job.status==="gated"||job.status==="approved")continue;
     const depsOk=job.deps.every(d=>{ const dj=H.jobs.find(x=>x.id===d); return dj&&(dj.status==="gated"||dj.status==="approved"); });
@@ -929,6 +964,7 @@ function emitMoorOutput(detail){
   try{if(parent&&parent!==window)parent.postMessage({type:"moor:output",detail},"*");}catch(e){}
 }
 function doPromote(){
+  if(!AUTH)return deny("Promotion requires Funnel authorization.");
   const integ=H.jobs.find(j=>j.kind==="integration");
   if(!integ||integ.status!=="approved"||!integ.appHtml){ log("<b>promotion refused</b> — integration not verified"); return; }
   const next=H.canon==="—"?"1.0":bumpVer(H.canon);
@@ -961,41 +997,11 @@ function doPromote(){
   H.stage="deliver"; render();
 }
 async function runMod(){
-  const r=$("#modramble").value.trim(); if(!r)return;
-  const mspec=compileSpec(r);
-  log("<b>Mod ◈</b> — compiling delta…");
-  const feats=mspec.features.length?mspec.features:[{text:r.slice(0,40),weight:6,source:"you"}];
-  const isTheme=/dark|theme|night/i.test(r);
-  const jobs=feats.slice(0,2).map((f,i)=>{
-    const ranked=PARTS.filter(p=>p.kind===(isTheme?"theme":"feature"))
-      .map(p=>({p,s:fitScore(f,p)})).sort((a,b)=>b.s-a.s);
-    return {id:"mod-"+uid("j"),kind:isTheme?"theme":"feature",label:ranked[0].p.name+" — "+f.text,
-      part_id:ranked[0].p.id,feature:f.text,weight:f.weight,deps:[],status:"planned",isMod:true,name:f.text};
-  });
-  for(const j of jobs){ await executeJob(j,H.spec);
-    if(j.status==="gated"){ j.status="approved"; H.jobs.push(j); } }
-  // reassemble everything into a new canonical version
-  const integ={id:"job-re",kind:"integration",label:"Assemble + regression (mod)",part_id:null,
-    feature:"integration",weight:8,deps:[],status:"planned",isMod:true};
-  integ.packet=buildPacket(integ,H.spec); integ.worker_id=integ.packet.issued_to.worker_id;
-  log("<b>"+esc(integ.packet.issued_to.codename)+"</b> (integrator) reassembles "+H.jobs.filter(j=>j.status==="approved").length+" approved jobs");
-  await executeIntegration(integ,H.spec);
-  if(integ.status==="gated"){
-    const next=bumpVer(H.canon); H.appHtml=integ.appHtml; H.canon=next;
-    H.versions.push({v:next,jobs:jobs.length,note:"mod: "+r.slice(0,50)});
-    const nm=jobs.map(j=>j.feature).join(", ")||"mod";
-    H.mods.push({name:nm,v:next});
-    emitMoorOutput({id:"implementation:harness:"+next,kind:"implementation",title:"Modified app v"+next,
-      summary:"Harness modification promoted after integration and regression gates.",source:{app:"app-compiler-harness",component:"app-compiler-harness",project:"harness"},
-      concepts:[H.spec.app_type],status:"machine-verified",provenance:"verified",intent:r,intent_status:"user-reviewed",
-      intent_provenance:"explicit",recipe:{base_spec:H.spec,delta:mspec,parts:jobs.map(j=>j.part_id)},implementation_ref:"moor-harness-runtime-v1.html#v"+next,
-      payload:{version:next,mod:nm},evidence:{logic:{status:"verified-working",gates:"integration+regression"},intent:{status:"user-reviewed"}}});
-    log("<b>Mod promoted ★</b> → v"+next);
-  } else log("mod integration failed — held, not promoted");
-  render();
+  return deny("A modification is a new build/change request and requires a fresh Funnel run.");
 }
 /* ---------- auto-run: the funnel runs itself ---------- */
 async function autoRun(){
+  if(!AUTH)return deny("Auto-run requires Funnel authorization.");
   H.auto=true;
   $("#ramble")&&($("#ramble").value=SAMPLE_RAMBLE);
   H.ramble=SAMPLE_RAMBLE; H.spec=compileSpec(SAMPLE_RAMBLE); H.stage="spec"; render();
@@ -1018,10 +1024,11 @@ async function autoRun(){
 }
 /* ================= INIT ================= */
 H=freshH(); initWorkers();
-$("#autorun").onclick=()=>{ H=freshH(); initWorkers(); H.stage="intake"; render();
+if(initAuthorization()){H.funnel=AUTH;H.spec=adaptVerdictSpec(AUTH);H.stage="spec";}
+$("#autorun").onclick=()=>{ if(!AUTH)return deny("Auto-run requires Funnel authorization."); H=freshH(); initWorkers(); H.funnel=AUTH; H.spec=adaptVerdictSpec(AUTH); H.stage="spec"; render();
   setTimeout(()=>{ $("#ramble").value=SAMPLE_RAMBLE; },50); setTimeout(autoRun,400); };
 $("#cycle").onclick=()=>{ runUpkeepCycle(); render(); };
-$("#reset").onclick=()=>{ H=freshH(); initWorkers(); ECON.bounty=0; render(); };
+$("#reset").onclick=()=>{ H=freshH(); initWorkers(); H.funnel=AUTH; if(AUTH){H.spec=adaptVerdictSpec(AUTH);H.stage="spec";} ECON.bounty=0; render(); };
 render();
 </script>
 <script src="moor-request.js?v=20261005-request2"></script>
