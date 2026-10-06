@@ -25,7 +25,8 @@ Law.transition(id,'CONVERGING',{architecture:blueprint.answer.architectureName,c
 Law.transition(id,'BLUEPRINT_READY',{blueprint:'blueprint/capability-crystallizer.blueprint.json',hash:R.hash(blueprint)},'ultra-law');
 const br=Law.mintReceipt(id,'BlueprintReceipt',blueprint,'ultra-law',[],R.hash({crystal:true}));
 assert(R.verify(br));
-Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,obligations:blueprint.acceptance},'ultra-law');
+const replayObligations=Law.extractObligations(page0).map(o=>({...o,status:'satisfied'}));
+Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,page0_hash:Law.get(id).page0_hash,obligations:replayObligations,substitutions:[]},'ultra-law');
 Law.transition(id,'EXECUTION_AUTHORIZED',{blueprint_receipt:br.fingerprint,destination:'Project Pulse + MOOR runtime'},'ultra-law');
 const er=Law.mintReceipt(id,'ExecutionReceipt',{destination:'Project Pulse + MOOR runtime',targets:blueprint.buildTargets},'ultra-law',[br.fingerprint],R.hash({targets:blueprint.buildTargets}));
 assert(R.verify(er));
