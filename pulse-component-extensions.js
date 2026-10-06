@@ -22,9 +22,9 @@ entries.forEach(function(c){
  var app=document.getElementById('app');if(app)app.classList.add('independent-focus');
  var bar=document.createElement('div');bar.className='t-controls';
  var note=document.createElement('span');note.className='meta';note.textContent='Independent review component';
- var link=document.createElement('a');link.className='btn primary';link.href=c.source;link.target='_blank';link.rel='noopener';link.textContent='Open full screen';
+ var link=document.createElement('a');link.className='btn primary';var liveSrc=c.toolSrc||c.source;link.href=liveSrc;link.target='_blank';link.rel='noopener';link.textContent='Open full screen';
  bar.append(note,link);
- var frame=document.createElement('iframe');frame.title=c.label;frame.src=c.source;frame.style.cssText='width:100%;height:78dvh;min-height:420px;border:0;border-radius:12px;background:#162423';frame.allow='fullscreen';
+ var frame=document.createElement('iframe');frame.title=c.label;frame.src=liveSrc;frame.style.cssText='width:100%;height:78dvh;min-height:420px;border:0;border-radius:12px;background:#162423';frame.allow='fullscreen';
  host.replaceChildren(bar,frame);
  },unmount:function(){var app=document.getElementById('app');if(app)app.classList.remove('independent-focus');}};
 });
