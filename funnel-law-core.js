@@ -1,5 +1,6 @@
 (function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.UltraFunnelLaw=api;})(typeof globalThis!=='undefined'?globalThis:this,function(root){'use strict';
 const R=root&&root.FunnelReceiptCore||(typeof require==='function'?require('./funnel-receipt-core.js'):null);
+const UsagePlan=root&&root.FunnelUsagePlan||(typeof require==='function'?require('./funnel-usage-plan-core.js'):null);
 const STATES=['RECEIVED','REFERENCES_BOUND','QUESTIONS_COMPILED','SOLVING','CHILDREN_RUNNING','CONVERGING','BLUEPRINT_READY','PAGE0_REPLAYED','EXECUTION_AUTHORIZED','EXECUTING','VERIFICATION_PENDING','VERIFIED','LEARNED','COMPACTED'];
 const SIDE=['BLOCKED','FAILED','STALE','BUDGET_EXHAUSTED','OWNER_REQUIRED','QUARANTINED'];
 const LAW_VERSION='ultra-v1-candidate';
@@ -46,11 +47,18 @@ function open(input){
     if(!verifyCase(existing))throw Error('Ultra Funnel case integrity failed.');
     return clone(existing);
   }
-  const c={schema:'moor.ultra-funnel-case',version:1,law_version:LAW_VERSION,case_id:id,parent_case_id:input.parent_case_id||null,page0:raw,page0_hash:hash(raw),scope:clone(input.scope||{}),scope_hash:hash(input.scope||{}),state:'RECEIVED',events:[],receipts:[],stale:false};
-  pushEvent(c,'open','RECEIVED',{page0_hash:c.page0_hash,scope_hash:c.scope_hash},'law');
+  const usagePlan=input.usage_plan||UsagePlan&&UsagePlan.build?UsagePlan.build(raw,input.scope||{},input.usage_plan_overrides||{}):null;
+  if(!usagePlan||!UsagePlan||!UsagePlan.validate(usagePlan,raw))throw Error('Ultra Funnel requires a valid usage plan.');
+  const c={schema:'moor.ultra-funnel-case',version:1,law_version:LAW_VERSION,case_id:id,parent_case_id:input.parent_case_id||null,page0:raw,page0_hash:hash(raw),scope:clone(input.scope||{}),scope_hash:hash(input.scope||{}),usage_plan:clone(usagePlan),usage_plan_hash:UsagePlan.hash(usagePlan),state:'RECEIVED',events:[],receipts:[],stale:false};
+  pushEvent(c,'open','RECEIVED',{page0_hash:c.page0_hash,scope_hash:c.scope_hash,usage_plan_hash:c.usage_plan_hash},'law');
   cases.set(c.case_id,c);return clone(c);
 }
 function get(id){const c=cases.get(id);return c?clone(c):null}
+function plan(id,overrides){
+  const c=cases.get(id);if(!c)throw Error('unknown case');if(c.state!=='RECEIVED')throw Error('Usage plan locks before references.');
+  const next=UsagePlan.build(c.page0,c.scope,overrides||{});
+  c.usage_plan=clone(next);c.usage_plan_hash=UsagePlan.hash(next);pushEvent(c,'usage_plan','RECEIVED',{usage_plan_hash:c.usage_plan_hash,plan:clone(next)},'law');return clone(next);
+}
 function checkReplay(c,payload){
   if(!payload||payload.page0_verified!==true)throw Error('Ultra Page 0 replay must explicitly verify Page 0.');
   if(payload.page0_hash!==c.page0_hash)throw Error('Ultra Page 0 replay must use the immutable Page 0 hash.');
@@ -75,8 +83,10 @@ function transition(id,to,payload,issuer){
   const i=STATES.indexOf(c.state),j=STATES.indexOf(to);if(j!==i+1)throw Error('illegal transition '+c.state+' -> '+to);
   payload=clone(payload||{});
   if(to==='REFERENCES_BOUND'){
+    if(!c.usage_plan||!c.usage_plan_hash)throw Error('REFERENCES_BOUND requires a locked Funnel usage plan.');
     const refs=payload.references||payload.reused;
     if(!Array.isArray(refs))throw Error('REFERENCES_BOUND requires references/reused array.');
+    payload.usage_plan_hash=c.usage_plan_hash;
   }
   if(to==='QUESTIONS_COMPILED'){
     const qs=payload.questions||payload.material_questions;
@@ -130,6 +140,7 @@ const migration=Object.freeze({
   inherited_from:'v44-sealed',
   native_guards:Object.freeze([
     'immutable-page0',
+    'usage-plan-before-references',
     'ordered-states',
     'source-backed-page0-replay',
     'approved-deferrals-and-substitutions',
@@ -141,5 +152,5 @@ const migration=Object.freeze({
   ]),
   authority_status:'candidate-not-promoted'
 });
-return Object.freeze({version:1,law_version:LAW_VERSION,states:STATES.slice(),sideStates:SIDE.slice(),migration,open,get,transition,stale,mintReceipt,verifyReceipt,extractObligations,hash,_verifyCase:verifyCase});
+return Object.freeze({version:1,law_version:LAW_VERSION,states:STATES.slice(),sideStates:SIDE.slice(),migration,open,get,plan,transition,stale,mintReceipt,verifyReceipt,extractObligations,hash,_verifyCase:verifyCase});
 });
