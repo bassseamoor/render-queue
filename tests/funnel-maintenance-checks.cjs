@@ -49,9 +49,12 @@ assert(workflow.includes('tests/funnel-law-ultra-checks.cjs'));
 assert(workflow.includes('maintenance-sweep:'),'maintenance sweep must run independently of monolithic validation');
 assert(workflow.includes('tests/factory-accumulation-checks.cjs'));
 assert(workflow.includes('tests/moor-request-factory-checks.cjs'),'live request conveyor must be CI-gated');
+assert(workflow.includes('tests/maintenance-receipt-core-checks.cjs'),'FM-05 receipt contract must be CI-gated');
 assert(pages.includes('tests/funnel-maintenance-sweep.cjs --report-only'),'Pages must publish a deploy-time QC report');
 assert(hall.includes("fetch('funnel-maintenance-status.json'"),'Citadel must read canonical maintenance truth');
-assert(hall.includes("fetch('funnel-maintenance-live.json'"),'Citadel must overlay last deploy QC');
+assert(hall.includes("fetch('funnel-maintenance-receipt.json'"),'Citadel must prefer the formal FM-05 MaintenanceReceipt');
+assert(hall.includes("fetch('funnel-maintenance-live.json'"),'Citadel must retain compatibility fallback to raw deploy QC');
+assert(hall.indexOf("fetch('funnel-maintenance-receipt.json'")<hall.indexOf("fetch('funnel-maintenance-live.json'"),'formal receipt must be attempted before raw QC fallback');
 assert(!hallHtml.includes('funnel-maintenance-state.js'),'Citadel must not load a parallel maintenance truth source');
 
-console.log('PASS: Funnel maintenance truth distinguishes docs/code/wiring/tests/receipts/visualization, drives the 3D factory from one canonical register, overlays independent deploy QC, exposes Ultra gaps, and detects Beam BOM drift');
+console.log('PASS: Funnel maintenance truth distinguishes docs/code/wiring/tests/receipts/visualization, emits FM-05 MaintenanceReceipt, drives the 3D factory from canonical evidence, preserves raw-QC fallback, exposes Ultra gaps, and detects Beam BOM drift');
