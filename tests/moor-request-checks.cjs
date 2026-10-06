@@ -88,7 +88,7 @@ assert(window.MOOR && typeof window.MOOR.request === 'function');
     substitutions:[]
   },provenance:'verified'});
   s=K.advance({request_id:rid,stage:'verdict',payload:{
-    spec:{task:'fix layout'},
+    spec:{task:'fix layout',obligations:obs.map(o=>({id:o.id,source:o.source,status:'satisfied'}))},
     destination:'app-compiler-harness',
     done_criteria:['layout works']
   },provenance:'verified'});
