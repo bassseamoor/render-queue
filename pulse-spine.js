@@ -642,6 +642,14 @@ var CONTRACTS=[
   source:'funnel-kernel.js'}
 ];
 var FABRIC_DOCS=[
+ {id:'blueprint-farm-master',name:'MOOR Blueprint Farm',summary:'Master planning machine: open-question harvesting, parallel child blueprints, realignment, choreography, receipts and explicit slice release.',source:'blueprint/blueprint-farm.blueprint.json'},
+ {id:'blueprint-farm-library',name:'Blueprint Farm Library',summary:'Machine-readable index of the farm, blueprint statuses and released/planned slices.',source:'pulse-blueprint-farm-library.json'},
+ {id:'blueprint-farm-inspector',name:'Blueprint Farm Inspector',summary:'Read-only Pulse surface for inspecting Page 0, evidence, open questions, contracts, failure modes, maintenance and implementation slices.',source:'blueprint-farm.html'},
+ {id:'blueprint-farm-maintenance',name:'Funnel Maintenance Modernization',summary:'Blueprint for reducing semantic/theatrical maintenance debt without weakening proven Funnel authority or output quality.',source:'blueprint/funnel-maintenance-modernization.blueprint.json'},
+ {id:'blueprint-farm-twin',name:'Factory Digital Twin',summary:'Blueprint for a beautiful 3D software factory whose operational state is bound to real machine evidence.',source:'blueprint/factory-digital-twin.blueprint.json'},
+ {id:'blueprint-farm-procedural',name:'Seeded Procedural Toolchain',summary:'Blueprint for generator capability resolution and deterministic seed + recipe + version + semantic-anchor reconstruction.',source:'blueprint/seeded-procedural-toolchain.blueprint.json'},
+ {id:'blueprint-farm-workers',name:'Blueprint-to-Worker Orchestration',summary:'Blueprint for deliberately releasing one approved slice to scoped workers with stale-state, integration and QC boundaries.',source:'blueprint/worker-execution-orchestration.blueprint.json'},
+ {id:'blueprint-farm-choreography',name:'Blueprint Farm Choreography',summary:'Storyline and dependency DAG for implementation slices; only BF-01 is currently released.',source:'blueprint/blueprint-choreography.blueprint.json'},
  {id:'beam-rebrand-blueprint',name:'Pulse Beam Rebrand',summary:'Spatial product rebrand with permanent Beam Spaces, Funnel Hall, no-loss component migration and Beam Design Law.',source:'blueprint/pulse-beam-rebrand.blueprint.json'},
  {id:'beam-shell',name:'Pulse Beam Spatial Shell',summary:'Gesture-aware Create/Funnel Hall shell with Library, Inspector and runnable tool dock.',source:'pulse-beam.js'},
  {id:'beam-design-law',name:'Beam Design Law v1',summary:'Clear component standards plus compatibility → audited → Beam-native migration ladder.',source:'pulse-beam-standards.html'},
