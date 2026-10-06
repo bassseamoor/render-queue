@@ -27,7 +27,8 @@ Law.transition(id,'CONVERGING',{architecture:bp.architecture.name,telemetry:bp.t
 Law.transition(id,'BLUEPRINT_READY',{blueprint:'blueprint/pulse-creation-deck.blueprint.json',blueprint_data:bp,hash:R.hash(bp)},'ultra-law');
 const br=Law.mintReceipt(id,'BlueprintReceipt',bp,'ultra-law',[],R.hash({layout:true,telemetry:true,refinery:true}));
 assert(R.verify(br));
-Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,obligations:bp.acceptance},'ultra-law');
+const replayObligations=Law.extractObligations(page0).map(o=>({...o,status:'satisfied'}));
+Law.transition(id,'PAGE0_REPLAYED',{page0_verified:true,page0_hash:Law.get(id).page0_hash,obligations:replayObligations,substitutions:[]},'ultra-law');
 Law.transition(id,'EXECUTION_AUTHORIZED',{blueprint_receipt:br.fingerprint,destination:'Project Pulse'},'ultra-law');
 const er=Law.mintReceipt(id,'ExecutionReceipt',{destination:'Project Pulse',targets:bp.buildTargets},'ultra-law',[br.fingerprint],R.hash({targets:bp.buildTargets}));
 assert(R.verify(er));
