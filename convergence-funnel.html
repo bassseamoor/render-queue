@@ -16,7 +16,7 @@
     <div class="brand"><div class="eyebrow">MOOR · creation pipeline</div><h1>Convergence Funnel</h1><p class="muted">Forward once. Then flip it: observe the result, compare it to the immutable dogfood, emit only the difference, and repeat until nothing material is left.</p>
       <div class="pipeline" aria-label="pipeline"><span class="node">DOGFOOD</span><span class="arrow">→</span><span class="node">FORWARD BLUEPRINT</span><span class="arrow">→</span><span class="node">BUILD</span><span class="arrow">→</span><span class="node hot">BLIND OBSERVE</span><span class="arrow">→</span><span class="node hot">DIFFERENCE</span><span class="arrow">→</span><span class="node hot">DELTA</span><span class="arrow">↺</span></div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><a class="btn" href="convergence-torture.html" style="text-decoration:none">Torture 1,000 situations</a><a class="btn" href="beauty-kernel.html" style="text-decoration:none">Beauty Kernel</a><div class="tag"><span class="dot"></span> fail-closed · original never mutates</div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><a class="btn" href="convergence-torture.html" style="text-decoration:none">Torture 1,000 situations</a><a class="btn" href="beauty-kernel.html" style="text-decoration:none">Beauty Kernel</a><a class="btn" href="trajectory-ledger.html" style="text-decoration:none">Trajectory</a><div class="tag"><span class="dot"></span> fail-closed · original never mutates</div></div>
   </div>
 
   <div class="grid">
@@ -142,9 +142,41 @@ function updatePromotion(){
   if(state.last.pass){el.className='status pass';el.innerHTML='<strong>PROMOTABLE</strong><span>No material difference.</span>';}
   else{el.className='status fail';el.innerHTML='<strong>BLOCKED</strong><span>'+((state.last.missing.length+state.last.wrong.length))+' material difference(s).</span>';}
 }
+const TRAJECTORY_KEY='moor.trajectory.v1';
+function appendTrajectoryCheckpoint(last,iterationNumber){
+  try{
+    const rows=JSON.parse(localStorage.getItem(TRAJECTORY_KEY)||'[]');
+    const list=Array.isArray(rows)?rows:[];
+    const results=Array.isArray(last.results)?last.results:[];
+    const passCount=results.filter(x=>x.status==='PASS').length;
+    const score=results.length?Math.round(passCount/results.length*100):null;
+    const confidence=60;
+    list.push({
+      schema:'moor.trajectory.checkpoint.v1',
+      at:new Date().toISOString(),
+      source:'convergence-funnel',
+      title:'Funnel iteration #'+iterationNumber,
+      originalIntent:state.dogfood,
+      funnelIntent:state.requirements.map(r=>r.id+' — '+r.text).join('\n'),
+      builtResult:last.observation,
+      artifact:last.artifact,
+      evidenceBoundary:last.evidenceBoundary,
+      modality:last.modality,
+      assessors:score==null?[]:[{
+        name:'Convergence Funnel evaluator',
+        equipment:last.modality+' observation + requirement-signal matcher',
+        score:score,
+        confidence:confidence,
+        note:'Scoped estimate only. Evidence boundary: '+last.evidenceBoundary
+      }]
+    });
+    localStorage.setItem(TRAJECTORY_KEY,JSON.stringify(list));
+  }catch(e){}
+}
 function recordIteration(){
   if(!state.last)return;
   state.iterations.push({n:state.iterations.length+1,artifact:state.last.artifact,pass:state.last.pass,missing:state.last.missing.length,wrong:state.last.wrong.length,extra:state.last.extra.length,delta:state.last.delta,at:new Date().toISOString()});
+  appendTrajectoryCheckpoint(state.last,state.iterations.length);
   renderHistory();
   if(!state.last.pass){$('observation').value='';$('artifact').value='';$('evidenceBoundary').value='';$('observation').focus();}
 }
