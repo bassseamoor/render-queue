@@ -1,3 +1,13 @@
+# MOOR agent entry — read this first
+
+If the user says **use the Funnel**, **run this through the Funnel**, **Funnel this**, or asks you to work through MOOR's request system, read `/FUNNEL.md` before interpreting or modifying the request.
+
+When browser/runtime access exists and `window.MOOR.request` is available, use that API. Do **not** type into the human request bar and do **not** independently choose Bin vs Funnel vs Harness. The router owns that decision.
+
+No API key is required for the base path. If intelligence is unavailable, use local known references/fallback rules, preserve fallback provenance, and continue.
+
+Machine-readable entry: `/moor-agent.json`.
+
 # Pulse dashboard rebuild contract
 
 This repository publishes Project Pulse. Multiple builders update it. Always fetch the latest dashboard and manifest before writing; never replace newer changes using an older snapshot.
