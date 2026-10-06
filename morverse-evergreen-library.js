@@ -37,6 +37,7 @@ const EXHIBITS=[
 {id:'planet-workshop',title:'Planet Workshop',status:'experimental',summary:'Seeded planetary terrain, rivers and environment-driven vegetation.',source:'moor-planet-workshop.html',provenance:'Pulse component'},
 {id:'moor-atlas',title:'MOOR Atlas',status:'experimental',summary:'Coordinates, places, claims and terrain-aware routes for spatial worlds.',source:'moor-atlas.html',provenance:'Pulse component'},
 {id:'material-lab',title:'Material Lab',status:'specified',summary:'Recipe-first material system with deterministic layers, locks and verification contracts.',source:'pulse-training-blueprints-11.json',provenance:'training blueprint'},
+{id:'blueprint-farm',title:'MOOR Blueprint Farm',status:'BF-01 live · future slices planned',summary:'Six end-to-end plans for Funnel maintenance, truthful factory state, deterministic procedural tools, worker orchestration and choreographed implementation. Planning is inspectable; only BF-01 has execution authority.',source:'blueprint-farm.html',provenance:'Ultra BlueprintReceipt family'},
 {id:'evergreen-world',title:'EVERGREEN World Blueprint',status:'current build',summary:'The end-to-end public library planet you are standing inside.',source:BLUEPRINT_URL,provenance:'Funnel build'}
 ];
 
