@@ -75,10 +75,10 @@ function session(requestId){
   var es=events(requestId),out={request_id:requestId,stage:null,page0:null,writes:[],stages:{},receipt:null,tainted:false};
   es.forEach(function(e){
     if(e.type==='stage'){
-      out.stage=e.payload.stage;out.stages[e.payload.stage]=clone(e.payload);
+      out.stage=e.payload.stage;out.stages[e.payload.stage]=clone(e.payload);out.stages[e.payload.stage]._event_hash=e.hash;
       if(e.payload.stage==='page0')out.page0=e.payload.raw;
-      if(e.payload.stage==='verdict'&&e.payload.receipt)out.receipt=clone(e.payload.receipt);
     }else if(e.type==='write')out.writes.push(clone(e.payload));
+    else if(e.type==='receipt')out.receipt=clone(e.payload);
   });
   return out;
 }
@@ -167,8 +167,10 @@ function advance(arg){
     if(!text(payload.destination).trim())throw Error('Verdict requires destination.');
     if(!Array.isArray(payload.done_criteria)||!payload.done_criteria.length)throw Error('Verdict requires done criteria.');
     var replay=s.stages.replay;if(!replay)throw Error('Page 0 replay is required before verdict.');
-    var head=state().ledger.length?state().ledger[state().ledger.length-1].hash:'GENESIS';
-    payload.receipt=receiptFor(id,payload,head,s.stages.page0.raw_hash);
+    var verdictEvent=append('stage',id,Object.assign({stage:to},payload),prov);
+    var receipt=receiptFor(id,payload,verdictEvent.hash,s.stages.page0.raw_hash);
+    append('receipt',id,receipt,'system');
+    return session(id);
   }
   append('stage',id,Object.assign({stage:to},payload),prov);
   return session(id);
@@ -177,10 +179,12 @@ function verifyReceipt(receipt){
   if(!receipt||receipt.schema!==RECEIPT_SCHEMA||receipt.version!==VERSION||receipt.law_version!==LAW_VERSION)return false;
   var copy=clone(receipt),fp=copy.fingerprint;delete copy.fingerprint;
   if(hash(copy)!==fp)return false;
-  var s=session(receipt.request_id);
+  var s=session(receipt.request_id),es=events(receipt.request_id),last=es[es.length-1];
   if(!s.receipt||s.receipt.fingerprint!==receipt.fingerprint||!s.stages.replay||!s.stages.verdict)return false;
+  if(!last||last.type!=='receipt'||!last.payload||last.payload.fingerprint!==receipt.fingerprint)return false;
   if(s.stages.page0.raw_hash!==receipt.page0_hash)return false;
   if(hash(s.stages.verdict.spec)!==receipt.spec_hash)return false;
+  if(s.stages.verdict._event_hash!==receipt.ledger_head)return false;
   return verifyState(state());
 }
 function executionPacket(receipt){
