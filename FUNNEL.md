@@ -1,97 +1,138 @@
-# MOOR Funnel — canonical agent entry
+# MOOR Funnel — sealed canonical entry
 
-This file is the single repository doorway for the MOOR decision resolver.
+This file describes the public contract. The executable authority is `/funnel-kernel.js`.
 
-## If an instruction says "use the Funnel"
+## Prime law
 
-Do not search around for a different Funnel implementation and do not invent a parallel questionnaire.
+For Project Pulse, a build/change request cannot become executable because a model believes it is clear, because old answers look similar, because a caller passes `resolved:true`, or because a builder is confident.
 
-1. Treat the user's original request as immutable Page 0 input.
-2. Resolve the request through the canonical v43 rules below.
-3. Reuse known locked answers and Bin references before spending new intelligence.
-4. Resolve only missing, changed, conflicting, or downstream-affected decisions.
-5. Preserve every explicit named mechanism as its own requirement.
-6. Produce a verdict packet containing only:
+A build/change becomes executable only when the sealed Funnel Kernel emits a valid `moor.funnel-receipt`.
+
+Models may submit language and evidence through the Funnel doorway. They may not mint receipts, reorder stages, rewrite Funnel law, or directly authorize Harness execution.
+
+## Mandatory path
+
+1. **Page 0** — freeze the user's original request verbatim.
+2. **References** — reuse known locked answers, Bin references, verified implementations, corrections, and failures.
+3. **Distill** — convert the request into a precise candidate specification without deleting Page 0.
+4. **Decisions** — lock material choices. Unresolved material decisions block execution.
+5. **Replay** — compare the candidate back against immutable Page 0. Every explicit obligation must be satisfied or explicitly deferred with owner approval. Silent substitution is forbidden.
+6. **Verdict** — emit only:
    - spec
    - destination
    - done criteria
-7. Builders execute the verdict packet; they do not receive the raw ramble.
-8. Verification must prove the actual requested path. Failed gates remain evidence.
-9. If no LLM/API key is available, use known references and local fallback rules, mark fallback provenance, and continue. Never return nothing merely because intelligence is unavailable.
+7. **Receipt** — the kernel binds the verdict to Page 0 and the append-only ledger.
+8. **Harness** — executes only a verdict carrying a receipt that the kernel verifies.
+9. **Verifier** — proves the requested path. Failures are written back as evidence.
+
+The Funnel defines. The Harness builds. The Verifier proves. The Bin/Engine remembers.
+
+## Write slot
+
+The Funnel is a sealed box with a narrow write surface. Allowed writes are append-only inputs such as:
+
+- answer
+- evidence
+- failure
+- correction
+- reference
+- note
+
+These writes may influence later decisions. They do not alter Funnel law.
+
+## Page 0 law
+
+Page 0 is immutable for a request ID. Distillation is allowed; replacement is not.
+
+Explicit named mechanisms and requirement-bearing statements become atomic obligations. Replay must source each obligation back to Page 0 and mark it either:
+
+- `satisfied`, or
+- `explicitly-deferred` with owner approval.
+
+If replay omits an obligation or introduces an unapproved substitution, no receipt is issued.
 
 ## Runtime identities
 
+- Public contract: `/FUNNEL.md`
+- Sealed state machine: `/funnel-kernel.js`
 - Human/runtime UI: `/quiz-funnel-v3.html`
 - Pulse Funnel project ID: `funnel`
 - Architecture contract: `/pulse-learning-spine-blueprints.json`
 - Universal request router: `/moor-request.js`
-- Browser API: `await MOOR.request(...)`
+- Browser entry: `await MOOR.request(...)`
 - Reference system: `PulseReferences`
 - Execution/Harness component: `app-compiler-harness`
+- Muse operating personality: `/BUSTER.md`
 
-The filename `quiz-funnel-v3.html` is a runtime shell name. The canonical decision contract is Funnel v43.
+The UI filename may retain its historical name. The current executable law version is `v44-sealed`, owned by the kernel.
 
-## Model rule
+## Agent rule
 
-A model with browser/page access SHOULD NOT type into the human global request bar when `window.MOOR.request` is available.
-
-Use:
+If `window.MOOR.request` exists, use it. Do not type into the human request bar. Do not independently choose Bin, Funnel, Harness, Compiler, or a builder.
 
 ```js
 await MOOR.request({
-  input: "the user's request",
+  input: "the user's original request",
   source: "agent",
   context: MOOR.context()
 })
 ```
 
-MOOR chooses Bin/reference lookup, navigation, Funnel resolution, or resolved execution. The caller should not independently select a subsystem unless explicitly overriding the router for diagnostics.
+A model is a contributor to the Funnel, not an authority over it.
 
 ## Deterministic routing
 
-1. Exact reference/system command → direct reference/action.
-2. Navigation/open request with a strong known target → direct navigation.
-3. Search/find/lookup request → Bin/reference retrieval.
-4. Build/change request with already locked decisions → Harness/execution route.
-5. Build/change request with unresolved intent → Funnel.
-6. Ambiguous novel request → Funnel.
-7. No intelligence available → local fallback with provenance; no dead end.
+- Exact reference/system command → direct reference/action.
+- Navigation/open request with a strong known target → direct navigation.
+- Search/find/lookup request → Bin/reference retrieval.
+- Any build/change request without a verified Funnel receipt → Funnel.
+- Build/change request with a kernel-verified Funnel receipt → Harness.
+- Ambiguous novel request → Funnel.
+- No intelligence/API key → local fallback inside the Funnel with provenance; never bypass the Funnel.
 
-## Canonical Funnel laws
+There is no fuzzy-match or `resolved:true` execution shortcut.
+
+## Learning law
 
 - One quiz, two sides: user and system answer the same decisions.
 - No wrong-answer dead end.
-- Vague/skip may use proven known answers.
+- Vague/skip may reuse a proven known answer with provenance.
 - Every answer locks as a versioned page.
-- Ramble may be distilled, but Page 0 remains frozen.
-- Provenance distinguishes user, inferred, learned, and fallback.
-- Explicit requirements become atomic obligations; none may be silently substituted.
-- Funnel decides WHAT. Harness executes. Verifier proves. Bin/Engine remember.
+- Provenance distinguishes explicit, inferred, learned, fallback, and verified evidence.
 - Known answers are reused; compute is spent on novelty.
-- Failures are durable training evidence.
-- A technically working result and an intent-matching result are separate judgments.
-- Verified working logic may be learned even when intent remains unconfirmed.
+- Failed gates are durable training evidence.
+- Technical success and intent match are separate judgments.
+- Repeated bad interpretations are Funnel defects to repair, not permission to bypass it.
 - Confirmed intent + verified logic is the strongest reusable example.
 
-## Completion contract
+## Owner/constitution boundary
 
-A poor, empty, or janky request is not permission to stop. The system should still attempt the best-known candidate, with honest provenance and real gates.
+Normal agents may use the Funnel API but must not possess authority to modify Funnel law.
 
-## Human global input
+The target hardened deployment is:
 
-The global "Request anything" bar is a human interface to `MOOR.request`. It is not the Funnel itself. Simple navigation/retrieval must not invoke Funnel unnecessarily.
+- Funnel kernel isolated behind a separate trust boundary.
+- Build agents receive only its narrow request/write/status/receipt interface.
+- Funnel receipts are cryptographically signed by that authority.
+- The build repository stores only the public verification material.
+- Direct pushes are disabled; protected branches require the Funnel gate check.
+- Funnel-law maintenance requires a separate owner unlock and is never available to ordinary agents.
 
-## Output contract
+A secret must never be embedded in client JavaScript or committed to the repository. A client-side password field alone is not a security boundary.
 
-Every call returns a structured envelope:
+## Output envelope
+
+Every `MOOR.request` call returns:
 
 ```json
 {
   "request_id": "request:...",
   "route": "reference | navigation | funnel | harness | fallback",
-  "status": "resolved | queued | ready-for-execution | fallback",
-  "provenance": "explicit | learned | inferred | fallback",
+  "status": "resolved | queued | locked | ready-for-execution | fallback",
+  "provenance": "explicit | learned | inferred | verified | fallback",
   "context": {},
   "result": {}
 }
 ```
+
+Harness packets must contain a kernel-verified `funnel_receipt`. Without it, execution is denied.

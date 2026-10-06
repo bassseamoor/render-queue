@@ -14,14 +14,18 @@ for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi))
 const markup = html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
 assert.equal((markup.match(/<\/body\s*>/gi) || []).length, 1, 'Tool source must not close the dashboard body');
 assert.equal((markup.match(/<\/html\s*>/gi) || []).length, 1);
-for (const file of ['pulse-workspace.js', 'pulse-spine.js', 'moor-request.js', 'pulse-component-extensions.js', 'pulse-ultrafeedback.js', 'pulse-training-blueprints-11.js']) {
+for (const file of ['pulse-workspace.js', 'pulse-spine.js', 'funnel-kernel.js', 'moor-request.js', 'pulse-component-extensions.js', 'pulse-ultrafeedback.js', 'pulse-training-blueprints-11.js']) {
   assert(html.includes(`src="${file}`), `Missing ${file} hook`);
   new vm.Script(read(file), { filename: file });
 }
 assert.equal(html.match(/var PULSE_VERSION='([^']+)'/)[1], read('pulse-version.txt').trim());
 assert(read('AGENTS.md').includes('/FUNNEL.md'), 'AGENTS.md must route agents to FUNNEL.md');
 assert(read('FUNNEL.md').includes('MOOR.request'), 'FUNNEL.md must identify MOOR.request');
-assert.equal(JSON.parse(read('moor-agent.json')).entrypoint, 'MOOR.request');
+const agent=JSON.parse(read('moor-agent.json'));
+assert.equal(agent.entrypoint, 'MOOR.request');
+assert.equal(agent.funnel.kernel, 'funnel-kernel.js');
+assert.equal(agent.funnel.execution_receipt, 'moor.funnel-receipt');
+assert(html.indexOf('funnel-kernel.js')<html.indexOf('moor-request.js'), 'Funnel kernel must load before request router');
 const sourceBlock = html.match(/window\.SEED_CONSOLE_SRC = ([^\n]+);/)[1];
 new vm.Script(JSON.parse(sourceBlock), { filename: 'embedded Seed Console source' });
 

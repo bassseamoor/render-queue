@@ -97,20 +97,27 @@ function queueFunnel(req){
   }
   return queueOffline(req);
 }
-function knownLocked(input){
-  try{
-    if(!window.PulseFunnel||!window.PulseFunnel.state)return false;
-    var q=words(input),best=0;
-    (window.PulseFunnel.state.projects||[]).forEach(function(p){
-      (p.versions||[]).forEach(function(v){
-        if(!/locked/i.test(v.state||''))return;
-        var hay=JSON.stringify(v).toLowerCase(),score=0;
-        q.forEach(function(w){if(w.length>3&&hay.indexOf(w)>=0)score++;});
-        if(score>best)best=score;
-      });
+function kernel(){
+  return window.MOORFunnelKernel||null;
+}
+function openKernel(req,refs){
+  var k=kernel();
+  if(!k)throw Error('Funnel Kernel unavailable. Build execution is locked.');
+  var session=k.open({request_id:req.id,input:req.input,source:req.source,context:req.context});
+  if(session.stage==='page0'){
+    var reused=[];
+    ['concepts','recipes','implementations','rules','failures','evidence','intents'].forEach(function(kind){
+      (refs&&refs[kind]||[]).forEach(function(r){reused.push({kind:kind,id:r.id||r.source_id||null,title:r.title||null});});
     });
-    return best>=Math.max(2,Math.ceil(q.filter(function(w){return w.length>3;}).length*.6));
-  }catch(e){return false;}
+    session=k.advance({request_id:req.id,stage:'references',payload:{reused:reused,missing:[]},provenance:'learned'});
+  }
+  return session;
+}
+function verifiedExecution(receipt,input){
+  var k=kernel();
+  if(!k||!k.verifyReceipt(receipt))return null;
+  if(k.hash(input)!==receipt.page0_hash)return null;
+  return k.executionPacket(receipt);
 }
 async function request(arg){
   if(typeof arg==='string')arg={input:arg};
@@ -132,25 +139,28 @@ async function request(arg){
     return {request_id:req.id,route:'reference',status:'resolved',provenance:'learned',context:ctx,result:referencePacket(input)};
   }
 
-  if(arg.forceFunnel){
-    var forced=queueFunnel(req);
-    return {request_id:req.id,route:'funnel',status:'queued',provenance:'explicit',context:ctx,result:forced};
-  }
-
-  if(buildIntent(input)){
-    if(arg.resolved===true||knownLocked(input)){
-      var packet=referencePacket(input);
-      try{
-        if(window.PulseReferences)window.PulseReferences.add({
-          id:'intent:'+req.id,kind:'intent',title:'Resolved request',summary:input,status:'observed',
-          source:'MOOR.request',source_id:req.id,provenance:arg.resolved===true?'explicit':'learned',data:{context:ctx,packet:packet}
-        });
-      }catch(e){}
-      return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:arg.resolved===true?'explicit':'learned',context:ctx,
-        result:{verdict_packet:{spec:input,destination:ctx.page||'current-page',done_criteria:arg.done_criteria||['Requested behavior works through the real user path.']},references:packet}};
+  if(arg.forceFunnel||buildIntent(input)){
+    var refsForFunnel=referencePacket(input);
+    if(arg.funnel_receipt){
+      var packet=verifiedExecution(arg.funnel_receipt,input);
+      if(packet){
+        try{
+          if(window.PulseReferences)window.PulseReferences.add({
+            id:'intent:'+req.id,kind:'intent',title:'Funnel-resolved request',summary:input,status:'observed',
+            source:'MOOR.request',source_id:req.id,provenance:'verified',data:{context:ctx,packet:packet}
+          });
+        }catch(e){}
+        return {request_id:req.id,route:'harness',status:'ready-for-execution',provenance:'verified',context:ctx,result:{verdict_packet:packet,references:refsForFunnel}};
+      }
+      return {request_id:req.id,route:'funnel',status:'locked',provenance:'fallback',context:ctx,result:{error:'Invalid Funnel receipt. Execution denied.'}};
+    }
+    var kernelSession;
+    try{kernelSession=openKernel(req,refsForFunnel);}
+    catch(err){
+      return {request_id:req.id,route:'funnel',status:'locked',provenance:'fallback',context:ctx,result:{error:String(err&&err.message||err)}};
     }
     var queued=queueFunnel(req);
-    return {request_id:req.id,route:'funnel',status:'queued',provenance:'explicit',context:ctx,result:queued};
+    return {request_id:req.id,route:'funnel',status:'queued',provenance:'explicit',context:ctx,result:{queue:queued,kernel:{law_version:kernel().law_version,stage:kernelSession.stage}}};
   }
 
   var refs=referencePacket(input);
@@ -216,7 +226,7 @@ var api={
   request:request,
   context:pageContext,
   drain:drain,
-  contract:{funnel:'FUNNEL.md',agent:'moor-agent.json',runtime:'quiz-funnel-v3.html'},
+  contract:{funnel:'FUNNEL.md',kernel:'funnel-kernel.js',agent:'moor-agent.json',runtime:'quiz-funnel-v3.html'},
   routes:['reference','navigation','funnel','harness','fallback']
 };
 if(window.MOOR&&window.MOOR!==api){for(var k in window.MOOR)if(!(k in api))api[k]=window.MOOR[k];}
