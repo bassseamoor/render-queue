@@ -261,6 +261,15 @@ PRESERVED_PLATFORM_ITEMS = {
         'tags': ['cat:creation','cat:compdata','kind:blueprint-farm','prov:ultra-funnel','prov:bf-01'],
         'honest_limits': 'Read-only planning/inspection slice. BF-01 is the only released slice.'
     },
+    'software-factory': {
+        'label': 'MOOR Software Factory', 'file': 'software-factory-core.js',
+        'component': 'Software Work-Order / Traveler Ledger v1',
+        'component_source': 'blueprint/software-manufacturing-system.blueprint.json',
+        'page': 'pulse-beam-funnel-hall.html',
+        'depends_on': ['moor-request.js','moor-capability-memory.js','funnel-maintenance-status.json'],
+        'tags': ['cat:system','cat:compdata','kind:software-factory','prov:verified','see:funnel-fabric'],
+        'honest_limits': 'Records manufacturing state and binds authority; it does not replace the Funnel or mint execution authority.'
+    },
     'pulse-beam': {
         'label': 'Pulse Beam', 'file': 'pulse-beam.js',
         'component': 'Pulse Beam Spatial Shell v1',
