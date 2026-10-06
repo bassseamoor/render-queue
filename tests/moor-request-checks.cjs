@@ -4,6 +4,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const root = path.resolve(__dirname, '..');
+const usagePlanSrc = fs.readFileSync(path.join(root, 'funnel-usage-plan-core.js'), 'utf8');
 const kernelSrc = fs.readFileSync(path.join(root, 'funnel-kernel.js'), 'utf8');
 const src = fs.readFileSync(path.join(root, 'moor-request.js'), 'utf8');
 const store = new Map();
@@ -34,6 +35,8 @@ const context = vm.createContext({
   URLSearchParams,URL,Promise,Date,Math,JSON,String,Array,Object,RegExp,Number,
   setTimeout:()=>0,clearTimeout:()=>{},CustomEvent:function(){}
 });
+new vm.Script(usagePlanSrc,{filename:'funnel-usage-plan-core.js'}).runInContext(context);
+window.FunnelUsagePlan=context.FunnelUsagePlan;
 new vm.Script(kernelSrc,{filename:'funnel-kernel.js'}).runInContext(context);
 window.MOORFunnelKernel=context.MOORFunnelKernel;
 assert(window.MOORFunnelKernel && typeof window.MOORFunnelKernel.verifyReceipt === 'function');
