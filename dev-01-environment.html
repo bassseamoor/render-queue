@@ -228,34 +228,7 @@ camera.position.set(0,14,-70);
 const node=new THREE.Group();
 const dom=renderer.domElement;
 
-/* ---------- failure-class preventions (funnel bc999f717afdb6ae) ---------- */
-(function preventFailures(){
-  // Rule 1: camera must spawn inside room envelope
-  console.assert(
-    Math.abs(camera.position.x)<W/2 && Math.abs(camera.position.z)<D/2 && camera.position.y>0 && camera.position.y<H,
-    'PREVENTION FAIL: camera spawned outside room envelope'
-  );
-  // Rule 3: lighting minimum ambient floor (never 0)
-  for(const k in LIGHT_PRESETS){ LIGHT_PRESETS[k].ambient=Math.max(0.05, LIGHT_PRESETS[k].ambient); }
-  // Rule 4: movement waypoints validated inside bounds
-  [CHAIR_POS, ...ringPos].forEach((p,i)=>{
-    console.assert(
-      Math.abs(p.x)<W/2 && Math.abs(p.z)<D/2,
-      'PREVENTION FAIL: waypoint '+i+' outside room bounds'
-    );
-  });
-})();
-
-/* ---------- display membrane walls (seamless screens, faint grid when idle) ---------- */
-function gridTexture(){
-  const c=document.createElement('canvas');c.width=c.height=512;
-  const g=c.getContext('2d');
-  g.fillStyle='#0a0a0c';g.fillRect(0,0,512,512);
-  g.strokeStyle='rgba(140,160,190,0.10)';g.lineWidth=1;
-  for(let i=0;i<=512;i+=64){g.beginPath();g.moveTo(i,0);g.lineTo(i,512);g.stroke();g.beginPath();g.moveTo(0,i);g.lineTo(512,i);g.stroke();}
-  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
-}
-/* character stream screens: procedural animated background via CanvasTexture */
+/* ---------- character stream texture (shared by walls and monitors) ---------- */
 const streamCanvas=document.createElement('canvas');streamCanvas.width=1024;streamCanvas.height=640;
 const charStream=window.CharStream.create(streamCanvas,{seed:'devroom-v1'});
 charStream.start();
@@ -264,11 +237,9 @@ streamTex.colorSpace=THREE.SRGBColorSpace;
 streamTex.minFilter=THREE.LinearMipmapLinearFilter;
 streamTex.magFilter=THREE.LinearFilter;
 streamTex.anisotropy=8;
-const wallTex=gridTexture();
+/* ---------- walls: 24-inch thick, character stream texture ---------- */
 const wallMat=new THREE.MeshStandardMaterial({map:streamTex,emissive:0xffffff,emissiveMap:streamTex,emissiveIntensity:0.5,roughness:0.85,metalness:0.1,color:0xffffff});
-
 function wall(w,h,px,py,pz,ry){
-  // 24-inch reinforced walls: BoxGeometry with 2 ft thickness
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,2),wallMat.clone());
   m.material.map=streamTex;m.material.map.needsUpdate=true;
   m.material.emissiveMap=streamTex;
@@ -344,10 +315,17 @@ rim.position.set(0,40,-100); scene.add(rim);
 
 /* emitter fixtures on truss grid (visual, emissive) */
 const emitterMat=new THREE.MeshStandardMaterial({color:0x111111,emissive:0xffb46b,emissiveIntensity:0.8});
+const emitterRowsH=[[],[],[],[],[]];
+const emitterRowsV=[[],[],[],[],[],[],[]];
 const emitterGeo=new THREE.BoxGeometry(2,0.5,2);
+const emitterMeshes=[]; // {mesh, gx, gz, mat}
 for(let gx=-3;gx<=3;gx++)for(let gz=-2;gz<=2;gz++){
-  const e=new THREE.Mesh(emitterGeo,emitterMat);
+  const mat=emitterMat.clone();
+  const e=new THREE.Mesh(emitterGeo,mat);
   e.position.set(gx*40,83,gz*40); scene.add(e);
+  emitterMeshes.push({mesh:e, gx:gx+3, gz:gz+2, mat});
+  emitterRowsH[gz+2].push(e);
+  emitterRowsV[gx+3].push(e);
 }
 
 let currentPreset='cinematic';
@@ -378,15 +356,8 @@ const switchMat=new THREE.MeshStandardMaterial({color:0xf5f5f7,roughness:0.3,met
 const switchOnMat=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0x0052FF,emissiveIntensity:0.6,roughness:0.3});
 const rowSwitches={h:[],v:[]}; // horizontal (left), vertical (right)
 // emitter rows: group emitters by x (horizontal) and z (vertical)
-const emitterRowsH=[[],[],[],[],[]]; // 5 horizontal rows
-const emitterRowsV=[[],[],[],[],[],[],[]]; // 7 vertical rows
-// Note: emitters created earlier; group them here by position
-scene.traverse(o=>{
-  if(o.geometry===emitterGeo){
-    const hx=Math.round((o.position.x/RING_R*3)+3), vz=Math.round((o.position.z/40)+2);
-    // simplified: use position to assign
-  }
-});
+/* emitterRows declared with emitters (above) */
+/* emitter rows grouped at creation time (see below) */
 // left side: horizontal row switches (5)
 for(let i=0;i<5;i++){
   const sw=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.3,0.5),switchMat.clone());
@@ -408,8 +379,12 @@ function toggleRow(axis,row){
   const sw=rowSwitches[axis][row];
   sw.userData.on=!sw.userData.on;
   sw.material=sw.userData.on?switchOnMat:switchMat;
-  // toggle corresponding emitter row visibility
-  // (emitters are visual; dim their material per-row via scale)
+  const rows=axis==='h'?emitterRowsH:emitterRowsV;
+  const targets=rows[row]||[];
+  targets.forEach(e=>{
+    e.material.emissiveIntensity=sw.userData.on?0.8:0.05;
+    e.visible=sw.userData.on||e.material.emissiveIntensity>0;
+  });
 }
 // raycast for switch interaction
 const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
@@ -506,10 +481,12 @@ let ringIdx=0;
 let transT=0, transFrom=new THREE.Vector3(), transTo=new THREE.Vector3(), transDur=1.2;
 let swipeStart=null, swipeTime=0;
 
-function startTransition(to, dur){
+let transDest='ring'; // 'chair' or 'ring'
+function startTransition(to, dur, dest){
   transFrom.copy(camera.position);
   transTo.copy(to);
   transT=0; transDur=dur;
+  transDest=dest||'ring';
   mode='transition';
 }
 
@@ -528,15 +505,15 @@ dom.addEventListener('touchend',e=>{
   if(adx>ady){
     // horizontal: ring navigation
     if(mode==='ring'||mode==='chair'){
-      if(mode==='chair'){mode='ring';ringIdx=0;startTransition(ringPos[0],1.2/vel);}
-      else{ringIdx=(ringIdx+(dx>0?1:7))%8;startTransition(ringPos[ringIdx],0.9/vel);}
+      if(mode==='chair'){mode='ring';ringIdx=0;startTransition(ringPos[0],1.2/vel,'ring');}
+      else{ringIdx=(ringIdx+(dx>0?1:7))%8;startTransition(ringPos[ringIdx],0.9/vel,'ring');}
     }else if(mode==='transition'){
       ringIdx=(ringIdx+(dx>0?1:7))%8;startTransition(ringPos[ringIdx],0.9/vel);
     }
   }else{
     // vertical: chair <-> ring
-    if(dy<0&&mode==='chair'){mode='ring';ringIdx=0;startTransition(ringPos[0],1.4/vel);}
-    else if(dy>0&&mode==='ring'){mode='chair';startTransition(CHAIR_POS,1.4/vel);}
+    if(dy<0&&mode==='chair'){mode='ring';ringIdx=0;startTransition(ringPos[0],1.4/vel,'ring');}
+    else if(dy>0&&mode==='ring'){mode='chair';startTransition(CHAIR_POS,1.4/vel,'chair');}
   }
   swipeStart=null;
 });
@@ -556,7 +533,7 @@ function tick(){
     const t=Math.min(1,transT);
     const e=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; // easeInOut
     camera.position.lerpVectors(transFrom,transTo,e);
-    if(t>=1){mode=(transTo===CHAIR_POS)?'chair':'ring';}
+    if(t>=1){mode=transDest;}
   }
   // chair auto-spin: delayed follow of head yaw
   if(mode==='chair'){
@@ -582,6 +559,15 @@ function tick(){
   streamTex.needsUpdate=true;
   renderer.render(scene,camera);
 }
+/* failure-class preventions (funnel bc999f71) — runs AFTER all declarations */
+(function preventFailures(){
+  console.assert(Math.abs(camera.position.x)<W/2&&Math.abs(camera.position.z)<D/2,'PREVENTION FAIL: camera outside room');
+  for(const k in LIGHT_PRESETS)LIGHT_PRESETS[k].ambient=Math.max(0.05,LIGHT_PRESETS[k].ambient);
+  [CHAIR_POS,...ringPos].forEach((p,i)=>{
+    console.assert(Math.abs(p.x)<W/2&&Math.abs(p.z)<D/2,'PREVENTION FAIL: waypoint '+i+' outside bounds');
+  });
+  window.__diag&&window.__diag('preventions pass');
+})();
 window.__diag&&window.__diag('starting tick');
 tick();
 addEventListener('resize',()=>{
