@@ -1,0 +1,63 @@
+{
+  "schema": "moor.auto-release-contract",
+  "version": 1,
+  "id": "moor-auto-release-v1",
+  "purpose": "Collapse repetitive same-repo feature release work into a trusted GitHub Actions gate without weakening Funnel, CI, stale-base, or owner-observability rules.",
+  "opt_in": {
+    "marker": "<!-- MOOR:AUTO-RELEASE {json} -->",
+    "required_metadata": [
+      "release_mode=auto",
+      "item_id",
+      "destination"
+    ],
+    "optional_metadata": [
+      "funnel_receipt_ref",
+      "trajectory"
+    ]
+  },
+  "eligibility": [
+    "Pull request targets main.",
+    "Pull request head is in bassseamoor/render-queue, not a fork.",
+    "Pull request is not draft.",
+    "Auto-release marker parses and release_mode is auto.",
+    "No authority-sensitive or workflow-governance paths are changed.",
+    "Branch is current with main; stale branches are updated and rechecked.",
+    "Pulse recovery checks exist and pass.",
+    "Every observed pull-request workflow for the same head SHA is complete without failure."
+  ],
+  "blocked_paths": [
+    "FUNNEL.md",
+    "BUSTER.md",
+    "worker-response-sop.json",
+    "funnel-kernel.js",
+    "moor-spec/**",
+    "funnel-law-*",
+    "funnel-receipt-core*",
+    "funnel-capability-core*",
+    "funnel-budget-core*",
+    "funnel-consensus-core*",
+    "funnel-case-runtime*",
+    "funnel-society-core*",
+    ".github/workflows/**"
+  ],
+  "actions": [
+    "If stale, update branch from main and wait for rerun.",
+    "If any gate fails, do not merge.",
+    "If all gates pass, squash-merge using the exact verified head SHA.",
+    "After merge, append a Dev Feed main-stage receipt directly from the trusted workflow.",
+    "If trajectory metadata is supplied, append a canonical Trajectory checkpoint."
+  ],
+  "security": [
+    "Automation runs from workflow_run using trusted workflow code on main.",
+    "It never checks out or executes pull-request head code with a write-capable token.",
+    "Fork PRs are ineligible.",
+    "Authority/governance changes are ineligible.",
+    "The bot cannot mint Funnel receipts; it only records a supplied receipt reference and relies on CI/Funnel verification already present in the repository."
+  ],
+  "honest_limits": [
+    "This removes mechanical release steps, not build/verification time.",
+    "GitHub Actions scheduling latency still exists.",
+    "Receipt commits after merge may trigger follow-on Pages/check workflows, but they no longer require another manual PR.",
+    "Live deployment remains a separate state from merge/Pulse registration."
+  ]
+}
