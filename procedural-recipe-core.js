@@ -1,5 +1,6 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.MoorProceduralRecipe=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
+const SUBSEED_SCHEMES=Object.freeze(['semantic-key-v1']);
 function copy(x){return x==null?x:JSON.parse(JSON.stringify(x))}
 function stable(x){if(x===null||typeof x!=='object')return JSON.stringify(x);if(Array.isArray(x))return '['+x.map(stable).join(',')+']';return '{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+stable(x[k])).join(',')+'}'}
 function hash(x){const s=typeof x==='string'?x:stable(x);let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}return h.toString(16).padStart(8,'0')}
@@ -13,6 +14,7 @@ function normalizeRecipe(r){
 function validateRecipe(input,inventory){
  const r=normalizeRecipe(input),errors=[];
  for(const k of ['recipe_id','requested_capability','generator_binding','generator_version','root_seed','subseed_scheme'])if(!r[k])errors.push('missing '+k);
+ if(r.subseed_scheme&&!SUBSEED_SCHEMES.includes(r.subseed_scheme))errors.push('unsupported subseed_scheme '+r.subseed_scheme);
  const ids=new Set(),keys=new Set();
  for(const a of r.semantic_anchors){if(!a.anchor_id)errors.push('anchor missing id');if(!a.role)errors.push('anchor '+a.anchor_id+' missing role');if(!a.stable_key)errors.push('anchor '+a.anchor_id+' missing stable_key');if(ids.has(a.anchor_id))errors.push('duplicate anchor_id '+a.anchor_id);ids.add(a.anchor_id);if(keys.has(a.stable_key))errors.push('duplicate stable_key '+a.stable_key);keys.add(a.stable_key)}
  for(const a of r.semantic_anchors)if(a.parent_anchor&&!ids.has(a.parent_anchor))errors.push('unknown parent_anchor '+a.parent_anchor);
@@ -21,5 +23,5 @@ function validateRecipe(input,inventory){
  if(input&&input.content_hash&&input.content_hash!==contentHash(r))errors.push('content_hash mismatch');
  return {ok:errors.length===0,errors,recipe:r,generator:copy(generator)};
 }
-return Object.freeze({version:1,normalizeRecipe,validateRecipe,contentHash,hash});
+return Object.freeze({version:1,subseed_schemes:SUBSEED_SCHEMES.slice(),normalizeRecipe,validateRecipe,contentHash,hash});
 });
