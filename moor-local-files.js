@@ -7,7 +7,7 @@
 const DB='moor.file-handles.v1', STORE='handles', PRIMARY='primary-root';
 const MOOR_ROOT='MOOR', APP_DATA='app-data';
 function supported(){return !!(root&&root.showDirectoryPicker&&root.indexedDB)}
-function cleanSegment(x){return String(x||'').replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,' ').trim().slice(0,120)||'untitled'}
+function cleanSegment(x){return String(x||'').replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ').trim().slice(0,120)||'untitled'}
 function openDb(){
   return new Promise((resolve,reject)=>{
     if(!root.indexedDB)return reject(new Error('IndexedDB unavailable'));
