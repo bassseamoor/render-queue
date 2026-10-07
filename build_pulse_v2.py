@@ -252,6 +252,24 @@ for c in comps:
 # Platform-level items that must survive every dashboard rebuild. These are not
 # derived from the legacy COMPS inventory, so regeneration must add them explicitly.
 PRESERVED_PLATFORM_ITEMS = {
+    'dev-feed': {
+        'label': 'MOOR Dev Feed', 'file': 'dev-feed-core.js',
+        'component': 'MOOR Dev Feed v1',
+        'component_source': 'blueprint/dev-feed-owner-visibility.blueprint.json',
+        'page': 'dev-feed.html',
+        'depends_on': ['dev-feed-ledger.json','dev-feed/event-schema.json','pulse-slice-release-ledger.json','funnel-maintenance-status.json','pulse-manifest.json'],
+        'tags': ['cat:creation','cat:compdata','cat:interface','kind:owner-observability','prov:funnel','prov:github','prov:trackers','tool:devFeed'],
+        'honest_limits': 'Near-real-time polling, not push streaming. Private work that never reaches a semantic receipt or repository event cannot be observed automatically.'
+    },
+    'trajectory-ledger': {
+        'label': 'Trajectory', 'file': 'trajectory-ledger.html',
+        'component': 'MOOR Trajectory Ledger',
+        'component_source': 'trajectory-ledger.component-project.json',
+        'page': 'trajectory-ledger.html',
+        'depends_on': ['convergence-funnel.component-project.json'],
+        'tags': ['cat:creation','cat:compdata','cat:interface','kind:trajectory-ledger','prov:funnel','prov:append-only','tool:trajectoryLedger'],
+        'honest_limits': 'Evidence-scoped estimate of intent/result alignment; confidence and assessor modality remain visible.'
+    },
     'quick-notes': {
         'label': 'Quick Notes', 'file': 'quick-notes-core.js',
         'component': 'MOOR Quick Notes v1',
