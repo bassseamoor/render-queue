@@ -70,7 +70,7 @@ const DIMENSIONS=[
 /* REAL canonical funnel run for a Gen-1 seat */
 function runCanonicalFunnel(seatId, purpose, page0){
   K._resetForTests();
-  const input=`EXPEDITION SEAT ${seatId}\nPurpose: ${purpose.purpose}\nDimension: ${purpose.dimension}\n\nPage 0 (verbatim, hash ${page0.hash.slice(0,16)}):\n${page0.text.slice(0,2000)}\n\n[Full Page 0 supplied verbatim. Investigate from the ${purpose.dimension} angle.]`;
+  const input=`EXPEDITION SEAT ${seatId}\nPurpose: ${purpose.purpose}\nDimension: ${purpose.dimension}\n\nPage 0 (verbatim, hash ${page0.hash.slice(0,16)}):\n${page0.text}\n\n[Full Page 0 supplied verbatim. Investigate from the ${purpose.dimension} angle.]`;
 
   let s=K.open({request_id:`exp-seat-${seatId}`,input,source:'expedition',context:{seat:seatId}});
   // B2: Materially different Usage Plan per dimension (not just string substitution)
@@ -213,7 +213,7 @@ function reconverge(seats){
 /* Real canonical Match Funnel */
 function runMatchFunnel(candidateA, candidateB, page0, matchId){
   K._resetForTests();
-  const input=`MATCH FUNNEL ${matchId}\n\nEXACT PAGE 0 (hash ${page0.hash.slice(0,16)}):\n${page0.text.slice(0,1500)}\n\nCandidate A (${candidateA.seat}):\n- Dimension: ${candidateA.dimension}\n- Evidence: ${candidateA.evidence.length}\n- Unresolved: ${candidateA.unresolved.length}\n- Receipt: ${candidateA.receipt}\n\nCandidate B (${candidateB.seat}):\n- Dimension: ${candidateB.dimension}\n- Evidence: ${candidateB.evidence.length}\n- Unresolved: ${candidateB.unresolved.length}\n- Receipt: ${candidateB.receipt}\n\nDecide: which is stronger realization of Page 0?`;
+  const input=`MATCH FUNNEL ${matchId}\n\nEXACT PAGE 0 (hash ${page0.hash.slice(0,16)}):\n${page0.text}\n\nCandidate A (${candidateA.seat}):\n- Dimension: ${candidateA.dimension}\n- Evidence: ${candidateA.evidence.length}\n- Unresolved: ${candidateA.unresolved.length}\n- Receipt: ${candidateA.receipt}\n\nCandidate B (${candidateB.seat}):\n- Dimension: ${candidateB.dimension}\n- Evidence: ${candidateB.evidence.length}\n- Unresolved: ${candidateB.unresolved.length}\n- Receipt: ${candidateB.receipt}\n\nDecide: which is stronger realization of Page 0?`;
 
   let s=K.open({request_id:`match-${matchId}`,input,source:'expedition-match',context:{match:matchId}});
   const plan=K.makeUsagePlan(input,{match:matchId});
@@ -226,7 +226,7 @@ function runMatchFunnel(candidateA, candidateB, page0, matchId){
     spec_draft:`Compare evidence counts, unresolved, Page 0 alignment.`
   },provenance:'inferred'});
 
-  // Evidence-based selection (not positional)
+  // Evidence-based selection. Terminal tie falls back to positional (labeled as arbitrary).
   const scoreA=candidateA.evidence.length*10 - candidateA.unresolved.length*3;
   const scoreB=candidateB.evidence.length*10 - candidateB.unresolved.length*3;
   let winner, loser, reason;
@@ -238,7 +238,12 @@ function runMatchFunnel(candidateA, candidateB, page0, matchId){
     const diffB=new Set(candidateB.findings.map(f=>f.content)).size;
     if(diffA>diffB){ winner=candidateA; loser=candidateB; reason=`tie-break: differentiated findings ${diffA} > ${diffB}`; }
     else if(diffB>diffA){ winner=candidateB; loser=candidateA; reason=`tie-break: differentiated findings ${diffB} > ${diffA}`; }
-    else{ winner=candidateA; loser=candidateB; reason=`tie-break: identical, A advances with B's material inherited`; }
+    else{
+      // HONEST: truly identical after all evidence tiebreaks.
+      // Positional as last resort, LABELED as arbitrary (not evidence-based).
+      winner=candidateA; loser=candidateB;
+      reason=`tie-break: ARBITRARY POSITIONAL (no evidence difference). Both had score ${scoreA}, ${diffA} differentiated findings.`;
+    }
   }
 
   s=K.advance({request_id:`match-${matchId}`,stage:'decisions',payload:{locked:[
