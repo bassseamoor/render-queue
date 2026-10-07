@@ -105,12 +105,13 @@ const streamsEl=document.getElementById('streams');
 const drawer=document.getElementById('drawer');
 const body=document.getElementById('drawerBody');
 const title=document.getElementById('drawerTitle');
-let ledger=null;
+let ledger=null,externalEvents=[];
 const STREAMS=[
   {id:'intake',label:'Intake',match:e=>['requested','funneled','blueprint'].includes(e.stage)},
   {id:'build',label:'Build',match:e=>['building','verified'].includes(e.stage)},
   {id:'release',label:'Release',match:e=>['pulse','main','owner-visible'].includes(e.stage)},
-  {id:'gaps',label:'Attention',match:e=>e.status==='gap'||e.status==='failed'||e.status==='blocked'}
+  {id:'gaps',label:'Attention',match:e=>e.status==='gap'||e.status==='failed'||e.status==='blocked'},
+  {id:'repository',label:'Repository',match:e=>e.source_kind==='github'||e.source_kind==='tracker'}
 ];
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function time(s){try{return new Date(s).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'})}catch(e){return s}}
@@ -118,6 +119,7 @@ function stateClass(status){return /complete|verified|observed/.test(status)?'st
 function allEvents(){
   const out=[];
   (ledger.items||[]).forEach(item=>(item.events||[]).forEach(e=>out.push({...e,item_id:item.id,item_title:item.title,item_kind:item.kind,expected_destination:item.expected_destination})));
+  externalEvents.forEach(e=>out.push(e));
   return out.sort((a,b)=>String(b.at).localeCompare(String(a.at)));
 }
 function render(){
@@ -127,7 +129,7 @@ function render(){
     ['Items',summary.counts.total],['Owner visible',summary.counts.owner_visible],['Gaps',summary.counts.gaps],['Events',evs.length]
   ].map(x=>'<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>').join('');
   streamsEl.innerHTML=STREAMS.map(s=>{
-    const rows=evs.filter(s.match);
+    const rows=evs.filter(e=>s.id==='repository'?s.match(e):(!e.source_kind&&s.match(e)));
     return '<section class="stream"><div class="streamHead"><b>'+s.label+'</b><span>'+rows.length+'</span></div><div class="feed" data-stream="'+s.id+'">'+
       (rows.length?rows.map(e=>card(e)).join(''):'<div class="empty">Nothing here.</div>')+'</div></section>';
   }).join('');
@@ -154,6 +156,8 @@ function openDrawer(e){
   ];
   body.innerHTML=pairs.map(x=>'<div class="kv"><small>'+esc(x[0])+'</small><div>'+esc(x[1])+'</div></div>').join('')+
     (e.detail?'<div class="kv"><small>Detail</small><div>'+esc(e.detail)+'</div></div>':'')+
+    (e.receipt?'<div class="kv"><small>Receipt</small><div>'+esc(typeof e.receipt==='string'?e.receipt:JSON.stringify(e.receipt,null,2))+'</div></div>':'')+
+    (e.stats?'<div class="kv"><small>Statistics</small><div>'+esc(JSON.stringify(e.stats,null,2))+'</div></div>':'')+
     (itemState&&itemState.gap.length?'<div class="kv"><small>Current gaps</small><div class="state-bad">'+esc(itemState.gap.join(', '))+'</div></div>':'')+
     (e.ref?'<a class="link" href="'+esc(resolveRef(e.ref))+'" target="_blank" rel="noopener">Open evidence / artifact ↗</a>':'');
   drawer.classList.add('open');
@@ -163,12 +167,80 @@ function resolveRef(ref){
   if(/^[0-9a-f]{7,40}$/i.test(ref))return 'https://github.com/bassseamoor/render-queue/commit/'+ref;
   return ref;
 }
+async function json(url){
+  const r=await fetch(url,{cache:'no-store',headers:{'Accept':'application/vnd.github+json'}});
+  if(!r.ok)throw new Error(url+' '+r.status);
+  return r.json();
+}
+async function loadParallelEvents(){
+  const api='https://api.github.com/repos/bassseamoor/render-queue/contents/dev-feed/events?ref=main';
+  try{
+    const list=await json(api);
+    const files=Array.isArray(list)?list.filter(x=>x.type==='file'&&/\\.json$/i.test(x.name)).slice(-80):[];
+    const rows=await Promise.all(files.map(async x=>{
+      try{
+        const e=await json(x.download_url+'?ts='+Date.now());
+        return {...e,item_id:e.item_id,item_title:e.title||e.item_id,item_kind:e.kind||'event',expected_destination:e.destination||'—'};
+      }catch(_){return null}
+    }));
+    return rows.filter(Boolean);
+  }catch(_){return []}
+}
+async function loadGitHub(){
+  const base='https://api.github.com/repos/bassseamoor/render-queue';
+  const out=[];
+  try{
+    const [prs,commits]=await Promise.all([
+      json(base+'/pulls?state=all&sort=updated&direction=desc&per_page=20'),
+      json(base+'/commits?per_page=25')
+    ]);
+    (prs||[]).forEach(pr=>{
+      const e=Core.githubPullToEvent(pr);
+      out.push({...e,item_id:'repo-pr-'+pr.number,item_title:e.title,item_kind:'repository',expected_destination:'GitHub',source_kind:'github'});
+    });
+    (commits||[]).forEach(commit=>{
+      const e=Core.githubCommitToEvent(commit);
+      out.push({...e,item_id:'repo-commit-'+String(commit.sha||'').slice(0,12),item_title:e.title,item_kind:'repository',expected_destination:'main',source_kind:'github'});
+    });
+  }catch(_){}
+  return out;
+}
+async function loadTrackers(){
+  const out=[];
+  try{
+    const release=await json('pulse-slice-release-ledger.json?ts='+Date.now());
+    (release.releases||release.entries||[]).slice(-30).forEach((x,i)=>out.push({
+      id:'tracker:release:'+(x.slice_id||x.id||i),stage:'main',status:x.status||'observed',
+      at:x.released_at||x.at||x.timestamp||'',source:'Slice release ledger',source_kind:'tracker',
+      worker:x.owner||x.worker||'release ledger',title:(x.slice_id||x.id||'Release')+' · '+(x.status||'observed'),
+      detail:x.note||x.reason||'',item_id:'tracker-release-'+(x.slice_id||x.id||i),item_title:'Slice '+(x.slice_id||x.id||i),
+      item_kind:'release-tracker',expected_destination:'release ledger',ref:'pulse-slice-release-ledger.json'
+    }));
+  }catch(_){}
+  try{
+    const maintenance=await json('funnel-maintenance-status.json?ts='+Date.now());
+    (maintenance.systems||maintenance.subsystems||maintenance.items||[]).forEach((x,i)=>{
+      const visual=x.display_state||x.visual_state||x.status||'observed';
+      out.push({
+        id:'tracker:maintenance:'+(x.id||i),stage:'verified',status:/gap|degraded|missing|failed/i.test(visual)?'gap':'observed',
+        at:maintenance.updated_at||maintenance.generated_at||'',source:'Funnel maintenance',source_kind:'tracker',
+        worker:x.owner||'maintenance',title:x.name||x.label||x.id||'Maintenance',
+        detail:visual,item_id:'tracker-maintenance-'+(x.id||i),item_title:x.name||x.label||x.id||'Maintenance',
+        item_kind:'maintenance-tracker',expected_destination:'Funnel maintenance',ref:'funnel-maintenance-status.json',
+        stats:{visual_state:visual,live_path:x.live_path}
+      });
+    });
+  }catch(_){}
+  return out;
+}
 async function load(){
   const r=await fetch('dev-feed-ledger.json?ts='+Date.now(),{cache:'no-store'});
   if(!r.ok)throw new Error('feed '+r.status);
   ledger=await r.json();
   const valid=Core.validateLedger(ledger);
   if(!valid.ok)throw new Error(valid.errors.join('; '));
+  const [parallel,github,trackers]=await Promise.all([loadParallelEvents(),loadGitHub(),loadTrackers()]);
+  externalEvents=[...parallel,...github,...trackers];
   document.getElementById('updated').textContent='updated '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit',second:'2-digit'});
   render();
 }
