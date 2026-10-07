@@ -29,7 +29,7 @@ assert(coreCode.includes("PREFIX='moor:subseed:v1:'"));
 assert(coreCode.includes('JSON.stringify([root,keys])'));
 
 const html=fs.readFileSync('blueprint-pg03-seed-tree.html','utf8');
-for(const marker of ['THE SEED TREE','SELL // WHY THIS EXISTS','SPEC // EXECUTE TO THE NAIL','VERIFY // EVERY CLAIM HAS TEETH','SEALED v44 · BUILD · 7ef1649f30935f91'])assert(html.includes(marker),'missing visual blueprint marker '+marker);
+for(const marker of ['SEED TREE','SELL // WHY THIS EXISTS','SPEC // EXECUTE TO THE NAIL','VERIFY // EVERY CLAIM HAS TEETH','SEALED v44 · BUILD · 7ef1649f30935f91'])assert(html.includes(marker),'missing visual blueprint marker '+marker);
 for(const m of html.matchAll(/href="([^"]+)"/g))assert(m[1].startsWith('#')||m[1].startsWith('pulse-dashboard.html?tool='),'owner links must stay inside Pulse: '+m[1]);
 
 const ext=fs.readFileSync('pulse-component-extensions.js','utf8');
