@@ -3,7 +3,7 @@ const fs=require('node:fs'),vm=require('node:vm');
 const values=new Map(),localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,String(v))},elements=new Map();
 const document={readyState:'loading',title:'Quiz automation',body:{dataset:{}},addEventListener(){},querySelectorAll:()=>[],getElementById(id){if(!elements.has(id))elements.set(id,{textContent:'',innerHTML:'',style:{},dataset:{},querySelectorAll:()=>[],addEventListener(){}});return elements.get(id);}};
 const ctx=vm.createContext({document,localStorage,URL,URLSearchParams,location:{href:'https://bassseamoor.github.io/render-queue/quiz-funnel-v3.html',pathname:'/quiz-funnel-v3.html',hash:'',search:''},setTimeout:()=>0,clearTimeout(){},CustomEvent:class{constructor(type,args){this.type=type;this.detail=args?.detail;}},addEventListener(){},dispatchEvent(){},console});ctx.window=ctx;ctx.parent=ctx;
-for(const path of['funnel-kernel.js','moor-request.js'])vm.runInContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});
+for(const path of['funnel-usage-plan-core.js','funnel-kernel.js','moor-request.js'])vm.runInContext(fs.readFileSync(path,'utf8'),ctx,{filename:path});
 const code=fs.readFileSync('quiz-funnel-v3.html','utf8').match(/<script>\s*([\s\S]*?)<\/script>/)[1];vm.runInContext(code,ctx,{filename:'quiz-funnel-v3.html'});
 const assert=require('node:assert/strict');
 assert.equal(ctx.MOORQuiz.compile({input:'Create procedural assets'}).ready,false);
