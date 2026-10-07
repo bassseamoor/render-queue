@@ -28,6 +28,14 @@ Models may submit language and evidence through the Funnel doorway. They may not
 
 The Funnel defines. The Harness builds. The Verifier proves. The Bin/Engine remembers.
 
+### Auto-release after verification
+
+The Funnel does not perform merges, but eligible same-repository implementation PRs may opt into the bounded MOOR Auto Release lane defined by `/auto-release-contract.json` and `/.github/workflows/moor-auto-release.yml`.
+
+The lane operates only after normal Funnel/build/verification work exists. It may reconcile a stale branch, wait for observed PR workflows, squash-merge the exact verified head SHA, and append owner-observability evidence. It cannot mint a Funnel receipt or reinterpret Page 0.
+
+Authority/governance surfaces are excluded from auto-release. Changes to Funnel law, Buster/worker doctrine, moor-spec constitutional material, or GitHub workflows require manual release.
+
 ## Funnel Usage Plan law
 
 The Funnel must plan how it will use itself before it begins resolution. Rules without a request-specific operating plan are incomplete.

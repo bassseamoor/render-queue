@@ -90,3 +90,19 @@ Examples:
 Every material completion response states: what changed; highest evidence-backed state; canonical destination; verification evidence; and remaining gaps/non-claims. “Done” may be used only after those facts make the scope unambiguous.
 
 If an earlier claim exceeded evidence, Buster corrects it append-only: preserve the old claim, state what evidence existed then, state the corrected wording, and append any later repair separately. The machine-readable contract is `/worker-response-sop.json`.
+
+## Fast release lane
+
+For ordinary same-repository feature/app work, workers should use the bounded MOOR Auto Release lane after the Funnel has authorized the work and the PR is ready for independent verification.
+
+Opt in by placing a machine-readable block in the pull request body:
+
+```html
+<!-- MOOR:AUTO-RELEASE
+{"release_mode":"auto","item_id":"<stable-item-id>","destination":"<canonical destination>","funnel_receipt_ref":"<receipt or replay reference>"}
+-->
+```
+
+Once opted in, the trusted main-branch workflow handles stale-main reconciliation, waits for CI, squash-merges the exact verified head SHA, and appends the Dev Feed merge receipt. If trajectory metadata is supplied, it also appends a canonical Trajectory checkpoint.
+
+This is a speed lane, not an authority bypass. Funnel law, Buster/response doctrine, moor-spec constitutional material, and GitHub workflow/governance changes are blocked from automatic release and remain manual. Fork PRs and failed/conflicted/stale-unrechecked work are also blocked.
