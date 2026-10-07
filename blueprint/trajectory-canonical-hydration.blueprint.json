@@ -1,0 +1,36 @@
+{
+  "schema": "moor.trajectory-hydration-blueprint",
+  "version": 1,
+  "id": "trajectory-canonical-hydration-v1",
+  "page0": "why is the trajectory ledger empty",
+  "objective": "Make Trajectory load durable append-only repository checkpoints from parallel workers in addition to browser-local/manual checkpoints, so the owner sees existing project history on any device instead of an empty localStorage-only ledger.",
+  "diagnosis": [
+    "trajectory-ledger.html currently initializes only from localStorage key moor.trajectory.v1.",
+    "convergence-funnel.html writes compatible checkpoints to that same browser-local key.",
+    "Repository, Funnel, Dev Feed and parallel-chat work is not hydrated into the page.",
+    "Therefore a fresh browser/device legitimately renders an empty ledger even when real trajectory evidence exists."
+  ],
+  "implementation": [
+    "Add trajectory/checkpoint-schema.json.",
+    "Create unique append-only checkpoint files under trajectory/events/ for existing evidence-backed work.",
+    "Update trajectory-ledger.html to load repository checkpoints through GitHub Contents API once on startup and on explicit refresh.",
+    "Merge canonical and local checkpoints by stable checkpoint identity without overwriting local manual history.",
+    "Keep scores optional; canonical seed history may remain unscored.",
+    "Expose source badge so repository-canonical and browser-local checkpoints are distinguishable.",
+    "Add CI checks proving a fresh localStorage ledger still renders canonical checkpoint history."
+  ],
+  "done_criteria": [
+    "Fresh browser with empty localStorage receives canonical trajectory checkpoints.",
+    "Local/manual checkpoints remain preserved and merge with canonical history.",
+    "Parallel workers can append unique repository checkpoint files without sharing one mutable ledger.",
+    "No synthetic Trajectory score is invented for unscored canonical checkpoints.",
+    "Convergence Funnel local append behavior remains compatible.",
+    "Pulse registration remains intact.",
+    "Sealed Funnel replay and CI checks pass."
+  ],
+  "honest_limits": [
+    "The static browser cannot write repository checkpoints itself; workers/agents append them through Git/GitHub.",
+    "GitHub API hydration is near-real-time on refresh/open, not push streaming.",
+    "Canonical history only contains checkpoints workers actually emit; older work not yet backfilled will not appear automatically."
+  ]
+}
