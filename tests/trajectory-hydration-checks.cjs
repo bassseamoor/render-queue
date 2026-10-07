@@ -20,10 +20,16 @@ for(const file of files){
 }
 assert(foundGap&&foundEnv&&foundNotes,'critical backfill checkpoints missing');
 
+const seed=JSON.parse(fs.readFileSync('trajectory/canonical-seed.json','utf8'));
+assert.equal(seed.schema,'moor.trajectory-canonical-seed');
+assert(seed.checkpoints.length>=8,'same-origin canonical seed should prevent an empty fresh ledger');
+for(const cp of seed.checkpoints)assert(ids.has(cp.checkpoint_id),'seed checkpoint missing event source '+cp.checkpoint_id);
+
 const html=fs.readFileSync('trajectory-ledger.html','utf8');
 for(const needle of [
   "REPO_API='https://api.github.com/repos/bassseamoor/render-queue/contents/trajectory/events?ref=main'",
   'canonicalRows=[]',
+  "fetch('trajectory/canonical-seed.json?ts='",
   'mergeRows()',
   'repository-canonical',
   'Unscored is valid',
