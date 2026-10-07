@@ -1,9 +1,9 @@
 # Funnel Expedition v2 — Specifications
 
-**From TRUE Page 0** (Sebastian verbatim, 2026-10-07)
-**Funnel receipt:** `c0450bb4696739c5`
-**Page 0 hash:** `6a576dd951428d1e...`
-**Status:** Built, tested, live
+**Produced by:** Production Funnel RID `funnel-v2specs-2026-10-07`
+**Receipt:** `7450b9885b0b6c83` (valid)
+**Source:** True Page 0 (Sebastian verbatim, 460 lines) + tested v2 engine
+**Build receipt:** `c0450bb4696739c5`
 
 ---
 
@@ -23,6 +23,7 @@ Not voting. Not averaging. Not summarizing. A tournament.
 - SHA-256 hashed, `Object.freeze()` applied
 - Every Funnel seat receives the exact text — never summarized, never paraphrased
 - Singleton: one Page 0 per expedition run
+- File: `PAGE0-VERBATIM.txt`
 
 ### Generation One — 256 Seats
 
@@ -36,7 +37,7 @@ Not voting. Not averaging. Not summarizing. A tournament.
 - Each Gen-1 parent generates its own child society
 - Parent result determines child investigative topology
 - Full scale: 256 × 256 = 65,536
-- Default run: 256 × 8 = 2,048 (configurable)
+- Default run: 256 × 8 = 2,048 (configurable via `childrenPerParent`)
 
 ### Resource Intelligence
 
@@ -95,7 +96,7 @@ Per Page 0: `PAGE 0 → FUNNEL → BLUEPRINT → BUILD → RUNTIME → VERIFIER 
 
 - Engine: https://bassseamoor.github.io/render-queue/funnel-expedition.js
 - True Page 0: https://bassseamoor.github.io/render-queue/PAGE0-VERBATIM.txt
-- Pulse: comp-expedition (83 tools)
+- Pulse: comp-expedition
 
 ---
 
@@ -103,4 +104,4 @@ Per Page 0: `PAGE 0 → FUNNEL → BLUEPRINT → BUILD → RUNTIME → VERIFIER 
 
 v1 was built from a summarized Page 0. Sebastian rejected it: "That did not come out of my fucking funnel."
 
-v2 was rebuilt from his verbatim 460-line specification through canonical funnel law (receipt `c0450bb4696739c5`).
+v2 was rebuilt from his verbatim 460-line specification through canonical funnel law.
