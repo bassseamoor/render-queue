@@ -252,6 +252,15 @@ for c in comps:
 # Platform-level items that must survive every dashboard rebuild. These are not
 # derived from the legacy COMPS inventory, so regeneration must add them explicitly.
 PRESERVED_PLATFORM_ITEMS = {
+    'quick-notes': {
+        'label': 'Quick Notes', 'file': 'quick-notes-core.js',
+        'component': 'MOOR Quick Notes v1',
+        'component_source': 'blueprint/quick-notes.blueprint.json',
+        'page': 'quick-notes.html',
+        'depends_on': ['environment-engine-core.js'],
+        'tags': ['cat:creation','cat:compdata','cat:interface','kind:interactive','dep:localstorage','src:quick-notes','tool:quickNotes'],
+        'honest_limits': 'Device/browser-local persistence only in v1. No cloud sync, collaboration, attachments, or OS-level filesystem access.'
+    },
     'environment-engine': {
         'label': 'MOOR Environment Engine', 'file': 'environment-engine-core.js',
         'component': 'MOOR Environment Engine v1',
