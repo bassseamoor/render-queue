@@ -197,16 +197,20 @@ function gridTexture(){
   for(let i=0;i<=512;i+=64){g.beginPath();g.moveTo(i,0);g.lineTo(i,512);g.stroke();g.beginPath();g.moveTo(0,i);g.lineTo(512,i);g.stroke();}
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
 }
+/* character stream screens: procedural animated background via CanvasTexture */
+const streamCanvas=document.createElement('canvas');streamCanvas.width=512;streamCanvas.height=320;
+const charStream=window.CharStream.create(streamCanvas,{seed:'devroom-v1'});
+charStream.start();
+const streamTex=new THREE.CanvasTexture(streamCanvas);
+streamTex.colorSpace=THREE.SRGBColorSpace;
 const wallTex=gridTexture();
-const wallMat=new THREE.MeshStandardMaterial({map:wallTex,emissive:0x1a2030,emissiveMap:wallTex,emissiveIntensity:0.55,roughness:0.85,metalness:0.1,color:0xffffff});
-wallTex.repeat.set(10,3);
+const wallMat=new THREE.MeshStandardMaterial({map:streamTex,emissive:0xffffff,emissiveMap:streamTex,emissiveIntensity:0.5,roughness:0.85,metalness:0.1,color:0xffffff});
 
 function wall(w,h,px,py,pz,ry){
   // 24-inch reinforced walls: BoxGeometry with 2 ft thickness
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,2),wallMat.clone());
-  m.material.map=wallTex.clone();m.material.map.needsUpdate=true;
-  m.material.map.repeat.set(w/32,h/32);
-  m.material.emissiveMap=m.material.map;
+  m.material.map=streamTex;m.material.map.needsUpdate=true;
+  m.material.emissiveMap=streamTex;
   m.position.set(px,py,pz);m.rotation.y=ry;m.receiveShadow=true;m.castShadow=true;scene.add(m);return m;
 }
 wall(W,H, 0,H/2,-D/2, 0);
@@ -286,12 +290,7 @@ desk.position.y=3;desk.castShadow=true;node.add(desk);
   leg.position.set(x,1.5,z);node.add(leg);
 });
 // 6 monitors in a slight arc, blank (powered on, displaying nothing)
-/* character stream screens: procedural animated background via CanvasTexture */
-const streamCanvas=document.createElement('canvas');streamCanvas.width=512;streamCanvas.height=320;
-const charStream=window.CharStream.create(streamCanvas,{seed:'devroom-v1'});
-charStream.start();
-const streamTex=new THREE.CanvasTexture(streamCanvas);
-streamTex.colorSpace=THREE.SRGBColorSpace;
+/* streamTex defined earlier with wall setup */
 const screenMat=new THREE.MeshStandardMaterial({map:streamTex,emissive:0xffffff,emissiveMap:streamTex,emissiveIntensity:0.55,roughness:0.35,color:0xffffff});
 const bezelMat=new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.5,metalness:0.6});
 for(let i=0;i<6;i++){
