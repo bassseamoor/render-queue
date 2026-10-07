@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Funnel Evolution Record — a lens over Funnel history</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0e14; color: #dbe2ee; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 18px 22px 10px; border-bottom: 1px solid #1e2635; }
+  header h1 { margin: 0 0 6px; font-size: 22px; font-weight: 650; }
+  header .sub { color: #93a0b8; font-size: 14px; max-width: 72ch; }
+  blockquote { margin: 12px 0 4px; padding: 10px 14px; border-left: 3px solid #7dd3fc;
+    background: #101724; color: #c7d3e8; font-size: 14px; max-width: 72ch; }
+  #controls { padding: 12px 22px; border-bottom: 1px solid #1e2635; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .tabs button { background: #141b2a; color: #dbe2ee; border: 1px solid #2a3550; border-radius: 8px;
+    padding: 7px 14px; cursor: pointer; font-size: 14px; }
+  .tabs button.active { background: #1e2c47; border-color: #7dd3fc; }
+  select, input[type="range"] { background: #141b2a; color: #dbe2ee; border: 1px solid #2a3550; border-radius: 8px; padding: 6px 10px; }
+  .ctl { display: flex; gap: 8px; align-items: center; font-size: 13px; color: #aeb9cf; }
+  .btn { background: #1e2c47; color: #e6edf8; border: 1px solid #3a4c74; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 14px; }
+  .btn:hover { border-color: #7dd3fc; }
+  #filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #filters label { font-size: 12px; color: #aeb9cf; display: flex; gap: 5px; align-items: center;
+    background: #101724; border: 1px solid #232d45; border-radius: 20px; padding: 4px 10px; cursor: pointer; }
+  #main { display: flex; min-height: 560px; }
+  #stage { flex: 1; position: relative; min-width: 0; }
+  #cv { display: block; width: 100%; height: 620px; cursor: grab; background: #0b0e14; }
+  #panel { width: 340px; border-left: 1px solid #1e2635; padding: 16px; overflow-y: auto; max-height: 620px; background: #0d1220; }
+  #panel h2 { font-size: 15px; margin: 0 0 8px; }
+  .chip { display: inline-block; font-size: 12px; border-radius: 20px; padding: 2px 10px; margin-bottom: 8px; color: #0b0e14; font-weight: 700; }
+  #panel .ev { white-space: pre-wrap; font-size: 13px; color: #c7d3e8; background: #101724;
+    border: 1px solid #232d45; border-radius: 8px; padding: 10px; }
+  #panel .meta { font-size: 12px; color: #8b96ad; margin-top: 8px; }
+  #panel ul { padding-left: 18px; font-size: 13px; color: #c7d3e8; }
+  #legend { padding: 10px 22px; border-top: 1px solid #1e2635; font-size: 12.5px; color: #93a0b8; display: flex; flex-wrap: wrap; gap: 14px; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: baseline; }
+  #selfcheck { margin: 14px 22px 30px; border: 1px solid #232d45; border-radius: 10px; padding: 14px 16px; background: #0d1220; }
+  #selfcheck h2 { font-size: 15px; margin: 0 0 8px; }
+  #selfcheck .row { font-size: 13px; padding: 2px 0; color: #c7d3e8; }
+  #selfcheck .ok { color: #4ade80; } #selfcheck .bad { color: #f87171; }
+  .hint { font-size: 12px; color: #7c879d; }
+  #changes { font-size: 13px; color: #c7d3e8; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Funnel Evolution Record</h1>
+  <div class="sub">A read-only lens over Funnel history. It draws exact structural snapshots of the
+  Funnel over time as an inspectable graph — nothing is scored, ranked, or rearranged, and the
+  drawing never changes what happened. Colors mark structural roles and recorded changes only;
+  they say nothing about how good, fast, or smart anything is.</div>
+  <blockquote>"Preserve the exact topology. Improve the lens. Never improve the picture by changing what happened."</blockquote>
+  <div class="hint">Demo data: every node is labeled <b>demo</b> in its evidence text. Receipts shown are real sealed receipt ids, used only as example labels.</div>
+</header>
+
+<div id="controls">
+  <div class="tabs">
+    <button id="tab-single" class="active">Single</button>
+    <button id="tab-timeline">Timeline</button>
+    <button id="tab-compare">Compare</button>
+  </div>
+  <div class="ctl" id="ctl-single">Snapshot
+    <select id="sel-snap"></select>
+  </div>
+  <div class="ctl" id="ctl-timeline" style="display:none">
+    <input type="range" id="scrub" min="0" max="2" step="1" value="2" style="width:220px">
+    <span id="scrub-label" class="mono"></span>
+    <button class="btn" id="btn-play">Play</button>
+  </div>
+  <div class="ctl" id="ctl-compare" style="display:none">A
+    <select id="sel-a"></select> B <select id="sel-b"></select>
+    <label><input type="radio" name="cmpmode" value="side" checked> side by side</label>
+    <label><input type="radio" name="cmpmode" value="overlay"> overlaid</label>
+  </div>
+  <div class="ctl"><button class="btn" id="btn-fit">Fit view</button></div>
+  <div class="ctl"><label><input type="checkbox" id="chk-bundle" checked> bundle edges</label></div>
+  <div class="ctl"><label><input type="checkbox" id="chk-labels" checked> labels</label></div>
+</div>
+<div id="controls" style="border-top:none">
+  <div id="filters"></div>
+  <div class="hint" id="filter-count"></div>
+  <div class="hint" id="changes"></div>
+</div>
+
+<div id="main">
+  <div id="stage"><canvas id="cv"></canvas></div>
+  <aside id="panel">
+    <h2>Evidence</h2>
+    <div class="hint">Click any node to see its label, structural role, and evidence text. Receipts are shown exactly as recorded.</div>
+    <div id="ev-body" style="margin-top:10px"></div>
+  </aside>
+</div>
+
+<div id="legend"></div>
+
+<div id="selfcheck">
+  <h2>Self-check <span class="hint">— runs the core's own determinism and diff-correctness proof on load</span></h2>
+  <div id="sc-rows"></div>
+</div>
+
+<script src="evolution-record-core.js"></script>
+<script>
+(function () {
+'use strict';
+var ER = window.EvolutionRecord;
+var SNAPS = [ER.DEMO.v1, ER.DEMO.v2, ER.DEMO.v3];
+var ROLE_ORDER = ER.NODE_ROLES;
+var ROLE_COLORS = {
+  stage: '#7dd3fc', candidate: '#a5b4fc', obligation: '#fbbf24', reference: '#94a3b8',
+  decision: '#34d399', failure: '#f87171', receipt: '#e879f9', lineage: '#f472b6'
+};
+var DIFF_COLORS = { added: '#22c55e', removed: '#ef4444', merged: '#f59e0b', split: '#a855f7', changed: '#3b82f6' };
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---------- layout: one cluster per structural role, arranged in a ring ----------
+var layoutCache = {};
+function layoutSnapshot(snap) {
+  if (layoutCache[snap.id]) return layoutCache[snap.id];
+  var byRole = {}, i;
+  ROLE_ORDER.forEach(function (r) { byRole[r] = []; });
+  snap.nodes.forEach(function (n) { if (byRole[n.role]) byRole[n.role].push(n); });
+  var roles = ROLE_ORDER.filter(function (r) { return byRole[r].length > 0; });
+  var R = 430, pos = {}, clusters = [];
+  roles.forEach(function (role, i) {
+    var ang = -Math.PI / 2 + i * (2 * Math.PI / roles.length);
+    var cx = R * Math.cos(ang), cy = R * Math.sin(ang);
+    var list = byRole[role];
+    clusters.push({ role: role, cx: cx, cy: cy, ids: list.map(function (n) { return n.id; }) });
+    var rr = list.length === 1 ? 0 : Math.min(70 + list.length * 14, 165);
+    list.forEach(function (n, j) {
+      var a2 = list.length === 1 ? 0 : (j * (2 * Math.PI / list.length) - Math.PI / 2);
+      pos[n.id] = { x: cx + rr * Math.cos(a2), y: cy + rr * Math.sin(a2) };
+    });
+  });
+  var L = { pos: pos, clusters: clusters };
+  layoutCache[snap.id] = L;
+  return L;
+}
+function nodeMap(snap) {
+  var m = {};
+  snap.nodes.forEach(function (n) { m[n.id] = n; });
+  return m;
+}
+
+// ---------- diff classes for one node id ----------
+function diffClasses(diff) {
+  var cls = {};
+  diff.removed.forEach(function (id) { cls[id] = 'removed'; });
+  diff.added.forEach(function (id) { cls[id] = 'added'; });
+  diff.changed.forEach(function (id) { cls[id] = 'changed'; });
+  diff.merged.forEach(function (m) {
+    m.from.forEach(function (id) { cls[id] = 'merged'; });
+    cls[m.to] = 'merged';
+  });
+  diff.split.forEach(function (s) {
+    cls[s.from] = 'split';
+    s.to.forEach(function (id) { cls[id] = 'split'; });
+  });
+  return cls;
+}
+
+// ---------- canvas ----------
+var cv = document.getElementById('cv');
+var ctx = cv.getContext('2d');
+var DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+function resize() {
+  var w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.round(w * DPR); cv.height = Math.round(h * DPR);
+  render();
+}
+window.addEventListener('resize', resize);
+
+function makeView() { return { scale: 1, ox: 0, oy: 0 }; }
+var view = makeView(), viewB = makeView();
+
+function fitView(v, w, h, pts) {
+  if (!pts.length) return;
+  var minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+  pts.forEach(function (p) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  });
+  var pad = 70;
+  var s = Math.min((w - pad * 2) / Math.max(1, maxX - minX), (h - pad * 2) / Math.max(1, maxY - minY));
+  v.scale = s;
+  v.ox = w / 2 - s * (minX + maxX) / 2;
+  v.oy = h / 2 - s * (minY + maxY) / 2;
+}
+function w2s(v, x, y) { return { x: v.ox + x * v.scale, y: v.oy + y * v.scale }; }
+function s2w(v, x, y) { return { x: (x - v.ox) / v.scale, y: (y - v.oy) / v.scale }; }
+
+// ---------- state ----------
+var state = {
+  mode: 'single', snapIdx: 2, cmpA: 0, cmpB: 2, cmpMode: 'side',
+  hiddenRoles: {}, bundled: true, showLabels: true,
+  selected: null, selectedSnap: null, playing: false, playTimer: null
+};
+
+function visibleNodes(snap) {
+  return snap.nodes.filter(function (n) { return !state.hiddenRoles[n.role]; });
+}
+function hiddenCount(snap) {
+  return snap.nodes.length - visibleNodes(snap).length;
+}
+
+// ---------- edge bundling ----------
+function drawEdges(c, v, snap, layout, hiddenSet, dim, cls) {
+  var nm = nodeMap(snap);
+  var bundled = state.bundled;
+  if (bundled) {
+    var groups = {};
+    snap.edges.forEach(function (e) {
+      var a = nm[e.from], b = nm[e.to];
+      if (!a || !b || hiddenSet[a.id] || hiddenSet[b.id]) return;
+      var key = a.role + '>' + b.role;
+      (groups[key] = groups[key] || []).push(e);
+    });
+    Object.keys(groups).forEach(function (key) {
+      var list = groups[key];
+      var roles = key.split('>');
+      var ca = clusterCenter(layout, roles[0]), cb = clusterCenter(layout, roles[1]);
+      if (!ca || !cb) return;
+      var pa = w2s(v, ca.cx, ca.cy), pb = w2s(v, cb.cx, cb.cy);
+      var mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
+      var dx = pb.x - pa.x, dy = pb.y - pa.y;
+      var len = Math.max(1, Math.hypot(dx, dy));
+      var bend = key.indexOf('>') !== -1 && roles[0] === roles[1] ? 60 : 26;
+      var qx = mx - dy / len * bend, qy = my + dx / len * bend;
+      c.save();
+      c.globalAlpha = 0.5 * dim;
+      c.strokeStyle = '#5b6b8c';
+      c.lineWidth = Math.min(14, 2 + Math.sqrt(list.length) * 2.2);
+      c.lineCap = 'round';
+      c.beginPath(); c.moveTo(pa.x, pa.y); c.quadraticCurveTo(qx, qy, pb.x, pb.y); c.stroke();
+      c.globalAlpha = 0.9 * dim;
+      c.fillStyle = '#9fb0cc';
+      c.font = '11px system-ui';
+      c.textAlign = 'center';
+      c.fillText(String(list.length), qx, qy - 4);
+      c.restore();
+    });
+  } else {
+    snap.edges.forEach(function (e) {
+      var a = nm[e.from], b = nm[e.to];
+      if (!a || !b || hiddenSet[a.id] || hiddenSet[b.id]) return;
+      var pa = layout.pos[e.from], pb = layout.pos[e.to];
+      if (!pa || !pb) return;
+      var sa = w2s(v, pa.x, pa.y), sb = w2s(v, pb.x, pb.y);
+      c.save();
+      c.globalAlpha = 0.45 * dim;
+      c.strokeStyle = '#5b6b8c';
+      c.lineWidth = 1;
+      c.beginPath(); c.moveTo(sa.x, sa.y); c.lineTo(sb.x, sb.y); c.stroke();
+      c.restore();
+    });
+  }
+}
+function clusterCenter(layout, role) {
+  for (var i = 0; i < layout.clusters.length; i++) {
+    if (layout.clusters[i].role === role) return layout.clusters[i];
+  }
+  return null;
+}
+
+// ---------- one graph render into a viewport ----------
+function renderGraph(c, v, vw, vh, ox, snap, layout, cls, dim, extraNodes) {
+  c.save();
+  c.beginPath(); c.rect(ox, 0, vw, vh); c.clip();
+  c.translate(ox, 0);
+  var hiddenSet = {};
+  snap.nodes.forEach(function (n) { if (state.hiddenRoles[n.role]) hiddenSet[n.id] = true; });
+
+  drawEdges(c, v, snap, layout, hiddenSet, dim, cls);
+
+  // cluster labels: structural role names only (data labels, no interpretation)
+  layout.clusters.forEach(function (cl) {
+    var p = w2s(v, cl.cx, cl.cy);
+    c.save();
+    c.globalAlpha = 0.85 * dim;
+    c.fillStyle = '#7c879d';
+    c.font = '600 13px system-ui';
+    c.textAlign = 'center';
+    c.fillText(cl.role, p.x, p.y - 96 * v.scale - 14);
+    c.restore();
+  });
+
+  function drawNode(id, p, node, nodeDim, isExtra) {
+    var s = w2s(v, p.x, p.y);
+    if (s.x < -40 || s.x > vw + 40 || s.y < -40 || s.y > vh + 40) return;
+    var k = cls[id];
+    var base = node ? ROLE_COLORS[node.role] : '#666';
+    var color = k ? DIFF_COLORS[k] : base;
+    var r = 15;
+    c.save();
+    c.globalAlpha = (k === 'removed' ? 0.45 : 0.95) * nodeDim * dim;
+    c.fillStyle = color;
+    c.beginPath(); c.arc(s.x, s.y, r, 0, 2 * Math.PI); c.fill();
+    if (state.selected === id && state.selectedSnap === snap.id) {
+      c.strokeStyle = '#fff'; c.lineWidth = 2.5;
+      c.beginPath(); c.arc(s.x, s.y, r + 4, 0, 2 * Math.PI); c.stroke();
+    }
+    c.fillStyle = '#0b0e14';
+    c.font = '700 9px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(node ? node.id.slice(0, 7) : id.slice(0, 7), s.x, s.y);
+    c.restore();
+    if (state.showLabels && node) {
+      c.save();
+      c.globalAlpha = 0.9 * nodeDim * dim;
+      c.fillStyle = k === 'removed' ? '#f87171' : '#c7d3e8';
+      c.font = '11px system-ui'; c.textAlign = 'center';
+      var ly = s.y + r + 12;
+      c.fillText(node.label, s.x, ly);
+      if (k === 'removed') {
+        var wdt = c.measureText(node.label).width;
+        c.strokeStyle = '#f87171'; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(s.x - wdt / 2, ly - 4); c.lineTo(s.x + wdt / 2, ly - 4); c.stroke();
+      }
+      c.restore();
+    }
+  }
+
+  // extra nodes (e.g. removed ids drawn at the previous snapshot's positions)
+  (extraNodes || []).forEach(function (en) { drawNode(en.id, en.p, en.node, 0.55, true); });
+  visibleNodes(snap).forEach(function (n) {
+    var p = layout.pos[n.id];
+    if (p) drawNode(n.id, p, n, 1, false);
+  });
+  c.restore();
+}
+
+// ---------- top-level render ----------
+function currentScenes() {
+  var scenes = [];
+  if (state.mode === 'single') {
+    scenes.push({ snap: SNAPS[state.snapIdx], view: view, x: 0, w: cv.clientWidth, cls: {}, dim: 1, title: '' });
+  } else if (state.mode === 'timeline') {
+    var i = state.snapIdx, snap = SNAPS[i];
+    var cls = {}, prevLayout = null, extra = [];
+    if (i > 0) {
+      var d = ER.diffSnapshots(SNAPS[i - 1], snap);
+      cls = diffClasses(d);
+      prevLayout = layoutSnapshot(SNAPS[i - 1]);
+      var prevMap = nodeMap(SNAPS[i - 1]);
+      d.removed.forEach(function (id) {
+        var p = prevLayout.pos[id];
+        if (p) extra.push({ id: id, p: p, node: prevMap[id] });
+      });
+    }
+    scenes.push({ snap: snap, view: view, x: 0, w: cv.clientWidth, cls: cls, dim: 1, extra: extra, title: '' });
+  } else {
+    var A = SNAPS[state.cmpA], B = SNAPS[state.cmpB];
+    var d2 = ER.diffSnapshots(A, B);
+    var cls2 = diffClasses(d2);
+    var prevL = layoutSnapshot(A), prevM = nodeMap(A);
+    var extra2 = [];
+    d2.removed.forEach(function (id) {
+      var p = prevL.pos[id];
+      if (p) extra2.push({ id: id, p: p, node: prevM[id] });
+    });
+    if (state.cmpMode === 'side') {
+      var half = cv.clientWidth / 2;
+      scenes.push({ snap: A, view: view, x: 0, w: half, cls: {}, dim: 0.55, title: A.id + ' (earlier)' });
+      scenes.push({ snap: B, view: viewB, x: half, w: half, cls: cls2, dim: 1, extra: extra2, title: B.id + ' (later)' });
+    } else {
+      scenes.push({ snap: A, view: view, x: 0, w: cv.clientWidth, cls: {}, dim: 0.35, title: A.id + ' dimmed underneath' });
+      scenes.push({ snap: B, view: view, x: 0, w: cv.clientWidth, cls: cls2, dim: 1, extra: extra2, title: B.id + ' on top' });
+    }
+  }
+  return scenes;
+}
+
+function render() {
+  var w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0b0e14';
+  ctx.fillRect(0, 0, w, h);
+  currentScenes().forEach(function (sc) {
+    var layout = layoutSnapshot(sc.snap);
+    renderGraph(ctx, sc.view, sc.w, h, sc.x, sc.snap, layout, sc.cls, sc.dim, sc.extra);
+    if (sc.title) {
+      ctx.save();
+      ctx.fillStyle = '#8b96ad'; ctx.font = '12px system-ui'; ctx.textAlign = 'left';
+      ctx.fillText(sc.title, sc.x + 12, 20);
+      ctx.restore();
+    }
+    if (state.mode === 'compare' && state.cmpMode === 'side' && sc.x > 0) {
+      ctx.save();
+      ctx.strokeStyle = '#232d45'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(sc.x, 0); ctx.lineTo(sc.x, h); ctx.stroke();
+      ctx.restore();
+    }
+  });
+  updateFilterCount();
+  updateChanges();
+}
+
+function fitAll() {
+  var w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  currentScenes().forEach(function (sc) {
+    var layout = layoutSnapshot(sc.snap);
+    var pts = visibleNodes(sc.snap).map(function (n) { return layout.pos[n.id]; }).filter(Boolean);
+    fitView(sc.view, sc.w || w, h, pts);
+  });
+  render();
+}
+
+// ---------- interaction: pan, zoom, click ----------
+var drag = null;
+cv.addEventListener('mousedown', function (ev) {
+  drag = { x: ev.clientX, y: ev.clientY, moved: false, view: viewAt(ev) };
+  cv.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', function (ev) {
+  if (!drag) return;
+  var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  drag.view.ox += dx; drag.view.oy += dy;
+  drag.x = ev.clientX; drag.y = ev.clientY;
+  render();
+});
+window.addEventListener('mouseup', function (ev) {
+  if (!drag) return;
+  cv.style.cursor = 'grab';
+  var wasClick = !drag.moved;
+  var v = drag.view, ex = ev.clientX, ey = ev.clientY;
+  drag = null;
+  if (wasClick) pickNode(v, ex, ey);
+});
+cv.addEventListener('wheel', function (ev) {
+  ev.preventDefault();
+  var v = viewAt(ev);
+  var rect = cv.getBoundingClientRect();
+  var mx = ev.clientX - rect.left - sceneOffsetX(v), my = ev.clientY - rect.top;
+  var before = s2w(v, mx, my);
+  var f = ev.deltaY < 0 ? 1.15 : 1 / 1.15;
+  v.scale = Math.min(8, Math.max(0.05, v.scale * f));
+  // keep the world point under the cursor fixed on screen
+  v.ox = mx - before.x * v.scale;
+  v.oy = my - before.y * v.scale;
+  render();
+}, { passive: false });
+
+function sceneOffsetX(v) {
+  var scenes = currentScenes();
+  for (var i = 0; i < scenes.length; i++) {
+    if (scenes[i].view === v) return scenes[i].x;
+  }
+  return 0;
+}
+function viewAt(ev) {
+  var rect = cv.getBoundingClientRect();
+  var mx = ev.clientX - rect.left;
+  if (state.mode === 'compare' && state.cmpMode === 'side' && mx > cv.clientWidth / 2) return viewB;
+  return view;
+}
+function pickNode(v, clientX, clientY) {
+  var rect = cv.getBoundingClientRect();
+  var mx = clientX - rect.left - sceneOffsetX(v), my = clientY - rect.top;
+  var wpt = s2w(v, mx, my);
+  var best = null, bestD = 1e9, bestSnap = null;
+  currentScenes().forEach(function (sc) {
+    if (sc.view !== v) return;
+    var layout = layoutSnapshot(sc.snap);
+    visibleNodes(sc.snap).forEach(function (n) {
+      var p = layout.pos[n.id];
+      if (!p) return;
+      var d = Math.hypot(p.x - wpt.x, p.y - wpt.y);
+      if (d < bestD) { bestD = d; best = n; bestSnap = sc.snap; }
+    });
+  });
+  if (best && bestD < 26 / v.scale + 12) {
+    state.selected = best.id; state.selectedSnap = bestSnap.id;
+    showEvidence(best, bestSnap);
+  } else {
+    state.selected = null; state.selectedSnap = null;
+    showEvidence(null, null);
+  }
+  render();
+}
+
+// ---------- evidence panel ----------
+function showEvidence(node, snap) {
+  var body = document.getElementById('ev-body');
+  if (!node) {
+    body.innerHTML = '<div class="hint">Nothing selected.</div>';
+    return;
+  }
+  var color = ROLE_COLORS[node.role] || '#999';
+  body.innerHTML =
+    '<div class="chip" style="background:' + color + '">' + esc(node.role) + '</div>' +
+    '<h2 style="margin-top:0">' + esc(node.label) + '</h2>' +
+    '<div class="ev">' + esc(node.evidence) + '</div>' +
+    '<div class="meta">node id <span class="mono">' + esc(node.id) + '</span> · snapshot <span class="mono">' + esc(snap.id) + '</span></div>' +
+    '<div class="t-row" style="margin-top:10px"><button class="btn" id="btn-lineage">Trace lineage</button></div>' +
+    '<div id="lineage-out" style="margin-top:8px"></div>';
+  document.getElementById('btn-lineage').onclick = function () {
+    var chain = ER.lineage(node.id, SNAPS);
+    document.getElementById('lineage-out').innerHTML =
+      '<div class="meta">Lineage of <span class="mono">' + esc(node.id) + '</span> across versions:</div><ul>' +
+      chain.map(function (c) {
+        var t = c.snapshot + ': ' + (c.present ? 'present' : 'absent') + (c.transition ? ' (' + c.transition + ')' : '');
+        return '<li>' + esc(t) + '</li>';
+      }).join('') + '</ul>';
+  };
+}
+
+// ---------- filters ----------
+function buildFilters() {
+  var wrap = document.getElementById('filters');
+  var html = '<span class="hint">Hide by role (hides, never deletes):</span>';
+  ROLE_ORDER.forEach(function (r) {
+    html += '<label><input type="checkbox" data-role="' + r + '" checked> ' +
+      '<span class="sw" style="background:' + ROLE_COLORS[r] + '"></span>' + esc(r) + '</label>';
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('input').forEach(function (inp) {
+    inp.onchange = function () {
+      state.hiddenRoles[inp.getAttribute('data-role')] = !inp.checked;
+      render();
+    };
+  });
+}
+function updateFilterCount() {
+  var el = document.getElementById('filter-count');
+  if (state.mode === 'compare' && state.cmpMode === 'side') { el.textContent = ''; return; }
+  var snap = state.mode === 'compare' ? SNAPS[state.cmpB] : SNAPS[state.snapIdx];
+  var h = hiddenCount(snap);
+  el.textContent = h ? ('Hiding ' + h + ' of ' + snap.nodes.length + ' nodes by filter — nothing deleted.') : '';
+}
+function updateChanges() {
+  var el = document.getElementById('changes');
+  var html = '';
+  if (state.mode === 'timeline' && state.snapIdx > 0) {
+    var d = ER.diffSnapshots(SNAPS[state.snapIdx - 1], SNAPS[state.snapIdx]);
+    html = 'Change since ' + SNAPS[state.snapIdx - 1].id + ': ' +
+      '<b style="color:#22c55e">' + d.added.length + ' added</b>, ' +
+      '<b style="color:#ef4444">' + d.removed.length + ' removed</b>, ' +
+      '<b style="color:#3b82f6">' + d.changed.length + ' changed</b>, ' +
+      '<b style="color:#f59e0b">' + d.merged.length + ' merged</b>, ' +
+      '<b style="color:#a855f7">' + d.split.length + ' split</b>';
+  } else if (state.mode === 'compare') {
+    var d2 = ER.diffSnapshots(SNAPS[state.cmpA], SNAPS[state.cmpB]);
+    html = 'Diff ' + SNAPS[state.cmpA].id + ' → ' + SNAPS[state.cmpB].id + ': ' +
+      '<b style="color:#22c55e">' + d2.added.length + ' added</b>, ' +
+      '<b style="color:#ef4444">' + d2.removed.length + ' removed</b>, ' +
+      '<b style="color:#3b82f6">' + d2.changed.length + ' changed</b>, ' +
+      '<b style="color:#f59e0b">' + d2.merged.length + ' merged</b>, ' +
+      '<b style="color:#a855f7">' + d2.split.length + ' split</b>';
+  }
+  el.innerHTML = html;
+}
+
+// ---------- legend ----------
+function buildLegend() {
+  var html = '<span><b>Roles</b> (structural labels only):</span>' +
+    ROLE_ORDER.map(function (r) {
+      return '<span><span class="sw" style="background:' + ROLE_COLORS[r] + '"></span>' + r + '</span>';
+    }).join('') +
+    '<span><b>Change</b>:</span>' +
+    Object.keys(DIFF_COLORS).map(function (k) {
+      return '<span><span class="sw" style="background:' + DIFF_COLORS[k] + '"></span>' + k + '</span>';
+    }).join('') +
+    '<span class="hint">Edge thickness = how many edges run between the same pair of roles. The number on a bundle is the edge count.</span>';
+  document.getElementById('legend').innerHTML = html;
+}
+
+// ---------- controls ----------
+function setMode(m) {
+  state.mode = m;
+  ['single', 'timeline', 'compare'].forEach(function (x) {
+    document.getElementById('tab-' + x).classList.toggle('active', x === m);
+    document.getElementById('ctl-' + x).style.display = x === m ? '' : 'none';
+  });
+  fitAll();
+}
+function fillSelect(sel, selected) {
+  sel.innerHTML = SNAPS.map(function (s, i) {
+    return '<option value="' + i + '"' + (i === selected ? ' selected' : '') + '>' +
+      esc(s.id + ' — ' + (s.meta.title || '')) + (s.meta.current ? ' (current)' : '') + '</option>';
+  }).join('');
+}
+
+document.getElementById('tab-single').onclick = function () { setMode('single'); };
+document.getElementById('tab-timeline').onclick = function () { setMode('timeline'); };
+document.getElementById('tab-compare').onclick = function () { setMode('compare'); };
+document.getElementById('btn-fit').onclick = fitAll;
+document.getElementById('chk-bundle').onchange = function (e) { state.bundled = e.target.checked; render(); };
+document.getElementById('chk-labels').onchange = function (e) { state.showLabels = e.target.checked; render(); };
+
+var selSnap = document.getElementById('sel-snap');
+fillSelect(selSnap, 2);
+selSnap.onchange = function () { state.snapIdx = +selSnap.value; fitAll(); };
+
+var selA = document.getElementById('sel-a'), selB = document.getElementById('sel-b');
+fillSelect(selA, 0); fillSelect(selB, 2);
+selA.onchange = function () { state.cmpA = +selA.value; fitAll(); };
+selB.onchange = function () { state.cmpB = +selB.value; fitAll(); };
+document.querySelectorAll('input[name="cmpmode"]').forEach(function (r) {
+  r.onchange = function () { state.cmpMode = document.querySelector('input[name="cmpmode"]:checked').value; fitAll(); };
+});
+
+var scrub = document.getElementById('scrub'), scrubLabel = document.getElementById('scrub-label');
+function scrubTo(i) {
+  state.snapIdx = i;
+  scrub.value = i;
+  scrubLabel.textContent = SNAPS[i].id + (SNAPS[i].meta.current ? ' (current)' : ' (historical — dimmed in comparisons)');
+  fitAll();
+}
+scrub.oninput = function () { scrubTo(+scrub.value); };
+document.getElementById('btn-play').onclick = function () {
+  var btn = document.getElementById('btn-play');
+  if (state.playing) {
+    clearInterval(state.playTimer); state.playing = false; btn.textContent = 'Play';
+    return;
+  }
+  state.playing = true; btn.textContent = 'Stop';
+  state.playTimer = setInterval(function () {
+    scrubTo((state.snapIdx + 1) % SNAPS.length);
+  }, 1600);
+};
+
+// ---------- self-check readout ----------
+function runSelfCheck() {
+  var res;
+  try { res = ER.selfCheck(); }
+  catch (e) { res = { pass: false, checks: [{ name: 'selfCheck threw: ' + e.message, pass: false }] }; }
+  var html = '<div class="row"><b class="' + (res.pass ? 'ok' : 'bad') + '">' +
+    (res.pass ? 'PASS' : 'FAIL') + '</b> — ' + res.checks.length + ' checks</div>';
+  html += res.checks.map(function (c) {
+    return '<div class="row"><span class="' + (c.pass ? 'ok' : 'bad') + '">' +
+      (c.pass ? '✓' : '✗') + '</span> ' + esc(c.name) + '</div>';
+  }).join('');
+  document.getElementById('sc-rows').innerHTML = html;
+}
+
+// ---------- boot ----------
+buildFilters();
+buildLegend();
+runSelfCheck();
+scrubLabel.textContent = SNAPS[2].id + ' (current)';
+resize();
+fitAll();
+})();
+</script>
+</body>
+</html>

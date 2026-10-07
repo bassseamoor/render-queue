@@ -8796,6 +8796,13 @@ var COMPS = [
    technical:'semantic-detail-core v1', source:'semantic-detail-core.js (inlined)', inMoor:false,
    toolGap:'v1: deterministic seeded expansion with a curated knowledge base. Creative and inferred items are labeled, never presented as Sebastian-authored truth. Generation is not authority.'},
 
+  {id:'comp-evolutionrecord', tool:'evolutionrecord', toolSrc:'pulse-tools/tool-evolutionrecord.js', cats:['creation','interface'], icon:'\u2630', label:'Funnel Evolution Record',
+   short:'Watch the Funnel\u2019s structure evolve over time \u2014 rendered as an inspectable graph.',
+   job:'Three demo snapshots (v1\u2192v2\u2192v3) built from real receipts, clustered by structural role. A timeline scrubber shows additions, removals, merges, splits, and changed relationships lighting up as the structure evolves. Click any node to inspect its underlying evidence; compare any two snapshots side by side; trace a node\u2019s lineage through time.',
+   why:'A read-only lens over Funnel history. The record preserves the exact topology; the tool only improves the lens. Appearance-to-meaning leaps are hypotheses to be tested separately \u2014 this tool presents data, nothing more.',
+   technical:'evolution-record-core v1 (inlined)', source:'pulse-v2/tools/tool-evolutionrecord.js (inlined)', inMoor:false,
+   toolGap:'v1: demo dataset only (real receipts, labeled demo). No live record import yet. No scoring, ranking, pruning, or composition of candidates \u2014 distill Phase 2 stays on hold.'},
+
   {id:'moor-beta', tool:'moorBeta', toolSrc:'pulse-tools/tool-moobeta.js', page:'moor-beta.html', version:'0.12', cats:['space','creation'], icon:'\uD83C\uDF10', label:'Moor Beta',
    short:'The persistent world shell. Build a city, draw paths, claim land, walk it — on a real planet.',
    job:'A seeded planet you can orbit or walk — and now the world IS the planet: you walk on the sphere itself, down pulls toward the center, and there is no fence because a ball has no edges. Walk far enough in one direction and you circle back to spawn from the other side. Place real STRUCT buildings (5 themes) and Furniture Foundry items, draw trails/paths/sidewalks, stake land claims, move and edit buildings, walk it in a visible body, undo anything, reset the world with one button, and a live 3D hologram world map on M. The map is one continuous reality with the game: the same planet, the same terrain. Fly up and the ground curves away under you, the sky fades to black, and the true 254-planet verse fades in at MoorWorld\u2019s canonical coordinates. No tiers, no cuts. Tap any planet to travel there. Everything saves into one world document and reloads.',
@@ -20217,6 +20224,637 @@ TOOLS.semanticdetail = { mount: function(host){
 }, unmount: function(){/* stateless */} };
 })();
 
+</script>
+<script>
+/* Funnel Evolution Record — Pulse tool.
+ * A read-only lens over Funnel history: exact structural snapshots of the Funnel
+ * rendered as an inspectable graph across versions. No scoring, ranking, pruning
+ * or composition of candidates. No network calls. No kernel changes.
+ * Self-contained: inline compact copy of the core + canvas renderer + demo data.
+ *
+ * TAGS: tool:evolutionrecord | cat:interface cat:creation | kind:interactive |
+ *       dep:canvas2d | prov:funnel-evolution-lens | see:funnel-kernel |
+ *       src:funnel-docs/funnel-evolution-record-requirement.md
+ */
+(function(){
+'use strict';
+
+function esc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ---------------- inline compact core (pure functions, zero deps) ---------------- */
+var NODE_ROLES = ['stage','candidate','obligation','reference','decision','failure','receipt','lineage'];
+var EDGE_ROLES = ['requires','produced-by','decided-by','evidenced-by','supersedes','merged-into','split-from'];
+
+function snapshot(id, meta, nodes, edges){
+  return { id:String(id), meta:meta||{}, nodes:nodes?nodes.slice():[], edges:edges?edges.slice():[] };
+}
+function edgeSig(id, edges){
+  var p=[];
+  for(var i=0;i<edges.length;i++){ var e=edges[i];
+    if(e.from===id||e.to===id) p.push(e.from+'>'+e.to+':'+e.role); }
+  p.sort(); return p.join('|');
+}
+function parseList(ev, marker){
+  var m=/([a-z-]+)\s*:\s*([A-Za-z0-9_\-, ]+)/.exec(String(ev||''));
+  if(!m||m[1]!==marker) return null;
+  return m[2].split(',').map(function(s){return s.trim();}).filter(Boolean);
+}
+function diffSnapshots(a,b){
+  var aIds={},bIds={},i,n;
+  for(i=0;i<a.nodes.length;i++) aIds[a.nodes[i].id]=a.nodes[i];
+  for(i=0;i<b.nodes.length;i++) bIds[b.nodes[i].id]=b.nodes[i];
+  var added=[],removed=[],changed=[];
+  for(i=0;i<b.nodes.length;i++){ n=b.nodes[i];
+    if(!aIds.hasOwnProperty(n.id)){ added.push(n.id); continue; }
+    var p=aIds[n.id];
+    if(p.label!==n.label||p.role!==n.role||edgeSig(n.id,a.edges)!==edgeSig(n.id,b.edges)) changed.push(n.id);
+  }
+  for(i=0;i<a.nodes.length;i++){ n=a.nodes[i];
+    if(!bIds.hasOwnProperty(n.id)) removed.push(n.id); }
+  var mByTo={};
+  for(i=0;i<b.nodes.length;i++){ n=b.nodes[i];
+    if(aIds.hasOwnProperty(n.id)) continue;
+    var from=parseList(n.evidence,'merged-from');
+    if(from){ var kept=from.filter(function(id){return aIds.hasOwnProperty(id)&&!bIds.hasOwnProperty(id);});
+      if(kept.length) (mByTo[n.id]=mByTo[n.id]||[]).push.apply(mByTo[n.id],kept); } }
+  for(i=0;i<a.nodes.length;i++){ n=a.nodes[i];
+    if(bIds.hasOwnProperty(n.id)) continue;
+    var into=parseList(n.evidence,'merged-into');
+    if(into&&into.length&&bIds.hasOwnProperty(into[0])) (mByTo[into[0]]=mByTo[into[0]]||[]).push(n.id); }
+  var merged=Object.keys(mByTo).sort().map(function(to){
+    return {from:Array.from(new Set(mByTo[to])).sort(), to:to}; });
+  var sByFrom={};
+  for(i=0;i<b.nodes.length;i++){ n=b.nodes[i];
+    if(aIds.hasOwnProperty(n.id)) continue;
+    var src=parseList(n.evidence,'split-from');
+    if(src&&src.length&&aIds.hasOwnProperty(src[0])&&!bIds.hasOwnProperty(src[0]))
+      (sByFrom[src[0]]=sByFrom[src[0]]||[]).push(n.id); }
+  var split=Object.keys(sByFrom).sort().map(function(fr){ return {from:fr, to:sByFrom[fr].sort()}; });
+  return { added:added.sort(), removed:removed.sort(), changed:changed.sort(), merged:merged, split:split };
+}
+function nodeById(s,id){ for(var i=0;i<s.nodes.length;i++) if(s.nodes[i].id===id) return s.nodes[i]; return null; }
+function lineage(nodeId, snaps){
+  var chain=[];
+  for(var i=0;i<snaps.length;i++){
+    var s=snaps[i], n=nodeById(s,nodeId), tr=null;
+    if(i>0){
+      var d=diffSnapshots(snaps[i-1],s);
+      var has=function(a){return a.indexOf(nodeId)!==-1;};
+      if(has(d.added)){ var sp=null;
+        for(var k=0;k<d.split.length;k++) if(d.split[k].to.indexOf(nodeId)!==-1) sp=d.split[k].from;
+        tr=sp?('split from '+sp):'added';
+      } else if(has(d.removed)){ var mg=null;
+        for(var m=0;m<d.merged.length;m++) if(d.merged[m].from.indexOf(nodeId)!==-1) mg=d.merged[m].to;
+        tr=mg?('merged into '+mg):'removed';
+      } else if(has(d.changed)) tr='changed'; else tr='unchanged';
+    }
+    chain.push({snapshot:s.id, present:!!n, node:n, transition:tr});
+  }
+  return chain;
+}
+function selfCheck(){
+  var checks=[];
+  function ck(name,pass){ checks.push({name:name,pass:!!pass}); }
+  var s1=snapshot('s1',{},[{id:'n1',role:'stage',label:'A',evidence:'demo'}],[]);
+  ck('snapshot-shape', s1.id==='s1'&&s1.nodes.length===1);
+  var d0=diffSnapshots(s1,snapshot('s1',{},[{id:'n1',role:'stage',label:'A',evidence:'demo'}],[]));
+  ck('diff-identical-empty', !d0.added.length&&!d0.removed.length&&!d0.changed.length&&!d0.merged.length&&!d0.split.length);
+  var sa=snapshot('a',{},[{id:'n1',role:'stage',label:'A',evidence:''}],[]);
+  var sb=snapshot('b',{},[{id:'n1',role:'stage',label:'A',evidence:''},{id:'n2',role:'receipt',label:'B',evidence:''}],[]);
+  var dab=diffSnapshots(sa,sb), dba=diffSnapshots(sb,sa);
+  ck('diff-added-removed', dab.added.join()==='n2'&&dba.removed.join()==='n2');
+  ck('diff-changed-label', diffSnapshots(sa,snapshot('c',{},[{id:'n1',role:'stage',label:'B',evidence:''}],[])).changed.join()==='n1');
+  var m1=snapshot('m1',{},[{id:'x1',role:'obligation',label:'X',evidence:''},{id:'x2',role:'obligation',label:'X',evidence:''}],[]);
+  var m2=snapshot('m2',{},[{id:'x',role:'obligation',label:'X',evidence:'merged-from:x1,x2'}],[]);
+  var dm=diffSnapshots(m1,m2);
+  ck('diff-merged', dm.merged.length===1&&dm.merged[0].to==='x'&&dm.merged[0].from.join()==='x1,x2');
+  var p1=snapshot('p1',{},[{id:'r',role:'reference',label:'R',evidence:''}],[]);
+  var p2=snapshot('p2',{},[{id:'r-a',role:'reference',label:'RA',evidence:'split-from:r'},{id:'r-b',role:'reference',label:'RB',evidence:'split-from:r'}],[]);
+  var dp=diffSnapshots(p1,p2);
+  ck('diff-split', dp.split.length===1&&dp.split[0].from==='r'&&dp.split[0].to.join()==='r-a,r-b');
+  var dd1=JSON.stringify(diffSnapshots(DEMO.v1,DEMO.v2));
+  ck('diff-deterministic', dd1===JSON.stringify(diffSnapshots(DEMO.v1,DEMO.v2)));
+  var ch=lineage('ob-4',[DEMO.v1,DEMO.v2,DEMO.v3]);
+  ck('lineage-chain', ch.length===3&&!ch[0].present&&ch[1].present&&ch[2].present);
+  var ok=true;
+  [DEMO.v1,DEMO.v2,DEMO.v3].forEach(function(sn){
+    sn.nodes.forEach(function(x){ if(String(x.evidence||'').indexOf('demo')===-1) ok=false; });
+  });
+  ck('demo-all-labeled-demo', ok);
+  var d12=diffSnapshots(DEMO.v1,DEMO.v2), d23=diffSnapshots(DEMO.v2,DEMO.v3);
+  ck('demo-diff-classes', d12.added.length>0&&d12.merged.length>0&&d12.split.length>0&&d12.changed.length>0&&d23.removed.length>0&&d23.added.length>0);
+  var pass=checks.every(function(c){return c.pass;});
+  return {pass:pass, checks:checks};
+}
+
+/* ---------------- compact demo dataset (same structure as the standalone page) ---------------- */
+function N(id,role,label,ev){ return {id:id,role:role,label:label,evidence:'demo — '+ev}; }
+function E(from,to,role,label){ return {from:from,to:to,role:role,label:'demo — '+label}; }
+function chainEs(st){ var e=[]; for(var i=0;i+1<st.length;i++) e.push(E(st[i].id,st[i+1].id,'requires','stage order in the record.')); return e; }
+
+var ST1=['intake|Intake','intent|Intent','blueprint|Blueprint','build|Build','verify|Verify','distill|Distill','decide|Decide','record|Record']
+  .map(function(s){ var p=s.split('|'); return N('s-'+p[0],'stage',p[1],'stage in the intake record snapshot.'); });
+function v1nodes(){
+  return ST1.concat([
+    N('ob-1','obligation','Exact topology preserved','obligation carried by the run.'),
+    N('ob-2','obligation','Receipts verbatim','obligation carried by the run.'),
+    N('ob-3','obligation','No cognitive claims','obligation carried by the run.'),
+    N('ob-4a','obligation','Lens only, no kernel writes','duplicate of ob-4b; merged into ob-4 in v2.'),
+    N('ob-4b','obligation','Lens only, no kernel writes','duplicate of ob-4a; merged into ob-4 in v2.'),
+    N('ref-1','reference','Requirement doc','reference: the evolution-record requirement text.'),
+    N('ref-2','reference','Blueprint v1','reference: sealed build spec (receipt 4978940cc73fd989).'),
+    N('ref-3','reference','Contradiction on hold','holds two contradictory positions; split into ref-3a and ref-3b in v2.'),
+    N('rc-fabric','receipt','Receipt 2e44784661158cd5','sealed receipt 2e44784661158cd5 (fabric runtime).'),
+    N('rc-evergreen','receipt','Receipt fc5f0e9eb62a','sealed receipt fc5f0e9eb62a (evergreen context).')
+  ]);
+}
+function v1edges(){
+  return chainEs(ST1).concat([
+    E('ob-1','s-intake','evidenced-by','obligation attached at intake.'),
+    E('ob-2','s-record','evidenced-by','obligation attached at record.'),
+    E('ob-3','s-decide','evidenced-by','obligation attached at decide.'),
+    E('ob-4a','s-verify','evidenced-by','obligation attached at verify.'),
+    E('ob-4b','s-verify','evidenced-by','obligation attached at verify.'),
+    E('ref-1','s-intent','evidenced-by','reference read at intent.'),
+    E('ref-2','s-blueprint','evidenced-by','reference read at blueprint.'),
+    E('ref-3','s-decide','evidenced-by','reference read at decide.'),
+    E('rc-fabric','s-build','produced-by','receipt produced at build.'),
+    E('rc-evergreen','s-distill','produced-by','receipt produced at distill.')
+  ]);
+}
+var DEMO={};
+DEMO.v1=snapshot('v1',{title:'Intake record',current:false},v1nodes(),v1edges());
+
+(function buildV2(){
+  var st=ST1.map(function(n){
+    return n.id==='s-verify'
+      ? N('s-verify','stage','Verify (gated)','stage label changed in v2: gates are now explicit.')
+      : N(n.id,n.role,n.label,n.evidence.replace(/^demo — /,''));
+  });
+  var nodes=st.concat([
+    N('ob-1','obligation','Exact topology preserved','obligation carried by the run.'),
+    N('ob-2','obligation','Receipts verbatim','obligation carried by the run.'),
+    N('ob-3','obligation','No cognitive claims','obligation carried by the run.'),
+    N('ob-4','obligation','Lens only, no kernel writes','merged-from:ob-4a,ob-4b — the two duplicate obligation nodes from v1 were merged into this one.'),
+    N('ref-1','reference','Requirement doc','reference: the evolution-record requirement text.'),
+    N('ref-2','reference','Blueprint v1','reference: sealed build spec (receipt 4978940cc73fd989).'),
+    N('ref-3a','reference','Hold Phase 2','split-from:ref-3 — one side: keep Phase 2 on hold until evidence demands it.'),
+    N('ref-3b','reference','Watch the lineage log','split-from:ref-3 — other side: natural work keeps leaving fossils in the lineage log.'),
+    N('rc-fabric','receipt','Receipt 2e44784661158cd5','sealed receipt 2e44784661158cd5 (fabric runtime).'),
+    N('rc-evergreen','receipt','Receipt fc5f0e9eb62a','sealed receipt fc5f0e9eb62a (evergreen context).'),
+    N('rc-cachebust','receipt','Receipt 608514ba3c138bdb','sealed receipt 608514ba3c138bdb (adapter cache-bust).'),
+    N('rc-pulse3d','receipt','Receipt 4d2bfd029313ef73','sealed receipt 4d2bfd029313ef73 (Pulse 3D migration).'),
+    N('c-1','candidate','Candidate A','preserved candidate. Not scored, not ranked, not pruned — preserved.'),
+    N('c-2','candidate','Candidate B','preserved candidate. Not scored, not ranked, not pruned — preserved.'),
+    N('c-3','candidate','Candidate C','preserved candidate. Not scored, not ranked, not pruned — preserved.'),
+    N('c-4','candidate','Candidate D','preserved candidate. Not scored, not ranked, not pruned — preserved.'),
+    N('c-5','candidate','Candidate E','preserved candidate. Not scored, not ranked, not pruned — preserved.'),
+    N('d-1','decision','Decision 1','decision recorded against the preserved frontier.'),
+    N('d-2','decision','Decision 2','decision recorded against the preserved frontier.'),
+    N('d-3','decision','Decision 3','decision recorded against the preserved frontier.'),
+    N('d-4','decision','Decision 4','decision recorded against the preserved frontier.'),
+    N('f-1','failure','Failure 1','recorded failure; kept in the record, not hidden.'),
+    N('f-2','failure','Failure 2','recorded failure; kept in the record, not hidden. Superseded; removed in v3.')
+  ]);
+  var edges=chainEs(st).concat([
+    E('ob-1','s-intake','evidenced-by','obligation attached at intake.'),
+    E('ob-2','s-record','evidenced-by','obligation attached at record.'),
+    E('ob-3','s-decide','evidenced-by','obligation attached at decide.'),
+    E('ob-4','s-verify','evidenced-by','obligation attached at verify.'),
+    E('ref-1','s-intent','evidenced-by','reference read at intent.'),
+    E('ref-2','s-blueprint','evidenced-by','reference read at blueprint.'),
+    E('ref-3a','s-decide','evidenced-by','reference read at decide.'),
+    E('ref-3b','s-decide','evidenced-by','reference read at decide.'),
+    E('rc-fabric','s-build','produced-by','receipt produced at build.'),
+    E('rc-evergreen','s-distill','produced-by','receipt produced at distill.'),
+    E('rc-cachebust','s-verify','produced-by','receipt produced at verify.'),
+    E('rc-pulse3d','s-build','produced-by','receipt produced at build.'),
+    E('c-1','s-distill','produced-by','candidate preserved at distill.'),
+    E('c-2','s-distill','produced-by','candidate preserved at distill.'),
+    E('c-3','s-distill','produced-by','candidate preserved at distill.'),
+    E('c-4','s-distill','produced-by','candidate preserved at distill.'),
+    E('c-5','s-distill','produced-by','candidate preserved at distill.'),
+    E('d-1','c-1','decided-by','decision made from the frontier.'),
+    E('d-2','c-2','decided-by','decision made from the frontier.'),
+    E('d-3','c-3','decided-by','decision made from the frontier.'),
+    E('d-4','c-4','decided-by','decision made from the frontier.'),
+    E('f-1','d-1','evidenced-by','failure evidenced by a decision.'),
+    E('f-2','d-2','evidenced-by','failure evidenced by a decision.')
+  ]);
+  DEMO.v2=snapshot('v2',{title:'Frontier preserved',current:false},nodes,edges);
+})();
+
+(function buildV3(){
+  function cp(n){ return N(n.id,n.role,n.label,n.evidence.replace(/^demo — /,'')); }
+  var nodes=DEMO.v2.nodes.filter(function(n){return n.id!=='f-2';}).map(cp).concat([
+    N('ln-1','lineage','lineage_id event','distill-frontier contract event: lineage_id (<rid>:<candidate-id>) recorded on each surviving candidate.'),
+    N('ln-2','lineage','recordFate event','distill-frontier contract event: recordFate() logs downstream fate (preserved/considered/exercised/failed/contributed/ended).'),
+    N('ln-3','lineage','frozen-rule event','distill-frontier contract event: frozen rule — reward preserved diversity only when it changes what the system learns, decides, avoids, or builds.'),
+    N('rc-dev01','receipt','Receipt 9a8f1b8152224f96','sealed receipt 9a8f1b8152224f96 (DEV-01 REV6).')
+  ]);
+  var edges=DEMO.v2.edges.filter(function(e){return e.from!=='f-2'&&e.to!=='f-2';})
+    .map(function(e){return E(e.from,e.to,e.role,e.label.replace(/^demo — /,''));}).concat([
+    E('ln-1','c-1','evidenced-by','lineage event attached to a surviving candidate.'),
+    E('ln-1','c-2','evidenced-by','lineage event attached to a surviving candidate.'),
+    E('ln-2','d-1','evidenced-by','fate record attached to a decision.'),
+    E('ln-2','d-3','evidenced-by','fate record attached to a decision.'),
+    E('ln-3','s-distill','evidenced-by','frozen rule attached at distill.'),
+    E('ln-3','s-decide','supersedes','frozen rule supersedes unmeasured preservation at decide.'),
+    E('rc-dev01','s-build','produced-by','receipt produced at build.')
+  ]);
+  DEMO.v3=snapshot('v3',{title:'Distill frontier (current)',current:true},nodes,edges);
+})();
+
+/* ---------------- compact canvas renderer ---------------- */
+var RC={ stage:'#7dd3fc', candidate:'#a5b4fc', obligation:'#fbbf24', reference:'#94a3b8',
+  decision:'#34d399', failure:'#f87171', receipt:'#e879f9', lineage:'#f472b6' };
+var DC={ added:'#22c55e', removed:'#ef4444', merged:'#f59e0b', split:'#a855f7', changed:'#3b82f6' };
+
+function layoutSnap(snap){
+  var byR={}, i;
+  NODE_ROLES.forEach(function(r){byR[r]=[];});
+  snap.nodes.forEach(function(n){ if(byR[n.role]) byR[n.role].push(n); });
+  var roles=NODE_ROLES.filter(function(r){return byR[r].length>0;});
+  var R=430, pos={}, clusters=[];
+  roles.forEach(function(role,i){
+    var a=-Math.PI/2+i*(2*Math.PI/roles.length);
+    var cx=R*Math.cos(a), cy=R*Math.sin(a);
+    var list=byR[role];
+    clusters.push({role:role,cx:cx,cy:cy});
+    var rr=list.length===1?0:Math.min(70+list.length*14,165);
+    list.forEach(function(n,j){
+      var a2=list.length===1?0:(j*(2*Math.PI/list.length)-Math.PI/2);
+      pos[n.id]={x:cx+rr*Math.cos(a2), y:cy+rr*Math.sin(a2)};
+    });
+  });
+  return {pos:pos, clusters:clusters};
+}
+function diffCls(d){
+  var c={};
+  d.removed.forEach(function(id){c[id]='removed';});
+  d.added.forEach(function(id){c[id]='added';});
+  d.changed.forEach(function(id){c[id]='changed';});
+  d.merged.forEach(function(m){ m.from.forEach(function(id){c[id]='merged';}); c[m.to]='merged'; });
+  d.split.forEach(function(s){ c[s.from]='split'; s.to.forEach(function(id){c[id]='split';}); });
+  return c;
+}
+
+TOOLS.evolutionrecord = { mount: function(host){
+  var SNAPS=[DEMO.v1,DEMO.v2,DEMO.v3];
+  var state={ mode:'single', idx:2, cmpA:0, cmpB:2, cmpMode:'side',
+    hidden:{}, bundled:true, labels:true, sel:null, selSnap:null, playing:false, timer:null };
+  var layouts={}; SNAPS.forEach(function(s){layouts[s.id]=layoutSnap(s);});
+  function L(id){ return layouts[id]; }
+  function nm(s){ var m={}; s.nodes.forEach(function(n){m[n.id]=n;}); return m; }
+
+  function optSel(cur){
+    return SNAPS.map(function(s,i){
+      return '<option value="'+i+'"'+(i===cur?' selected':'')+'>'+esc(s.id+(s.meta.title?' — '+s.meta.title:''))+(s.meta.current?' (current)':'')+'</option>';
+    }).join('');
+  }
+
+  host.innerHTML =
+  '<div class="t-sec"><div class="eyebrow">Funnel Evolution Record</div>'+
+  '<div class="meta">A read-only lens over Funnel history: exact structural snapshots drawn as an inspectable graph. '+
+  'Nothing is scored, ranked, or rearranged. Colors mark structural roles and recorded changes only — '+
+  'they say nothing about how good, fast, or smart anything is. Demo data: every node is labeled <b>demo</b> in its evidence.</div>'+
+  '<div class="meta" style="margin-top:6px"><i>"Preserve the exact topology. Improve the lens. Never improve the picture by changing what happened."</i></div></div>'+
+
+  '<div class="t-sec"><div class="eyebrow">View</div>'+
+  '<div class="t-row" style="gap:8px;flex-wrap:wrap">'+
+  '<button class="btn primary" id="er-m-single">Single</button>'+
+  '<button class="btn" id="er-m-time">Timeline</button>'+
+  '<button class="btn" id="er-m-cmp">Compare</button></div>'+
+  '<div class="t-row" id="er-c-single" style="margin-top:8px;gap:8px">'+
+  '<span class="meta">Snapshot</span><select id="er-sel">'+optSel(2)+'</select></div>'+
+  '<div class="t-row" id="er-c-time" style="display:none;margin-top:8px;gap:8px">'+
+  '<input type="range" id="er-scrub" min="0" max="2" step="1" value="2" style="width:180px">'+
+  '<span class="meta mono" id="er-scrub-lbl"></span>'+
+  '<button class="btn" id="er-play">Play</button></div>'+
+  '<div class="t-row" id="er-c-cmp" style="display:none;margin-top:8px;gap:8px">'+
+  '<span class="meta">A</span><select id="er-a">'+optSel(0)+'</select>'+
+  '<span class="meta">B</span><select id="er-b">'+optSel(2)+'</select>'+
+  '<select id="er-cmpmode"><option value="side">side by side</option><option value="overlay">overlaid</option></select></div>'+
+  '<div class="t-row" style="margin-top:8px;gap:12px">'+
+  '<button class="btn" id="er-fit">Fit view</button>'+
+  '<label class="meta"><input type="checkbox" id="er-bundle" checked> bundle edges</label>'+
+  '<label class="meta"><input type="checkbox" id="er-labels" checked> labels</label></div>'+
+  '<div class="t-row" id="er-filters" style="margin-top:8px;gap:6px;flex-wrap:wrap"></div>'+
+  '<div class="meta" id="er-fcount" style="margin-top:4px"></div>'+
+  '<div class="meta" id="er-changes" style="margin-top:4px"></div></div>'+
+
+  '<div class="t-sec"><canvas id="er-cv" style="width:100%;height:440px;display:block;background:#0b0e14;border-radius:8px;cursor:grab"></canvas>'+
+  '<div class="meta" id="er-legend" style="margin-top:8px"></div></div>'+
+
+  '<div class="t-sec"><div class="eyebrow">Evidence</div>'+
+  '<div class="meta">Click any node to see its label, structural role, and evidence text (receipts shown exactly as recorded).</div>'+
+  '<div id="er-ev" style="margin-top:8px"></div></div>'+
+
+  '<div class="t-sec"><div class="eyebrow">Self-check</div><div id="er-sc" class="meta"></div></div>';
+
+  var cv=host.querySelector('#er-cv'), cx2d=cv.getContext('2d');
+  var DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+  var view={s:1,ox:0,oy:0}, viewB={s:1,ox:0,oy:0};
+
+  function w2s(v,x,y){ return {x:v.ox+x*v.s, y:v.oy+y*v.s}; }
+  function s2w(v,x,y){ return {x:(x-v.ox)/v.s, y:(y-v.oy)/v.s}; }
+  function vis(snap){ return snap.nodes.filter(function(n){return !state.hidden[n.role];}); }
+  function fit(v,w,h,pts){
+    if(!pts.length) return;
+    var x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+    pts.forEach(function(p){ if(p.x<x0)x0=p.x; if(p.x>x1)x1=p.x; if(p.y<y0)y0=p.y; if(p.y>y1)y1=p.y; });
+    var pad=60;
+    v.s=Math.min((w-pad*2)/Math.max(1,x1-x0),(h-pad*2)/Math.max(1,y1-y0));
+    v.ox=w/2-v.s*(x0+x1)/2; v.oy=h/2-v.s*(y0+y1)/2;
+  }
+
+  function scenes(){
+    var out=[];
+    if(state.mode==='single'){
+      out.push({snap:SNAPS[state.idx],v:view,x:0,w:cv.clientWidth,cls:{},dim:1,extra:[],title:''});
+    } else if(state.mode==='timeline'){
+      var i=state.idx, sn=SNAPS[i], cls={}, extra=[];
+      if(i>0){ var d=diffSnapshots(SNAPS[i-1],sn); cls=diffCls(d);
+        var pm=nm(SNAPS[i-1]);
+        d.removed.forEach(function(id){ var p=L(SNAPS[i-1].id).pos[id]; if(p) extra.push({id:id,p:p,node:pm[id]}); });
+      }
+      out.push({snap:sn,v:view,x:0,w:cv.clientWidth,cls:cls,dim:1,extra:extra,title:''});
+    } else {
+      var A=SNAPS[state.cmpA], B=SNAPS[state.cmpB];
+      var d2=diffSnapshots(A,B), c2=diffCls(d2), pm2=nm(A), ex2=[];
+      d2.removed.forEach(function(id){ var p=L(A.id).pos[id]; if(p) ex2.push({id:id,p:p,node:pm2[id]}); });
+      if(state.cmpMode==='side'){
+        var half=cv.clientWidth/2;
+        out.push({snap:A,v:view,x:0,w:half,cls:{},dim:0.55,extra:[],title:A.id+' (earlier)'});
+        out.push({snap:B,v:viewB,x:half,w:half,cls:c2,dim:1,extra:ex2,title:B.id+' (later)'});
+      } else {
+        out.push({snap:A,v:view,x:0,w:cv.clientWidth,cls:{},dim:0.35,extra:[],title:A.id+' dimmed underneath'});
+        out.push({snap:B,v:view,x:0,w:cv.clientWidth,cls:c2,dim:1,extra:ex2,title:B.id+' on top'});
+      }
+    }
+    return out;
+  }
+
+  function drawEdges(c,v,snap,lay,dim){
+    var m=nm(snap);
+    if(state.bundled){
+      var g={};
+      snap.edges.forEach(function(e){
+        var a=m[e.from],b=m[e.to];
+        if(!a||!b||state.hidden[a.role]||state.hidden[b.role]) return;
+        var k=a.role+'>'+b.role; (g[k]=g[k]||[]).push(e);
+      });
+      Object.keys(g).forEach(function(k){
+        var list=g[k], rs=k.split('>'), ca=null, cb=null;
+        lay.clusters.forEach(function(cl){ if(cl.role===rs[0])ca=cl; if(cl.role===rs[1])cb=cl; });
+        if(!ca||!cb) return;
+        var pa=w2s(v,ca.cx,ca.cy), pb=w2s(v,cb.cx,cb.cy);
+        var mx=(pa.x+pb.x)/2, my=(pa.y+pb.y)/2, dx=pb.x-pa.x, dy=pb.y-pa.y;
+        var len=Math.max(1,Math.hypot(dx,dy)), bend=rs[0]===rs[1]?60:26;
+        var qx=mx-dy/len*bend, qy=my+dx/len*bend;
+        c.save(); c.globalAlpha=0.5*dim; c.strokeStyle='#5b6b8c';
+        c.lineWidth=Math.min(14,2+Math.sqrt(list.length)*2.2); c.lineCap='round';
+        c.beginPath(); c.moveTo(pa.x,pa.y); c.quadraticCurveTo(qx,qy,pb.x,pb.y); c.stroke();
+        c.globalAlpha=0.9*dim; c.fillStyle='#9fb0cc'; c.font='11px system-ui'; c.textAlign='center';
+        c.fillText(String(list.length),qx,qy-4); c.restore();
+      });
+    } else {
+      snap.edges.forEach(function(e){
+        var a=m[e.from],b=m[e.to];
+        if(!a||!b||state.hidden[a.role]||state.hidden[b.role]) return;
+        var pa=lay.pos[e.from], pb=lay.pos[e.to]; if(!pa||!pb) return;
+        var sa=w2s(v,pa.x,pa.y), sb=w2s(v,pb.x,pb.y);
+        c.save(); c.globalAlpha=0.45*dim; c.strokeStyle='#5b6b8c'; c.lineWidth=1;
+        c.beginPath(); c.moveTo(sa.x,sa.y); c.lineTo(sb.x,sb.y); c.stroke(); c.restore();
+      });
+    }
+  }
+
+  function render(){
+    var w=cv.clientWidth,h=cv.clientHeight;
+    if(!w||!h) return;
+    cx2d.setTransform(DPR,0,0,DPR,0,0);
+    cx2d.clearRect(0,0,w,h); cx2d.fillStyle='#0b0e14'; cx2d.fillRect(0,0,w,h);
+    scenes().forEach(function(sc){
+      var lay=L(sc.snap.id);
+      cx2d.save(); cx2d.beginPath(); cx2d.rect(sc.x,0,sc.w,h); cx2d.clip(); cx2d.translate(sc.x,0);
+      drawEdges(cx2d,sc.v,sc.snap,lay,sc.dim);
+      lay.clusters.forEach(function(cl){
+        var p=w2s(sc.v,cl.cx,cl.cy);
+        cx2d.save(); cx2d.globalAlpha=0.85*sc.dim; cx2d.fillStyle='#7c879d';
+        cx2d.font='600 13px system-ui'; cx2d.textAlign='center';
+        cx2d.fillText(cl.role,p.x,p.y-96*sc.v.s-14); cx2d.restore();
+      });
+      function node(id,p,node,nd){
+        var s=w2s(sc.v,p.x,p.y);
+        if(s.x<-40||s.x>sc.w+40||s.y<-40||s.y>h+40) return;
+        var k=sc.cls[id], base=node?RC[node.role]:'#666', col=k?DC[k]:base, r=15;
+        cx2d.save(); cx2d.globalAlpha=(k==='removed'?0.45:0.95)*nd*sc.dim;
+        cx2d.fillStyle=col; cx2d.beginPath(); cx2d.arc(s.x,s.y,r,0,2*Math.PI); cx2d.fill();
+        if(state.sel===id&&state.selSnap===sc.snap.id){
+          cx2d.strokeStyle='#fff'; cx2d.lineWidth=2.5;
+          cx2d.beginPath(); cx2d.arc(s.x,s.y,r+4,0,2*Math.PI); cx2d.stroke();
+        }
+        cx2d.fillStyle='#0b0e14'; cx2d.font='700 9px system-ui';
+        cx2d.textAlign='center'; cx2d.textBaseline='middle';
+        cx2d.fillText(node?node.id.slice(0,7):id.slice(0,7),s.x,s.y); cx2d.restore();
+        if(state.labels&&node){
+          cx2d.save(); cx2d.globalAlpha=0.9*nd*sc.dim;
+          cx2d.fillStyle=k==='removed'?'#f87171':'#c7d3e8';
+          cx2d.font='11px system-ui'; cx2d.textAlign='center';
+          var ly=s.y+r+12; cx2d.fillText(node.label,s.x,ly);
+          if(k==='removed'){ var wd=cx2d.measureText(node.label).width;
+            cx2d.strokeStyle='#f87171'; cx2d.lineWidth=1.5;
+            cx2d.beginPath(); cx2d.moveTo(s.x-wd/2,ly-4); cx2d.lineTo(s.x+wd/2,ly-4); cx2d.stroke(); }
+          cx2d.restore();
+        }
+      }
+      sc.extra.forEach(function(en){ node(en.id,en.p,en.node,0.55); });
+      vis(sc.snap).forEach(function(n){ var p=lay.pos[n.id]; if(p) node(n.id,p,n,1); });
+      cx2d.restore();
+      if(sc.title){ cx2d.save(); cx2d.fillStyle='#8b96ad'; cx2d.font='12px system-ui';
+        cx2d.textAlign='left'; cx2d.fillText(sc.title,sc.x+12,20); cx2d.restore(); }
+      if(state.mode==='compare'&&state.cmpMode==='side'&&sc.x>0){
+        cx2d.save(); cx2d.strokeStyle='#232d45';
+        cx2d.beginPath(); cx2d.moveTo(sc.x,0); cx2d.lineTo(sc.x,h); cx2d.stroke(); cx2d.restore();
+      }
+    });
+    var fc=host.querySelector('#er-fcount');
+    var snap=state.mode==='compare'?SNAPS[state.cmpB]:SNAPS[state.idx];
+    var hid=snap.nodes.length-vis(snap).length;
+    fc.textContent=hid?('Hiding '+hid+' of '+snap.nodes.length+' nodes by filter — nothing deleted.'):'';
+    var chg=host.querySelector('#er-changes'), html='';
+    function summ(d,from,to){
+      return 'Change '+from+' → '+to+': <b style="color:#22c55e">'+d.added.length+' added</b>, '+
+        '<b style="color:#ef4444">'+d.removed.length+' removed</b>, '+
+        '<b style="color:#3b82f6">'+d.changed.length+' changed</b>, '+
+        '<b style="color:#f59e0b">'+d.merged.length+' merged</b>, '+
+        '<b style="color:#a855f7">'+d.split.length+' split</b>';
+    }
+    if(state.mode==='timeline'&&state.idx>0)
+      html=summ(diffSnapshots(SNAPS[state.idx-1],SNAPS[state.idx]),SNAPS[state.idx-1].id,SNAPS[state.idx].id);
+    else if(state.mode==='compare')
+      html=summ(diffSnapshots(SNAPS[state.cmpA],SNAPS[state.cmpB]),SNAPS[state.cmpA].id,SNAPS[state.cmpB].id);
+    chg.innerHTML=html;
+  }
+
+  function fitAll(){
+    var w=cv.clientWidth,h=cv.clientHeight;
+    if(!w||!h) return;
+    scenes().forEach(function(sc){
+      var lay=L(sc.snap.id);
+      fit(sc.v,sc.w||w,h,vis(sc.snap).map(function(n){return lay.pos[n.id];}).filter(Boolean));
+    });
+    render();
+  }
+
+  /* interaction */
+  var drag=null;
+  function vAt(clientX){
+    var r=cv.getBoundingClientRect(), mx=clientX-r.left;
+    if(state.mode==='compare'&&state.cmpMode==='side'&&mx>cv.clientWidth/2) return viewB;
+    return view;
+  }
+  function xOff(v){
+    var scs=scenes();
+    for(var i=0;i<scs.length;i++) if(scs[i].v===v) return scs[i].x;
+    return 0;
+  }
+  cv.addEventListener('mousedown',function(e){ drag={x:e.clientX,y:e.clientY,moved:false,v:vAt(e.clientX)}; cv.style.cursor='grabbing'; });
+  window.addEventListener('mousemove',function(e){
+    if(!drag) return;
+    var dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+    if(Math.abs(dx)+Math.abs(dy)>3) drag.moved=true;
+    drag.v.ox+=dx; drag.v.oy+=dy; drag.x=e.clientX; drag.y=e.clientY; render();
+  });
+  window.addEventListener('mouseup',function(e){
+    if(!drag) return;
+    cv.style.cursor='grab';
+    var click=!drag.moved, v=drag.v; drag=null;
+    if(!click) return;
+    var r=cv.getBoundingClientRect();
+    var wpt=s2w(v,e.clientX-r.left-xOff(v),e.clientY-r.top);
+    var best=null,bd=1e9,bs=null;
+    scenes().forEach(function(sc){
+      if(sc.v!==v) return;
+      var lay=L(sc.snap.id);
+      vis(sc.snap).forEach(function(n){
+        var p=lay.pos[n.id]; if(!p) return;
+        var d=Math.hypot(p.x-wpt.x,p.y-wpt.y);
+        if(d<bd){bd=d;best=n;bs=sc.snap;}
+      });
+    });
+    if(best&&bd<26/v.s+12){ state.sel=best.id; state.selSnap=bs.id; showEv(best,bs); }
+    else { state.sel=null; state.selSnap=null; showEv(null,null); }
+    render();
+  });
+  cv.addEventListener('wheel',function(e){
+    e.preventDefault();
+    var v=vAt(e.clientX), r=cv.getBoundingClientRect();
+    var mx=e.clientX-r.left-xOff(v), my=e.clientY-r.top;
+    var before=s2w(v,mx,my), f=e.deltaY<0?1.15:1/1.15;
+    v.s=Math.min(8,Math.max(0.05,v.s*f));
+    v.ox=mx-before.x*v.s; v.oy=my-before.y*v.s;
+    render();
+  },{passive:false});
+
+  function showEv(node,snap){
+    var el=host.querySelector('#er-ev');
+    if(!node){ el.innerHTML='<div class="meta">Nothing selected.</div>'; return; }
+    el.innerHTML='<div class="meta"><span class="mono" style="background:'+(RC[node.role]||'#999')+
+      ';color:#0b0e14;border-radius:12px;padding:2px 10px;font-weight:700">'+esc(node.role)+'</span> '+
+      '<b>'+esc(node.label)+'</b></div>'+
+      '<div class="meta" style="margin-top:6px;white-space:pre-wrap">'+esc(node.evidence)+'</div>'+
+      '<div class="meta" style="margin-top:4px">node <span class="mono">'+esc(node.id)+'</span> · snapshot <span class="mono">'+esc(snap.id)+'</span></div>'+
+      '<div class="t-row" style="margin-top:8px"><button class="btn primary" id="er-lin">Trace lineage</button></div>'+
+      '<div id="er-linout" class="meta" style="margin-top:6px"></div>';
+    el.querySelector('#er-lin').onclick=function(){
+      var chain=lineage(node.id,SNAPS);
+      el.querySelector('#er-linout').innerHTML='<ul style="margin:4px 0;padding-left:18px">'+
+        chain.map(function(c){
+          return '<li>'+esc(c.snapshot+': '+(c.present?'present':'absent')+(c.transition?' ('+c.transition+')':''))+'</li>';
+        }).join('')+'</ul>';
+    };
+  }
+
+  /* controls */
+  function setMode(m){
+    state.mode=m;
+    host.querySelector('#er-m-single').className='btn'+(m==='single'?' primary':'');
+    host.querySelector('#er-m-time').className='btn'+(m==='timeline'?' primary':'');
+    host.querySelector('#er-m-cmp').className='btn'+(m==='compare'?' primary':'');
+    host.querySelector('#er-c-single').style.display=m==='single'?'':'none';
+    host.querySelector('#er-c-time').style.display=m==='timeline'?'':'none';
+    host.querySelector('#er-c-cmp').style.display=m==='compare'?'':'none';
+    fitAll();
+  }
+  host.querySelector('#er-m-single').onclick=function(){setMode('single');};
+  host.querySelector('#er-m-time').onclick=function(){setMode('timeline');};
+  host.querySelector('#er-m-cmp').onclick=function(){setMode('compare');};
+  host.querySelector('#er-sel').onchange=function(e){ state.idx=+e.target.value; fitAll(); };
+  host.querySelector('#er-a').onchange=function(e){ state.cmpA=+e.target.value; fitAll(); };
+  host.querySelector('#er-b').onchange=function(e){ state.cmpB=+e.target.value; fitAll(); };
+  host.querySelector('#er-cmpmode').onchange=function(e){ state.cmpMode=e.target.value; fitAll(); };
+  host.querySelector('#er-fit').onclick=fitAll;
+  host.querySelector('#er-bundle').onchange=function(e){ state.bundled=e.target.checked; render(); };
+  host.querySelector('#er-labels').onchange=function(e){ state.labels=e.target.checked; render(); };
+  var scrub=host.querySelector('#er-scrub'), slbl=host.querySelector('#er-scrub-lbl');
+  function scrubTo(i){
+    state.idx=i; scrub.value=i;
+    slbl.textContent=SNAPS[i].id+(SNAPS[i].meta.current?' (current)':' (historical)');
+    fitAll();
+  }
+  scrub.oninput=function(){ scrubTo(+scrub.value); };
+  slbl.textContent=SNAPS[2].id+' (current)';
+  host.querySelector('#er-play').onclick=function(){
+    var b=host.querySelector('#er-play');
+    if(state.playing){ clearInterval(state.timer); state.playing=false; b.textContent='Play'; return; }
+    state.playing=true; b.textContent='Stop';
+    state.timer=setInterval(function(){ scrubTo((state.idx+1)%SNAPS.length); },1600);
+  };
+
+  /* filters */
+  var fw=host.querySelector('#er-filters');
+  fw.innerHTML='<span class="meta">Hide by role (hides, never deletes):</span>'+
+    NODE_ROLES.map(function(r){
+      return '<label class="meta" style="cursor:pointer"><input type="checkbox" data-r="'+r+'" checked> '+esc(r)+'</label>';
+    }).join('');
+  fw.querySelectorAll('input').forEach(function(inp){
+    inp.onchange=function(){ state.hidden[inp.getAttribute('data-r')]=!inp.checked; render(); };
+  });
+
+  /* legend */
+  host.querySelector('#er-legend').innerHTML=
+    NODE_ROLES.map(function(r){
+      return '<span style="margin-right:10px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+RC[r]+';margin-right:4px"></span>'+r+'</span>';
+    }).join('')+
+    '<span style="margin-left:8px">change: </span>'+
+    Object.keys(DC).map(function(k){
+      return '<span style="margin-right:10px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+DC[k]+';margin-right:4px"></span>'+k+'</span>';
+    }).join('')+
+    '<div class="meta" style="margin-top:4px">Edge thickness = number of edges between the same pair of roles; the number on a bundle is the edge count. Turn off "bundle edges" to see every edge.</div>';
+
+  /* self-check */
+  var sc;
+  try{ sc=selfCheck(); }catch(e){ sc={pass:false,checks:[{name:'threw: '+e.message,pass:false}]}; }
+  host.querySelector('#er-sc').innerHTML=
+    '<b style="color:'+(sc.pass?'#4ade80':'#f87171')+'">'+(sc.pass?'PASS':'FAIL')+'</b> — '+sc.checks.length+' checks<br>'+
+    sc.checks.map(function(c){
+      return '<span style="color:'+(c.pass?'#4ade80':'#f87171')+'">'+(c.pass?'✓':'✗')+'</span> '+esc(c.name)+'<br>';
+    }).join('');
+
+  function sizeCv(){
+    var w=cv.clientWidth,h=cv.clientHeight;
+    cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR);
+    render();
+  }
+  window.addEventListener('resize',sizeCv);
+  sizeCv(); fitAll();
+}};
+
+})();
 </script>
 <script>
 /* Project Pulse — Source drawer (non-invasive).
