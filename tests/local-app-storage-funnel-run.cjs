@@ -6,6 +6,7 @@ const bp=JSON.parse(fs.readFileSync('blueprint/local-app-storage.blueprint.json'
 F._resetForTests();
 const id='local-app-storage-v1';
 F.open({request_id:id,input:bp.page0,source:'Sebastian / connected SSD storage rule',context:{destination:'Project Pulse app storage'}});
+F.advance({request_id:id,stage:'usage_plan',provenance:'system',payload:{plan:F.makeUsagePlan(bp.page0,{page:'Project Pulse app storage',source:'Sebastian / connected SSD storage rule'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'Project Pulse app storage',reuse_before_new:true}})}});
 F.advance({request_id:id,stage:'references',provenance:'verified',payload:{
   reused:[
     {path:'quick-notes.html',reason:'Existing app requiring durable local storage.'},
@@ -32,5 +33,6 @@ F.advance({request_id:id,stage:'verdict',provenance:'verified',payload:{
   destination:'Project Pulse app storage',done_criteria:bp.done_criteria
 }});
 const s=F.inspect(id);assert(s.receipt);assert.equal(F.verifyReceipt(s.receipt),true);
+assert.equal(s.receipt.usage_plan_hash,s.stages.usage_plan.plan_hash,'receipt must bind current Funnel usage plan');
 assert.equal(F.executionPacket(s.receipt).spec.blueprint_id,bp.id);
 console.log('PASS: sealed Funnel issued local app storage receipt '+s.receipt.fingerprint);
