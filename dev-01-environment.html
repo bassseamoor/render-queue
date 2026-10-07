@@ -67,21 +67,34 @@ const wallMat=new THREE.MeshStandardMaterial({map:wallTex,emissive:0x1a2030,emis
 wallTex.repeat.set(10,3);
 
 function wall(w,h,px,py,pz,ry){
-  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),wallMat.clone());
+  // 24-inch reinforced walls: BoxGeometry with 2 ft thickness
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,2),wallMat.clone());
   m.material.map=wallTex.clone();m.material.map.needsUpdate=true;
   m.material.map.repeat.set(w/32,h/32);
   m.material.emissiveMap=m.material.map;
-  m.position.set(px,py,pz);m.rotation.y=ry;m.receiveShadow=true;scene.add(m);return m;
+  m.position.set(px,py,pz);m.rotation.y=ry;m.receiveShadow=true;m.castShadow=true;scene.add(m);return m;
 }
 wall(W,H, 0,H/2,-D/2, 0);
 wall(W,H, 0,H/2, D/2, Math.PI);
 wall(D,H, -W/2,H/2,0, Math.PI/2);
 wall(D,H,  W/2,H/2,0,-Math.PI/2);
 
-/* ---------- floor: dark polished, subtle reflection ---------- */
+/* ---------- floor: matte non-reflective, scored 10ft grid + 20ft accent ring ---------- */
+function floorTexture(){
+  const c=document.createElement('canvas');c.width=c.height=1024;
+  const g=c.getContext('2d');
+  g.fillStyle='#0b0b0d';g.fillRect(0,0,1024,1024);
+  // 10 ft grid (1024px = 320 ft -> 32px per 10 ft)
+  g.strokeStyle='rgba(150,160,180,0.14)';g.lineWidth=1;
+  for(let i=0;i<=1024;i+=32){g.beginPath();g.moveTo(i,0);g.lineTo(i,1024);g.stroke();g.beginPath();g.moveTo(0,i);g.lineTo(1024,i);g.stroke();}
+  // 20 ft accent ring at center
+  g.strokeStyle='rgba(232,200,122,0.22)';g.lineWidth=3;
+  g.beginPath();g.arc(512,512,64,0,Math.PI*2);g.stroke();
+  const t=new THREE.CanvasTexture(c);return t;
+}
 const floor=new THREE.Mesh(
   new THREE.PlaneGeometry(W,D),
-  new THREE.MeshStandardMaterial({color:0x0c0c0e,roughness:0.32,metalness:0.65})
+  new THREE.MeshStandardMaterial({map:floorTexture(),color:0xffffff,roughness:0.92,metalness:0.0})
 );
 floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
 
@@ -141,7 +154,7 @@ desk.position.y=3;desk.castShadow=true;node.add(desk);
 const screenMat=new THREE.MeshStandardMaterial({color:0x05070a,emissive:0x0d1420,emissiveIntensity:0.7,roughness:0.25});
 const bezelMat=new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.5,metalness:0.6});
 for(let i=0;i<6;i++){
-  const a=(i-2.5)*0.28; // arc
+  const a=(i-2.5)*0.384; // 110-degree arc per blueprint
   const mx=Math.sin(a)*9, mz=-Math.cos(a)*9+2;
   const mon=new THREE.Group();
   const bezel=new THREE.Mesh(new THREE.BoxGeometry(4.4,2.6,0.25),bezelMat);
@@ -168,16 +181,6 @@ for(let i=0;i<5;i++){
   leg.rotation.y=-a;node.add(leg);
 }
 scene.add(node);
-
-/* ---------- perimeter alcoves: glowing tool bays ---------- */
-const bayColors=[0xffb86b,0x7dd8d8,0xe88ca0,0x9fc6e8,0xc4a9e8,0xe8c87a];
-for(let i=0;i<12;i++){
-  const a=i/12*Math.PI*2;
-  const bx=Math.cos(a)*(W/2-8), bz=Math.sin(a)*(D/2-8);
-  const bay=new THREE.Mesh(new THREE.BoxGeometry(10,14,1.5),
-    new THREE.MeshStandardMaterial({color:0x0a0a0c,emissive:bayColors[i%6],emissiveIntensity:0.28,roughness:0.7}));
-  bay.position.set(bx,7,bz);bay.lookAt(0,7,0);scene.add(bay);
-}
 
 /* ---------- 6DoF flight controls ---------- */
 const keys={};
