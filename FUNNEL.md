@@ -27,6 +27,16 @@ Models may submit language and evidence through the Funnel doorway. They may not
 
 The Funnel defines. The Harness builds. The Verifier proves. The Bin/Engine remembers.
 
+## Owner observability
+
+The developer must not need perfect memory or trust a worker's prose claim to know what happened across parallel chats/agents.
+
+For every material build/change, workers should emit append-only Dev Feed event receipts at meaningful transitions such as requested, funneled, blueprint, building, verified, Pulse, main, and owner-visible. Use unique files under `/dev-feed/events/` so parallel workers do not contend on one shared log. Old events are never rewritten to make history cleaner; corrections append new events.
+
+Dev Feed is observational only. It cannot mint Funnel authority, approve a build, release code, or upgrade verification state. GitHub PR/commit activity, maintenance state, release ledgers, Funnel receipts, and Pulse registration remain independent evidence sources. A mismatch between a worker event and repository evidence is surfaced as a gap.
+
+Technical completion and owner visibility are distinct. "Merged" does not mean "the owner can find and inspect it." An owner-visible state requires a named canonical destination or a Pulse/Dev Feed path the developer can actually open.
+
 ## Write slot
 
 The Funnel is a sealed box with a narrow write surface. Allowed writes are append-only inputs such as:
