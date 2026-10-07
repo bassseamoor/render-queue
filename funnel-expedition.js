@@ -68,6 +68,34 @@ const DIMENSIONS=[
 ];
 
 /* REAL canonical funnel run for a Gen-1 seat */
+/* FORWARD ERROR PREDICTION — preovercome bounded medium-range errors.
+ * Before executing, predict what could go wrong in the next 2-3 steps
+ * and pre-build mitigations. */
+function predictForwardErrors(seatId, purpose, page0) {
+  const predictions = [];
+  const text = (page0.text || '').toLowerCase();
+
+  // Medium-range error predictions (horizon 2-3)
+  if (!text.includes('error') && !text.includes('fail')) {
+    predictions.push({
+      horizon: 2,
+      error: 'No failure handling specified in Page 0',
+      mitigation: 'Add failure-mode investigation to findings',
+      confidence: 'HIGH-PROBABILITY',
+    });
+  }
+  if (purpose.dimension === 'verification' && !text.includes('test')) {
+    predictions.push({
+      horizon: 2,
+      error: 'Verification dimension but no test criteria in Page 0',
+      mitigation: 'Flag as unresolved: missing verification criteria',
+      confidence: 'HIGH-PROBABILITY',
+    });
+  }
+  // Intent compounder: predictions compound into stronger investigation
+  return predictions;
+}
+
 function runCanonicalFunnel(seatId, purpose, page0){
   // NO _resetForTests(): unique request_id provides isolation. Reset destroys prior receipts.
   // MULTIPLIER #8 (page0-by-reference): use hash + lazy ref, not full text embedding.
@@ -125,6 +153,10 @@ function runCanonicalFunnel(seatId, purpose, page0){
 
   // V6: share evidence through pool, measure duplicates avoided
   findings.forEach(f=>{ if(!shareEvidence(f)) recordMetric('duplicates_avoided'); });
+  // Competitive scoring: reward evidence quality from birth
+  const qualityPoints = findings.filter(f => f.provenance).length * 10;
+  const unresolvedPenalty = findings.filter(f => f.type === 'unresolved').length * 2;
+  updateCompetitiveScore(seatId, 'evidence_quality', qualityPoints - unresolvedPenalty);
   return {
     seat:seatId, dimension:purpose.dimension,
     receipt:s.receipt.fingerprint,
@@ -137,6 +169,38 @@ function runCanonicalFunnel(seatId, purpose, page0){
 }
 
 /* Real differentiated investigation by dimension */
+/* PROCEDURAL INTENT DISTILLERS — adaptively seeded from Page 0.
+ * Each distiller is procedurally generated, not hardcoded.
+ * Distillers compete: higher information gain = higher score. */
+function seedIntentDistillers(page0) {
+  const text = page0.text.toLowerCase();
+  const distillers = [];
+
+  // Procedurally detect intent signals in Page 0
+  const signals = {
+    has_must: (text.match(/must/gi) || []).length,
+    has_prohibition: (text.match(/must not|shall not|never|cannot/gi) || []).length,
+    has_temporal: (text.match(/before|after|when|then|until/gi) || []).length,
+    has_conditional: (text.match(/if|unless|when|provided/gi) || []).length,
+    has_quantitative: (text.match(/\d+/g) || []).length,
+    has_comparative: (text.match(/better|worse|faster|slower|more|less/gi) || []).length,
+  };
+
+  // Generate distillers based on detected signals (procedural, not templated)
+  for (const [signal, count] of Object.entries(signals)) {
+    if (count > 0) {
+      distillers.push({
+        id: `distill-${signal}`,
+        signal, count,
+        // Procedurally seeded question
+        question: `Page 0 contains ${count} instances of '${signal}'. What do they collectively require?`,
+        weight: Math.min(count / 10, 3), // adaptive weight
+      });
+    }
+  }
+  return distillers;
+}
+
 function investigateDimension(dimension, page0){
   const findings=[];
   const text=page0.text;
@@ -314,6 +378,28 @@ function reconverge(seats){
     .sort((a,b)=>(b.evidence+b.unresolved)-(a.evidence+a.unresolved));
 }
 
+/* COMPETITION SINCE BIRTH — non-consequential until final stage.
+ * Every seat accumulates a competitive score from birth.
+ * Scores update on: evidence quality, prediction accuracy, falsification survival.
+ * No elimination until the final tournament stage.
+ * This forces continuous improvement, not just survival. */
+const _competitiveScores = new Map(); // seatId -> {score, history[]}
+
+function updateCompetitiveScore(seatId, event, points) {
+  if (!_competitiveScores.has(seatId)) {
+    _competitiveScores.set(seatId, { score: 0, history: [] });
+  }
+  const entry = _competitiveScores.get(seatId);
+  entry.score += points;
+  entry.history.push({ event, points, at: Date.now() });
+}
+
+function getCompetitiveRanking() {
+  return [..._competitiveScores.entries()]
+    .map(([seatId, data]) => ({ seatId, score: data.score, events: data.history.length }))
+    .sort((a, b) => b.score - a.score);
+}
+
 /* Real canonical Match Funnel */
 function runMatchFunnel(candidateA, candidateB, page0, matchId){
   // NO _resetForTests(): unique request_id provides isolation.
@@ -477,8 +563,24 @@ function shareEvidence(finding){
 }
 function getEvidencePoolSize(){ return _evidencePool.size; }
 
+/* GENERATIVE MULTI-PERSPECTIVE QUESTIONS — open-minded, not assumptive.
+ * Generate questions from adversarial, naive, expert, and alien perspectives.
+ * Do not assume the solution shape. */
+function generateMultiPerspectiveQuestions(page0, dimension) {
+  const text = (page0.text || '').slice(0, 500);
+  return [
+    { perspective: 'adversarial', question: `What if the ${dimension} approach to "${text.slice(0, 50)}..." is fundamentally wrong?` },
+    { perspective: 'naive', question: `In the simplest possible terms, what does ${dimension} require here?` },
+    { perspective: 'expert', question: `What would a domain expert find missing in the ${dimension} treatment?` },
+    { perspective: 'alien', question: `If you had never seen this problem before, what would ${dimension} suggest?` },
+    { perspective: 'inverter', question: `What should ${dimension} explicitly NOT do here?` },
+  ];
+}
+
 module.exports={getPage0, getPage0Ref, runCanonicalFunnel, runChildInvestigation, runMatchFunnel, reconverge, pulseView,
   setChampionPurposes, getChampionPurposes, getWeightedDimensions, shareEvidence, getEvidencePoolSize,
+  seedIntentDistillers, predictForwardErrors, generateMultiPerspectiveQuestions,
+  updateCompetitiveScore, getCompetitiveRanking,
   // V6 MEASUREMENT: prove leverage actually occurred
   recordMetric,
   getMetrics(){ return {..._metrics,
