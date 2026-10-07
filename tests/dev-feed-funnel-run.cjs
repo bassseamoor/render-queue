@@ -6,6 +6,7 @@ const bp=JSON.parse(fs.readFileSync('blueprint/dev-feed-owner-visibility.bluepri
 F._resetForTests();
 const id='dev-feed-owner-visibility-v1';
 F.open({request_id:id,input:bp.page0,source:'Sebastian / Dev Feed',context:{destination:'Project Pulse'}});
+F.advance({request_id:id,stage:'usage_plan',provenance:'system',payload:{plan:F.makeUsagePlan(bp.page0,{page:'Project Pulse',source:'Sebastian / Dev Feed'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'Project Pulse / Dev Feed',reuse_before_new:true}})}});
 F.advance({request_id:id,stage:'references',provenance:'verified',payload:{
   reused:[
     {path:'software-factory-core.js',reason:'Existing work-order/traveler machinery remains authoritative production evidence.'},
