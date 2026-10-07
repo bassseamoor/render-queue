@@ -6,7 +6,7 @@ class FixedDate extends RealDate{
 }
 global.Date=FixedDate;
 const K=require('../funnel-kernel.js');
-const seal=require('../blueprint/dt06-mobile-semantic-parity.seal.v2.json');
+const seal=require('../blueprint/dt06-mobile-semantic-parity.seal.v3.json');
 
 const PAGE0=`Read the Blueprint SOP first: https://bassseamoor.github.io/render-queue/pulse-dashboard.html?tool=blueprintsop
 

@@ -74,10 +74,22 @@ function planSteps(raw,buildLike,researchLike){
   return steps;
 }
 function merge(dst,src){Object.keys(src||{}).forEach(k=>{if(src[k]&&typeof src[k]==='object'&&!Array.isArray(src[k])&&dst[k]&&typeof dst[k]==='object'&&!Array.isArray(dst[k]))merge(dst[k],src[k]);else dst[k]=clone(src[k]);});}
+// Negation-aware verb detection (intake repair 2026-10-07, funnel receipt d4cb285546a0f10d):
+// a verb under negation scope ("do not build", "never implement") is mentioned, not requested.
+const NEG_SCOPE=/\b(do not|don't|does not|doesn't|did not|didn't|never|cannot|can't|can not|could not|should not|would not|will not|won't|not|no|without|avoid|avoiding|refrain from)\b/i;
+function hasUnnegatedVerb(s,verbs){
+  const clauses=text(s).split(/(?:\n+|(?<=[.!?;])\s+)/);
+  const re=new RegExp('\\b('+verbs+')\\b','i');
+  return clauses.some(function(cl){
+    const m=re.exec(cl);
+    if(!m)return false;
+    return !NEG_SCOPE.test(cl.slice(0,m.index));
+  });
+}
 function build(page0,context,overrides){
   page0=text(page0).trim();if(!page0)throw Error('Usage plan requires Page 0.');
   context=clone(context||{});overrides=clone(overrides||{});
-  const buildLike=/\b(build|create|make|implement|change|fix|push|add|remove|update|design|wire|replace|deploy|publish)\b/i.test(page0);
+  const buildLike=hasUnnegatedVerb(page0,'build|create|make|implement|change|fix|push|add|remove|update|design|wire|replace|deploy|publish');
   const researchLike=/\b(find|research|compare|audit|inspect|understand|figure out|analy[sz]e|investigate|learn)\b/i.test(page0);
   const obligations=obligationHints(page0),surfaces=detectSurfaces(page0),queries=referenceQueries(page0);
   const plan={

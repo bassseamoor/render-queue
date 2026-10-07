@@ -70,4 +70,18 @@ assert(contract.includes('v44-sealed'));
 assert(contract.includes('BUSTER.md'));
 assert(contract.includes('Funnel Usage Plan law'));
 assert(contract.includes('funnel-usage-plan-core.js'));
-console.log('PASS: sealed Funnel usage-plan stage, immutable Page 0, source-backed replay, plan-bound receipt gate, receipt staleness, and router anti-bypass guards');
+
+// Intake repairs 2026-10-07 (funnel receipt d4cb285546a0f10d): negation scope, bullet inheritance, polarity.
+const negObs=K.extractObligations('Creativity must not become permission to:\n- solve a different problem\n- silently substitute explicit requirements');
+assert.equal(negObs.length,3,'requirement-bearing parent makes each bullet an atomic obligation');
+assert(negObs.every(o=>o.polarity==='negative'),'prohibition parent propagates negative polarity to bullets');
+const posObs=K.extractObligations('The system must:\n- load in under 1s\n- support dark mode');
+assert.equal(posObs.length,3);
+assert(posObs.slice(1).every(o=>o.polarity==='positive'));
+const dropObs=K.extractObligations('The system must satisfy:\n- a\n- b\nUnrelated sentence here.\n- c');
+assert.equal(dropObs.length,3,'parent inheritance stops at a non-list break');
+const quoted=K.extractObligations('DO NOT begin implementing anything');
+assert.equal(quoted.length,1);
+assert.equal(quoted[0].polarity,'negative','prohibition is captured with negative polarity, not as a positive requirement');
+assert(quoted[0].id&&quoted[0].source,'obligation shape keeps id+source (backward compatible)');
+console.log('PASS: sealed Funnel usage-plan stage, immutable Page 0, source-backed replay, plan-bound receipt gate, receipt staleness, router anti-bypass guards, and intake repairs (negation scope, bullet inheritance, polarity)');

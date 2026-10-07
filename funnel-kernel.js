@@ -136,14 +136,37 @@ function checkReplay(payload,s){
   if(payload.substitutions&&payload.substitutions.some(function(x){return !x||x.approved!==true;}))throw Error('Unapproved substitution blocks Funnel receipt.');
 }
 function extractObligations(raw){
-  var source=text(raw),parts=source.split(/(?:\n+|(?<=[.!?;])\s+)/).map(function(x){return x.trim();}).filter(Boolean);
+  var source=text(raw);
+  var REQKW=/\b(must|need(?:s)?|should|have to|has to|make sure|ensure|never|do not|don't|cannot|can't|want(?:s)?|required?|no excuse)\b/i;
+  // Polarity: leading-negation pattern reused from blueprint-comparison-core negativeText (intake repair 2026-10-07).
+  function polarityOf(t,inherit){
+    if(/^(?:do not|don't|does not|doesn't|never|cannot|can't|can ?not|not |no |avoid |without )/i.test(t))return 'negative';
+    if(/\b(must not|must never|cannot|can't|never)\b/i.test(t))return 'negative';
+    return inherit||'positive';
+  }
   var seen={},out=[];
-  parts.forEach(function(part){
-    if(!/\b(must|need(?:s)?|should|have to|has to|make sure|ensure|never|do not|don't|cannot|can't|want(?:s)?|required?|no excuse)\b/i.test(part))return;
-    var id='obligation:'+hash(part.toLowerCase());
-    if(!seen[id]){seen[id]=1;out.push({id:id,source:part});}
+  function pushObl(src,pol){
+    var id='obligation:'+hash(src.toLowerCase());
+    if(!seen[id]){seen[id]=1;out.push({id:id,source:src,polarity:pol||'positive'});}
+  }
+  var lines=source.split(/\n+/).map(function(x){return x.trim();}).filter(Boolean);
+  var parentReq=null; // polarity inherited by bullets under a requirement-bearing parent ending in ':'
+  lines.forEach(function(line){
+    var lm=line.match(/^\s*(?:[-*\u2022\u2023]|\d+[.)])\s+(.*)$/);
+    if(lm){
+      var item=lm[1].trim();
+      if(REQKW.test(item)){pushObl(item,polarityOf(item));parentReq=null;}
+      else if(parentReq){pushObl(item,polarityOf(item,parentReq));}
+      return;
+    }
+    line.split(/(?<=[.!?;])\s+/).map(function(x){return x.trim();}).filter(Boolean).forEach(function(part){
+      if(REQKW.test(part)){
+        pushObl(part,polarityOf(part));
+        parentReq=/:$/.test(part)?polarityOf(part):null;
+      }else{parentReq=null;}
+    });
   });
-  if(!out.length&&source.trim())out.push({id:'obligation:'+hash(source.trim().toLowerCase()),source:source.trim()});
+  if(!out.length&&source.trim())pushObl(source.trim(),'positive');
   return out;
 }
 function receiptFor(id,verdict,head,page0Hash){

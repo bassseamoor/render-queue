@@ -109,5 +109,9 @@ assert(window.MOOR && typeof window.MOOR.request === 'function');
   assert.equal(replayAttack.route,'funnel');
   assert.equal(replayAttack.status,'locked','Receipt must be bound to exact Page 0 input');
 
-  console.log('PASS: zero-key queue, reference lookup, mandatory Funnel routing, caller-bypass denial, exact-Page-0 receipt binding, and verified Harness execution');
+  // Negation-aware routing (intake repair 2026-10-07): a negated build verb is mentioned, not requested.
+  const negated=await window.MOOR.request({input:'do not build the thing',source:'test'});
+  assert.notEqual(negated.route,'funnel','negated build verb must not force the funnel-as-build path');
+
+  console.log('PASS: zero-key queue, reference lookup, mandatory Funnel routing, caller-bypass denial, exact-Page-0 receipt binding, verified Harness execution, and negation-aware routing');
 })().catch(err=>{console.error(err);process.exitCode=1;});

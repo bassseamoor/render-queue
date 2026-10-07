@@ -52,7 +52,19 @@ function navigationIntent(s){
   return /^(open|launch|go to|take me to|switch to)\b/i.test(text(s));
 }
 function buildIntent(s){
-  return /\b(build|make|create|add|change|modify|fix|implement|wire|connect|replace|remove|delete|turn|convert|design)\b/i.test(text(s));
+  return hasUnnegatedVerb(s,'build|make|create|add|change|modify|fix|implement|wire|connect|replace|remove|delete|turn|convert|design');
+}
+// Negation-aware verb detection (intake repair 2026-10-07, funnel receipt d4cb285546a0f10d):
+// a verb under negation scope ("do not build", "never implement") is mentioned, not requested.
+function hasUnnegatedVerb(s,verbs){
+  var NEG_SCOPE=/\b(do not|don't|does not|doesn't|did not|didn't|never|cannot|can't|can not|could not|should not|would not|will not|won't|not|no|without|avoid|avoiding|refrain from)\b/i;
+  var clauses=text(s).split(/(?:\n+|(?<=[.!?;])\s+)/);
+  var re=new RegExp('\\b('+verbs+')\\b','i');
+  return clauses.some(function(cl){
+    var m=re.exec(cl);
+    if(!m)return false;
+    return !NEG_SCOPE.test(cl.slice(0,m.index));
+  });
 }
 function exactReference(s){
   if(!window.PulseReferences)return null;

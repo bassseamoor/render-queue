@@ -52,4 +52,13 @@ assert.equal(Law.verifyReceipt(br),true);
 const tampered={...br,meta:{...br.meta,usage_plan_hash:'wrong'}};
 assert.equal(Law.verifyReceipt(tampered),false);
 
-console.log('PASS: v44 and Ultra derive, lock, follow and receipt-bind request-specific Funnel usage plans before resolution.');
+// Negation-aware build classification (intake repair 2026-10-07, funnel receipt d4cb285546a0f10d).
+const negPlan=Usage.build('Do not implement anything. Do not build a new system.',{page:'test',source:'test'});
+assert.equal(negPlan.execution_plan.build_required,false,'negated build verbs must not set build_required');
+assert(negPlan.request_analysis.mode!=='blueprint-build'&&negPlan.request_analysis.mode!=='research-blueprint-build');
+const posPlan=Usage.build('Implement the dashboard.',{page:'test',source:'test'});
+assert.equal(posPlan.execution_plan.build_required,true);
+const mixedPlan=Usage.build('Build the thing, do not deploy it.',{page:'test',source:'test'});
+assert.equal(mixedPlan.execution_plan.build_required,true,'unnegated build verb in the same input still counts');
+
+console.log('PASS: v44 and Ultra derive, lock, follow and receipt-bind request-specific Funnel usage plans before resolution; negation-aware build classification.');
