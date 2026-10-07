@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Funnel Expedition — Architecture Blueprint</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#07090e;color:#e8ecf1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;line-height:1.7;padding:24px;max-width:900px;margin:0 auto}
+h1{font-size:1.8em;margin:0 0 16px;color:#fff;border-bottom:2px solid #1a2332;padding-bottom:12px}
+h2{font-size:1.4em;margin:32px 0 12px;color:#7dd3fc;border-bottom:1px solid #1a2332;padding-bottom:8px}
+h3{font-size:1.15em;margin:24px 0 8px;color:#a5b4fc}
+h4{font-size:1em;margin:16px 0 8px;color:#c4b5fd}
+p,li{margin:6px 0}
+ul{padding-left:24px;margin:8px 0}
+code{background:#1a2332;padding:2px 6px;border-radius:4px;font-size:0.9em;color:#7dd3fc}
+pre{background:#0d1117;border:1px solid #1a2332;border-radius:8px;padding:16px;overflow-x:auto;margin:12px 0}
+pre code{background:none;padding:0}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+td{border:1px solid #1a2332;padding:8px 12px}
+tr:nth-child(even) td{background:#0d1117}
+.check{background:#0d1117;border:1px solid #1a2332;border-radius:6px;padding:8px 12px;margin:6px 0}
+hr{border:none;border-top:1px solid #1a2332;margin:24px 0}
+.receipt{background:#0d1a0d;border:1px solid #1a3a1a;border-radius:6px;padding:4px 8px;font-family:monospace;font-size:0.85em;color:#86efac}
+strong{color:#fff}
+.badge{display:inline-block;background:#1e3a5f;color:#7dd3fc;padding:4px 12px;border-radius:12px;font-size:0.85em;margin:4px 4px 4px 0}
+</style>
+</head>
+<body>
+<div><span class="badge">Blueprint rev2</span><span class="badge">10× v44 bulletproofed</span><span class="badge">Funnel accepted</span></div>
+<h1>Funnel Expedition — End-to-End Architecture Blueprint</h1>
+
+<h2>Status</h2>
+Implementation Blueprint, revision 2 (bulletproofed through 10 v44 iterations)
+
+<h2>Bulletproofing receipts</h2>
+1. Multi-socket architecture: <code>b8b07627e2709be3</code>
+2. Page 0 identity: <code>c92d9a0d6178d224</code>
+3. Gen-1 isolation: <code>61bd5c9de1ca813f</code>
+4. Gen-2 typing: <code>f61acfb18f786386</code>
+5. Tournament truth: <code>93a35c2b7efefb8b</code>
+6. Defeat/inherit: <code>f4563f468c4ebd2c</code>
+7. Evidence pool: <code>6c9f98913fa9ad6e</code>
+8. Ledger persistence: <code>52d90f77e3e10880</code>
+9. Pulse honesty: <code>78d95d70c7227d7d</code>
+10. End-to-end integration: <code>95a854a5441de3b8</code>
+
+<h2>Page 0</h2>
+Optimize the Funnel Expedition into a working system where 256 parallel investigations share data through multi-socket connections, each with different objectives, producing a verifiable champion through evidence-quality tournament.
+
+<hr>
+
+<h2>1. MULTI-SOCKET SHARED DATA ARCHITECTURE</h2>
+
+<h3>Core principle (Sebastian's intuition)</h3>
+All seats wire to the same data pots via multi-socket connections. Same data, different objectives. No copies.
+
+<h3>Socket topology</h3>
+<pre><code class="lang-">┌─────────────────────────────────────────────────┐
+│                  SHARED DATA POTS               │
+│                                                 │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐  │
+│  │ Page 0   │  │ Evidence │  │ Metrics      │  │
+│  │ Pot      │  │ Pool Pot │  │ Pot          │  │
+│  │ (read-   │  │ (read +  │  │ (append-    │  │
+│  │  only)   │  │  write)  │  │  only)       │  │
+│  └────┬─────┘  └────┬─────┘  └──────┬───────┘  │
+│       │             │               │           │
+│  ─────┼─────────────┼───────────────┼────       │
+│       │    SOCKET BUS (pub/sub)     │           │
+│  ─────┼─────────────┼───────────────┼────       │
+│       │             │               │           │
+│  ┌────▼──┐ ┌────▼──┐ ┌────▼──┐ ┌────▼──┐      │
+│  │Seat 1 │ │Seat 2 │ │Seat 3 │ │Seat N │ ...  │
+│  │(obj A)│ │(obj B)│ │(obj C)│ │(obj N)│      │
+│  └───────┘ └───────┘ └───────┘ └───────┘      │
+│                                                 │
+│  Each seat: isolated namespace + shared pots    │
+└─────────────────────────────────────────────────┘
+</code></pre>
+
+<h3>Pot specifications</h3>
+
+<strong>Page 0 Pot (read-only)</strong>*
+<ul><li>Stores: single canonical Page 0 text + SHA-256 hash</li>
+<li>Access: read-only for all seats. No seat can write.</li>
+<li>Seats receive: <code>{hash, lazy_ref}</code> — 100 bytes, not 10KB</li>
+<li>Text loaded on-demand via socket, never copied into seat input</li>
+<li>Failure: if pot unreachable, all seats hard-fail (no Page 0 = no investigation)</li>
+</ul>
+<strong>Evidence Pool Pot (read + write)</strong>*
+<ul><li>Stores: content-hash → finding mappings</li>
+<li>Seats check BEFORE investigating (deduplication during, not after)</li>
+<li>Writes are append-only with provenance (which seat, which dimension)</li>
+<li>Conflict resolution: same content-hash from different seats = corroboration (strengthens), not duplicate (discarded)</li>
+<li>Failure: if pot unreachable, seats proceed independently and merge on reconnect</li>
+</ul>
+<strong>Metrics Pot (append-only)</strong>*
+<ul><li>Stores: cache hits/misses, tokens used, duplicates avoided, escalations avoided</li>
+<li>All writes timestamped and attributed</li>
+<li>Read by Pulse for honest reporting</li>
+<li>Failure: metrics loss is acceptable (degraded reporting, not failed investigation)</li>
+</ul>
+<h3>What is shared vs isolated</h3>
+<table>
+<tr><td>Shared (via pots)</td><td>Isolated (per seat namespace)</td></tr>
+<tr><td>Page 0 text and hash</td><td>Seat findings</td></tr>
+<tr><td>Evidence pool entries</td><td>Seat decisions</td></tr>
+<tr><td>Global metrics</td><td>Seat receipt</td></tr>
+<tr><td>Dimension definitions</td><td>Seat lineage</td></tr>
+</table>
+
+<hr>
+
+<h2>2. PAGE 0 IDENTITY AND PROPAGATION</h2>
+
+<h3>Mechanism</h3>
+<ul><li>Page 0 hash computed once at expedition start: <code>SHA-256(full_text)</code></li>
+<li>Every seat receives <code>{page0_hash, page0_ref}</code> — never the full text in input</li>
+<li>Full text available via Page 0 Pot socket on demand</li>
+<li>Every seat's <code>page0_hash</code> must equal expedition <code>page0_hash</code> or seat is invalid</li>
+</ul>
+<h3>Hard-fail test</h3>
+<ul><li>One test seat receives deliberately altered Page 0 (single character changed)</li>
+<li>Hash mismatch → seat must hard-fail with <code>PAGE0_MISMATCH</code> error</li>
+<li>If seat proceeds with wrong Page 0, the isolation mechanism is broken</li>
+</ul>
+<h3>No-embedding rule</h3>
+<ul><li>Seat inputs contain: seat ID, purpose, dimension, page0_hash, page0_ref</li>
+<li>Seat inputs do NOT contain: Page 0 full text</li>
+<li>Match inputs contain: match ID, candidate summaries (not full findings), page0_hash</li>
+<li>This eliminates the 655MB problem at the architectural level</li>
+</ul>
+<hr>
+
+<h2>3. GEN-1 SEAT ISOLATION</h2>
+
+<h3>Namespace isolation (replaces _resetForTests)</h3>
+<ul><li>Each seat gets a unique kernel namespace: <code>expedition-{run_id}-seat-{seat_id}</code></li>
+<li>Namespaces are isolated: seat A's stages do not appear in seat B's namespace</li>
+<li>No global reset. All 256 namespaces coexist.</li>
+<li>After run, all namespaces remain inspectable via session index</li>
+</ul>
+<h3>Seat lifecycle</h3>
+1. <code>namespace.create(expedition-{run_id}-seat-{seat_id})</code>
+2. <code>K.open({request_id, input: {seat_id, purpose, dimension, page0_hash, page0_ref}, namespace})</code>
+3. Seat loads Page 0 text on-demand from Page 0 Pot (if needed for investigation)
+4. Seat checks Evidence Pool Pot before investigating (deduplication)
+5. Seat runs: usage_plan → references → distill → decisions → replay → verdict
+6. Seat writes findings to Evidence Pool Pot (with provenance)
+7. Seat writes metrics to Metrics Pot
+8. <code>namespace.seal()</code> — namespace becomes read-only, receipt issued
+
+<h3>Cross-contamination prevention</h3>
+<ul><li>Seats cannot read other seats' namespaces</li>
+<li>Seats can only write to shared pots (Evidence, Metrics)</li>
+<li>Evidence Pool Pot validates provenance on every write</li>
+<li>A seat writing malformed evidence is quarantined, not crashed</li>
+</ul>
+<hr>
+
+<h2>4. GEN-2 CHILD TYPING</h2>
+
+<h3>Two explicit types</h3>
+
+<strong>Type C: Canonical Funnel</strong>*
+<ul><li>Full stages: open → usage_plan → references → distill → decisions → replay → verdict</li>
+<li>Issues receipt</li>
+<li>Used when: child investigation is open-ended, requires judgment</li>
+<li>Schema: <code>{type:'canonical', request_id, stages:{...}, receipt}</code></li>
+</ul>
+<strong>Type P: Deterministic Probe</strong>*
+<ul><li>Narrower contract: input → deterministic function → output + proof</li>
+<li>No receipt (not a funnel), but auditable</li>
+<li>Used when: child investigation is mechanical (counting, pattern matching, validation)</li>
+<li>Schema: <code>{type:'probe', probe_id, function:'count_must_requirements', input_hash, output, proof}</code></li>
+</ul>
+<h3>Typing rule</h3>
+<ul><li>Every child must declare <code>type: 'canonical' | 'probe'</code> at creation</li>
+<li>If <code>type</code> is missing, child is rejected</li>
+<li>Code that calls a probe a "Funnel" fails validation</li>
+<li>Counts: <code>canonical_children</code> and <code>probe_children</code> tracked separately</li>
+</ul>
+<hr>
+
+<h2>5. TOURNAMENT SCORING (QUALITY OVER COUNT)</h2>
+
+<h3>Scoring function</h3>
+<pre><code class="lang-">score(candidate) =
+  page0_coverage * 40 +      // % of Page 0 obligations addressed (0-1 → 0-40)
+  evidence_quality * 30 +     // avg provenance score of evidence (0-1 → 0-30)
+  falsification_survival * 20 + // % of evidence surviving falsification tests
+  receipt_validity * 10        // 1 if receipt valid, 0 if not
+</code></pre>
+
+<h3>Evidence quality (per finding)</h3>
+<pre><code class="lang-">quality(finding) =
+  has_provenance ? 0.3 : 0 +
+  has_falsification_test ? 0.3 : 0 +
+  corroborated_by_others ? 0.2 : 0 +
+  directly_addresses_page0 ? 0.2 : 0
+</code></pre>
+
+<h3>Tie handling</h3>
+<ul><li>If <code>|scoreA - scoreB| < 0.01</code>: honest tie</li>
+<li>Tied candidates receive <code>standing: 'co-equal'</code></li>
+<li>Both advance metadata to next round</li>
+<li>Reason: <code>"TIE: co-equal standing (scores ${scoreA} ≈ ${scoreB})"</code></li>
+<li>Positional fallback is BANNED. No arbitrary winners.</li>
+</ul>
+<h3>Pair order invariance</h3>
+<ul><li>Test: run tournament with shuffled pair order</li>
+<li>Non-tied outcomes must be identical</li>
+<li>If order changes a non-tied outcome, scoring function is broken</li>
+</ul>
+<hr>
+
+<h2>6. DEFEAT AND SELECTIVE INHERITANCE</h2>
+
+<h3>Adjudication rules (per loser evidence item)</h3>
+1. <strong>Page 0 alignment</strong>*: Does it address a Page 0 obligation? If no → reject (<code>reason: 'not_page0_aligned'</code>)
+2. <strong>Contradiction check</strong>*: Does it semantically contradict winner evidence? (Not string equality — semantic opposition.) If yes → reject (<code>reason: 'contradicts_winner'</code>, include contradicting winner evidence ID)
+3. <strong>Defect lineage</strong>*: Does it import a known defect pattern? If yes → reject (<code>reason: 'defect_lineage'</code>, include defect ID)
+4. <strong>Provenance</strong>*: Does it have valid provenance? If no → reject (<code>reason: 'no_provenance'</code>)
+5. <strong>Otherwise</strong>* → accept with <code>inherited_from</code> attribution
+
+<h3>Traceability</h3>
+<ul><li>Every inherited item: <code>{content, inherited_from: loser_seat, accepted_by: match_id, reason: 'passed_all_checks'}</code></li>
+<li>Every rejected item: <code>{content, rejected_by: match_id, reason, evidence}</code></li>
+<li>Champion's <code>lineage</code> array traces every element to its origin seat</li>
+</ul>
+<h3>Test requirement</h3>
+<ul><li>Controlled test with known good and known bad loser evidence</li>
+<li>Must show at least one accept AND one reject</li>
+<li>If all accepted or all rejected, adjudication is not selective</li>
+</ul>
+<hr>
+
+<h2>7. EVIDENCE POOL DEDUPLICATION</h2>
+
+<h3>Pre-work check (not post-work)</h3>
+<pre><code class="lang-">Before investigating:
+  1. Seat formulates investigation query
+  2. Seat checks Evidence Pool Pot: &quot;has this been investigated?&quot;
+  3. If yes and result is conclusive → use cached result, record cache_hit
+  4. If yes but inconclusive → investigate independently, record corroboration
+  5. If no → investigate, write result to pool, record cache_miss
+</code></pre>
+
+<h3>Duplicate vs corroboration</h3>
+<ul><li><strong>Duplicate</strong>*: same query, same method, same result → skip work, use cached</li>
+<li><strong>Corroboration</strong>*: same query, different method or different seat → independent investigation, strengthens evidence</li>
+<li>Pool stores: <code>{query_hash, method, result, seat_id, dimension, timestamp, corroboration_count}</code></li>
+</ul>
+<h3>Instrumentation</h3>
+<ul><li>Every pool check records: hit/miss, timestamp, seat</li>
+<li>Metrics Pot aggregates: total hits, total misses, hit rate</li>
+<li>Unmeasured values reported as <code>UNMEASURED</code>, never as 0</li>
+</ul>
+<hr>
+
+<h2>8. LEDGER PERSISTENCE</h2>
+
+<h3>Storage schema</h3>
+<pre><code class="lang-">expedition-{run_id}/
+  manifest.json          // run manifest (schema v1)
+  session-index.json     // maps seat/match IDs to namespace IDs
+  namespaces/
+    seat-000/            // 256 seat namespaces
+      stages.json        // all 7 stages
+      receipt.json       // signed receipt
+    ...
+    match-000/           // 255 match namespaces
+      stages.json
+      receipt.json
+  evidence-pool.jsonl    // append-only evidence log
+  metrics.json           // aggregated metrics
+</code></pre>
+
+<h3>Tamper detection</h3>
+<ul><li>Each namespace has a hash chain: each stage hashes the previous</li>
+<li>Receipt signs the final hash</li>
+<li>Tampering with any stage invalidates the receipt</li>
+<li>Tampering with one namespace does not affect others</li>
+</ul>
+<h3>Post-run inspection</h3>
+<ul><li>All 511 namespaces (256 + 255) remain readable after run</li>
+<li>Session index provides O(1) lookup by seat/match ID</li>
+<li>No <code>_resetForTests()</code>. No destruction. Ever.</li>
+</ul>
+<hr>
+
+<h2>9. PULSE HONEST REPORTING</h2>
+
+<h3>Independent verification</h3>
+<code>pulseView()</code> does NOT accept caller-supplied counts. Instead:
+1. Reads <code>manifest.json</code> for expected counts
+2. Reads <code>session-index.json</code> and counts actual namespaces
+3. Verifies each receipt independently via <code>K.verifyReceipt()</code>
+4. Reads <code>metrics.json</code> for measured values
+5. Reports <code>UNMEASURED</code> for anything without evidence
+
+<h3>Output schema</h3>
+<pre><code class="lang-json">{
+  &quot;gen1_expected&quot;: 256,
+  &quot;gen1_actual&quot;: 256,
+  &quot;gen1_receipts_valid&quot;: 256,
+  &quot;gen2_canonical_expected&quot;: &quot;UNMEASURED&quot;,
+  &quot;tournament_battles_expected&quot;: 255,
+  &quot;tournament_battles_actual&quot;: 255,
+  &quot;champion&quot;: &quot;seat-042&quot;,
+  &quot;verification&quot;: &quot;INDEPENDENT&quot;,
+  &quot;caveats&quot;: []
+}
+</code></pre>
+
+<h3>Failure mode</h3>
+<ul><li>If verification fails, Pulse reports <code>"verification": "FAILED"</code> with details</li>
+<li>Pulse never reports success based on caller claims</li>
+<li>Pulse never hides failures</li>
+</ul>
+<hr>
+
+<h2>10. END-TO-END DATA FLOW</h2>
+
+<pre><code class="lang-">Page 0 Input
+    │
+    ▼
+┌─────────────┐
+│ Page 0 Pot  │◄── Hash verified, text stored once
+└──────┬──────┘
+       │ (read-only socket)
+       ▼
+┌─────────────────────────────────────────┐
+│ 256 Gen-1 Seats (isolated namespaces)   │
+│ Each: checks Evidence Pot → investigates │
+│ → writes findings → gets receipt         │
+└──────┬──────────────────────────────────┘
+       │ (findings via Evidence Pool Pot)
+       ▼
+┌─────────────────────────────────────────┐
+│ 65,536 Gen-2 Children                   │
+│ Typed: canonical (receipt) or probe     │
+│ (auditable contract)                    │
+│ Parent-shaped: focus from parent gaps   │
+└──────┬──────────────────────────────────┘
+       │ (child results → parent revision)
+       ▼
+┌─────────────────────────────────────────┐
+│ 255 Tournament Matches                  │
+│ Quality scoring (not count)             │
+│ Defeat/inherit with real adjudication   │
+│ Honest ties → co-equal standing         │
+└──────┬──────────────────────────────────┘
+       │
+       ▼
+┌─────────────┐
+│  Champion   │──► Blueprint with full lineage
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Pulse     │──► Independent verification
+└─────────────┘    Honest reporting only
+</code></pre>
+
+<hr>
+
+<h2>FAILURE CONTRACT</h2>
+
+<table>
+<tr><td>Failure</td><td>Response</td></tr>
+<tr><td>Page 0 Pot unreachable</td><td>All seats hard-fail. No investigation without Page 0.</td></tr>
+<tr><td>Evidence Pool Pot unreachable</td><td>Seats proceed independently. Merge on reconnect.</td></tr>
+<tr><td>Metrics Pot unreachable</td><td>Degraded reporting. Investigation continues.</td></tr>
+<tr><td>Seat namespace corrupted</td><td>Seat quarantined. Other seats unaffected.</td></tr>
+<tr><td>Tournament scoring order-dependent</td><td>Scoring function rejected. Must be order-invariant.</td></tr>
+<tr><td>Receipt invalid</td><td>Candidate cannot win. Match re-run.</td></tr>
+<tr><td>Pulse verification fails</td><td>Report FAILED. Do not claim success.</td></tr>
+</table>
+
+<hr>
+
+<h2>PROOF REQUIREMENTS</h2>
+
+<div class="check">☐ All 511 namespaces inspectable post-run</div>
+<div class="check">☐ Page 0 hash identical across all seats</div>
+<div class="check">☐ One altered-Page-0 test hard-fails</div>
+<div class="check">☐ Tournament order-invariance test passes</div>
+<div class="check">☐ At least one inherit accept AND one reject in controlled test</div>
+<div class="check">☐ Evidence pool hit rate measured (not assumed)</div>
+<div class="check">☐ Pulse verification independent (not caller-supplied)</div>
+<div class="check">☐ All 10 bulletproofing receipts valid</div>
+
+<hr>
+
+*If this Blueprint is correct, the product will be correct.*
+*No pass certifies itself. Every claim has an artifact.*
+
+<hr>
+<p style="color:#666;font-size:0.85em">Acceptance receipt: <span class="receipt">1dface1979e7fcbe</span> | Commit: <span class="receipt">b9ee4925</span></p>
+</body>
+</html>
