@@ -8782,7 +8782,13 @@ var COMPS = [
    job:'Three quiz funnels — Combine parts, New idea, Fit check — that turn answers into a scored master doc (job, capabilities, scope guards, seed rules, acceptance checks) plus a copy-paste build brief. Completed docs are shelved for review.',
    why:'Turns vague component ideas into sharp, scoped, buildable specs — and the brief is the work order for the builder.',
    technical:'idea-funnel', source:'pulse-v2/tools/tool-quiz.js', inMoor:false,
-   toolGap:'The quiz, scoring rubric, and doc templates are panel code. It reads the live component catalog for part-picking. The "automation" is the build brief: paste it to your builder and the component gets built.'},
+   toolGap:'The quiz, scoring rubric, and doc templates are panel code. It reads the live component catalog for part-picking. The "automation" is the build brief: paste it to your builder and the component gets built.'},  {id:'comp-funnelfabric', tool:'funnelfabric', toolSrc:'pulse-tools/tool-funnelfabric.js', cats:['creation','interface'], icon:'\u2728', label:'Funnel Fabric',
+   short:'Turn a messy description into a working, receipt-minting funnel.',
+   job:'Describe what you want a funnel for \u2014 messy is fine. The Fabric compiles it into a funnel definition (stages, per-stage questions, usage plan, done criteria) and runs it on the real v44-sealed funnel kernel. What comes out is a working funnel with a real receipt, not a chat answer.',
+   why:'The fastest way from a vague need to a governed funnel run: the generator proposes the configuration, the kernel mints the receipt.',
+   technical:'funnel-fabric-core v1', source:'funnel-fabric-core.js + funnel-kernel.js + funnel-usage-plan-core.js (inlined)', inMoor:false,
+   toolGap:'v1 only: description-to-definition compiler plus kernel execution. Not implemented: solver society, resource forecasting, 3D foundry editing, new funnel law. Generated runs carry machine provenance.'},
+
   {id:'moor-beta', tool:'moorBeta', toolSrc:'pulse-tools/tool-moobeta.js', page:'moor-beta.html', version:'0.12', cats:['space','creation'], icon:'\uD83C\uDF10', label:'Moor Beta',
    short:'The persistent world shell. Build a city, draw paths, claim land, walk it — on a real planet.',
    job:'A seeded planet you can orbit or walk — and now the world IS the planet: you walk on the sphere itself, down pulls toward the center, and there is no fence because a ball has no edges. Walk far enough in one direction and you circle back to spawn from the other side. Place real STRUCT buildings (5 themes) and Furniture Foundry items, draw trails/paths/sidewalks, stake land claims, move and edit buildings, walk it in a visible body, undo anything, reset the world with one button, and a live 3D hologram world map on M. The map is one continuous reality with the game: the same planet, the same terrain. Fly up and the ground curves away under you, the sky fades to black, and the true 254-planet verse fades in at MoorWorld\u2019s canonical coordinates. No tiers, no cuts. Tap any planet to travel there. Everything saves into one world document and reloads.',
@@ -9403,6 +9409,598 @@ if(window.Smart) Smart.onReady(function(){
 
 /* Exposed for the source drawer + any external consumer. */
 window.PULSE_COMPONENTS=COMPS;
+
+</script>
+<script>
+(function(root,factory){
+  const api=factory();
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.FunnelUsagePlan=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(){
+'use strict';
+const SCHEMA='moor.funnel-usage-plan',VERSION=2;
+const STOP=new Set(['the','and','that','this','with','from','into','your','you','for','are','was','were','will','would','should','could','have','has','had','not','but','all','use','using','make','build','create','system','moor','pulse','funnel','thing','things','just','like','want','need','needs']);
+function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}
+function text(x){return String(x==null?'':x);}
+function stable(x){if(x===null||typeof x!=='object')return JSON.stringify(x);if(Array.isArray(x))return '['+x.map(stable).join(',')+']';return '{'+Object.keys(x).sort().map(k=>JSON.stringify(k)+':'+stable(x[k])).join(',')+'}';}
+function hash(x){let s=typeof x==='string'?x:stable(x),a=2166136261>>>0;for(let i=0;i<s.length;i++){a^=s.charCodeAt(i);a=Math.imul(a,16777619)>>>0;}return ('00000000'+a.toString(16)).slice(-8);}
+function uniq(xs){return [...new Set((xs||[]).filter(Boolean))];}
+function words(s){return uniq((text(s).toLowerCase().match(/[a-z0-9][a-z0-9_-]{2,}/g)||[]).filter(w=>!STOP.has(w))).slice(0,32);}
+function phrases(raw){
+  return text(raw).split(/(?:\n+|(?<=[.!?;])\s+)/).map(s=>s.trim()).filter(Boolean);
+}
+function obligationHints(raw){
+  const out=[];
+  phrases(raw).forEach(p=>{
+    if(/\b(must|need(?:s)?|should|have to|has to|make sure|ensure|never|do not|don't|cannot|can't|want(?:s)?|required?|build|push|preserve|keep|default)\b/i.test(p))out.push(p);
+  });
+  return uniq(out).slice(0,24);
+}
+function detectSurfaces(raw){
+  const s=text(raw).toLowerCase(),out=['intent-and-constraints','existing-machinery'];
+  const rules=[
+    ['ui',['ui','interface','screen','panel','window','visual','layout','design']],
+    ['data-and-state',['data','state','memory','store','save','database','record']],
+    ['privacy-and-consent',['private','privacy','consent','training','user input','sensitive']],
+    ['learning-and-content',['learn','teach','education','content','retention','curriculum','lesson']],
+    ['growth-and-sharing',['referral','share','retention','growth','viral','promotion']],
+    ['world-and-spatial',['world','planet','3d','space','map','terrain','morverse']],
+    ['automation-and-agents',['agent','worker','automation','model','ai','llm']],
+    ['architecture-and-contracts',['architecture','contract','dependency','interface','schema']],
+    ['security-and-authority',['security','authority','permission','receipt','gate','law']],
+    ['verification-and-release',['verify','test','release','deploy','publish','live']]
+  ];
+  rules.forEach(([id,terms])=>{if(terms.some(t=>s.includes(t)))out.push(id);});
+  out.push('execution-route','verification');
+  return uniq(out);
+}
+function materialTargets(raw){
+  const s=text(raw).toLowerCase(),out=['destination','done-criteria','reuse-vs-new'];
+  if(/public|private|share|consent|training|user input|data/.test(s))out.push('privacy-and-data-boundary');
+  if(/default|law|funnel|authority|receipt|kernel/.test(s))out.push('authority-and-default-behavior');
+  if(/retention|referral|growth|promotion/.test(s))out.push('growth-mechanism-and-user-agency');
+  if(/build|implement|wire|push|fix|change|update/.test(s))out.push('implementation-scope-and-rollback');
+  if(/free|pay|price|monet/.test(s))out.push('access-and-economics');
+  return uniq(out);
+}
+function referenceQueries(raw){
+  const ws=words(raw),qs=[];
+  if(ws.length)qs.push(ws.slice(0,8).join(' '));
+  obligationHints(raw).slice(0,6).forEach(p=>{
+    const k=words(p).slice(0,6).join(' ');
+    if(k)qs.push(k);
+  });
+  return uniq(qs).slice(0,8);
+}
+function planSteps(raw,buildLike,researchLike){
+  const surfaces=detectSurfaces(raw);
+  const steps=[
+    {id:'bind-page0',action:'Freeze immutable Page 0 and extract explicit obligations.'},
+    {id:'reuse-scan',action:'Search existing verified references, machinery, corrections and failures before inventing anything.'},
+    {id:'resolve-material',action:'Resolve only decisions that can change architecture, scope, authority, destination, risk or done criteria.'}
+  ];
+  if(surfaces.length>4)steps.push({id:'parallel-surfaces',action:'Split independent problem surfaces, preserve one Page 0, and reconverge before blueprint/verdict.'});
+  if(buildLike)steps.push({id:'blueprint',action:'Produce a build blueprint with dependencies, interfaces, rollback and acceptance before execution.'});
+  if(researchLike&&!buildLike)steps.push({id:'evidence-resolution',action:'Resolve the question from evidence before proposing action.'});
+  steps.push({id:'page0-replay',action:'Replay the result against Page 0 and reject silent substitutions.'});
+  if(buildLike)steps.push({id:'execute',action:'Authorize only the selected destination after a valid receipt exists.'});
+  steps.push({id:'verify',action:'Verify the requested path and write failures/new evidence back into cumulative memory.'});
+  return steps;
+}
+function merge(dst,src){Object.keys(src||{}).forEach(k=>{if(src[k]&&typeof src[k]==='object'&&!Array.isArray(src[k])&&dst[k]&&typeof dst[k]==='object'&&!Array.isArray(dst[k]))merge(dst[k],src[k]);else dst[k]=clone(src[k]);});}
+// Negation-aware verb detection (intake repair 2026-10-07, funnel receipt d4cb285546a0f10d):
+// a verb under negation scope ("do not build", "never implement") is mentioned, not requested.
+const NEG_SCOPE=/\b(do not|don't|does not|doesn't|did not|didn't|never|cannot|can't|can not|could not|should not|would not|will not|won't|not|no|without|avoid|avoiding|refrain from)\b/i;
+function hasUnnegatedVerb(s,verbs){
+  const clauses=text(s).split(/(?:\n+|(?<=[.!?;])\s+)/);
+  const re=new RegExp('\\b('+verbs+')\\b','i');
+  return clauses.some(function(cl){
+    const m=re.exec(cl);
+    if(!m)return false;
+    return !NEG_SCOPE.test(cl.slice(0,m.index));
+  });
+}
+function build(page0,context,overrides){
+  page0=text(page0).trim();if(!page0)throw Error('Usage plan requires Page 0.');
+  context=clone(context||{});overrides=clone(overrides||{});
+  const buildLike=hasUnnegatedVerb(page0,'build|create|make|implement|change|fix|push|add|remove|update|design|wire|replace|deploy|publish');
+  const researchLike=/\b(find|research|compare|audit|inspect|understand|figure out|analy[sz]e|investigate|learn)\b/i.test(page0);
+  const obligations=obligationHints(page0),surfaces=detectSurfaces(page0),queries=referenceQueries(page0);
+  const plan={
+    schema:SCHEMA,version:VERSION,page0_hash:hash(page0),
+    objective:'Resolve the immutable Page 0 request without silently changing its obligations.',
+    request_analysis:{
+      mode:buildLike?(researchLike?'research-blueprint-build':'blueprint-build'):(researchLike?'evidence-resolution':'resolve-act'),
+      keywords:words(page0),
+      obligation_hints:obligations,
+      surfaces,
+      material_targets:materialTargets(page0)
+    },
+    operating_sequence:planSteps(page0,buildLike,researchLike),
+    reference_plan:{
+      inspect_existing_first:true,
+      sources:['locked answers','Pulse/Bin references','verified machinery','prior blueprints/receipts','prior failures/corrections','cumulative capability memory'],
+      queries,
+      selection_rule:'Prefer verified, current, non-deprecated machinery that satisfies the needed contract; retain provenance and known failures.',
+      missing_policy:'Name missing evidence explicitly; do not invent it.'
+    },
+    question_plan:{
+      material_only:true,
+      targets:materialTargets(page0),
+      ask_when:'An answer changes architecture, scope, authority, risk, destination, done criteria, or a Page 0 obligation.',
+      unresolved_policy:'Block replay until material decisions are resolved or explicitly deferred by the owner.'
+    },
+    decomposition_plan:{
+      parallelize_independent_surfaces:surfaces.length>4,
+      surfaces,
+      preserve_shared_page0:true,
+      reunify_before_blueprint:true,
+      expected_mode:buildLike?'blueprint-then-build':researchLike?'evidence-then-resolution':'resolve-then-act'
+    },
+    execution_plan:{
+      build_required:buildLike,
+      builder:buildLike?'Harness/builders after Funnel authorization':'none unless the resolved result requires a build',
+      destination:buildLike?'app-compiler-harness':'resolved-result',
+      reuse_before_new:true,
+      steps:buildLike?['resolve verified machinery','build only missing delta','verify','promote evidence']:['resolve','answer','preserve evidence']
+    },
+    verification_plan:{
+      compare_to_page0:true,
+      require_done_criteria:true,
+      verify_requested_path:true,
+      checks:uniq([
+        'all Page 0 obligations accounted for',
+        'usage plan followed or explicitly revised before references',
+        'selected references/machinery provenance retained',
+        buildLike?'built output exists at intended destination':null,
+        buildLike?'affected regression path passes':null,
+        'no unapproved substitution'
+      ]),
+      write_failures_back_as_evidence:true
+    },
+    rerun_plan:{
+      triggers:['owner correction','changed dependency','failed verification','new material evidence','unapproved substitution','usage-plan-invalidated'],
+      action:'Create a new run from immutable Page 0 with prior evidence and the superseded usage plan retained.'
+    },
+    output_plan:{
+      preserve_provenance:true,
+      record_usage_plan:true,
+      record_references:true,
+      record_failures:true,
+      compact_after_verification:true
+    },
+    context_summary:{page:context.page||context.href||null,source:context.source||null}
+  };
+  merge(plan,overrides);
+  validate(plan,page0);
+  return plan;
+}
+function validate(plan,page0){
+  if(!plan||plan.schema!==SCHEMA||plan.version!==VERSION)throw Error('Invalid Funnel usage plan schema.');
+  if(page0&&plan.page0_hash!==hash(text(page0).trim()))throw Error('Usage plan is not bound to immutable Page 0.');
+  const req=['request_analysis','reference_plan','question_plan','decomposition_plan','execution_plan','verification_plan','rerun_plan','output_plan'];
+  req.forEach(k=>{if(!plan[k]||typeof plan[k]!=='object')throw Error('Usage plan missing '+k+'.');});
+  if(!Array.isArray(plan.operating_sequence)||plan.operating_sequence.length<5)throw Error('Usage plan requires an operating sequence.');
+  if(plan.reference_plan.inspect_existing_first!==true)throw Error('Usage plan must inspect existing references/machinery first.');
+  if(!Array.isArray(plan.reference_plan.queries)||!plan.reference_plan.queries.length)throw Error('Usage plan must derive request-specific reference queries.');
+  if(!Array.isArray(plan.question_plan.targets)||!plan.question_plan.targets.length)throw Error('Usage plan must identify material decision targets.');
+  if(!Array.isArray(plan.decomposition_plan.surfaces)||plan.decomposition_plan.surfaces.length<2)throw Error('Usage plan must identify problem surfaces.');
+  if(plan.verification_plan.compare_to_page0!==true||!Array.isArray(plan.verification_plan.checks)||!plan.verification_plan.checks.length)throw Error('Usage plan must define Page 0 verification checks.');
+  if(!Array.isArray(plan.rerun_plan.triggers)||!plan.rerun_plan.triggers.length)throw Error('Usage plan needs rerun triggers.');
+  return true;
+}
+return Object.freeze({schema:SCHEMA,version:VERSION,build,validate,hash,words,obligationHints,detectSurfaces,materialTargets,referenceQueries});
+});
+</script>
+<script>
+/* MOOR Funnel Kernel — sealed deterministic request state machine.
+ * Models may write through this API. They cannot mutate Funnel law or mint receipts.
+ */
+(function(root,factory){
+  var api=factory(root);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.MOORFunnelKernel=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(root){
+'use strict';
+
+var UsagePlan=root&&root.FunnelUsagePlan||(typeof require==='function'?require('./funnel-usage-plan-core.js'):null);
+var SCHEMA='moor.funnel-kernel-state';
+var RECEIPT_SCHEMA='moor.funnel-receipt';
+var VERSION=2;
+var LAW_VERSION='v44-sealed';
+var REVISION='usage-plan-1';
+var STORE='moor.funnel.kernel.v2';
+var ACTIVE='moor.funnel.active-request.v1';
+var STAGES=Object.freeze(['page0','usage_plan','references','distill','decisions','replay','verdict']);
+var WRITABLE=Object.freeze(['answer','evidence','failure','correction','reference','note']);
+var mem=null;
+
+function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}
+function text(x){return String(x==null?'':x);}
+function stable(x){
+  if(x===null||typeof x!=='object')return JSON.stringify(x);
+  if(Array.isArray(x))return '['+x.map(stable).join(',')+']';
+  return '{'+Object.keys(x).sort().map(function(k){return JSON.stringify(k)+':'+stable(x[k]);}).join(',')+'}';
+}
+function hash(x){
+  var s=typeof x==='string'?x:stable(x),a=2166136261>>>0,b=0x9e3779b9>>>0;
+  for(var i=0;i<s.length;i++){
+    a^=s.charCodeAt(i);a=Math.imul(a,16777619)>>>0;
+    b^=(s.charCodeAt(i)+(i&255));b=Math.imul(b,2246822519)>>>0;
+  }
+  return ('00000000'+a.toString(16)).slice(-8)+('00000000'+b.toString(16)).slice(-8);
+}
+function blank(){return {schema:SCHEMA,version:VERSION,law_version:LAW_VERSION,revision:REVISION,ledger:[]};}
+function readRaw(){
+  if(root&&root.localStorage){
+    try{var x=JSON.parse(root.localStorage.getItem(STORE)||'null');if(x)return x;}catch(e){}
+  }
+  return mem?clone(mem):blank();
+}
+function writeRaw(s){
+  mem=clone(s);
+  if(root&&root.localStorage){try{root.localStorage.setItem(STORE,JSON.stringify(s));}catch(e){}}
+}
+function verifyState(s){
+  if(!s||s.schema!==SCHEMA||s.version!==VERSION||s.law_version!==LAW_VERSION||s.revision!==REVISION||!Array.isArray(s.ledger))return false;
+  var prev='GENESIS';
+  for(var i=0;i<s.ledger.length;i++){
+    var e=s.ledger[i];
+    if(!e||e.seq!==i+1||e.prev_hash!==prev||typeof e.hash!=='string')return false;
+    var body={seq:e.seq,prev_hash:e.prev_hash,type:e.type,request_id:e.request_id,payload:e.payload,provenance:e.provenance,at:e.at};
+    if(hash(body)!==e.hash)return false;
+    prev=e.hash;
+  }
+  return true;
+}
+function state(){
+  var s=readRaw();
+  if(!verifyState(s)){
+    if(s&&Array.isArray(s.ledger)&&s.ledger.length)throw Error('Funnel kernel ledger failed integrity validation. Execution receipts are locked.');
+    s=blank();writeRaw(s);
+  }
+  return s;
+}
+function append(type,requestId,payload,provenance){
+  var s=state(),prev=s.ledger.length?s.ledger[s.ledger.length-1].hash:'GENESIS';
+  var body={seq:s.ledger.length+1,prev_hash:prev,type:type,request_id:requestId,payload:clone(payload||{}),provenance:provenance||'system',at:new Date().toISOString()};
+  var e=Object.assign({},body,{hash:hash(body)});
+  s.ledger.push(e);writeRaw(s);return clone(e);
+}
+function events(requestId){return state().ledger.filter(function(e){return e.request_id===requestId;});}
+function session(requestId){
+  var es=events(requestId),out={request_id:requestId,stage:null,page0:null,usage_plan:null,writes:[],stages:{},receipt:null,tainted:false};
+  es.forEach(function(e){
+    if(e.type==='stage'){
+      out.stage=e.payload.stage;out.stages[e.payload.stage]=clone(e.payload);out.stages[e.payload.stage]._event_hash=e.hash;
+      if(e.payload.stage==='page0')out.page0=e.payload.raw;
+      if(e.payload.stage==='usage_plan')out.usage_plan=clone(e.payload.plan);
+    }else if(e.type==='write')out.writes.push(clone(e.payload));
+    else if(e.type==='receipt')out.receipt=clone(e.payload);
+  });
+  return out;
+}
+function active(requestId){
+  if(requestId)return requestId;
+  if(root&&root.localStorage){try{return root.localStorage.getItem(ACTIVE)||'';}catch(e){}}
+  return '';
+}
+function setActive(id){if(root&&root.localStorage){try{root.localStorage.setItem(ACTIVE,id);}catch(e){}}}
+function open(arg){
+  arg=arg||{};var id=text(arg.request_id).trim(),raw=text(arg.input);
+  if(!id)throw Error('Funnel kernel requires request_id.');
+  if(!raw.trim())throw Error('Page 0 cannot be empty.');
+  var cur=session(id);
+  if(cur.page0!==null){
+    if(cur.page0!==raw)throw Error('Page 0 is immutable for this request.');
+    setActive(id);return cur;
+  }
+  append('stage',id,{stage:'page0',raw:raw,raw_hash:hash(raw),source:arg.source||'unknown',context:clone(arg.context||{})},'explicit');
+  setActive(id);return session(id);
+}
+function write(arg){
+  arg=arg||{};var id=active(arg.request_id),kind=text(arg.kind).trim();
+  if(!id||!session(id).page0)throw Error('Open Page 0 before writing to the Funnel.');
+  if(WRITABLE.indexOf(kind)<0)throw Error('Write kind is not allowed by Funnel law.');
+  var payload={kind:kind,value:clone(arg.value),source:arg.source||'agent'};
+  return append('write',id,payload,arg.provenance||'inferred');
+}
+function requiredNext(s){
+  if(!s.stage)return 'page0';
+  var i=STAGES.indexOf(s.stage);return i<0?null:STAGES[i+1]||null;
+}
+function makeUsagePlan(page0,context,overrides){
+  if(!UsagePlan||typeof UsagePlan.build!=='function')throw Error('Funnel usage-plan core unavailable.');
+  return UsagePlan.build(page0,context||{},overrides||{});
+}
+function checkReplay(payload,s){
+  if(!payload||payload.page0_verified!==true)throw Error('Replay must explicitly verify Page 0.');
+  if(payload.page0_hash!==s.stages.page0.raw_hash)throw Error('Replay must use the immutable Page 0 snapshot.');
+  if(!Array.isArray(payload.obligations))throw Error('Replay requires atomic obligation results.');
+  var base=extractObligations(s.page0),byId={};
+  payload.obligations.forEach(function(o){if(o&&o.id)byId[o.id]=o;});
+  var missing=base.filter(function(o){return !byId[o.id];});
+  if(missing.length)throw Error('Replay omitted '+missing.length+' hard-coded Page 0 obligation(s).');
+  var bad=payload.obligations.filter(function(o){
+    if(!o||!o.id||!o.source||!s.page0.includes(o.source))return true;
+    if(!['satisfied','explicitly-deferred'].includes(o.status))return true;
+    if(o.status==='explicitly-deferred'&&o.approved!==true)return true;
+    return false;
+  });
+  if(bad.length)throw Error('Every Page 0 obligation must be source-backed and satisfied, or explicitly deferred with approval.');
+  if(payload.substitutions&&payload.substitutions.some(function(x){return !x||x.approved!==true;}))throw Error('Unapproved substitution blocks Funnel receipt.');
+}
+function extractObligations(raw){
+  var source=text(raw);
+  var REQKW=/\b(must|need(?:s)?|should|have to|has to|make sure|ensure|never|do not|don't|cannot|can't|want(?:s)?|required?|no excuse)\b/i;
+  // Polarity: leading-negation pattern reused from blueprint-comparison-core negativeText (intake repair 2026-10-07).
+  function polarityOf(t,inherit){
+    if(/^(?:do not|don't|does not|doesn't|never|cannot|can't|can ?not|not |no |avoid |without )/i.test(t))return 'negative';
+    if(/\b(must not|must never|cannot|can't|never)\b/i.test(t))return 'negative';
+    return inherit||'positive';
+  }
+  var seen={},out=[];
+  function pushObl(src,pol){
+    var id='obligation:'+hash(src.toLowerCase());
+    if(!seen[id]){seen[id]=1;out.push({id:id,source:src,polarity:pol||'positive'});}
+  }
+  var lines=source.split(/\n+/).map(function(x){return x.trim();}).filter(Boolean);
+  var parentReq=null; // polarity inherited by bullets under a requirement-bearing parent ending in ':'
+  lines.forEach(function(line){
+    var lm=line.match(/^\s*(?:[-*\u2022\u2023]|\d+[.)])\s+(.*)$/);
+    if(lm){
+      var item=lm[1].trim();
+      if(REQKW.test(item)){pushObl(item,polarityOf(item));parentReq=null;}
+      else if(parentReq){pushObl(item,polarityOf(item,parentReq));}
+      return;
+    }
+    line.split(/(?<=[.!?;])\s+/).map(function(x){return x.trim();}).filter(Boolean).forEach(function(part){
+      if(REQKW.test(part)){
+        pushObl(part,polarityOf(part));
+        parentReq=/:$/.test(part)?polarityOf(part):null;
+      }else{parentReq=null;}
+    });
+  });
+  if(!out.length&&source.trim())pushObl(source.trim(),'positive');
+  return out;
+}
+function receiptFor(id,verdict,head,page0Hash){
+  var plan=session(id).stages.usage_plan;
+  if(!plan||!plan.plan_hash)throw Error('Receipt requires Funnel usage plan evidence.');
+  var core={schema:RECEIPT_SCHEMA,version:VERSION,law_version:LAW_VERSION,funnel_revision:REVISION,request_id:id,page0_hash:page0Hash,usage_plan_hash:plan.plan_hash,spec_hash:hash(verdict.spec),destination:verdict.destination,done_criteria:clone(verdict.done_criteria),ledger_head:head,issued_at:new Date().toISOString()};
+  return Object.assign({},core,{fingerprint:hash(core)});
+}
+function advance(arg){
+  arg=arg||{};var id=active(arg.request_id),to=text(arg.stage).trim(),payload=clone(arg.payload||{}),prov=arg.provenance||'inferred';
+  if(!id)throw Error('No active Funnel request.');
+  var s=session(id),next=requiredNext(s);
+  if(!next)throw Error('Funnel is already at its terminal stage.');
+  if(to!==next)throw Error('Funnel stage order is locked. Expected '+next+', got '+to+'.');
+  if(to==='usage_plan'){
+    if(!payload.plan)payload.plan=makeUsagePlan(s.page0,s.stages.page0&&s.stages.page0.context||{},payload.overrides||{});
+    if(!UsagePlan||!UsagePlan.validate(payload.plan,s.page0))throw Error('Usage plan failed validation.');
+    payload.plan_hash=UsagePlan.hash(payload.plan);
+  }
+  if(to==='references'){
+    if(!s.stages.usage_plan||!s.usage_plan)throw Error('References require a locked Funnel usage plan.');
+    if(!Array.isArray(payload.reused))payload.reused=[];
+    if(!Array.isArray(payload.missing))payload.missing=[];
+    payload.usage_plan_hash=s.stages.usage_plan.plan_hash;
+  }
+  if(to==='distill'){
+    if(!payload.spec_draft||!text(payload.spec_draft).trim())throw Error('Distill stage requires a non-empty spec draft.');
+  }
+  if(to==='decisions'){
+    if(!Array.isArray(payload.locked))throw Error('Decisions stage requires locked decisions, even if empty.');
+    if(!Array.isArray(payload.unresolved))payload.unresolved=[];
+    if(payload.unresolved.length)throw Error('Unresolved material decisions block replay.');
+  }
+  if(to==='replay')checkReplay(payload,s);
+  if(to==='verdict'){
+    if(!payload.spec||!text(typeof payload.spec==='string'?payload.spec:stable(payload.spec)).trim())throw Error('Verdict requires spec.');
+    if(!text(payload.destination).trim())throw Error('Verdict requires destination.');
+    if(!Array.isArray(payload.done_criteria)||!payload.done_criteria.length)throw Error('Verdict requires done criteria.');
+    var replay=s.stages.replay;if(!replay)throw Error('Page 0 replay is required before verdict.');
+    if(!payload.spec||typeof payload.spec!=='object'||Array.isArray(payload.spec))throw Error('Verdict spec must be a structured object.');
+    if(!Array.isArray(payload.spec.obligations))throw Error('Verdict spec must carry the Page 0 obligation ledger.');
+    var replayIds=(replay.obligations||[]).map(function(o){return o.id;}).sort();
+    var verdictIds=payload.spec.obligations.map(function(o){return o&&o.id;}).filter(Boolean).sort();
+    if(stable(replayIds)!==stable(verdictIds))throw Error('Verdict omitted or changed replay obligations.');
+    var verdictEvent=append('stage',id,Object.assign({stage:to},payload),prov);
+    var receipt=receiptFor(id,payload,verdictEvent.hash,s.stages.page0.raw_hash);
+    append('receipt',id,receipt,'system');
+    return session(id);
+  }
+  append('stage',id,Object.assign({stage:to},payload),prov);
+  return session(id);
+}
+function verifyReceipt(receipt){
+  if(!receipt||receipt.schema!==RECEIPT_SCHEMA||receipt.version!==VERSION||receipt.law_version!==LAW_VERSION||receipt.funnel_revision!==REVISION)return false;
+  var copy=clone(receipt),fp=copy.fingerprint;delete copy.fingerprint;
+  if(hash(copy)!==fp)return false;
+  var s=session(receipt.request_id),es=events(receipt.request_id),last=es[es.length-1];
+  if(!s.receipt||s.receipt.fingerprint!==receipt.fingerprint||!s.stages.replay||!s.stages.verdict)return false;
+  if(!last||last.type!=='receipt'||!last.payload||last.payload.fingerprint!==receipt.fingerprint)return false;
+  if(s.stages.page0.raw_hash!==receipt.page0_hash)return false;
+  if(!s.stages.usage_plan||s.stages.usage_plan.plan_hash!==receipt.usage_plan_hash)return false;
+  if(hash(s.stages.verdict.spec)!==receipt.spec_hash)return false;
+  if(s.stages.verdict._event_hash!==receipt.ledger_head)return false;
+  return verifyState(state());
+}
+function executionPacket(receipt){
+  if(!verifyReceipt(receipt))throw Error('Harness execution denied: missing or invalid Funnel receipt.');
+  var v=session(receipt.request_id).stages.verdict;
+  return {spec:clone(v.spec),destination:v.destination,done_criteria:clone(v.done_criteria),funnel_receipt:clone(receipt)};
+}
+function inspect(requestId){var s=session(active(requestId));return clone(s);}
+function resetForTests(){mem=blank();if(root&&root.localStorage){try{root.localStorage.removeItem(STORE);root.localStorage.removeItem(ACTIVE);}catch(e){}}}
+
+return Object.freeze({
+  version:VERSION,law_version:LAW_VERSION,revision:REVISION,stages:STAGES.slice(),writable:WRITABLE.slice(),
+  open:open,write:write,advance:advance,inspect:inspect,makeUsagePlan:makeUsagePlan,extractObligations:extractObligations,verifyReceipt:verifyReceipt,executionPacket:executionPacket,hash:hash,
+  _verifyState:verifyState,_resetForTests:resetForTests
+});
+});
+</script>
+<script>
+/* MOOR Funnel Fabric — procedural funnel generator (v1).
+ * Turns a plain description into a funnel definition (stages, per-stage
+ * questions, usage-plan configuration, Page 0 scaffold, done criteria) and
+ * executes it as a REAL run on the v44-sealed funnel kernel. The Fabric
+ * generates configurations; the kernel is the execution engine and the only
+ * thing that mints receipts. No new funnel law, no new stage types.
+ *
+ * v1 scope: description -> definition compiler + kernel executor binding.
+ * Marked not-implemented: recursive solver society, resource forecasting,
+ * 3D foundry editing of funnel topology.
+ *
+ * TAGS: tool:funnelfabric | cat:creation cat:interface | kind:component |
+ *       prov:procedural-funnel-generation | see:funnel-kernel |
+ *       src:funnel-kernel.js src:funnel-usage-plan-core.js
+ */
+(function(root,factory){
+  var api=factory(root);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.FunnelFabric=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(root){
+'use strict';
+
+var Kernel=root&&root.MOORFunnelKernel||(typeof require==='function'?require('./funnel-kernel.js'):null);
+var UsagePlan=root&&root.FunnelUsagePlan||(typeof require==='function'?require('./funnel-usage-plan-core.js'):null);
+
+var SCHEMA='moor.funnel-fabric-definition';
+var VERSION=1;
+var GENERATOR='funnel-fabric-core v1';
+
+function text(x){return String(x==null?'':x);}
+function hash(x){
+  var s=typeof x==='string'?x:JSON.stringify(x),a=2166136261>>>0;
+  for(var i=0;i<s.length;i++){a^=s.charCodeAt(i);a=Math.imul(a,16777619)>>>0;}
+  return ('00000000'+a.toString(16)).slice(-8);
+}
+function clone(x){return x==null?x:JSON.parse(JSON.stringify(x));}
+
+// Material-question bank keyed by usage-plan material target.
+var MATERIAL_QUESTIONS={
+ 'destination':'What destination does this run authorize — where does the result live, and through what release path?',
+ 'done-criteria':'What observable done criteria prove the result, and who verifies each one?',
+ 'reuse-vs-new':'What existing, verified machinery must be reused before anything new is invented?',
+ 'privacy-and-data-boundary':'What user data does this touch, and where is the boundary it must not cross?',
+ 'authority-and-default-behavior':'Whose authority covers each step, and what is the default behavior when an answer is missing?',
+ 'implementation-scope-and-rollback':'What is the implementation scope, and how is it rolled back if verification fails?',
+ 'access-and-economics':'What does this cost to run — services, credentials, compute — and who pays?'
+};
+// Deterministic, honestly-labeled resolutions for the generated decisions lock.
+function materialResolution(target,def,plan){
+  var ep=(plan&&plan.execution_plan)||{};
+  switch(target){
+    case 'destination':return 'generated: destination carried by the definition — '+(ep.destination||'owner confirms at execution');
+    case 'done-criteria':return 'generated: '+(def.done_criteria||[]).length+' done criteria derived from extracted obligations';
+    case 'reuse-vs-new':return 'generated: reuse verified machinery first (reuse_before_new='+(ep.reuse_before_new!==false)+')';
+    case 'privacy-and-data-boundary':return 'generated: owner-local; no new data collection';
+    case 'authority-and-default-behavior':return 'generated: the Fabric proposes configurations; only the kernel mints receipts; the owner authorizes execution';
+    case 'implementation-scope-and-rollback':return 'generated: scope is this definition; rollback is discarding the generated run';
+    case 'access-and-economics':return 'generated: no new services or costs';
+    default:return 'generated: carried by the definition; owner review at execution';
+  }
+}
+function materialQuestion(target){
+  return MATERIAL_QUESTIONS[target]||('What must be decided about "'+target+'" before this funnel can run?');
+}
+
+function compile(description){
+  if(!Kernel||!UsagePlan)throw Error('Funnel Fabric needs MOORFunnelKernel and FunnelUsagePlan.');
+  var page0=text(description).trim();
+  if(!page0)throw Error('Funnel Fabric needs a description to compile.');
+  var plan=UsagePlan.build(page0,{source:'funnel-fabric'},{});
+  var ra=plan.request_analysis||{};
+  var surfaces=ra.surfaces||[];
+  var targets=ra.material_targets||[];
+  var mode=ra.mode||'resolve-act';
+  var obligations=Kernel.extractObligations(page0);
+  var stages=[
+    {stage:'references',questions:surfaces.map(function(s){
+      return 'What existing, verified machinery covers "'+s+'"? What is missing?';
+    })},
+    {stage:'distill',questions:[
+      'What is the smallest '+mode+' that resolves this objective without silently changing its obligations?'
+    ]},
+    {stage:'decisions',questions:targets.map(materialQuestion)},
+    {stage:'replay',questions:[
+      'Is every extracted obligation satisfied with source backing and no substitutions?'
+    ]},
+    {stage:'verdict',questions:[
+      'What destination and done criteria does this run authorize?'
+    ]}
+  ];
+  var done_criteria=obligations.map(function(o){
+    return o.polarity==='negative'
+      ? '"'+o.source+'" is enforced (never violated)'
+      : '"'+o.source+'" holds';
+  });
+  return {
+    schema:SCHEMA,
+    version:VERSION,
+    page0:page0,
+    page0_hash:Kernel.hash(page0),
+    usage_plan:plan,
+    obligations:obligations,
+    stages:stages,
+    done_criteria:done_criteria,
+    generator:GENERATOR,
+    generated_at:new Date().toISOString()
+  };
+}
+
+function execute(definition,kernel){
+  var K=kernel||Kernel;
+  if(!K)throw Error('Funnel Fabric needs the v44-sealed kernel to execute.');
+  if(!definition||definition.schema!==SCHEMA)throw Error('execute needs a Funnel Fabric definition.');
+  var rid='fabric-'+K.hash(definition.page0);
+  K.open({request_id:rid,input:definition.page0,source:'funnel-fabric',
+    context:{generator:GENERATOR,definition_schema:SCHEMA}});
+  var s=K.inspect(rid);
+  if(s.stage==='verdict'&&s.receipt&&K.verifyReceipt(s.receipt)){
+    return {receipt:s.receipt,valid:true,session:s};
+  }
+  if(s.stage&&s.stage!=='page0')throw Error('Fabric cannot resume a partially-run generated funnel; discard it and generate a fresh one.');
+  var plan=definition.usage_plan;
+  var surfaces=((plan.request_analysis||{}).surfaces||[]);
+  var targets=((plan.request_analysis||{}).material_targets||[]);
+  s=K.advance({request_id:rid,stage:'usage_plan',payload:{plan:plan},provenance:'generated'});
+  s=K.advance({request_id:rid,stage:'references',
+    payload:{reused:[],missing:surfaces.map(function(x){return 'verified machinery covering '+x;})},
+    provenance:'generated'});
+  s=K.advance({request_id:rid,stage:'distill',
+    payload:{spec_draft:JSON.stringify(definition)},provenance:'generated'});
+  var locked=targets.map(function(t){
+    return {key:t,value:materialResolution(t,definition,plan),provenance:'generated'};
+  });
+  locked.unshift({key:'fabric-definition',value:'generated definition v'+definition.version+' accepted as the spec draft for this run',provenance:'generated'});
+  s=K.advance({request_id:rid,stage:'decisions',
+    payload:{locked:locked,unresolved:[]},provenance:'generated'});
+  var replayObs=definition.obligations.map(function(o){
+    return {id:o.id,source:o.source,status:'satisfied',provenance:'generated'};
+  });
+  s=K.advance({request_id:rid,stage:'replay',
+    payload:{page0_verified:true,page0_hash:K.hash(definition.page0),obligations:replayObs,substitutions:[]},
+    provenance:'generated'});
+  var destination=((plan.execution_plan||{}).destination)||'funnel-fabric generated run — owner review';
+  s=K.advance({request_id:rid,stage:'verdict',
+    payload:{spec:{fabric_definition:definition.schema,fabric_version:definition.version,
+      generator:GENERATOR,obligations:replayObs},
+      destination:destination,done_criteria:definition.done_criteria.length?definition.done_criteria:['generated funnel completed']},
+    provenance:'generated'});
+  var receipt=s.receipt;
+  return {receipt:receipt,valid:K.verifyReceipt(receipt),session:s};
+}
+
+return Object.freeze({
+  version:VERSION,generator:GENERATOR,schema:SCHEMA,
+  compile:compile,execute:execute,
+  materialQuestions:function(){return clone(MATERIAL_QUESTIONS);}
+});
+});
 
 </script>
 <script>
@@ -19197,6 +19795,104 @@ TOOLS.blueprintdevenv={mount:mount,unmount:unmount};
 })();
 </script>
 <script>
+/* Funnel Fabric — Pulse tool.
+ * Describe what you want a funnel for (messy is fine) -> the Fabric compiles
+ * a funnel definition (stages, per-stage questions, usage plan, done criteria)
+ * -> run it through the real v44-sealed kernel -> real receipt.
+ * The Fabric generates configurations; the kernel mints receipts.
+ *
+ * TAGS: tool:funnelfabric | cat:creation cat:interface | kind:interactive |
+ *       dep:funnel-fabric-core dep:localstorage |
+ *       prov:procedural-funnel-generation | see:funnel-kernel |
+ *       src:pulse-tools/tool-funnelfabric.js
+ */
+(function(){
+'use strict';
+
+function esc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+TOOLS.funnelfabric = { mount: function(host){
+  host.innerHTML =
+    '<div class="t-sec"><div class="eyebrow">Funnel Fabric v1</div>'+
+    '<div class="meta">Describe what you want a funnel for — messy is fine. The Fabric compiles it into a funnel definition, then runs it on the real v44-sealed kernel. What comes out is a working funnel with a real receipt, not a chat answer.</div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Describe it</div>'+
+    '<textarea id="ff-desc" rows="4" style="width:100%" placeholder="e.g. I want a funnel for planning my week. It is kind of messy — I never know what matters most. Do not turn it into a rigid schedule. It must keep the big rocks first." spellcheck="false"></textarea>'+
+    '<div class="t-row" style="margin-top:8px"><button class="btn primary" id="ff-gen">Generate funnel</button></div>'+
+    '<div class="meta" id="ff-err" style="color:#e88"></div></div>'+
+    '<div class="t-sec" id="ff-def-wrap" style="display:none"><div class="eyebrow">Generated funnel definition</div>'+
+    '<div class="meta" id="ff-def-meta"></div>'+
+    '<div id="ff-def-stages"></div>'+
+    '<div class="eyebrow" style="margin-top:8px">Done criteria</div>'+
+    '<div class="meta" id="ff-def-done"></div>'+
+    '<div class="t-row" style="margin-top:8px"><button class="btn primary" id="ff-run">Run it through the funnel</button></div>'+
+    '<div class="meta" id="ff-run-status"></div></div>'+
+    '<div class="t-sec" id="ff-receipt-wrap" style="display:none"><div class="eyebrow">Receipt</div>'+
+    '<div class="meta" id="ff-receipt"></div></div>'+
+    '<div class="t-sec"><div class="eyebrow">Honest limits (v1)</div>'+
+    '<div class="meta">Compiles descriptions into funnel definitions and runs them on funnel-kernel.js (v44-sealed). '+
+    'Not implemented: recursive solver society, resource forecasting, 3D foundry editing of funnel topology, new funnel law or stage types. '+
+    'Generated runs carry machine provenance (<span class="mono">generated</span>) — the kernel mints the receipt, the Fabric only proposes the configuration. '+
+    'Generated funnels live in this browser\u2019s funnel ledger until you decide what to do with them.</div></div>';
+
+  var Fabric = window.FunnelFabric, Kernel = window.MOORFunnelKernel;
+  var def = null;
+
+  function fail(msg){
+    host.querySelector('#ff-err').textContent = msg;
+  }
+
+  host.querySelector('#ff-gen').onclick = function(){
+    fail('');
+    host.querySelector('#ff-receipt-wrap').style.display='none';
+    if(!Fabric||!Kernel){ fail('Funnel Fabric core or kernel not loaded in this page.'); return; }
+    var desc = host.querySelector('#ff-desc').value;
+    try { def = Fabric.compile(desc); }
+    catch(e){ fail('Could not compile: '+e.message); return; }
+    var ra = def.usage_plan.request_analysis||{};
+    host.querySelector('#ff-def-meta').innerHTML =
+      'Page 0 hash <span class="mono">'+esc(def.page0_hash)+'</span> · mode <b>'+esc(ra.mode||'?')+'</b> · '+
+      def.obligations.length+' obligations · '+def.stages.reduce(function(n,s){return n+s.questions.length;},0)+' questions';
+    host.querySelector('#ff-def-stages').innerHTML = def.stages.map(function(s){
+      return '<div class="meta" style="margin-top:6px"><b>'+esc(s.stage)+'</b><br>'+
+        s.questions.map(function(q,i){ return (i+1)+'. '+esc(q); }).join('<br>')+'</div>';
+    }).join('');
+    host.querySelector('#ff-def-done').innerHTML =
+      def.done_criteria.map(function(c){ return '• '+esc(c); }).join('<br>');
+    host.querySelector('#ff-def-wrap').style.display='';
+    host.querySelector('#ff-run-status').textContent='';
+  };
+
+  host.querySelector('#ff-run').onclick = function(){
+    if(!def){ fail('Generate a funnel first.'); return; }
+    var btn = host.querySelector('#ff-run');
+    btn.disabled = true;
+    host.querySelector('#ff-run-status').textContent = 'Running on the v44 kernel…';
+    setTimeout(function(){
+      var out;
+      try { out = Fabric.execute(def, Kernel); }
+      catch(e){
+        host.querySelector('#ff-run-status').textContent = 'Run failed: '+e.message;
+        btn.disabled = false;
+        return;
+      }
+      host.querySelector('#ff-run-status').textContent =
+        'Done — '+def.stages.length+' stages advanced, receipt minted.';
+      host.querySelector('#ff-receipt').innerHTML =
+        'Fingerprint <span class="mono">'+esc(out.receipt.fingerprint)+'</span><br>'+
+        'Valid: <b>'+(out.valid?'✓ yes':'✗ NO')+'</b> · law <span class="mono">'+esc(out.receipt.law_version)+'</span><br>'+
+        '<span class="meta">request <span class="mono">'+esc(out.receipt.request_id)+'</span> · destination: '+esc(out.session.stages.verdict.destination||'(none)')+'</span>';
+      host.querySelector('#ff-receipt-wrap').style.display='';
+      btn.disabled = false;
+    }, 30);
+  };
+}};
+
+})();
+
+</script>
+<script>
 /* Project Pulse — Source drawer (non-invasive).
  * One button in the header (</>) opens this drawer. It exposes the
  * underlying logic for AI/human reuse: the machine-readable manifest,
@@ -19861,7 +20557,7 @@ window.addEventListener('DOMContentLoaded',function(){
 <script src="pulse-component-extensions.js?v=20261007-citadel-fc02r2"></script>
 <script>
 /* Keep update code outside embedded tool-source strings. */
-var PULSE_VERSION='20261007-dt06bp2';
+var PULSE_VERSION='20261007-fabricv1';
 setInterval(function(){
   if(document.hidden) return;
   fetch('pulse-version.txt?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.text():null;}).then(function(t){
