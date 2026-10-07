@@ -53,26 +53,26 @@ for(const step of bp.build_steps){
   );
 }
 
-function checkAnchor(target,anchor,label){
-  const src=target==='pulse-beam-funnel-hall.js'?js:target==='pulse-beam-funnel-hall.html'?html:null;
-  if(!src)return;
-  for(const x of (Array.isArray(anchor)?anchor:[anchor]))assert(src.includes(x),label+' anchor drifted: '+x);
+const runtimeImplemented=js.includes("const VIEW=Object.freeze({")&&js.includes('window.FACTORY_TWIN_VIEW_STATE=Object.freeze({');
+if(!runtimeImplemented){
+  function checkAnchor(target,anchor,label){
+    const src=target==='pulse-beam-funnel-hall.js'?js:target==='pulse-beam-funnel-hall.html'?html:null;
+    if(!src)return;
+    for(const x of (Array.isArray(anchor)?anchor:[anchor]))assert(src.includes(x),label+' anchor drifted: '+x);
+  }
+  for(const step of bp.build_steps){
+    if(step.anchor_exact)checkAnchor(step.file,step.anchor_exact,'plate '+step.step);
+    if(step.route_anchor_exact)checkAnchor(step.file,step.route_anchor_exact,'plate '+step.step+' route');
+    if(step.panel_anchor_exact)checkAnchor(step.file,step.panel_anchor_exact,'plate '+step.step+' panel');
+  }
+  const cssOld=bp.build_steps.find(x=>x.step===6).css_replace_exact.split('→')[0].trim();
+  assert(html.includes(cssOld),'DT-06 CSS breakpoint anchor drifted');
+}else{
+  assert(js.includes("const semanticFactory=(twinValid?(twin.machines||[]):[])"));
+  assert(js.includes("const semanticWip=(twinValid?(twin.work_orders||[]):[]).filter(o=>o.status!=='RELEASED')"));
+  assert(html.includes('id="semantic-index-toggle"'));
+  assert(html.includes('@media(max-width:720px)'));
 }
-for(const step of bp.build_steps){
-  if(step.anchor_exact)checkAnchor(step.file,step.anchor_exact,'plate '+step.step);
-  if(step.route_anchor_exact)checkAnchor(step.file,step.route_anchor_exact,'plate '+step.step+' route');
-  if(step.panel_anchor_exact)checkAnchor(step.file,step.panel_anchor_exact,'plate '+step.step+' panel');
-}
-const cssOld=bp.build_steps.find(x=>x.step===6).css_replace_exact.split('→')[0].trim();
-assert(html.includes(cssOld),'DT-06 CSS breakpoint anchor drifted');
-
-for(const legacy of [
-  "const low=(navigator.hardwareConcurrency||4)<=4||innerWidth<720;",
-  "const factoryLimit=low?24:72,visibleFactory=factoryNodes.slice(0,factoryLimit);",
-  "for(const e of (twinValid?(twin.routes||[]):[]).slice(0,low?36:120)){",
-  "const wipOrders=(twinValid?(twin.work_orders||[]):[]).filter(o=>o.status!=='RELEASED').slice(0,low?12:32);",
-  "renderer.setPixelRatio(Math.min(devicePixelRatio||1,low?1.2:1.8))"
-]) assert(js.includes(legacy),'blueprint must be anchored to the current pre-DT06 runtime: '+legacy);
 
 for(const marker of [
   'SELL // THE BUG IS PHILOSOPHICAL',
@@ -104,4 +104,9 @@ const touch=bp.builder_handoff.touch_order;
 assert.deepEqual(touch,['pulse-beam-funnel-hall.js','pulse-beam-funnel-hall.html','tests/factory-twin-mobile-parity-checks.cjs']);
 for(const x of ['factory-twin-core.js','funnel-kernel.js','software-factory-core.js'])assert(bp.builder_handoff.do_not_touch.includes(x));
 
-console.log('PASS: DT-06 REV2 clears the Blueprint SOP bar: sealed v44 verdict, exact live anchors, locked numeric values, claim-level assertions, dramatic Pulse-native presentation, and zero side-conversation decisions.');
+if(runtimeImplemented){
+  require('./funnel-build-loop-checks.cjs');
+  require('./dt06-runtime-funnel-run.cjs');
+  require('./factory-twin-mobile-parity-checks.cjs');
+}
+console.log('PASS: DT-06 REV2 remains a sealed executable Blueprint SOP artifact; when runtime is present, the automated Funnel build loop, separate v44 execution release, and mobile semantic-parity checks also pass.');
