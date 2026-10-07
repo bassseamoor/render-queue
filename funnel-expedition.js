@@ -563,38 +563,7 @@ function getChampionPurposes(){ return _championPurposes; }
 // with exponential decay and kill switch. Prevents permanent champion monopoly.
 let _championWeightDecay = 1.0;
 let _championFeedbackKilled = false;
-function killChampionFeedback(){ _championFeedbackKilled = true; }
-function decayChampionFeedback(factor){ _championWeightDecay *= (factor || 0.9); }
-function getWeightedDimensions(){
-  if (_championFeedbackKilled) return DIMENSIONS;
-  const champ=getChampionPurposes();
-  if(!champ||!champ.winning_dimensions||champ.winning_dimensions.length===0){
-    return DIMENSIONS; // no champion yet, use all
-  }
-  // Weight decays over time: prevents bad feedback from compounding permanently
-  const baseWeight = 3 * _championWeightDecay;
-  const weighted=[];
-  DIMENSIONS.forEach(d=>{
-    const weight=champ.winning_dimensions.includes(d)?Math.max(1, Math.round(baseWeight)):1;
-    for(let i=0;i<weight;i++) weighted.push(d);
-  });
-  recordMetric('champion_feedback_applied');
-  return weighted;
-}
-
-/* V5 PARALLELIZATION: shared evidence pool */
-const _evidencePool=new Map(); // content-hash -> finding
-/* V6 MEASUREMENT: module-level metrics */
-const _metrics={tokens_saved:0, cache_hits:0, cache_misses:0, duplicates_avoided:0, escalations_avoided:0};
-function recordMetric(k,n){ _metrics[k]=(_metrics[k]||0)+(n||1); }
-function shareEvidence(finding){
-  const h=crypto.createHash('sha256').update(JSON.stringify(finding.content)).digest('hex').slice(0,16);
-  if(!_evidencePool.has(h)){
-    _evidencePool.set(h, finding);
-    return true; // new
-  }
-  return false; // duplicate — skip redundant work
-}
+// REMOVED killChampionFeedback (dead code, funnel-decided round 3)
 function getEvidencePoolSize(){ return _evidencePool.size; }
 
 /* GENERATIVE MULTI-PERSPECTIVE QUESTIONS — open-minded, not assumptive.
