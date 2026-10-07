@@ -1,0 +1,263 @@
+{
+  "schema": "moor.build-blueprint",
+  "version": 2,
+  "blueprint_id": "PG-03-REV2",
+  "slice_id": "PG-03",
+  "title": "THE SEED TREE — Stable Semantic Substreams",
+  "pulse_tool": "blueprintpg03",
+  "blueprint_status": "awaiting-v44-seal",
+  "runtime_implementation_authorized": false,
+  "promise": "One root seed can grow an arbitrarily large procedural world without a new sibling reshuffling anything that already exists.",
+  "stakes": "Today MOOR has deterministic streams, but no canonical child-stream address. Without one, composition order can leak into identity and future adapters can invent incompatible naming rules.",
+  "click": "Every procedural branch gets an address, not a turn in a random-number queue: root seed + semantic key parts → one canonical seed string → the existing streamFrom().",
+  "selected_by": {
+    "planner": "scripts/funnel-build-loop.cjs",
+    "evidence": "blueprint-choreography-state.json",
+    "reason": "PG-03 is the current deterministic highest-scoring eligible unfinished slice after verified DT-06."
+  },
+  "parent": {
+    "ref": "blueprint/seeded-procedural-toolchain.blueprint.json",
+    "slice": {
+      "id": "PG-03",
+      "name": "Seed derivation standard",
+      "dependsOn": [
+        "PG-02"
+      ],
+      "deliverable": "Named sub-seed scheme compatible with current seed-rng/codec."
+    }
+  },
+  "existing_machinery": [
+    {
+      "ref": "pulse-dashboard.html",
+      "anchor": "function streamFrom(seedStr) { return mulberry32(hashSeed(seedStr)); }",
+      "use": "Existing FNV-1a → mulberry32 stream remains the RNG. PG-03 does not modify it."
+    },
+    {
+      "ref": "procedural-recipe-core.js",
+      "anchor": "subseed_scheme:String(r.subseed_scheme||'semantic-key-v1')",
+      "use": "PG-02 already carries the scheme identifier; PG-03 makes that identifier executable and validated."
+    },
+    {
+      "ref": "procedural-recipe-schema.json",
+      "anchor": "\"subseed_scheme\"",
+      "use": "Existing recipe contract already requires a scheme field."
+    },
+    {
+      "ref": "procedural-generator-inventory.json",
+      "anchor": "\"generator_id\": \"seed-rng\"",
+      "use": "Current inventory records seed-rng as verified D3 machinery; adapters come later in PG-04."
+    }
+  ],
+  "locked_values": {
+    "scheme": "semantic-key-v1",
+    "prefix": "moor:subseed:v1:",
+    "canonical_seed_formula": "'moor:subseed:v1:' + JSON.stringify([String(root_seed), key_parts.map(String)])",
+    "key_input": "one string or ordered array of semantic key parts",
+    "empty_root": "reject",
+    "empty_key_part": "reject",
+    "rng_owner": "existing streamFrom(seedStr)",
+    "hash_owner": "existing hashSeed(seedStr) / FNV-1a",
+    "recipe_default_scheme": "semantic-key-v1"
+  },
+  "value_rationale": [
+    {
+      "value": "semantic-key-v1",
+      "why": "Already emitted by PG-02 normalizeRecipe(), so standardizing it adds meaning to an existing datum instead of inventing a parallel field."
+    },
+    {
+      "value": "moor:subseed:v1:",
+      "why": "A namespace + explicit version prevents a future derivation algorithm from silently reinterpreting v1 seed strings."
+    },
+    {
+      "value": "JSON.stringify([root, keyParts])",
+      "why": "Array framing is unambiguous: ['ab','c'] and ['a','bc'] serialize differently; punctuation and Unicode remain data instead of delimiters."
+    },
+    {
+      "value": "ordered key parts",
+      "why": "Hierarchy is semantic data. ['terrain','ridge'] is intentionally distinct from ['ridge','terrain']; sibling creation order is absent from the formula."
+    },
+    {
+      "value": "no additional hash",
+      "why": "streamFrom() already owns FNV-1a + mulberry32. Hashing again would create a second RNG contract and hide lineage."
+    },
+    {
+      "value": "reject empty root/key parts",
+      "why": "An empty semantic identity makes accidental unnamed streams indistinguishable from deliberate branches."
+    }
+  ],
+  "contracts": {
+    "SeedSubstreamDescriptor": {
+      "schema": "moor.seed-substream",
+      "version": 1,
+      "fields": [
+        "scheme",
+        "root_seed",
+        "key_parts",
+        "seed_string"
+      ],
+      "invariant": "seed_string depends only on root_seed + ordered semantic key_parts + scheme version; never on sibling count, generation order, wall clock, UI order, or prior draws."
+    },
+    "compatibility": {
+      "input": "descriptor.seed_string",
+      "consumer": "existing streamFrom(seedStr)",
+      "output": "existing deterministic RNG closure",
+      "authority": "none; seed derivation creates no production/Funnel authority"
+    }
+  },
+  "build_steps": [
+    {
+      "step": 1,
+      "title": "Add the semantic-key framing core",
+      "file": "seed-substream-core.js",
+      "operation": "create",
+      "exact_code": "/* MOOR Seed Substream Core v1 — PG-03\n * Names deterministic child streams without owning/replacing the RNG.\n */\n(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.MoorSeedSubstream=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){\n'use strict';\nconst SCHEME='semantic-key-v1';\nconst PREFIX='moor:subseed:v1:';\nfunction copy(x){return x==null?x:JSON.parse(JSON.stringify(x))}\nfunction parts(input){\n  const xs=(Array.isArray(input)?input:[input]).map(x=>String(x==null?'':x));\n  if(!xs.length||xs.some(x=>!x))throw Error('semantic sub-seed key parts must be non-empty strings');\n  return xs;\n}\nfunction describe(rootSeed,keyParts){\n  const root=String(rootSeed==null?'':rootSeed);\n  if(!root)throw Error('root seed required');\n  const keys=parts(keyParts);\n  return {scheme:SCHEME,root_seed:root,key_parts:keys,seed_string:PREFIX+JSON.stringify([root,keys])};\n}\nfunction seed(rootSeed,keyParts){return describe(rootSeed,keyParts).seed_string}\nfunction stream(rootSeed,keyParts,streamFrom){\n  if(typeof streamFrom!=='function')throw Error('streamFrom function required');\n  return streamFrom(seed(rootSeed,keyParts));\n}\nreturn Object.freeze({version:1,scheme:SCHEME,prefix:PREFIX,describe,seed,stream});\n});\n",
+      "done_state": "MoorSeedSubstream exposes version, scheme, prefix, describe(), seed(), and stream(); it owns no RNG algorithm.",
+      "verification": [
+        "require('../seed-substream-core.js').scheme === 'semantic-key-v1'",
+        "seed('alpha',['terrain','ridge']) === 'moor:subseed:v1:[\"alpha\",[\"terrain\",\"ridge\"]]'",
+        "seed('alpha',['ab','c']) !== seed('alpha',['a','bc'])"
+      ]
+    },
+    {
+      "step": 2,
+      "title": "Make ProceduralRecipe fail closed on unknown schemes",
+      "file": "procedural-recipe-core.js",
+      "operation": "patch",
+      "anchor_exact": "'use strict';\\nfunction copy(x)",
+      "insert_exact": "'use strict';\\nconst SUBSEED_SCHEMES=Object.freeze(['semantic-key-v1']);\\nfunction copy(x)",
+      "validation_anchor_exact": "for(const k of ['recipe_id','requested_capability','generator_binding','generator_version','root_seed','subseed_scheme'])if(!r[k])errors.push('missing '+k);",
+      "validation_after_exact": "for(const k of ['recipe_id','requested_capability','generator_binding','generator_version','root_seed','subseed_scheme'])if(!r[k])errors.push('missing '+k);\\n if(r.subseed_scheme&&!SUBSEED_SCHEMES.includes(r.subseed_scheme))errors.push('unsupported subseed_scheme '+r.subseed_scheme);",
+      "export_anchor_exact": "return Object.freeze({version:1,normalizeRecipe,validateRecipe,contentHash,hash});",
+      "export_after_exact": "return Object.freeze({version:1,subseed_schemes:SUBSEED_SCHEMES.slice(),normalizeRecipe,validateRecipe,contentHash,hash});",
+      "done_state": "Recipes still default to semantic-key-v1, but any other non-empty scheme now fails validation instead of silently passing.",
+      "verification": [
+        "Core.subseed_schemes deep-equals ['semantic-key-v1']",
+        "validateRecipe({...recipe,subseed_scheme:'unknown-v9'},inv).errors contains 'unsupported subseed_scheme unknown-v9'"
+      ]
+    },
+    {
+      "step": 3,
+      "title": "Define the scheme as data in the existing procedural contract",
+      "file": "procedural-recipe-schema.json",
+      "operation": "patch-json",
+      "json_path": "contracts.SeedSubstreamScheme",
+      "exact_value": {
+        "schema": "moor.seed-substream-scheme",
+        "version": 1,
+        "id": "semantic-key-v1",
+        "prefix": "moor:subseed:v1:",
+        "formula": "prefix + JSON.stringify([String(root_seed), key_parts.map(String)])",
+        "compatibility": "Pass seed_string to existing streamFrom(seedStr).",
+        "invariants": [
+          "same root_seed + same ordered key_parts => same seed_string",
+          "different semantic key paths => different framed seed_string before RNG hashing",
+          "adding/reordering unrelated sibling branches does not change an existing branch seed_string",
+          "no Date.now(), Math.random(), sequence index, sibling count, prior draw count, or UI order participates"
+        ]
+      },
+      "done_state": "The compact machine-readable schema states exactly how semantic-key-v1 is formed and what is forbidden.",
+      "verification": [
+        "schema.contracts.SeedSubstreamScheme.id === 'semantic-key-v1'",
+        "formula contains JSON.stringify",
+        "invariants explicitly forbid sequence index and prior draw count"
+      ]
+    },
+    {
+      "step": 4,
+      "title": "Prove locality, framing, compatibility and recipe enforcement",
+      "file": "tests/seed-substream-core-checks.cjs",
+      "operation": "create",
+      "required_assertions": [
+        "identical root/key path returns identical seed string",
+        "['ab','c'] differs from ['a','bc']",
+        "Unicode and punctuation round-trip through JSON framing",
+        "terrain branch seed is unchanged before/after adding unrelated vegetation sibling",
+        "different root seed changes seed string",
+        "verbatim reference streamFrom(derivedSeed) gives identical first 16 draws across two runs",
+        "PG-02 recipe validator accepts semantic-key-v1 and rejects unknown-v9",
+        "source contains no Date.now() and no Math.random()"
+      ],
+      "done_state": "One deterministic test demonstrates branch locality and current RNG compatibility without modifying a generator.",
+      "verification": [
+        "node tests/seed-substream-core-checks.cjs exits 0"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "PG03-C1",
+      "claim": "Sibling insertion cannot perturb an existing branch seed.",
+      "assertion": "Compute terrain seed, compute unrelated vegetation seed, recompute terrain seed; strict equality."
+    },
+    {
+      "id": "PG03-C2",
+      "claim": "The framing is structurally unambiguous before hashing.",
+      "assertion": "seed(root,['ab','c']) !== seed(root,['a','bc'])."
+    },
+    {
+      "id": "PG03-C3",
+      "claim": "PG-03 reuses the existing RNG instead of replacing it.",
+      "assertion": "seed-substream-core.js contains no mulberry32/hashSeed implementation and stream() requires injected streamFrom."
+    },
+    {
+      "id": "PG03-C4",
+      "claim": "Recipe scheme identity is enforced.",
+      "assertion": "unknown-v9 fails validateRecipe; semantic-key-v1 passes."
+    },
+    {
+      "id": "PG03-C5",
+      "claim": "Derivation is independent of time and uncontrolled randomness.",
+      "assertion": "seed-substream-core.js contains neither Date.now nor Math.random."
+    },
+    {
+      "id": "PG03-C6",
+      "claim": "PG-03 creates no execution authority.",
+      "assertion": "core exports data/seed helpers only; no Funnel receipt, release, Git, worker, or production mutation method exists."
+    }
+  ],
+  "non_goals": [
+    "Do not modify hashSeed, mulberry32, streamFrom, SeedCodec, or generator algorithms.",
+    "Do not adapt terrain/vegetation/effects/struct generators yet; that is PG-04.",
+    "Do not claim FNV-1a is cryptographic or collision-free; PG-03 prevents semantic framing collisions, not the underlying 32-bit hash's theoretical collisions.",
+    "Do not migrate existing recipes automatically.",
+    "Do not make a seed or recipe an execution/release authority."
+  ],
+  "builder_handoff": {
+    "touch_order": [
+      "seed-substream-core.js",
+      "procedural-recipe-core.js",
+      "procedural-recipe-schema.json",
+      "tests/seed-substream-core-checks.cjs"
+    ],
+    "do_not_touch": [
+      "pulse-dashboard.html",
+      "pulse-tools/tool-shared.js",
+      "funnel-kernel.js",
+      "software-factory-core.js",
+      "wonder-generators.json",
+      "moor-planet-workshop.html",
+      "moor-living-garden.html"
+    ],
+    "required_verification": [
+      "node --check seed-substream-core.js",
+      "node --check procedural-recipe-core.js",
+      "node tests/seed-substream-core-checks.cjs",
+      "node tests/procedural-recipe-core-checks.cjs"
+    ],
+    "stop_on_anchor_drift": true
+  },
+  "acceptance": [
+    "semantic-key-v1 is executable as one canonical framing formula.",
+    "The existing streamFrom/hashSeed/mulberry32 implementation is reused unchanged.",
+    "Sibling insertion/order does not enter the derivation formula.",
+    "ProceduralRecipe rejects unknown sub-seed scheme identifiers.",
+    "Every material claim has an executable assertion.",
+    "No generator adapter or production release is implied by the blueprint."
+  ],
+  "pulse_delivery": {
+    "tool": "blueprintpg03",
+    "owner_link": "pulse-dashboard.html?tool=blueprintpg03",
+    "standalone_owner_links_forbidden": true
+  },
+  "unresolved_decisions": []
+}
