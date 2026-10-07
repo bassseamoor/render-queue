@@ -50,6 +50,14 @@ function materialTargets(raw){
   return uniq(out);
 }
 function referenceQueries(raw){
+  // Semantic-core query generation (retrieval repair 2026-10-07, funnel receipt 5e7551e22f32f22f):
+  // the old first-8-words produced boilerplate ("page production request preserved verbatim...").
+  // Delegate to the shared retrieval module when available; otherwise legacy behavior.
+  const g=typeof globalThis!=='undefined'?globalThis:null;
+  const FRS=(g&&g.FunnelReferenceSearch)||(typeof require==='function'?require('./funnel-reference-search-core.js'):null);
+  if(FRS&&FRS.buildQueriesFromText){
+    return FRS.buildQueriesFromText(raw,{surfaces:detectSurfaces(raw),material_targets:materialTargets(raw),obligation_hints:obligationHints(raw)});
+  }
   const ws=words(raw),qs=[];
   if(ws.length)qs.push(ws.slice(0,8).join(' '));
   obligationHints(raw).slice(0,6).forEach(p=>{

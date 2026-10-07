@@ -257,12 +257,38 @@ function ingestOutput(d){
 function refText(r){
   return [r.title,r.summary,r.kind,r.status,r.source,r.source_id,(r.concepts||[]).join(' '),(r.roles||[]).join(' '),textOf(r.data)].join(' ').toLowerCase();
 }
+var FRS_TAGDATA=null,FRS_TAGFETCH=null;
+function frsEnsureTags(){
+  // Tag-aware scoring needs the for_ai registry. Loaded once, cached; searches before
+  // it arrives degrade gracefully to token-only scoring (legacy behavior).
+  if(FRS_TAGDATA||FRS_TAGFETCH)return;
+  var FRS=(typeof window!=='undefined'&&window.FunnelReferenceSearch)||(typeof globalThis!=='undefined'&&globalThis.FunnelReferenceSearch)||null;
+  if(typeof fetch==='function'){
+    FRS_TAGFETCH=fetch('pulse-tags.json').then(function(r){return r.json();}).then(function(t){
+      FRS_TAGDATA=FRS?FRS.normalizeTags(t):{byFile:{},relations:{}};
+    }).catch(function(){FRS_TAGDATA={byFile:{},relations:{}};});
+  }else{FRS_TAGDATA={byFile:{},relations:{}};}
+}
+function frsTagsForRef(r){
+  var FRS=(typeof window!=='undefined'&&window.FunnelReferenceSearch)||(typeof globalThis!=='undefined'&&globalThis.FunnelReferenceSearch)||null;
+  if(!FRS||!FRS_TAGDATA)return [];
+  return FRS.tagsForFile(FRS_TAGDATA,r.source_id||r.source||'');
+}
 function searchReferences(query,opts){
-  opts=opts||{};var ts=tokens(query), scored=[];
+  opts=opts||{};frsEnsureTags();
+  var FRS=(typeof window!=='undefined'&&window.FunnelReferenceSearch)||(typeof globalThis!=='undefined'&&globalThis.FunnelReferenceSearch)||null;
+  var ts=tokens(query), scored=[];
   S.refs.forEach(function(r,idx){
     if(opts.kinds&&opts.kinds.length&&opts.kinds.indexOf(r.kind)<0)return;
-    var hay=refText(r),score=0;
-    ts.forEach(function(t){if(hay.indexOf(t)>=0)score+=t.length>6?4:2;});
+    var score;
+    if(FRS){
+      // Shared retrieval scorer (2026-10-07, funnel receipt 5e7551e22f32f22f):
+      // token overlap + stemmed matches + curated tag overlap.
+      score=FRS.scoreDoc(ts,{text:refText(r),tags:frsTagsForRef(r)});
+    }else{
+      var hay=refText(r);score=0;
+      ts.forEach(function(t){if(hay.indexOf(t)>=0)score+=t.length>6?4:2;});
+    }
     if(!ts.length)score=1;
     if(score>0){score+=refStatusWeight(r.status)*.2;scored.push({ref:r,score:score,idx:idx});}
   });
