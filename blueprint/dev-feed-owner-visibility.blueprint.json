@@ -1,0 +1,46 @@
+{
+  "schema": "moor.dev-feed-blueprint",
+  "version": 1,
+  "id": "dev-feed-owner-visibility-v1",
+  "page0": "The developer needs a clear feed of what is entering MOOR and what is actually added to the right pipeline because multiple workers/chats operate in parallel and the developer cannot perfectly remember everything. Keep the presentation extremely simple: timestamped text feeds for different trackers, click an event for receipts, evidence, statistics, artifacts, or a place to review the work.",
+  "objective": "Create a read-only, low-noise owner HMI in Pulse that composes append-only worker events and existing repository trackers into multiple timestamped text streams, making semantic pipeline progress and visibility gaps obvious without turning the feed into project-management software.",
+  "architecture": {
+    "surface": "dev-feed.html",
+    "event_core": "dev-feed-core.js",
+    "bootstrap_ledger": "dev-feed-ledger.json",
+    "parallel_event_contract": "dev-feed/event-schema.json",
+    "event_directory": "dev-feed/events/",
+    "live_sources": [
+      "append-only dev-feed event receipts",
+      "GitHub pull requests and commits",
+      "pulse-slice-release-ledger.json",
+      "funnel-maintenance-status.json",
+      "Pulse manifest/component registry",
+      "linked Funnel receipts, blueprints and CI evidence"
+    ],
+    "streams": [
+      "Intake — requested / Funnel / blueprint",
+      "Build — building / verification",
+      "Release — Pulse / main / owner-visible",
+      "Attention — gaps / blocked / failed",
+      "Repository — live PR and commit activity"
+    ]
+  },
+  "owner_visibility_rule": "Technical completion and owner visibility are separate states. A change is owner-visible only when the developer can locate it from Dev Feed or its explicitly named canonical destination and follow evidence links.",
+  "worker_rule": "Every future material build/change should emit unique append-only Dev Feed event receipts at meaningful state transitions. Repository activity remains an independent source of truth and can expose missing semantic events.",
+  "done_criteria": [
+    "Developer can see timestamped events in multiple clean streams.",
+    "Clicking an event exposes source, worker, stage, destination, details, evidence/receipt refs and available statistics.",
+    "Parallel workers can add events without editing one shared append-only file.",
+    "GitHub PR/commit activity appears independently so silent worker omissions remain detectable.",
+    "Feed flags artifact-exists-not-in-Pulse and merged-not-owner-visible gaps.",
+    "Trajectory is registered in Pulse so the known visibility gap is repaired.",
+    "Dev Feed itself is registered and preserved across Pulse rebuilds.",
+    "The sealed Funnel verifies the Dev Feed blueprint before execution."
+  ],
+  "honest_limits": [
+    "Browser GitHub API polling is near-real-time, not push/WebSocket streaming.",
+    "A worker that never creates a semantic event can still appear through repository activity after it opens a PR or pushes/merges, but pre-repository private chat work cannot be observed automatically.",
+    "Dev Feed is read-only observability; it does not grant build/release authority."
+  ]
+}
