@@ -20,6 +20,7 @@ kernel.open({request_id:requestId,input:page0,source:'sebastian-chat',context:{
   target:'blueprint/funnel-law-ultra.blueprint.json',
   pulse_destination:'funnel-fabric'
 }});
+kernel.advance({request_id:requestId,stage:'usage_plan',provenance:'system',payload:{plan:kernel.makeUsagePlan(page0,{page:'Ultra Funnel Law meta-run',source:'sebastian-chat'},{decomposition_plan:{parallelize_independent_surfaces:true,surfaces:['secure-core','elastic-society','receipts','capabilities','budgets','promotion','pulse-integration'],preserve_shared_page0:true,reunify_before_blueprint:true,expected_mode:'blueprint-then-build'},execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'blueprint/funnel-law-ultra.blueprint.json',reuse_before_new:true}})}});
 
 for(const ref of [
   ['fabric','Recursive Funnel Fabric establishes child cases, solver swarms, resource budgets and Foundry topology.'],
