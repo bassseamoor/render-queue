@@ -243,8 +243,10 @@ function runMatchFunnel(candidateA, candidateB, page0, matchId){
   },provenance:'inferred'});
 
   // Evidence-based selection. Terminal tie falls back to positional (labeled as arbitrary).
-  const scoreA=candidateA.evidence.length*10 - candidateA.unresolved.length*3;
-  const scoreB=candidateB.evidence.length*10 - candidateB.unresolved.length*3;
+  // FIXED iter1: quality-weighted scoring (not count-based)
+  const quality = (c) => c.evidence.filter(e => e.provenance || e.quality_score).length * 10 + c.evidence.length * 2 - c.unresolved.length * 5;
+  const scoreA = quality(candidateA);
+  const scoreB = quality(candidateB);
   let winner, loser, reason;
   if(scoreA>scoreB){ winner=candidateA; loser=candidateB; reason=`evidence ${scoreA} > ${scoreB}`; }
   else if(scoreB>scoreA){ winner=candidateB; loser=candidateA; reason=`evidence ${scoreB} > ${scoreA}`; }
