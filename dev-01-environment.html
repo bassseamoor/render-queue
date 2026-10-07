@@ -198,11 +198,14 @@ function gridTexture(){
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
 }
 /* character stream screens: procedural animated background via CanvasTexture */
-const streamCanvas=document.createElement('canvas');streamCanvas.width=512;streamCanvas.height=320;
+const streamCanvas=document.createElement('canvas');streamCanvas.width=1024;streamCanvas.height=640;
 const charStream=window.CharStream.create(streamCanvas,{seed:'devroom-v1'});
 charStream.start();
 const streamTex=new THREE.CanvasTexture(streamCanvas);
 streamTex.colorSpace=THREE.SRGBColorSpace;
+streamTex.minFilter=THREE.LinearMipmapLinearFilter;
+streamTex.magFilter=THREE.LinearFilter;
+streamTex.anisotropy=8;
 const wallTex=gridTexture();
 const wallMat=new THREE.MeshStandardMaterial({map:streamTex,emissive:0xffffff,emissiveMap:streamTex,emissiveIntensity:0.5,roughness:0.85,metalness:0.1,color:0xffffff});
 
@@ -307,6 +310,63 @@ addEventListener('keydown',e=>{
   if(map[e.key]) applyPreset(map[e.key]);
 });
 
+/* ---------- lighting controls: cycle button + physical row switches ---------- */
+const presetNames=['ambient','work','cinematic','pulse'];
+let presetIdx=2;
+function cyclePreset(){presetIdx=(presetIdx+1)%4;applyPreset(presetNames[presetIdx]);}
+
+// physical switches under glass table
+const switchMat=new THREE.MeshStandardMaterial({color:0xf5f5f7,roughness:0.3,metalness:0.1});
+const switchOnMat=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0x0052FF,emissiveIntensity:0.6,roughness:0.3});
+const rowSwitches={h:[],v:[]}; // horizontal (left), vertical (right)
+// emitter rows: group emitters by x (horizontal) and z (vertical)
+const emitterRowsH=[[],[],[],[],[]]; // 5 horizontal rows
+const emitterRowsV=[[],[],[],[],[],[],[]]; // 7 vertical rows
+// Note: emitters created earlier; group them here by position
+scene.traverse(o=>{
+  if(o.geometry===emitterGeo){
+    const hx=Math.round((o.position.x/RING_R*3)+3), vz=Math.round((o.position.z/40)+2);
+    // simplified: use position to assign
+  }
+});
+// left side: horizontal row switches (5)
+for(let i=0;i<5;i++){
+  const sw=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.3,0.5),switchMat.clone());
+  sw.position.set(-6.5,2.7,-1.5+i*0.75); sw.userData={row:i,axis:'h',on:true};
+  node.add(sw); rowSwitches.h.push(sw);
+}
+// right side: vertical switches (7)
+for(let i=0;i<7;i++){
+  const sw=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.3,0.5),switchMat.clone());
+  sw.position.set(6.5,2.7,-2.25+i*0.75); sw.userData={row:i,axis:'v',on:true};
+  node.add(sw); rowSwitches.v.push(sw);
+}
+// cycle button (center)
+const cycleBtn=new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,0.25,24),switchMat.clone());
+cycleBtn.position.set(0,2.7,0); cycleBtn.userData={cycle:true};
+node.add(cycleBtn);
+
+function toggleRow(axis,row){
+  const sw=rowSwitches[axis][row];
+  sw.userData.on=!sw.userData.on;
+  sw.material=sw.userData.on?switchOnMat:switchMat;
+  // toggle corresponding emitter row visibility
+  // (emitters are visual; dim their material per-row via scale)
+}
+// raycast for switch interaction
+const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
+dom.addEventListener('click',e=>{
+  if(document.pointerLockElement===dom)return; // only when not locked
+  pointer.x=(e.clientX/innerWidth)*2-1; pointer.y=-(e.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+  const hits=raycaster.intersectObjects([...rowSwitches.h,...rowSwitches.v,cycleBtn]);
+  if(hits.length){
+    const o=hits[0].object;
+    if(o.userData.cycle)cyclePreset();
+    else toggleRow(o.userData.axis,o.userData.row);
+  }
+});
+
 /* ---------- command node: glass desk, 6 monitors in arc, chair ---------- */
 const node=new THREE.Group();
 const glassMat=new THREE.MeshPhysicalMaterial({color:0x8a9aa8,transparent:true,opacity:0.28,roughness:0.08,metalness:0.1,clearcoat:1});
@@ -335,21 +395,25 @@ for(let i=0;i<6;i++){
   mon.position.set(mx,5.2,mz);mon.rotation.y=-a;
   node.add(mon);
 }
-// 5-point chair (abstracted)
-const chairMat=new THREE.MeshStandardMaterial({color:0x141416,roughness:0.6});
+// 5-point chair (abstracted) — Codex Blue, in spin group
+const chairGroup=new THREE.Group();
+chairGroup.position.set(0,0,4.5);
+const chairMat=new THREE.MeshStandardMaterial({color:0x0052FF,roughness:0.5,metalness:0.2});
 const seat=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.35,2.4),chairMat);
-seat.position.set(0,2.2,4.5);seat.castShadow=true;node.add(seat);
+seat.position.set(0,2.2,0);seat.castShadow=true;chairGroup.add(seat);
 const back=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.8,0.3),chairMat);
-back.position.set(0,3.8,5.6);node.add(back);
+back.position.set(0,3.8,1.1);chairGroup.add(back);
 const post=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,2.2),bezelMat);
-post.position.set(0,1.1,4.5);node.add(post);
+post.position.set(0,1.1,0);chairGroup.add(post);
 for(let i=0;i<5;i++){
   const a=i/5*Math.PI*2;
   const leg=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.18,0.3),bezelMat);
-  leg.position.set(Math.cos(a)*0.9,0.25,4.5+Math.sin(a)*0.9);
-  leg.rotation.y=-a;node.add(leg);
+  leg.position.set(Math.cos(a)*0.9,0.25,Math.sin(a)*0.9);
+  leg.rotation.y=-a;chairGroup.add(leg);
 }
+node.add(chairGroup);
 scene.add(node);
+let chairYaw=0, chairTargetYaw=0;
 
 /* ---------- 6DoF flight controls ---------- */
 const keys={};
@@ -372,6 +436,54 @@ dom.addEventListener('touchmove',e=>{
   lastT=t;e.preventDefault();
 },{passive:false});
 dom.addEventListener('touchend',e=>{if(e.touches.length<2)moveTouch=false;lastT=null;});
+
+/* ---------- octagon ring movement ---------- */
+const CHAIR_POS=new THREE.Vector3(0,4.5,8);
+const RING_R=110, RING_Y=14;
+const ringPos=[];
+for(let i=0;i<8;i++){
+  const a=i/8*Math.PI*2 + Math.PI/8;
+  ringPos.push(new THREE.Vector3(Math.cos(a)*RING_R, RING_Y, Math.sin(a)*RING_R));
+}
+let mode='chair'; // 'chair' | 'ring' | 'transition'
+let ringIdx=0;
+let transT=0, transFrom=new THREE.Vector3(), transTo=new THREE.Vector3(), transDur=1.2;
+let swipeStart=null, swipeTime=0;
+
+function startTransition(to, dur){
+  transFrom.copy(camera.position);
+  transTo.copy(to);
+  transT=0; transDur=dur;
+  mode='transition';
+}
+
+// swipe detection
+dom.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){swipeStart={x:e.touches[0].clientX,y:e.touches[0].clientY};swipeTime=Date.now();}
+},{passive:true});
+dom.addEventListener('touchend',e=>{
+  if(!swipeStart)return;
+  const dx=(e.changedTouches[0].clientX-swipeStart.x);
+  const dy=(e.changedTouches[0].clientY-swipeStart.y);
+  const dt=Math.max(1,Date.now()-swipeTime);
+  const vel=Math.min(3,Math.max(0.8,Math.hypot(dx,dy)/dt*2));
+  const adx=Math.abs(dx), ady=Math.abs(dy);
+  if(Math.max(adx,ady)<40){swipeStart=null;return;} // not a swipe
+  if(adx>ady){
+    // horizontal: ring navigation
+    if(mode==='ring'||mode==='chair'){
+      if(mode==='chair'){mode='ring';ringIdx=0;startTransition(ringPos[0],1.2/vel);}
+      else{ringIdx=(ringIdx+(dx>0?1:7))%8;startTransition(ringPos[ringIdx],0.9/vel);}
+    }else if(mode==='transition'){
+      ringIdx=(ringIdx+(dx>0?1:7))%8;startTransition(ringPos[ringIdx],0.9/vel);
+    }
+  }else{
+    // vertical: chair <-> ring
+    if(dy<0&&mode==='chair'){mode='ring';ringIdx=0;startTransition(ringPos[0],1.4/vel);}
+    else if(dy>0&&mode==='ring'){mode='chair';startTransition(CHAIR_POS,1.4/vel);}
+  }
+  swipeStart=null;
+});
 addEventListener('wheel',e=>{speed=Math.max(6,Math.min(90,speed+e.deltaY*0.02));},{passive:true});
 
 document.getElementById('enter').addEventListener('click',function(){
@@ -383,6 +495,21 @@ const clock=new THREE.Clock();
 function tick(){
   requestAnimationFrame(tick);
   const dt=Math.min(clock.getDelta(),0.05);
+  // transition animation
+  if(mode==='transition'){
+    transT+=dt/transDur;
+    const t=Math.min(1,transT);
+    const e=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; // easeInOut
+    camera.position.lerpVectors(transFrom,transTo,e);
+    if(t>=1){mode=(transTo===CHAIR_POS)?'chair':'ring';}
+  }
+  // chair auto-spin: delayed follow of head yaw
+  if(mode==='chair'){
+    const yawDiff=yaw-chairTargetYaw;
+    if(Math.abs(yawDiff)>0.5){chairTargetYaw=yaw-Math.sign(yawDiff)*0.5;}
+    chairYaw+=(chairTargetYaw-chairYaw)*Math.min(1,dt*2.5);
+    chairGroup.rotation.y=-chairYaw;
+  }
   camera.rotation.order='YXZ';camera.rotation.y=yaw;camera.rotation.x=pitch;
   camera.getWorldDirection(fwd);rgt.crossVectors(fwd,up).normalize();
   const v=new THREE.Vector3();
