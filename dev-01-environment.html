@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>DEV-01 — The Empty Cathedral · Live Environment</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#050505}
+  body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,sans-serif;color:#e8e4da}
+  #app{position:fixed;inset:0}
+  canvas{display:block}
+  #hud{position:fixed;left:16px;top:14px;z-index:10;pointer-events:none}
+  #hud .t{font-size:13px;letter-spacing:.18em;color:#c9c2b4}
+  #hud .s{font-size:11px;color:#6b655a;margin-top:4px;letter-spacing:.06em}
+  #hint{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:10;
+    font-size:11px;color:#8a8478;background:rgba(10,10,10,.55);padding:8px 14px;border-radius:99px;
+    border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(8px);pointer-events:none;white-space:nowrap}
+  #enter{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 40%,#0d0d0f 0,#050505 70%);cursor:pointer}
+  #enter .box{text-align:center}
+  #enter h1{font-size:22px;letter-spacing:.28em;color:#e8e4da;font-weight:600}
+  #enter p{font-size:12px;color:#8a8478;margin-top:12px;letter-spacing:.08em}
+  #enter .go{margin-top:22px;display:inline-block;font-size:13px;letter-spacing:.2em;color:#e8c87a;
+    border:1px solid rgba(232,200,122,.35);padding:12px 28px;border-radius:99px}
+</style>
+<script type="importmap">{"imports":{"three":"./three.module.js"}}</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud"><div class="t">DEV-01 · THE EMPTY CATHEDRAL</div><div class="s">320 × 180 × 90 FT — FLY THE VOLUME</div></div>
+<div id="hint">WASD move · mouse look · drag on touch · scroll = speed</div>
+<div id="enter"><div class="box"><h1>THE EMPTY CATHEDRAL</h1><p>BLUEPRINT DEV-01 · REV 8 — LIVE ENVIRONMENT</p><span class="go">ENTER</span></div></div>
+<script type="module">
+import * as THREE from 'three';
+
+/* 1 unit = 1 foot. 320 x 180 x 90 ft, column-free. */
+const W=320, D=180, H=90;
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.1;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x050505);
+scene.fog=new THREE.FogExp2(0x050505,0.0035);
+
+const camera=new THREE.PerspectiveCamera(68,innerWidth/innerHeight,0.5,1200);
+camera.position.set(0,12,-120);
+
+/* ---------- display membrane walls (seamless screens, faint grid when idle) ---------- */
+function gridTexture(){
+  const c=document.createElement('canvas');c.width=c.height=512;
+  const g=c.getContext('2d');
+  g.fillStyle='#0a0a0c';g.fillRect(0,0,512,512);
+  g.strokeStyle='rgba(140,160,190,0.10)';g.lineWidth=1;
+  for(let i=0;i<=512;i+=64){g.beginPath();g.moveTo(i,0);g.lineTo(i,512);g.stroke();g.beginPath();g.moveTo(0,i);g.lineTo(512,i);g.stroke();}
+  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
+}
+const wallTex=gridTexture();
+const wallMat=new THREE.MeshStandardMaterial({map:wallTex,emissive:0x1a2030,emissiveMap:wallTex,emissiveIntensity:0.55,roughness:0.85,metalness:0.1,color:0xffffff});
+wallTex.repeat.set(10,3);
+
+function wall(w,h,px,py,pz,ry){
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),wallMat.clone());
+  m.material.map=wallTex.clone();m.material.map.needsUpdate=true;
+  m.material.map.repeat.set(w/32,h/32);
+  m.material.emissiveMap=m.material.map;
+  m.position.set(px,py,pz);m.rotation.y=ry;m.receiveShadow=true;scene.add(m);return m;
+}
+wall(W,H, 0,H/2,-D/2, 0);
+wall(W,H, 0,H/2, D/2, Math.PI);
+wall(D,H, -W/2,H/2,0, Math.PI/2);
+wall(D,H,  W/2,H/2,0,-Math.PI/2);
+
+/* ---------- floor: dark polished, subtle reflection ---------- */
+const floor=new THREE.Mesh(
+  new THREE.PlaneGeometry(W,D),
+  new THREE.MeshStandardMaterial({color:0x0c0c0e,roughness:0.32,metalness:0.65})
+);
+floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+
+/* ---------- ceiling: studio plane at 84 ft, 6 ft void above ---------- */
+const ceil=new THREE.Mesh(
+  new THREE.PlaneGeometry(W,D),
+  new THREE.MeshStandardMaterial({color:0x111114,roughness:0.9,metalness:0.05})
+);
+ceil.rotation.x=Math.PI/2;ceil.position.y=84;scene.add(ceil);
+
+/* truss rigging (simple, dark) */
+const trussMat=new THREE.MeshStandardMaterial({color:0x1a1a1c,roughness:0.7,metalness:0.5});
+for(let x=-140;x<=140;x+=40){
+  const truss=new THREE.Mesh(new THREE.BoxGeometry(2,2,D),trussMat);
+  truss.position.set(x,82,0);scene.add(truss);
+}
+for(let z=-70;z<=70;z+=35){
+  const beam=new THREE.Mesh(new THREE.BoxGeometry(W,1.5,1.5),trussMat);
+  beam.position.set(0,82,z);scene.add(beam);
+}
+
+/* ---------- lighting: cinematic pools of warm light in darkness ---------- */
+scene.add(new THREE.AmbientLight(0x1a1a22,0.5));
+
+function warmPool(x,z,intensity=900){
+  const s=new THREE.SpotLight(0xffc98a,intensity,120,Math.PI/5,0.45,1.6);
+  s.position.set(x,80,z);
+  s.target.position.set(x,0,z);
+  s.castShadow=true;s.shadow.mapSize.set(1024,1024);
+  scene.add(s);scene.add(s.target);
+  // visible fixture
+  const fix=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.8,2.5,12),
+    new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.4,metalness:0.8}));
+  fix.position.set(x,80,z);scene.add(fix);
+}
+warmPool(0,0,1200);       // command node
+warmPool(-80,-40,700); warmPool(80,-40,700);
+warmPool(-80,40,700);  warmPool(80,40,700);
+warmPool(0,-70,500);   warmPool(0,70,500);
+
+/* cool rim from the membrane */
+const rim=new THREE.DirectionalLight(0x4a5a78,0.35);
+rim.position.set(0,40,-100);scene.add(rim);
+
+/* ---------- command node: glass desk, 6 monitors in arc, chair ---------- */
+const node=new THREE.Group();
+const glassMat=new THREE.MeshPhysicalMaterial({color:0x8a9aa8,transparent:true,opacity:0.28,roughness:0.08,metalness:0.1,clearcoat:1});
+const desk=new THREE.Mesh(new THREE.BoxGeometry(14,0.4,5),glassMat);
+desk.position.y=3;desk.castShadow=true;node.add(desk);
+// desk legs
+[[-6,-2],[6,-2],[-6,2],[6,2]].forEach(([x,z])=>{
+  const leg=new THREE.Mesh(new THREE.BoxGeometry(0.5,3,0.5),
+    new THREE.MeshStandardMaterial({color:0x1a1a1c,roughness:0.4,metalness:0.8}));
+  leg.position.set(x,1.5,z);node.add(leg);
+});
+// 6 monitors in a slight arc, blank (powered on, displaying nothing)
+const screenMat=new THREE.MeshStandardMaterial({color:0x05070a,emissive:0x0d1420,emissiveIntensity:0.7,roughness:0.25});
+const bezelMat=new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.5,metalness:0.6});
+for(let i=0;i<6;i++){
+  const a=(i-2.5)*0.28; // arc
+  const mx=Math.sin(a)*9, mz=-Math.cos(a)*9+2;
+  const mon=new THREE.Group();
+  const bezel=new THREE.Mesh(new THREE.BoxGeometry(4.4,2.6,0.25),bezelMat);
+  bezel.castShadow=true;mon.add(bezel);
+  const scr=new THREE.Mesh(new THREE.PlaneGeometry(4.1,2.3),screenMat);
+  scr.position.z=0.14;mon.add(scr);
+  const stand=new THREE.Mesh(new THREE.BoxGeometry(0.4,1.6,0.4),bezelMat);
+  stand.position.y=-2;mon.add(stand);
+  mon.position.set(mx,5.2,mz);mon.rotation.y=-a;
+  node.add(mon);
+}
+// 5-point chair (abstracted)
+const chairMat=new THREE.MeshStandardMaterial({color:0x141416,roughness:0.6});
+const seat=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.35,2.4),chairMat);
+seat.position.set(0,2.2,4.5);seat.castShadow=true;node.add(seat);
+const back=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.8,0.3),chairMat);
+back.position.set(0,3.8,5.6);node.add(back);
+const post=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,2.2),bezelMat);
+post.position.set(0,1.1,4.5);node.add(post);
+for(let i=0;i<5;i++){
+  const a=i/5*Math.PI*2;
+  const leg=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.18,0.3),bezelMat);
+  leg.position.set(Math.cos(a)*0.9,0.25,4.5+Math.sin(a)*0.9);
+  leg.rotation.y=-a;node.add(leg);
+}
+scene.add(node);
+
+/* ---------- perimeter alcoves: glowing tool bays ---------- */
+const bayColors=[0xffb86b,0x7dd8d8,0xe88ca0,0x9fc6e8,0xc4a9e8,0xe8c87a];
+for(let i=0;i<12;i++){
+  const a=i/12*Math.PI*2;
+  const bx=Math.cos(a)*(W/2-8), bz=Math.sin(a)*(D/2-8);
+  const bay=new THREE.Mesh(new THREE.BoxGeometry(10,14,1.5),
+    new THREE.MeshStandardMaterial({color:0x0a0a0c,emissive:bayColors[i%6],emissiveIntensity:0.28,roughness:0.7}));
+  bay.position.set(bx,7,bz);bay.lookAt(0,7,0);scene.add(bay);
+}
+
+/* ---------- 6DoF flight controls ---------- */
+const keys={};
+addEventListener('keydown',e=>keys[e.code]=true);
+addEventListener('keyup',e=>keys[e.code]=false);
+let yaw=0,pitch=0,speed=28;
+const dom=renderer.domElement;
+dom.addEventListener('mousemove',e=>{
+  if(document.pointerLockElement!==dom)return;
+  yaw-=e.movementX*0.0022;pitch-=e.movementY*0.0022;
+  pitch=Math.max(-1.45,Math.min(1.45,pitch));
+});
+dom.addEventListener('click',()=>{if(document.pointerLockElement!==dom)dom.requestPointerLock();});
+// touch: drag to look, two-finger or on-screen to move — simple: drag looks, auto drift forward while touching with second finger
+let lastT=null,moveTouch=false;
+dom.addEventListener('touchstart',e=>{if(e.touches.length===2)moveTouch=true;lastT=e.touches[0];},{passive:true});
+dom.addEventListener('touchmove',e=>{
+  const t=e.touches[0];
+  if(lastT){yaw-=(t.clientX-lastT.clientX)*0.005;pitch-=(t.clientY-lastT.clientY)*0.005;pitch=Math.max(-1.45,Math.min(1.45,pitch));}
+  lastT=t;e.preventDefault();
+},{passive:false});
+dom.addEventListener('touchend',e=>{if(e.touches.length<2)moveTouch=false;lastT=null;});
+addEventListener('wheel',e=>{speed=Math.max(6,Math.min(90,speed+e.deltaY*0.02));},{passive:true});
+
+document.getElementById('enter').addEventListener('click',function(){
+  this.style.display='none';dom.requestPointerLock();
+});
+
+const fwd=new THREE.Vector3(),rgt=new THREE.Vector3(),up=new THREE.Vector3(0,1,0);
+const clock=new THREE.Clock();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=Math.min(clock.getDelta(),0.05);
+  camera.rotation.order='YXZ';camera.rotation.y=yaw;camera.rotation.x=pitch;
+  camera.getWorldDirection(fwd);rgt.crossVectors(fwd,up).normalize();
+  const v=new THREE.Vector3();
+  if(keys.KeyW||moveTouch)v.add(fwd);
+  if(keys.KeyS)v.sub(fwd);
+  if(keys.KeyA)v.sub(rgt);
+  if(keys.KeyD)v.add(rgt);
+  if(keys.KeyE||keys.Space)v.y+=1;
+  if(keys.KeyQ||keys.ShiftLeft)v.y-=1;
+  if(v.lengthSq()>0){v.normalize().multiplyScalar(speed*dt);camera.position.add(v);}
+  // soft bounds
+  camera.position.x=Math.max(-W/2+4,Math.min(W/2-4,camera.position.x));
+  camera.position.z=Math.max(-D/2+4,Math.min(D/2-4,camera.position.z));
+  camera.position.y=Math.max(2,Math.min(H-4,camera.position.y));
+  renderer.render(scene,camera);
+}
+tick();
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
