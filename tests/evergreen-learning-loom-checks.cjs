@@ -18,7 +18,8 @@ const done=L.complete(a,2,'2026-10-06T12:00:00Z');
 assert(new Date(done.next_review)>new Date(done.completed_at),'completion must schedule later retrieval');
 
 assert.throws(()=>L.contribution({thread_id:a.thread_id,concept_id:a.concept_id,learner_text:'private thought',consent_scope:'local-private'}),/Explicit non-private contribution scope required/);
-const cap=L.contribution({thread_id:a.thread_id,concept_id:a.concept_id,learner_text:'A useful explicit contribution',consent_scope:'pulse-contribution'});
+assert.throws(()=>L.contribution({thread_id:a.thread_id,concept_id:a.concept_id,learner_text:'A useful explicit contribution',consent_scope:'pulse-contribution'}),/confirmation/);
+const cap=L.contribution({thread_id:a.thread_id,concept_id:a.concept_id,learner_text:'A useful explicit contribution',consent_scope:'pulse-contribution',confirm:true,sensitive_excluded:true});
 assert.equal(cap.training_eligibility,true);
 assert.equal(cap.provenance,'explicit-learner-contribution');
 assert.equal(cap.sensitive_excluded,true);
@@ -31,6 +32,7 @@ const html=fs.readFileSync('pulse-learning-loom.html','utf8');
 assert(html.includes('Finite by design.'));
 assert(html.includes('Private by default.'));
 assert(html.includes('Contribute this exact text'));
+assert(html.includes('contribConfirm'));
 assert(html.includes("type:'moor:output'"));
 assert(html.includes('schedule review'));
 const ext=fs.readFileSync('pulse-component-extensions.js','utf8');
