@@ -1,0 +1,1 @@
+(function(){window.PulseTools=window.PulseTools||{};window.PulseTools['comp-bpv3']={id:'comp-bpv3',title:'Blueprint v3: Nine Multipliers',page:'https://bassseamoor.github.io/render-queue/blueprint-v3.html',description:'9 multipliers implemented. Infinite accumulation, finite authority.',open(){window.open(this.page,'_blank');}};})();
