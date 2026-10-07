@@ -252,6 +252,24 @@ for c in comps:
 # Platform-level items that must survive every dashboard rebuild. These are not
 # derived from the legacy COMPS inventory, so regeneration must add them explicitly.
 PRESERVED_PLATFORM_ITEMS = {
+    'funnel-usage-plan': {
+        'label': 'Funnel Usage Plan', 'file': 'funnel-usage-plan-core.js',
+        'component': 'Funnel Usage Plan v2',
+        'component_source': 'FUNNEL.md',
+        'page': 'pulse-dashboard.html',
+        'depends_on': ['funnel-kernel.js','funnel-law-core.js'],
+        'tags': ['cat:system','cat:compdata','kind:funnel-law','prov:verified','src:FUNNEL.md'],
+        'honest_limits': 'Derives and locks the request-specific operating plan before References; it does not answer material questions or authorize execution.'
+    },
+    'evergreen-learning-loom': {
+        'label': 'EVERGREEN Learning Loom', 'file': 'moor-learning-loom.js',
+        'component': 'EVERGREEN Learning Loom v1',
+        'component_source': 'blueprint/evergreen-learning-loom.blueprint.json',
+        'page': 'pulse-learning-loom.html',
+        'depends_on': ['pulse-spine.js','funnel-kernel.js','funnel-usage-plan-core.js'],
+        'tags': ['cat:creation','cat:compdata','kind:learning-system','prov:funnel-planned','src:blueprint/evergreen-learning-loom.blueprint.json'],
+        'honest_limits': 'Curated deterministic curriculum. Cross-field bridges are learning analogies. Private notes remain local; only explicitly reviewed contributions enter Pulse as candidate evidence.'
+    },
     'dev-feed': {
         'label': 'MOOR Dev Feed', 'file': 'dev-feed-core.js',
         'component': 'MOOR Dev Feed v1',

@@ -9,8 +9,12 @@ let s=K.open({request_id:'r1',input,source:'test',context:{page:'pulse-dashboard
 assert.equal(s.stage,'page0');
 assert.equal(s.page0,input);
 assert.throws(()=>K.open({request_id:'r1',input:'different request'}),/immutable/);
-assert.throws(()=>K.advance({request_id:'r1',stage:'distill',payload:{spec_draft:'x'}}),/Expected references/);
-
+assert.throws(()=>K.advance({request_id:'r1',stage:'distill',payload:{spec_draft:'x'}}),/Expected usage_plan/);
+const plan=K.makeUsagePlan(input,{page:'pulse-dashboard.html'});
+assert.equal(plan.schema,'moor.funnel-usage-plan');
+s=K.advance({request_id:'r1',stage:'usage_plan',payload:{plan},provenance:'system'});
+assert.equal(s.stage,'usage_plan');
+assert(s.usage_plan&&s.usage_plan.reference_plan.inspect_existing_first);
 s=K.advance({request_id:'r1',stage:'references',payload:{reused:[],missing:[]},provenance:'learned'});
 assert.equal(s.stage,'references');
 K.write({request_id:'r1',kind:'evidence',value:{note:'router inspected'},provenance:'verified'});
@@ -41,6 +45,8 @@ s=K.advance({request_id:'r1',stage:'verdict',payload:{
 assert.equal(s.stage,'verdict');
 assert(s.receipt);
 assert.equal(K.verifyReceipt(s.receipt),true);
+assert.equal(s.receipt.usage_plan_hash,s.stages.usage_plan.plan_hash);
+assert.equal(s.receipt.funnel_revision,'usage-plan-1');
 const packet=K.executionPacket(s.receipt);
 assert.equal(packet.destination,'app-compiler-harness');
 assert.equal(packet.spec.obligations.length,obs.length);
@@ -62,4 +68,6 @@ assert(!request.includes('arg.resolved'),'Caller-declared resolved execution byp
 assert(dash.indexOf('funnel-kernel.js')>=0&&dash.indexOf('funnel-kernel.js')<dash.indexOf('moor-request.js'),'Kernel must load before request router');
 assert(contract.includes('v44-sealed'));
 assert(contract.includes('BUSTER.md'));
-console.log('PASS: sealed Funnel state order, immutable Page 0, source-backed replay, receipt gate, receipt staleness, and router anti-bypass guards');
+assert(contract.includes('Funnel Usage Plan law'));
+assert(contract.includes('funnel-usage-plan-core.js'));
+console.log('PASS: sealed Funnel usage-plan stage, immutable Page 0, source-backed replay, plan-bound receipt gate, receipt staleness, and router anti-bypass guards');

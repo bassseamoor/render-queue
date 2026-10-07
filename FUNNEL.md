@@ -13,19 +13,36 @@ Models may submit language and evidence through the Funnel doorway. They may not
 ## Mandatory path
 
 1. **Page 0** — freeze the user's original request verbatim.
-2. **References** — reuse known locked answers, Bin references, verified implementations, corrections, and failures.
-3. **Distill** — convert the request into a precise candidate specification without deleting Page 0.
-4. **Decisions** — lock material choices. Unresolved material decisions block execution.
-5. **Replay** — compare the candidate back against immutable Page 0. Every explicit obligation must be satisfied or explicitly deferred with owner approval. Silent substitution is forbidden.
-6. **Verdict** — emit only:
+2. **Usage Plan** — before solving the request, lock how this specific Funnel run will use the Funnel: reference search, material-question strategy, decomposition/parallelism, execution destination, verification, rerun triggers, and output/provenance policy. The plan is bound to Page 0 and travels in the receipt.
+3. **References** — execute the usage plan's reuse-first search across known locked answers, Bin references, verified implementations, corrections, failures, and cumulative machinery.
+4. **Distill** — convert the request into a precise candidate specification without deleting Page 0.
+5. **Decisions** — lock material choices. Unresolved material decisions block execution.
+6. **Replay** — compare the candidate back against immutable Page 0 and the usage plan. Every explicit obligation must be satisfied or explicitly deferred with owner approval. Silent substitution is forbidden.
+7. **Verdict** — emit only:
    - spec
    - destination
    - done criteria
-7. **Receipt** — the kernel binds the verdict to Page 0 and the append-only ledger.
-8. **Harness** — executes only a verdict carrying a receipt that the kernel verifies.
-9. **Verifier** — proves the requested path. Failures are written back as evidence.
+8. **Receipt** — the kernel binds the verdict to Page 0, the Usage Plan, and the append-only ledger.
+9. **Harness** — executes only a verdict carrying a receipt that the kernel verifies.
+10. **Verifier** — proves the requested path. Failures are written back as evidence and may trigger a planned rerun.
 
 The Funnel defines. The Harness builds. The Verifier proves. The Bin/Engine remembers.
+
+## Funnel Usage Plan law
+
+The Funnel must plan how it will use itself before it begins resolution. Rules without a request-specific operating plan are incomplete.
+
+The canonical plan schema is `/funnel-usage-plan-core.js`. A valid plan is bound to immutable Page 0 and covers:
+
+- which existing references, verified machinery, corrections, and failures are searched first;
+- which questions are material enough to affect architecture, scope, authority, risk, destination, done criteria, or a Page 0 obligation;
+- which surfaces may be solved independently/recursively and how they reconverge;
+- what builder/destination may execute after authority is granted;
+- how the requested path will be verified;
+- which events force a rerun from Page 0 while preserving evidence;
+- what provenance/output must be retained after verification.
+
+`references` is illegal until a valid usage plan is locked. The v44 receipt contains `usage_plan_hash`; changing the plan invalidates the old execution authority. `MOOR.request` automatically creates the initial deterministic plan, and the Funnel runtime may refine it before References. Ultra candidate cases inherit the same usage-plan contract before `REFERENCES_BOUND`.
 
 ## Owner observability
 
@@ -88,7 +105,7 @@ If replay omits an obligation or introduces an unapproved substitution, no recei
 - Execution/Harness component: `app-compiler-harness`
 - Muse operating personality: `/BUSTER.md`
 
-The UI filename may retain its historical name. The current executable law version is `v44-sealed`, owned by the kernel.
+The UI filename may retain its historical name. The current executable law remains `v44-sealed`, owned by the kernel, with mandatory revision `usage-plan-1` and kernel state/receipt version 2.
 
 ## Authority topology and maintenance truth
 

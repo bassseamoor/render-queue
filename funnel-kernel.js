@@ -8,13 +8,15 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
 'use strict';
 
+var UsagePlan=root&&root.FunnelUsagePlan||(typeof require==='function'?require('./funnel-usage-plan-core.js'):null);
 var SCHEMA='moor.funnel-kernel-state';
 var RECEIPT_SCHEMA='moor.funnel-receipt';
-var VERSION=1;
+var VERSION=2;
 var LAW_VERSION='v44-sealed';
-var STORE='moor.funnel.kernel.v1';
+var REVISION='usage-plan-1';
+var STORE='moor.funnel.kernel.v2';
 var ACTIVE='moor.funnel.active-request.v1';
-var STAGES=Object.freeze(['page0','references','distill','decisions','replay','verdict']);
+var STAGES=Object.freeze(['page0','usage_plan','references','distill','decisions','replay','verdict']);
 var WRITABLE=Object.freeze(['answer','evidence','failure','correction','reference','note']);
 var mem=null;
 
@@ -33,7 +35,7 @@ function hash(x){
   }
   return ('00000000'+a.toString(16)).slice(-8)+('00000000'+b.toString(16)).slice(-8);
 }
-function blank(){return {schema:SCHEMA,version:VERSION,law_version:LAW_VERSION,ledger:[]};}
+function blank(){return {schema:SCHEMA,version:VERSION,law_version:LAW_VERSION,revision:REVISION,ledger:[]};}
 function readRaw(){
   if(root&&root.localStorage){
     try{var x=JSON.parse(root.localStorage.getItem(STORE)||'null');if(x)return x;}catch(e){}
@@ -45,7 +47,7 @@ function writeRaw(s){
   if(root&&root.localStorage){try{root.localStorage.setItem(STORE,JSON.stringify(s));}catch(e){}}
 }
 function verifyState(s){
-  if(!s||s.schema!==SCHEMA||s.version!==VERSION||s.law_version!==LAW_VERSION||!Array.isArray(s.ledger))return false;
+  if(!s||s.schema!==SCHEMA||s.version!==VERSION||s.law_version!==LAW_VERSION||s.revision!==REVISION||!Array.isArray(s.ledger))return false;
   var prev='GENESIS';
   for(var i=0;i<s.ledger.length;i++){
     var e=s.ledger[i];
@@ -72,11 +74,12 @@ function append(type,requestId,payload,provenance){
 }
 function events(requestId){return state().ledger.filter(function(e){return e.request_id===requestId;});}
 function session(requestId){
-  var es=events(requestId),out={request_id:requestId,stage:null,page0:null,writes:[],stages:{},receipt:null,tainted:false};
+  var es=events(requestId),out={request_id:requestId,stage:null,page0:null,usage_plan:null,writes:[],stages:{},receipt:null,tainted:false};
   es.forEach(function(e){
     if(e.type==='stage'){
       out.stage=e.payload.stage;out.stages[e.payload.stage]=clone(e.payload);out.stages[e.payload.stage]._event_hash=e.hash;
       if(e.payload.stage==='page0')out.page0=e.payload.raw;
+      if(e.payload.stage==='usage_plan')out.usage_plan=clone(e.payload.plan);
     }else if(e.type==='write')out.writes.push(clone(e.payload));
     else if(e.type==='receipt')out.receipt=clone(e.payload);
   });
@@ -111,6 +114,10 @@ function requiredNext(s){
   if(!s.stage)return 'page0';
   var i=STAGES.indexOf(s.stage);return i<0?null:STAGES[i+1]||null;
 }
+function makeUsagePlan(page0,context,overrides){
+  if(!UsagePlan||typeof UsagePlan.build!=='function')throw Error('Funnel usage-plan core unavailable.');
+  return UsagePlan.build(page0,context||{},overrides||{});
+}
 function checkReplay(payload,s){
   if(!payload||payload.page0_verified!==true)throw Error('Replay must explicitly verify Page 0.');
   if(payload.page0_hash!==s.stages.page0.raw_hash)throw Error('Replay must use the immutable Page 0 snapshot.');
@@ -140,7 +147,9 @@ function extractObligations(raw){
   return out;
 }
 function receiptFor(id,verdict,head,page0Hash){
-  var core={schema:RECEIPT_SCHEMA,version:VERSION,law_version:LAW_VERSION,request_id:id,page0_hash:page0Hash,spec_hash:hash(verdict.spec),destination:verdict.destination,done_criteria:clone(verdict.done_criteria),ledger_head:head,issued_at:new Date().toISOString()};
+  var plan=session(id).stages.usage_plan;
+  if(!plan||!plan.plan_hash)throw Error('Receipt requires Funnel usage plan evidence.');
+  var core={schema:RECEIPT_SCHEMA,version:VERSION,law_version:LAW_VERSION,funnel_revision:REVISION,request_id:id,page0_hash:page0Hash,usage_plan_hash:plan.plan_hash,spec_hash:hash(verdict.spec),destination:verdict.destination,done_criteria:clone(verdict.done_criteria),ledger_head:head,issued_at:new Date().toISOString()};
   return Object.assign({},core,{fingerprint:hash(core)});
 }
 function advance(arg){
@@ -149,9 +158,16 @@ function advance(arg){
   var s=session(id),next=requiredNext(s);
   if(!next)throw Error('Funnel is already at its terminal stage.');
   if(to!==next)throw Error('Funnel stage order is locked. Expected '+next+', got '+to+'.');
+  if(to==='usage_plan'){
+    if(!payload.plan)payload.plan=makeUsagePlan(s.page0,s.stages.page0&&s.stages.page0.context||{},payload.overrides||{});
+    if(!UsagePlan||!UsagePlan.validate(payload.plan,s.page0))throw Error('Usage plan failed validation.');
+    payload.plan_hash=UsagePlan.hash(payload.plan);
+  }
   if(to==='references'){
+    if(!s.stages.usage_plan||!s.usage_plan)throw Error('References require a locked Funnel usage plan.');
     if(!Array.isArray(payload.reused))payload.reused=[];
     if(!Array.isArray(payload.missing))payload.missing=[];
+    payload.usage_plan_hash=s.stages.usage_plan.plan_hash;
   }
   if(to==='distill'){
     if(!payload.spec_draft||!text(payload.spec_draft).trim())throw Error('Distill stage requires a non-empty spec draft.');
@@ -181,13 +197,14 @@ function advance(arg){
   return session(id);
 }
 function verifyReceipt(receipt){
-  if(!receipt||receipt.schema!==RECEIPT_SCHEMA||receipt.version!==VERSION||receipt.law_version!==LAW_VERSION)return false;
+  if(!receipt||receipt.schema!==RECEIPT_SCHEMA||receipt.version!==VERSION||receipt.law_version!==LAW_VERSION||receipt.funnel_revision!==REVISION)return false;
   var copy=clone(receipt),fp=copy.fingerprint;delete copy.fingerprint;
   if(hash(copy)!==fp)return false;
   var s=session(receipt.request_id),es=events(receipt.request_id),last=es[es.length-1];
   if(!s.receipt||s.receipt.fingerprint!==receipt.fingerprint||!s.stages.replay||!s.stages.verdict)return false;
   if(!last||last.type!=='receipt'||!last.payload||last.payload.fingerprint!==receipt.fingerprint)return false;
   if(s.stages.page0.raw_hash!==receipt.page0_hash)return false;
+  if(!s.stages.usage_plan||s.stages.usage_plan.plan_hash!==receipt.usage_plan_hash)return false;
   if(hash(s.stages.verdict.spec)!==receipt.spec_hash)return false;
   if(s.stages.verdict._event_hash!==receipt.ledger_head)return false;
   return verifyState(state());
@@ -201,8 +218,8 @@ function inspect(requestId){var s=session(active(requestId));return clone(s);}
 function resetForTests(){mem=blank();if(root&&root.localStorage){try{root.localStorage.removeItem(STORE);root.localStorage.removeItem(ACTIVE);}catch(e){}}}
 
 return Object.freeze({
-  version:VERSION,law_version:LAW_VERSION,stages:STAGES.slice(),writable:WRITABLE.slice(),
-  open:open,write:write,advance:advance,inspect:inspect,extractObligations:extractObligations,verifyReceipt:verifyReceipt,executionPacket:executionPacket,hash:hash,
+  version:VERSION,law_version:LAW_VERSION,revision:REVISION,stages:STAGES.slice(),writable:WRITABLE.slice(),
+  open:open,write:write,advance:advance,inspect:inspect,makeUsagePlan:makeUsagePlan,extractObligations:extractObligations,verifyReceipt:verifyReceipt,executionPacket:executionPacket,hash:hash,
   _verifyState:verifyState,_resetForTests:resetForTests
 });
 });
