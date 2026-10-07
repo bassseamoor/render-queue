@@ -14,3 +14,18 @@ Before ANY push to bassseamoor/render-queue:
    legitimate forward push (record it in PIN.txt HISTORY).
 
 This gate is the scripted form of the AGENTS.md STALE-TREE RULE.
+
+## Reporting after push / PR
+
+A green pre-push gate only proves the local/repository gate that actually ran. It does **not** authorize the worker to say merged, in Pulse, owner-visible, deployed, or done.
+
+After remote work, report against `worker-response-sop.json`:
+
+- PR open → say PR open.
+- CI green → say verified/CI passed.
+- Merge SHA present → say merged to the named branch.
+- Current Pulse registry + manifest + rebuild preservation → say registered in Pulse.
+- Named openable destination/Dev Feed receipt → say owner-visible.
+- Independent runtime check → only then say live/deployed.
+
+Never compress these into “pushed” or “done” when the later state has not been proven.

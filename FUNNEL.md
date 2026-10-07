@@ -37,6 +37,20 @@ Dev Feed is observational only. It cannot mint Funnel authority, approve a build
 
 Technical completion and owner visibility are distinct. "Merged" does not mean "the owner can find and inspect it." An owner-visible state requires a named canonical destination or a Pulse/Dev Feed path the developer can actually open.
 
+### Worker response envelope
+
+The worker-facing response contract is `/worker-response-sop.json`. A worker may only claim the highest state supported by independent evidence. Requested, funneled, implemented, verified, merged, Pulse-registered, owner-visible, and deployed/live are distinct reporting states.
+
+A material completion response must name:
+
+- what changed;
+- highest evidence-backed state;
+- canonical destination;
+- verification evidence;
+- remaining gaps or explicit non-claims.
+
+A prose response cannot upgrade pipeline state. If evidence and worker language disagree, evidence wins and Dev Feed should surface the mismatch/correction.
+
 ## Write slot
 
 The Funnel is a sealed box with a narrow write surface. Allowed writes are append-only inputs such as:

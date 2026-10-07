@@ -1,0 +1,181 @@
+{
+  "schema": "moor.worker-response-sop",
+  "version": 1,
+  "title": "MOOR Worker Response SOP",
+  "purpose": "Bind human-facing worker claims to actual pipeline evidence so parallel chats cannot accidentally tell Sebastian that work is done, pushed, in Pulse, or verified before those states are true.",
+  "authority_model": {
+    "note": "This SOP governs reporting language only. It cannot mint Funnel/build/release authority.",
+    "sources": [
+      "FUNNEL.md",
+      "BUSTER.md",
+      "blueprint-sop.html",
+      "pulse-devtools/PRE_PUSH.md",
+      "blueprint/worker-execution-orchestration.blueprint.json",
+      "dev-feed/event-schema.json"
+    ]
+  },
+  "states": [
+    {
+      "id": "requested",
+      "evidence": "User request / Page 0 exists.",
+      "allowed_claims": [
+        "requested",
+        "captured",
+        "entered the Funnel"
+      ],
+      "forbidden_claims": [
+        "built",
+        "implemented",
+        "verified",
+        "pushed",
+        "merged",
+        "in Pulse",
+        "done"
+      ]
+    },
+    {
+      "id": "funneled",
+      "evidence": "Valid sealed Funnel receipt or verified Funnel replay exists.",
+      "allowed_claims": [
+        "funneled",
+        "blueprint authorized",
+        "ready for execution"
+      ],
+      "forbidden_claims": [
+        "built",
+        "implemented",
+        "verified",
+        "pushed",
+        "merged",
+        "in Pulse",
+        "done"
+      ]
+    },
+    {
+      "id": "implemented",
+      "evidence": "Executable artifact/code exists in the worker's current branch or artifact location.",
+      "allowed_claims": [
+        "implemented on branch",
+        "built on branch",
+        "artifact exists"
+      ],
+      "forbidden_claims": [
+        "verified",
+        "merged",
+        "in main",
+        "in Pulse",
+        "owner-visible",
+        "done"
+      ]
+    },
+    {
+      "id": "verified",
+      "evidence": "Requested-path tests/CI/inspection actually ran and passed.",
+      "allowed_claims": [
+        "verified",
+        "tests passed",
+        "CI passed"
+      ],
+      "forbidden_claims": [
+        "merged",
+        "in main",
+        "in Pulse",
+        "owner-visible",
+        "done unless all requested destinations are also satisfied"
+      ]
+    },
+    {
+      "id": "merged",
+      "evidence": "Git host reports merge to canonical target branch with commit SHA.",
+      "allowed_claims": [
+        "merged to main",
+        "canonical repo contains it"
+      ],
+      "forbidden_claims": [
+        "in Pulse unless registry/manifest evidence exists",
+        "owner-visible unless openable canonical destination exists",
+        "deployed/live unless independently proven"
+      ]
+    },
+    {
+      "id": "pulse-registered",
+      "evidence": "Current main contains the Pulse registry/manifest/rebuild-preservation entry and target artifact.",
+      "allowed_claims": [
+        "registered in Pulse",
+        "Pulse contains the component"
+      ],
+      "forbidden_claims": [
+        "owner-visible unless the owner can locate/open it",
+        "deployed/live if Pages/runtime was not checked"
+      ]
+    },
+    {
+      "id": "owner-visible",
+      "evidence": "Named canonical destination is openable/findable by Sebastian and evidence links exist in Dev Feed or the explicit destination.",
+      "allowed_claims": [
+        "owner-visible",
+        "you can find it in Pulse",
+        "done for the requested owner-visible scope"
+      ],
+      "forbidden_claims": [
+        "production-ready",
+        "battle-tested",
+        "universally deployed",
+        "live backend"
+      ]
+    },
+    {
+      "id": "deployed-live",
+      "evidence": "Actual runtime/deployment path was independently checked after release.",
+      "allowed_claims": [
+        "live",
+        "deployed",
+        "reachable"
+      ],
+      "forbidden_claims": [
+        "production-ready unless production acceptance criteria also passed"
+      ]
+    }
+  ],
+  "wording_rules": [
+    "Never use 'pushed to Pulse' as shorthand for 'file exists in repository'. Pulse requires actual registry/manifest/rebuild-preservation evidence.",
+    "Never use 'done' without naming the highest proven state and any remaining gaps.",
+    "A PR being open is not a merge.",
+    "A merge is not deployment.",
+    "A passing unit test is not requested-path verification unless it actually exercises that path.",
+    "A Pulse component registration is not proof that GitHub Pages or another deployment has updated.",
+    "Visualized/documented/implemented/wired/verified/receipt-backed/owner-visible are distinct states.",
+    "If the worker discovered a mismatch between a previous claim and evidence, say so explicitly and append a correction event; do not silently rewrite history.",
+    "When another repository is the canonical destination, name that repository instead of saying 'Pulse' unless a Pulse representation also exists.",
+    "When evidence is incomplete, report the incomplete state rather than filling the gap with confidence."
+  ],
+  "final_response_contract": {
+    "required": [
+      "What changed",
+      "Highest evidence-backed state",
+      "Canonical destination",
+      "Verification evidence",
+      "Remaining gaps or explicit non-claims"
+    ],
+    "optional": [
+      "PR/commit SHA",
+      "Dev Feed event",
+      "Where the owner can open it",
+      "Related follow-on child blueprint"
+    ],
+    "minimal_examples": {
+      "branch_only": "Implemented on branch X. Not yet verified or merged.",
+      "verified_pr": "Implemented and CI-verified in PR #N. Not merged yet.",
+      "merged_not_pulse": "Merged to main at SHA. It is not registered in Pulse.",
+      "pulse_registered": "Merged and registered in Pulse. Runtime deployment was not independently checked.",
+      "owner_visible": "Merged, Pulse-registered, and owner-visible at [component]. CI passed. No live-backend/deployment claim beyond that."
+    }
+  },
+  "correction_protocol": [
+    "Identify the exact earlier claim that exceeded evidence.",
+    "State what evidence actually existed at that time.",
+    "State the corrected claim that should have been used.",
+    "If the gap is now fixed, append that later state separately rather than pretending the earlier claim was true.",
+    "Write the correction into Dev Feed when it materially affects owner understanding."
+  ]
+}
