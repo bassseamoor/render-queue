@@ -127,7 +127,16 @@ async function saveCanonicalCache(){
   }catch(e){console.warn('Trajectory cache save failed',e)}
 }
 async function loadCanonical(){
-  let loaded=[];
+  const map=new Map();
+  try{
+    const sr=await fetch('trajectory/canonical-seed.json?ts='+Date.now(),{cache:'no-store'});
+    if(sr.ok){
+      const seed=await sr.json();
+      (seed&&Array.isArray(seed.checkpoints)?seed.checkpoints:[]).forEach(r=>{
+        if(r&&r.schema==='moor.trajectory-checkpoint')map.set(checkpointId(r),r);
+      });
+    }
+  }catch(e){console.warn('Canonical seed load failed',e)}
   try{
     const r=await fetch(REPO_API,{cache:'no-store',headers:{Accept:'application/vnd.github+json'}});
     if(!r.ok)throw new Error('GitHub '+r.status);
@@ -140,19 +149,16 @@ async function loadCanonical(){
         return j&&j.schema==='moor.trajectory-checkpoint'?j:null;
       }catch(_){return null}
     }));
-    loaded=results.filter(Boolean);
-    canonicalRows=loaded;
-    await saveCanonicalCache();
-    return;
-  }catch(e){console.warn('Canonical Trajectory hydration failed',e)}
-  if(ssdHandle&&window.MOORLocalFiles){
+    results.filter(Boolean).forEach(r=>map.set(checkpointId(r),r));
+  }catch(e){console.warn('Canonical Trajectory live hydration failed',e)}
+  if(!map.size&&ssdHandle&&window.MOORLocalFiles){
     try{
       const cache=await MOORLocalFiles.readAppJson(ssdHandle,APP_ID,CACHE_FILE,null);
-      canonicalRows=cache&&Array.isArray(cache.checkpoints)?cache.checkpoints:[];
-      return;
+      (cache&&Array.isArray(cache.checkpoints)?cache.checkpoints:[]).forEach(r=>map.set(checkpointId(r),r));
     }catch(e){console.warn('Trajectory cache read failed',e)}
   }
-  canonicalRows=[];
+  canonicalRows=[...map.values()].sort((a,b)=>String(a.at||'').localeCompare(String(b.at||'')));
+  if(canonicalRows.length)await saveCanonicalCache();
 }
 function scoreOf(r){
   const a=Array.isArray(r.assessors)?r.assessors.filter(x=>Number.isFinite(+x.score)&&Number.isFinite(+x.confidence)):[];
