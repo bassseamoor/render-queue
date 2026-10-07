@@ -1,0 +1,41 @@
+{
+  "schema": "moor.local-app-storage-blueprint",
+  "version": 1,
+  "id": "local-app-storage-v1",
+  "page0": "my ssd is connected btw use that — clean file struct but everything is meant to be viewed in MOOR applications",
+  "objective": "Use the connected SSD as durable backing storage for MOOR applications while keeping the filesystem simple, app-owned, and secondary to MOOR's interfaces.",
+  "structure": {
+    "root": "MOOR/",
+    "app_data": "MOOR/app-data/<app-id>/",
+    "initial_apps": {
+      "quick-notes": [
+        "state.json"
+      ],
+      "trajectory": [
+        "local-checkpoints.json",
+        "canonical-cache.json"
+      ]
+    },
+    "rule": "Applications own their backing files. Users primarily view and manipulate the data through MOOR apps rather than by browsing/editing raw files."
+  },
+  "mechanism": {
+    "bridge": "moor-local-files.js",
+    "permission": "Browser File System Access API requires one explicit folder selection/permission grant.",
+    "remembered_handle": "Directory handle is remembered in IndexedDB when supported.",
+    "fallback": "Browser-local storage remains a cache/fallback when the SSD is unavailable.",
+    "migration": "Existing local data is merged or migrated into the app-owned SSD file on connection rather than discarded."
+  },
+  "done_criteria": [
+    "One SSD folder selection initializes MOOR/README.txt and MOOR/app-data/.",
+    "Quick Notes reads/writes MOOR/app-data/quick-notes/state.json when the remembered SSD handle is available.",
+    "Trajectory reads/writes MOOR/app-data/trajectory/local-checkpoints.json and caches canonical history in canonical-cache.json.",
+    "MOOR apps remain the primary presentation layer; no raw filesystem UI is introduced.",
+    "Browser fallback remains usable if File System Access is unsupported or permission is unavailable.",
+    "No app silently claims access to the SSD before the browser grants it."
+  ],
+  "honest_limits": [
+    "A normal browser cannot silently take control of an attached drive; the owner must choose the SSD folder once.",
+    "The remembered directory handle is browser-profile specific.",
+    "This is local durable storage, not automatic cloud sync or cross-device replication."
+  ]
+}
