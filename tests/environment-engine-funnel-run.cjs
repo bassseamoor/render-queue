@@ -6,6 +6,8 @@ const bp=JSON.parse(fs.readFileSync('blueprint/environment-engine-canonical-pres
 F._resetForTests();
 const requestId='environment-engine-canonical-presentation-v1';
 F.open({request_id:requestId,input:bp.page0,source:'Sebastian / Environment Engine build',context:{destination:'Project Pulse'}});
+const usagePlan=F.makeUsagePlan(bp.page0,{page:'environment-engine.html',source:'Sebastian / Environment Engine build'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'Project Pulse / Environment Engine',reuse_before_new:true}});
+F.advance({request_id:requestId,stage:'usage_plan',provenance:'system',payload:{plan:usagePlan}});
 F.advance({request_id:requestId,stage:'references',provenance:'verified',payload:{
   reused:bp.references.map(path=>({path,reason:'Existing verified or canonical source reused by the Environment Engine blueprint.'})),
   missing:[]
@@ -48,6 +50,7 @@ F.advance({request_id:requestId,stage:'verdict',provenance:'verified',payload:{
 const session=F.inspect(requestId);
 assert(session.receipt,'Funnel must issue receipt');
 assert.equal(F.verifyReceipt(session.receipt),true,'receipt must verify under sealed kernel');
+assert.equal(session.receipt.usage_plan_hash,session.stages.usage_plan.plan_hash,'Environment Engine authority must bind the usage plan');
 const packet=F.executionPacket(session.receipt);
 assert.equal(packet.spec.blueprint_id,bp.id);
 assert.equal(packet.destination,'Project Pulse / Environment Engine');
