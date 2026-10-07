@@ -31,6 +31,10 @@ const prep=fs.readFileSync('pulse-devtools/PRE_PUSH.md','utf8');
 assert(prep.includes('## Reporting after push / PR'));
 assert(prep.includes('PR open → say PR open'));
 
+const canonical=fs.readFileSync('moor-spec/MOOR-BLUEPRINT-SOP.md','utf8');
+assert(canonical.includes('## 6. Response discipline'));
+assert(canonical.includes('requested → funneled → implemented → verified → merged → Pulse-registered → owner-visible → deployed/live'));
+
 const blue=fs.readFileSync('blueprint-sop.html','utf8');
 assert(blue.includes('<h2>Response discipline</h2>'));
 assert(blue.includes('Requested → funneled → implemented → verified → merged → Pulse-registered → owner-visible → deployed/live'));
