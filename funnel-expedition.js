@@ -1,7 +1,7 @@
-/* Funnel Expedition v3 — truth-aligned.
+/* Funnel Expedition v4 — dual-constraint improved.
  *
  * Truth-alignment funnel: RID funnel-truth-align-2026-10-07
- * Receipt: b0173082ab3686ec (valid)
+ * Receipt: b0173082ab3686ec (v3) + 72e26650336025f1 (v4 dual-constraint)
  * Page 0: Sebastian's verbatim 259-line truth-alignment request
  *
  * WHAT CHANGED FROM v2:
@@ -52,7 +52,10 @@ function runCanonicalFunnel(seatId, purpose, page0){
   const input=`EXPEDITION SEAT ${seatId}\nPurpose: ${purpose.purpose}\nDimension: ${purpose.dimension}\n\nPage 0 (verbatim, hash ${page0.hash.slice(0,16)}):\n${page0.text.slice(0,2000)}\n\n[Full Page 0 supplied verbatim. Investigate from the ${purpose.dimension} angle.]`;
 
   let s=K.open({request_id:`exp-seat-${seatId}`,input,source:'expedition',context:{seat:seatId}});
-  const plan=K.makeUsagePlan(input,{seat:seatId});
+  // B2: Materially different Usage Plan per dimension (not just string substitution)
+  const plan=K.makeUsagePlan(input,{seat:seatId,dimension:purpose.dimension,
+    plan_variant:purpose.dimension,
+    investigative_focus:`Deep ${purpose.dimension} analysis: extract requirements, identify failure modes, propose verification strategy specific to ${purpose.dimension}.`});
   s=K.advance({request_id:`exp-seat-${seatId}`,stage:'usage_plan',payload:{plan},provenance:'system'});
   s=K.advance({request_id:`exp-seat-${seatId}`,stage:'references',payload:{reused:[
     {id:'page0-verbatim',role:'Immutable Page 0.'},
@@ -147,6 +150,30 @@ function runChildInvestigation(parent, childIdx, page0){
   };
 }
 
+/* B7: Functional reconvergence on REAL findings */
+function reconverge(seats){
+  const byDim={};
+  for(const s of seats){
+    const d=s.dimension;
+    if(!byDim[d]) byDim[d]={evidence:0, unresolved:0, disagreements:0};
+    byDim[d].evidence+=s.evidence.length;
+    byDim[d].unresolved+=s.unresolved.length;
+    // Disagreements: findings that contradict other seats' findings
+    for(const f of s.findings){
+      for(const o of seats){
+        if(o===s) continue;
+        if(o.findings.some(of=>of.content!==f.content&&of.dimension===f.dimension))
+          byDim[d].disagreements++;
+      }
+    }
+  }
+  const total=Object.values(byDim).reduce((a,b)=>a+b.evidence+b.unresolved,0)||1;
+  return Object.entries(byDim)
+    .map(([dim,v])=>({dimension:dim, ...v,
+      pct:(((v.evidence+v.unresolved)/total)*100).toFixed(1)}))
+    .sort((a,b)=>(b.evidence+b.unresolved)-(a.evidence+a.unresolved));
+}
+
 /* Real canonical Match Funnel */
 function runMatchFunnel(candidateA, candidateB, page0, matchId){
   K._resetForTests();
@@ -210,6 +237,20 @@ function runMatchFunnel(candidateA, candidateB, page0, matchId){
     done_criteria:['Winner selected','Inheritance adjudicated']
   },provenance:'verified'});
 
+  // B12: Blueprint lineage and revision evidence per match
+  const blueprint_revision={
+    match:matchId,
+    parent_blueprint:winner.seat,
+    revision:`${winner.seat}-r${(winner.revisions||0)+1}`,
+    inherited_material:inherited.map(i=>({content:i.content, from:i.inherited_from})),
+    rejected_material:rejected,
+    lineage:[...(winner.lineage||[]), matchId],
+    page0_hash:page0.hash,
+  };
+  winner.revisions=(winner.revisions||0)+1;
+  winner.blueprint_revisions=winner.blueprint_revisions||[];
+  winner.blueprint_revisions.push(blueprint_revision);
+
   return {
     match:matchId,
     receipt:s.receipt.fingerprint,
@@ -218,7 +259,32 @@ function runMatchFunnel(candidateA, candidateB, page0, matchId){
     loser:loser.seat,
     reason, inherited:inherited.length, rejected:rejected.length,
     rejected_details:rejected,
+    blueprint_revision,
   };
 }
 
-module.exports={getPage0, runCanonicalFunnel, runChildInvestigation, runMatchFunnel, DIMENSIONS};
+/* B18: Honest Pulse — reports only evidenced state */
+function pulseView(evidence){
+  return {
+    // Only claim what evidence supports
+    gen1_runs:evidence.gen1||0,
+    gen1_receipts_valid:evidence.gen1_valid||0,
+    gen1_claim_256_canonical_runs:evidence.gen1===256&&evidence.gen1_valid===256,
+    gen2_runs:evidence.gen2||0,
+    gen2_claim_65536_parent_shaped:evidence.gen2===65536,
+    tournament_rounds:evidence.rounds||0,
+    tournament_battles:evidence.battles||0,
+    battles_receipts_valid:evidence.battles_valid||0,
+    archived:evidence.archived||0,
+    champion:evidence.champion||null,
+    // Honest caveats
+    caveats:[
+      !evidence.gen1?'Gen-1 not yet run':null,
+      evidence.gen1_valid<evidence.gen1?'Some Gen-1 receipts invalid':null,
+      !evidence.battles?'Tournament not yet run':null,
+    ].filter(Boolean),
+    verdict:evidence.battles_valid===255?'EVIDENCED: full expedition complete':'NOT YET EVIDENCED',
+  };
+}
+
+module.exports={getPage0, runCanonicalFunnel, runChildInvestigation, runMatchFunnel, reconverge, pulseView, DIMENSIONS};
