@@ -1,11 +1,9 @@
 /* Blueprint SOP — Pulse adapter.
- * Mounts the standalone blueprint-sop.html (the interactive Standard
- * Operating Procedure: chain of command, L1-L5 recursive planning
- * layers, automatic gates, discipline) in an isolated iframe, so its
- * globals never touch the dashboard's.
+ * Mounts the standalone blueprint-sop.html (the Standard Operating Procedure
+ * for writing bulletproof Blueprints) in an isolated iframe.
  *
- * TAGS: tool:blueprintsop | cat:interface | kind:doctrine |
- *       dep:blueprint-standard | prov:funnel |
+ * TAGS: tool:blueprintsop | cat:interface | kind:sop |
+ *       dep:none | prov:funnel |
  *       src:blueprint-sop.html
  */
 (function(){
@@ -18,7 +16,7 @@ function mount(host,c){
   frame.title=(c&&c.label)||'Blueprint SOP';
   frame.setAttribute('loading','lazy');
   frame.style.cssText='width:100%;height:78vh;min-height:520px;border:0;display:block;'+
-    'border-radius:14px;background:#080b10;';
+    'border-radius:14px;background:#07090e;';
   host.appendChild(frame);
 }
 function unmount(){
