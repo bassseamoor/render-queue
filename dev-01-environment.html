@@ -214,6 +214,24 @@ scene.fog=new THREE.FogExp2(0x050505,0.0035);
 const camera=new THREE.PerspectiveCamera(68,innerWidth/innerHeight,0.5,1200);
 camera.position.set(0,14,-70);
 
+/* ---------- failure-class preventions (funnel bc999f717afdb6ae) ---------- */
+(function preventFailures(){
+  // Rule 1: camera must spawn inside room envelope
+  console.assert(
+    Math.abs(camera.position.x)<W/2 && Math.abs(camera.position.z)<D/2 && camera.position.y>0 && camera.position.y<H,
+    'PREVENTION FAIL: camera spawned outside room envelope'
+  );
+  // Rule 3: lighting minimum ambient floor (never 0)
+  for(const k in LIGHT_PRESETS){ LIGHT_PRESETS[k].ambient=Math.max(0.05, LIGHT_PRESETS[k].ambient); }
+  // Rule 4: movement waypoints validated inside bounds
+  [CHAIR_POS, ...ringPos].forEach((p,i)=>{
+    console.assert(
+      Math.abs(p.x)<W/2 && Math.abs(p.z)<D/2,
+      'PREVENTION FAIL: waypoint '+i+' outside room bounds'
+    );
+  });
+})();
+
 /* ---------- display membrane walls (seamless screens, faint grid when idle) ---------- */
 function gridTexture(){
   const c=document.createElement('canvas');c.width=c.height=512;
