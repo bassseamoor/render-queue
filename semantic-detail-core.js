@@ -247,6 +247,25 @@ function projectForBuilder(specObj){
   return L.join('\n');
 }
 
-module.exports={extractSemantics,extractSemanticsWithText,expandToSpecs,projectForHuman,projectForBuilder,tokens,stem,QUALITY_MAP,SCALE_CUES};
-return {extractSemantics,extractSemanticsWithText,expandToSpecs,projectForHuman,projectForBuilder,tokens,stem,QUALITY_MAP,SCALE_CUES};
+
+/* ---------- verdict outcome consultation (context-scoped learning) ---------- */
+function getVOQ(){try{
+  if(typeof module==='object'&&module.exports){return require('./funnel-outcome-query-core.js');}
+}catch(e){}
+  try{return (typeof globalThis!=='undefined'&&globalThis.VerdictOutcomeQuery)||null;}catch(e){return null;}
+}
+/* consultOutcomes(context, dimension) -> applicable prior outcomes.
+ * context: {project, blueprint, objective}. Only matching contexts return outcomes.
+ * corrected/owner-approved/explicitly-constrained outcomes constrain generation.
+ * intentionally-free dimensions stay generative. proposed/inferred never presented as owner truth.
+ * Returns [] when the query module or sidecar is unavailable — generator works standalone. */
+function consultOutcomes(context, dimension){
+  const VOQ=getVOQ();
+  if(!VOQ||!VOQ.loaded) return [];
+  const all=dimension?VOQ.outcomesFor(context,dimension):VOQ.applicableOutcomes(context);
+  return all.map(o=>({dimension:o.dimension,value:o.value,epistemic_state:o.epistemic_state,
+    source:o.source,verdict_id:o.verdict_id,receipt:o.receipt,detail:o.detail}));
+}
+module.exports={extractSemantics,extractSemanticsWithText,expandToSpecs,projectForHuman,projectForBuilder,tokens,stem,QUALITY_MAP,SCALE_CUES,consultOutcomes};
+return {extractSemantics,extractSemanticsWithText,expandToSpecs,projectForHuman,projectForBuilder,tokens,stem,QUALITY_MAP,SCALE_CUES,consultOutcomes};
 });
