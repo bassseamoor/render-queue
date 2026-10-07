@@ -70,7 +70,10 @@ const DIMENSIONS=[
 /* REAL canonical funnel run for a Gen-1 seat */
 function runCanonicalFunnel(seatId, purpose, page0){
   K._resetForTests();
-  const input=`EXPEDITION SEAT ${seatId}\nPurpose: ${purpose.purpose}\nDimension: ${purpose.dimension}\n\nPage 0 (verbatim, hash ${page0.hash.slice(0,16)}):\n${page0.text}\n\n[Full Page 0 supplied verbatim. Investigate from the ${purpose.dimension} angle.]`;
+  // MULTIPLIER #8 (page0-by-reference): use hash + lazy ref, not full text embedding.
+  // Full text available via getPage0().text on demand. Saves ~10KB per seat × 256 = ~2.5MB.
+  const page0Ref = getPage0Ref();
+  const input=`EXPEDITION SEAT ${seatId}\nPurpose: ${purpose.purpose}\nDimension: ${purpose.dimension}\n\nPage 0 ref: hash=${page0Ref.hash.slice(0,16)}, frozen=${page0Ref.frozen}\n[Page 0 available by reference. Investigate from the ${purpose.dimension} angle.]`;
 
   let s=K.open({request_id:`exp-seat-${seatId}`,input,source:'expedition',context:{seat:seatId}});
   // B2: Materially different Usage Plan per dimension (not just string substitution)
@@ -89,8 +92,21 @@ function runCanonicalFunnel(seatId, purpose, page0){
     {key:'page0_hash',value:page0.hash},
   ],unresolved:[]},provenance:'explicit'});
 
-  // Findings: differentiated by dimension (real investigative work)
-  const findings=investigateDimension(purpose.dimension, page0);
+  // MULTIPLIER #3 (pre-work-evidence-pool-check): check pool BEFORE investigating.
+  // If conclusive result exists for this dimension+page0, reuse it.
+  const poolKey = `${page0.hash.slice(0,16)}:${purpose.dimension}`;
+  const cached = _evidencePool.get('dim:'+poolKey);
+  let findings;
+  if (cached && cached.conclusive) {
+    recordMetric('cache_hits');
+    findings = cached.findings;
+  } else {
+    recordMetric('cache_misses');
+    // Findings: differentiated by dimension (real investigative work)
+    findings = investigateDimension(purpose.dimension, page0);
+    // Cache for future seats
+    _evidencePool.set('dim:'+poolKey, {findings, conclusive: findings.length > 0, dimension: purpose.dimension});
+  }
 
   // V5: obligation ledger deltas — cache by input hash
   const _obsCache=global._obsCache||(global._obsCache={});
@@ -333,17 +349,26 @@ let _championPurposes=null;
 function setChampionPurposes(purposes){ _championPurposes=purposes; }
 function getChampionPurposes(){ return _championPurposes; }
 // V6: Champion purposes ACTUALLY seed next run (not just stored)
+// MULTIPLIER #10 (decaying-champion-feedback): champion purposes influence next run
+// with exponential decay and kill switch. Prevents permanent champion monopoly.
+let _championWeightDecay = 1.0;
+let _championFeedbackKilled = false;
+function killChampionFeedback(){ _championFeedbackKilled = true; }
+function decayChampionFeedback(factor){ _championWeightDecay *= (factor || 0.9); }
 function getWeightedDimensions(){
+  if (_championFeedbackKilled) return DIMENSIONS;
   const champ=getChampionPurposes();
   if(!champ||!champ.winning_dimensions||champ.winning_dimensions.length===0){
     return DIMENSIONS; // no champion yet, use all
   }
-  // Weight: champion's winning dimensions get 3x representation
+  // Weight decays over time: prevents bad feedback from compounding permanently
+  const baseWeight = 3 * _championWeightDecay;
   const weighted=[];
   DIMENSIONS.forEach(d=>{
-    const weight=champ.winning_dimensions.includes(d)?3:1;
+    const weight=champ.winning_dimensions.includes(d)?Math.max(1, Math.round(baseWeight)):1;
     for(let i=0;i<weight;i++) weighted.push(d);
   });
+  recordMetric('champion_feedback_applied');
   return weighted;
 }
 
