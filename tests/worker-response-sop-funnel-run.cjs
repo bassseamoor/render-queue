@@ -6,6 +6,7 @@ const bp=JSON.parse(fs.readFileSync('blueprint/worker-response-sop.blueprint.jso
 F._resetForTests();
 const id='worker-response-sop-v1';
 F.open({request_id:id,input:bp.page0,source:'Sebastian / Pulse SOP response audit',context:{destination:'Project Pulse SOP'}});
+F.advance({request_id:id,stage:'usage_plan',provenance:'system',payload:{plan:F.makeUsagePlan(bp.page0,{page:'Project Pulse SOP',source:'Sebastian / Pulse SOP response audit'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'Project Pulse SOP / worker response reporting',reuse_before_new:true}})}});
 F.advance({request_id:id,stage:'references',provenance:'verified',payload:{
   reused:bp.references.map(path=>({path,reason:'Existing Pulse/Funnel/worker contract audited as source material for response truth.'})),
   missing:[]
