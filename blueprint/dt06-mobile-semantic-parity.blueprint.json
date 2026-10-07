@@ -1,0 +1,373 @@
+{
+  "schema": "moor.build-blueprint",
+  "version": 2,
+  "blueprint_id": "DT-06-REV2",
+  "title": "MOBILE TRUTH — Factory Twin Semantic Parity",
+  "parent": "blueprint/factory-digital-twin.blueprint.json#DT-06",
+  "pulse_tool": "blueprintdt06",
+  "sealed_verdict": "blueprint/dt06-mobile-semantic-parity.seal.json",
+  "authority_scope": "blueprint-only",
+  "runtime_implementation_authorized": false,
+  "promise": "A phone renders fewer objects, never less truth: every FactoryTwin machine, route, and active work order remains discoverable and inspectable from the same semantic snapshot.",
+  "stakes": "Today the Hall slices machines, routes, and WIP before the mobile experience can inspect them. That is a performance optimization leaking into meaning. DT-06 must make density a visual concern only.",
+  "click": "On a 390px phone the Citadel stays light—24 machines, 36 routes, 12 WIP drawn—but the ≡ FACTORY TRUTH index still exposes the exact same semantic entity IDs as a 1440px desktop.",
+  "source_of_truth": {
+    "semantic": "factory-twin-core.js → MoorFactoryTwin.compose() → validated moor.factory-twin-snapshot",
+    "renderer": "pulse-beam-funnel-hall.js",
+    "shell": "pulse-beam-funnel-hall.html",
+    "existing_binding_test": "tests/factory-twin-citadel-binding-checks.cjs",
+    "rule": "Renderer may omit geometry for density. It may not omit an entity from semantic discovery or invent an entity absent from FactoryTwinSnapshot."
+  },
+  "locked_values": {
+    "compact_width_px": 720,
+    "machine_visual_cap": {
+      "low": 24,
+      "full": 72
+    },
+    "route_visual_cap": {
+      "low": 36,
+      "full": 120
+    },
+    "wip_visual_cap": {
+      "low": 12,
+      "full": 32
+    },
+    "ring_segments": {
+      "low": 64,
+      "full": 128
+    },
+    "dpr_cap": {
+      "low": 1.2,
+      "full": 1.8
+    },
+    "semantic_index_initial_rows": 80,
+    "touch_target_min_px": 44,
+    "semantic_index_desktop_width_px": 360,
+    "semantic_index_mobile_left_px": 8,
+    "semantic_index_mobile_right_px": 8,
+    "semantic_index_mobile_top_px": 96,
+    "semantic_index_mobile_bottom_px": 154,
+    "semantic_index_mobile_breakpoint_px": 720,
+    "pick_click_movement_threshold_px": 8,
+    "pointer_yaw_gain": 0.0042,
+    "pointer_pitch_gain": 0.0036,
+    "pitch_limit_rad": 1.08
+  },
+  "value_rationale": {
+    "compact_width_px": "Preserves the Hall's current JS mobile threshold exactly; CSS moves from 680 to 720 so one number defines the compact experience.",
+    "machine_visual_cap": "Preserves current low/full geometry budgets (24/72). The change is where slicing occurs: after semantic catalog construction.",
+    "route_visual_cap": "Preserves current low/full route budgets (36/120).",
+    "wip_visual_cap": "Preserves current low/full active-work budgets (12/32).",
+    "ring_segments": "Preserves current low/full ring tessellation (64/128).",
+    "dpr_cap": "Preserves current renderer pixel-ratio caps (1.2/1.8).",
+    "semantic_index_initial_rows": "80 keeps initial DOM work bounded while search operates over the full catalog before row slicing; no entity becomes unreachable.",
+    "touch_target_min_px": "Matches existing Hall controls and Beam touch law.",
+    "semantic_index_mobile_geometry": "96px top clears the 44px top controls plus zone label; 154px bottom clears the two-row 93px move pad at its current 52px bottom offset with a 9px safety gap."
+  },
+  "parts": [
+    {
+      "id": "P1",
+      "name": "View policy constants",
+      "file": "pulse-beam-funnel-hall.js",
+      "role": "Move all mobile/full density numbers into one immutable local data object; no new platform service."
+    },
+    {
+      "id": "P2",
+      "name": "Semantic entity sets",
+      "file": "pulse-beam-funnel-hall.js",
+      "role": "Capture full Twin machines/routes/active work orders before any render slicing."
+    },
+    {
+      "id": "P3",
+      "name": "Visual slices",
+      "file": "pulse-beam-funnel-hall.js",
+      "role": "Apply existing 24/72, 36/120, 12/32 limits only to geometry."
+    },
+    {
+      "id": "P4",
+      "name": "Factory Truth index",
+      "file": "pulse-beam-funnel-hall.html + .js",
+      "role": "Compact searchable access to every semantic entity, including those not drawn."
+    },
+    {
+      "id": "P5",
+      "name": "Parity observability",
+      "file": "pulse-beam-funnel-hall.js",
+      "role": "Expose read-only semantic/drawn counts and IDs for verification; never authority."
+    },
+    {
+      "id": "P6",
+      "name": "Parity verifier",
+      "file": "tests/factory-twin-mobile-parity-checks.cjs",
+      "role": "Prove desktop/mobile semantic ID equality and visual-only density differences."
+    }
+  ],
+  "build_steps": [
+    {
+      "step": 1,
+      "title": "Centralize the existing density data — do not invent a second mobile system",
+      "file": "pulse-beam-funnel-hall.js",
+      "anchor_exact": [
+        "const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;",
+        "const low=(navigator.hardwareConcurrency||4)<=4||innerWidth<720;",
+        "const stage=document.getElementById('stage'),scene=new THREE.Scene();"
+      ],
+      "replace_with": [
+        "const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;",
+        "const VIEW=Object.freeze({",
+        "  compactWidth:720,",
+        "  machineVisualCap:{low:24,full:72},",
+        "  routeVisualCap:{low:36,full:120},",
+        "  wipVisualCap:{low:12,full:32},",
+        "  ringSegments:{low:64,full:128},",
+        "  dprCap:{low:1.2,full:1.8},",
+        "  catalogInitialRows:80",
+        "});",
+        "const constrained=(navigator.hardwareConcurrency||4)<=4;",
+        "let compact=innerWidth<VIEW.compactWidth,low=compact||constrained;",
+        "const density=name=>low?VIEW[name].low:VIEW[name].full;",
+        "const stage=document.getElementById('stage'),scene=new THREE.Scene();"
+      ],
+      "follow_on_exact": [
+        "renderer.setPixelRatio(Math.min(devicePixelRatio||1,density('dprCap')));",
+        "scene.add(ring(20.2,.06,GREEN,.045,density('ringSegments')),ring(24.2,.06,AMBER,.035,density('ringSegments')));"
+      ],
+      "done_state": "No literal 24/72, 36/120, 12/32, 64/128, 1.2/1.8 remains in render-selection expressions outside VIEW.",
+      "verification": "Static test asserts VIEW contains all locked values and old ad-hoc low ternaries for these budgets are absent."
+    },
+    {
+      "step": 2,
+      "title": "Create full semantic sets before slicing geometry",
+      "file": "pulse-beam-funnel-hall.js",
+      "anchor_exact": [
+        "const factoryPriority=n=>n.health==='healthy-verified'?0:n.kind==='fixture'?1:n.kind==='connection'?2:n.kind==='adapter'?3:n.health==='superseded'?4:5;",
+        "const factoryNodes=(twinValid?(twin.machines||[]):[]).filter(n=>n.source==='capability-memory').slice().sort((a,b)=>factoryPriority(a)-factoryPriority(b)||String(a.machine_id).localeCompare(String(b.machine_id)));",
+        "const factoryLimit=low?24:72,visibleFactory=factoryNodes.slice(0,factoryLimit);"
+      ],
+      "replace_with": [
+        "const factoryPriority=n=>n.health==='healthy-verified'?0:n.kind==='fixture'?1:n.kind==='connection'?2:n.kind==='adapter'?3:n.health==='superseded'?4:5;",
+        "const semanticFactory=(twinValid?(twin.machines||[]):[]).filter(n=>n.source==='capability-memory').slice().sort((a,b)=>factoryPriority(a)-factoryPriority(b)||String(a.machine_id).localeCompare(String(b.machine_id)));",
+        "const visibleFactory=semanticFactory.slice(0,density('machineVisualCap'));",
+        "const semanticRoutes=twinValid?(twin.routes||[]):[];",
+        "const visibleRoutes=semanticRoutes.slice(0,density('routeVisualCap'));"
+      ],
+      "route_anchor_exact": "for(const e of (twinValid?(twin.routes||[]):[]).slice(0,low?36:120)){",
+      "route_replace_exact": "for(const e of visibleRoutes){",
+      "done_state": "Full machine and route sets exist independently from visibleFactory/visibleRoutes.",
+      "verification": "Synthetic Twin with >visual caps yields semantic counts greater than drawn counts while all semantic IDs remain retained."
+    },
+    {
+      "step": 3,
+      "title": "Make active work orders semantic-first too",
+      "file": "pulse-beam-funnel-hall.js",
+      "anchor_exact": "const wipOrders=(twinValid?(twin.work_orders||[]):[]).filter(o=>o.status!=='RELEASED').slice(0,low?12:32);",
+      "replace_with": [
+        "const semanticWip=(twinValid?(twin.work_orders||[]):[]).filter(o=>o.status!=='RELEASED');",
+        "const visibleWip=semanticWip.slice(0,density('wipVisualCap'));"
+      ],
+      "rename_exact": [
+        "wipOrders.forEach(o=>{ → visibleWip.forEach(o=>{"
+      ],
+      "invariant": "RELEASED remains excluded from the active-WIP semantic set because the existing floor contract is active work, not archive history.",
+      "done_state": "Visual WIP budget cannot delete active work from semantic discovery.",
+      "verification": "A 40-WIP synthetic snapshot draws at most 12 on low profile but the semantic index contains all 40."
+    },
+    {
+      "step": 4,
+      "title": "Add one compact ≡ FACTORY TRUTH door",
+      "file": "pulse-beam-funnel-hall.html",
+      "anchor_exact": "<button class=\"btn word\" id=\"refinery\">REFINERY</button><button class=\"btn icon\" id=\"sound\"",
+      "insert_exact": "<button class=\"btn word\" id=\"refinery\">REFINERY</button><button class=\"btn icon\" id=\"semantic-index-toggle\" title=\"Factory semantic index\" aria-label=\"Open factory semantic index\" aria-expanded=\"false\">≡</button><button class=\"btn icon\" id=\"sound\"",
+      "panel_anchor_exact": "</div><div class=\"move-pad\">",
+      "panel_insert_before": [
+        "<div class=\"semantic-index\" id=\"semantic-index\" aria-hidden=\"true\">",
+        "  <div class=\"semantic-index-head\"><small>FACTORY TRUTH</small><b id=\"semantic-index-count\">0 entities</b></div>",
+        "  <input id=\"semantic-search\" type=\"search\" autocomplete=\"off\" spellcheck=\"false\" placeholder=\"Find machine, route, work order…\" aria-label=\"Search factory truth\">",
+        "  <div id=\"semantic-list\"></div>",
+        "  <div id=\"semantic-more\"></div>",
+        "</div>"
+      ],
+      "done_state": "One 44px icon exposes all semantic entities without adding another app, page, or authority path.",
+      "verification": "DOM test requires toggle, index, search, list, count, and aria-expanded/aria-hidden state."
+    },
+    {
+      "step": 5,
+      "title": "Build the searchable catalog from the full Twin sets, not the visual slices",
+      "file": "pulse-beam-funnel-hall.js",
+      "anchor_exact": "const info=document.getElementById('info');",
+      "insert_before": [
+        "const semanticCatalog=[];",
+        "semanticFactory.forEach(n=>semanticCatalog.push({entity_id:n.machine_id,kind:'machine',label:n.label||n.machine_id,status:n.health||n.lifecycle||'unknown',node:factoryInspectNode(n)}));",
+        "semanticWip.forEach(o=>semanticCatalog.push({entity_id:'work-order:'+o.work_order_id,kind:'work-order',label:o.work_order_id,status:o.status,node:workInspectNode(o)}));",
+        "semanticRoutes.forEach(r=>semanticCatalog.push({entity_id:'route:'+r.route_id,kind:'route',label:(r.from||'?')+' → '+(r.to||'?'),status:r.state||'connected',node:{id:'route.'+r.route_id,label:(r.from||'?')+' → '+(r.to||'?'),type:'factory-route',detail:'Twin route · '+(r.state||'connected')}}));",
+        "semanticCatalog.sort((a,b)=>String(a.kind).localeCompare(String(b.kind))||String(a.label).localeCompare(String(b.label)));",
+        "window.FACTORY_TWIN_VIEW_STATE=Object.freeze({",
+        "  snapshot_id:twinValid?twin.snapshot_id:null,",
+        "  semantic_ids:semanticCatalog.map(x=>x.entity_id),",
+        "  semantic_counts:{machines:semanticFactory.length,routes:semanticRoutes.length,wip:semanticWip.length},",
+        "  drawn_counts:{machines:visibleFactory.length,routes:visibleRoutes.length,wip:visibleWip.length},",
+        "  compact,low",
+        "});"
+      ],
+      "helper_rule": "Extract the existing inline machine and work-order pick-node object creation into factoryInspectNode(n) and workInspectNode(o) so geometry clicks and index clicks invoke identical inspect() payloads.",
+      "search_contract": {
+        "source": "semanticCatalog",
+        "normalization": "String(label + entity_id + kind + status).toLowerCase()",
+        "filter": "includes(query.toLowerCase().trim())",
+        "row_limit": 80,
+        "ordering": "filter full catalog first, then slice(0,80)",
+        "overflow_text": "Show '<visible> of <matches> · type to narrow' when matches > 80"
+      },
+      "done_state": "A visually omitted entity is still searchable by exact entity_id and opens the same inspector as a rendered entity.",
+      "verification": "Test asserts catalog construction references semanticFactory/semanticRoutes/semanticWip and never visibleFactory/visibleRoutes/visibleWip."
+    },
+    {
+      "step": 6,
+      "title": "Make the index physically phone-safe and align the breakpoint",
+      "file": "pulse-beam-funnel-hall.html",
+      "css_replace_exact": "@media(max-width:680px) → @media(max-width:720px)",
+      "css_add": [
+        ".semantic-index{pointer-events:auto;position:absolute;right:12px;top:70px;width:min(360px,calc(100vw - 24px));max-height:min(70vh,620px);overflow:hidden;border:1px solid var(--line);border-radius:20px;background:rgba(4,10,15,.78);backdrop-filter:blur(24px) saturate(1.18);opacity:0;transform:translateY(-6px);transition:.16s ease}",
+        ".semantic-index.on{opacity:1;transform:none}",
+        ".semantic-index-head{display:flex;align-items:center;justify-content:space-between;padding:12px 12px 8px}.semantic-index-head small{color:var(--muted);letter-spacing:.13em}.semantic-index-head b{font-size:9px;color:var(--ice)}",
+        "#semantic-search{display:block;width:calc(100% - 20px);height:44px;margin:0 10px 8px;border:1px solid var(--line);border-radius:12px;background:#050a0f;color:var(--white);padding:0 12px;font:11px/1.2 inherit}",
+        "#semantic-list{overflow:auto;max-height:calc(min(70vh,620px) - 104px);padding:0 8px 8px}",
+        ".semantic-row{width:100%;min-height:44px;border:0;border-top:1px solid rgba(205,226,240,.08);background:transparent;color:var(--white);text-align:left;padding:8px 6px}.semantic-row small{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.1em}",
+        "#semantic-more{min-height:24px;padding:4px 12px 8px;color:var(--muted);font-size:8px}",
+        "@media(max-width:720px){.semantic-index{left:8px;right:8px;top:96px;bottom:154px;width:auto;max-height:none}.semantic-index #semantic-list{max-height:calc(100% - 104px)}}"
+      ],
+      "geometry_proof": "Existing move pad is 93px tall and starts 52px above the safe-area baseline; its top is 145px. A 154px sheet bottom leaves 9px separation.",
+      "done_state": "Phone index never covers movement controls, uses one shared 720px breakpoint, and every interactive row is at least 44px.",
+      "verification": "Computed-style/browser assertion: semantic rows/search/toggle >=44px; at 390x844 portrait and 844x390 landscape the sheet bounding box does not intersect move-pad/use."
+    },
+    {
+      "step": 7,
+      "title": "Keep resize responsive without pretending geometry was rebuilt",
+      "file": "pulse-beam-funnel-hall.js",
+      "anchor_exact": "addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio||1,low?1.2:1.8))});",
+      "replace_with": [
+        "addEventListener('resize',()=>{",
+        "  compact=innerWidth<VIEW.compactWidth;low=compact||constrained;",
+        "  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();",
+        "  renderer.setSize(innerWidth,innerHeight);",
+        "  renderer.setPixelRatio(Math.min(devicePixelRatio||1,density('dprCap')));",
+        "  document.body.dataset.compact=compact?'1':'0';",
+        "});"
+      ],
+      "honesty_boundary": "Do not claim the already-instantiated scene increases object count after an orientation change. DT-06 guarantees semantic parity continuously and responsive UI/DPR continuously; visual object budget is selected at scene construction until a future scene-rebuild feature exists.",
+      "done_state": "Resize updates layout/camera/DPR truthfully; no false claim of live geometry repopulation.",
+      "verification": "Blueprint verifier asserts this non-goal exists and runtime tests compare semantic IDs, not geometry count, across resize."
+    },
+    {
+      "step": 8,
+      "title": "Wire the index to the existing inspector — no second detail system",
+      "file": "pulse-beam-funnel-hall.js",
+      "anchor_exact": "function inspect(n){",
+      "required_behavior": [
+        "semantic-index-toggle toggles .on, aria-expanded, and aria-hidden.",
+        "semantic-search input rerenders rows from the full semanticCatalog.",
+        "Clicking .semantic-row calls inspect(row.node), closes the semantic index, and leaves #info as the only detail panel.",
+        "Escape closes the semantic index if open; it does not alter camera or Funnel state.",
+        "Invalid Twin leaves semanticCatalog empty and index count '0 entities'; existing TWIN INVALID remains visible."
+      ],
+      "done_state": "Index navigation is merely another input into inspect(n).",
+      "verification": "Source test forbids a second machine/work-order detail renderer and checks row click path contains inspect(row.node)."
+    },
+    {
+      "step": 9,
+      "title": "Add independent semantic-parity verification",
+      "file": "tests/factory-twin-mobile-parity-checks.cjs",
+      "exact_assertions": [
+        "Hall HTML contains #semantic-index-toggle, #semantic-index, #semantic-search, #semantic-list.",
+        "VIEW.compactWidth === 720; machine caps 24/72; route caps 36/120; WIP caps 12/32; DPR caps 1.2/1.8; ring segments 64/128.",
+        "semanticFactory, semanticRoutes, semanticWip are created from validated Twin arrays before any .slice visual cap.",
+        "FACTORY_TWIN_VIEW_STATE.semantic_ids derives from semanticCatalog, not visible arrays.",
+        "A synthetic Twin with 100 machines + 50 routes + 40 active WIP yields identical semantic ID sets for low and full policies.",
+        "Low drawn counts <= 24/36/12; full drawn counts <= 72/120/32.",
+        "A semantic ID outside the low visual cap can be found by exact search and routed to inspect().",
+        "Existing TWIN INVALID source assertion remains.",
+        "No DT-06 blueprint link targets blueprint-dt06-mobile-parity.html directly; canonical owner link is pulse-dashboard.html?tool=blueprintdt06."
+      ],
+      "done_state": "Parity is mechanically checked; 'mobile safe' is not a prose claim."
+    }
+  ],
+  "interfaces": [
+    {
+      "from": "MoorFactoryTwin.compose()",
+      "to": "semanticFactory/semanticRoutes/semanticWip",
+      "contract": "Validated snapshot arrays are copied/read, never mutated."
+    },
+    {
+      "from": "semantic sets",
+      "to": "visible* arrays",
+      "contract": "Only rendering applies caps; semantic sets remain complete."
+    },
+    {
+      "from": "semanticCatalog",
+      "to": "Factory Truth index",
+      "contract": "Full searchable set; 80-row DOM cap applies after search filtering."
+    },
+    {
+      "from": "Factory Truth row",
+      "to": "inspect(n)",
+      "contract": "Use same inspect payload helpers as 3D pickables."
+    },
+    {
+      "from": "VIEW",
+      "to": "renderer/CSS/test",
+      "contract": "720 and density budgets are the only canonical DT-06 presentation values."
+    }
+  ],
+  "acceptance": [
+    "Phone and desktop expose identical semantic entity ID sets for the same FactoryTwinSnapshot.",
+    "Phone may draw fewer machines/routes/WIP but every omitted entity remains searchable and inspectable.",
+    "Invalid Twin never produces optimistic catalog entities.",
+    "No new authority, data source, app, route, or standalone navigation path is introduced.",
+    "All DT-06 links presented to the owner use pulse-dashboard.html?tool=blueprintdt06.",
+    "A competent builder can implement every change from this blueprint without choosing new numeric values or asking how the parts connect."
+  ],
+  "non_goals": [
+    "Do not redesign FactoryTwinSnapshot.",
+    "Do not change Funnel authority, work-order semantics, health semantics, machine lifecycle, or route semantics.",
+    "Do not rebuild the 3D scene when orientation changes; semantic parity and UI responsiveness are the DT-06 guarantee.",
+    "Do not add server state, sync, new storage, or a second inspector.",
+    "Do not raise mobile visual caps beyond the existing 24/36/12 budgets.",
+    "Do not hide TWIN INVALID or substitute raw plant/factory data when Twin validation fails."
+  ],
+  "pulse_registration": {
+    "canonical_link": "pulse-dashboard.html?tool=blueprintdt06",
+    "component_id": "blueprintdt06",
+    "source_file": "blueprint-dt06-mobile-parity.html",
+    "category": [
+      "interface",
+      "compdata"
+    ],
+    "kind": "blueprint",
+    "owner_navigation_rule": "All visible blueprint cross-links target _top Pulse dashboard deep links."
+  },
+  "builder_handoff": {
+    "touch_order": [
+      "pulse-beam-funnel-hall.js",
+      "pulse-beam-funnel-hall.html",
+      "tests/factory-twin-mobile-parity-checks.cjs"
+    ],
+    "do_not_touch": [
+      "factory-twin-core.js",
+      "funnel-kernel.js",
+      "software-factory-core.js"
+    ],
+    "preflight": [
+      "fetch latest main",
+      "confirm anchors still match exactly",
+      "if an anchor changed, stop and re-run the blueprint through the Funnel instead of guessing"
+    ],
+    "verification_order": [
+      "node --input-type=module --check < pulse-beam-funnel-hall.js",
+      "node tests/factory-twin-core-checks.cjs",
+      "node tests/factory-twin-citadel-binding-checks.cjs",
+      "node tests/factory-twin-mobile-parity-checks.cjs",
+      "node tests/pulse-beam-laser-citadel-checks.cjs",
+      "node tests/pulse-checks.cjs"
+    ]
+  }
+}
