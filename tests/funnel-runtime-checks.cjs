@@ -9,6 +9,9 @@ for(const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)){
   new vm.Script(m[2],{filename:'quiz-funnel-v3 inline '+(++inline)});
 }
 assert(html.includes('sealed v44'));
+assert(html.includes('funnel-usage-plan-core.js'));
+assert(html.includes("stage:'usage_plan'")||html.includes("stage:'usage_plan',"));
+assert(html.includes('makeUsagePlan'));
 assert(html.includes('src="funnel-kernel.js'));
 assert(html.indexOf('funnel-kernel.js')<html.indexOf('"use strict"'));
 assert(html.includes('function vReplay(){'));

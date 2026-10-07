@@ -10,7 +10,7 @@ const events=[];
 const window={parent:null,document,location,localStorage,addEventListener:()=>{},dispatchEvent:e=>events.push(e)};
 window.parent=window;
 const context=vm.createContext({window,document,location,localStorage,URLSearchParams,URL,Promise,Date,Math,JSON,String,Array,Object,RegExp,Number,Map,Set,TextEncoder,setTimeout:()=>0,clearTimeout:()=>{},CustomEvent:function(type,x){this.type=type;this.detail=x&&x.detail}});
-for(const file of ['funnel-kernel.js','software-factory-core.js','moor-request.js']){
+for(const file of ['funnel-usage-plan-core.js','funnel-kernel.js','software-factory-core.js','moor-request.js']){
   new vm.Script(fs.readFileSync(file,'utf8'),{filename:file}).runInContext(context);
 }
 window.MOORFunnelKernel=context.MOORFunnelKernel;
@@ -36,6 +36,8 @@ window.PulseSpine={references:[],request:(input,ctx,source)=>({id:'queued',input
 
   const K=window.MOORFunnelKernel,id='factory-receipt-test';
   let s=K.open({request_id:id,input,source:'test',context:{}});
+  const usagePlan=K.makeUsagePlan(input,{page:'pulse-dashboard.html',source:'test'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'app-compiler-harness',reuse_before_new:true}});
+  s=K.advance({request_id:id,stage:'usage_plan',payload:{plan:usagePlan},provenance:'system'});
   s=K.advance({request_id:id,stage:'references',payload:{reused:[],missing:[]},provenance:'learned'});
   s=K.advance({request_id:id,stage:'distill',payload:{spec_draft:'Build verified reusable widget.'},provenance:'inferred'});
   s=K.advance({request_id:id,stage:'decisions',payload:{locked:[{key:'build',value:'widget'}],unresolved:[]},provenance:'explicit'});
@@ -43,6 +45,7 @@ window.PulseSpine={references:[],request:(input,ctx,source)=>({id:'queued',input
   s=K.advance({request_id:id,stage:'replay',payload:{page0_verified:true,page0_hash:K.hash(input),obligations:obs.map(o=>({...o,status:'satisfied'})),substitutions:[]},provenance:'verified'});
   s=K.advance({request_id:id,stage:'verdict',payload:{spec:{task:'widget',obligations:obs.map(o=>({...o,status:'satisfied'}))},destination:'app-compiler-harness',done_criteria:['verified widget exists']},provenance:'verified'});
   assert(K.verifyReceipt(s.receipt));
+  assert.equal(s.receipt.usage_plan_hash,s.stages.usage_plan.plan_hash);
 
   const approved=await window.MOOR.request({input,source:'test',forceFunnel:true,funnel_receipt:s.receipt});
   assert.equal(approved.route,'harness');

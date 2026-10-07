@@ -4,6 +4,7 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
 const root = path.resolve(__dirname, '..');
+const usagePlanSrc = fs.readFileSync(path.join(root, 'funnel-usage-plan-core.js'), 'utf8');
 const kernelSrc = fs.readFileSync(path.join(root, 'funnel-kernel.js'), 'utf8');
 const src = fs.readFileSync(path.join(root, 'moor-request.js'), 'utf8');
 const store = new Map();
@@ -34,6 +35,8 @@ const context = vm.createContext({
   URLSearchParams,URL,Promise,Date,Math,JSON,String,Array,Object,RegExp,Number,
   setTimeout:()=>0,clearTimeout:()=>{},CustomEvent:function(){}
 });
+new vm.Script(usagePlanSrc,{filename:'funnel-usage-plan-core.js'}).runInContext(context);
+window.FunnelUsagePlan=context.FunnelUsagePlan;
 new vm.Script(kernelSrc,{filename:'funnel-kernel.js'}).runInContext(context);
 window.MOORFunnelKernel=context.MOORFunnelKernel;
 assert(window.MOORFunnelKernel && typeof window.MOORFunnelKernel.verifyReceipt === 'function');
@@ -77,6 +80,8 @@ assert(window.MOOR && typeof window.MOOR.request === 'function');
   const receiptInput='fix this layout';
   const rid='receipt-route-test';
   let s=K.open({request_id:rid,input:receiptInput,source:'test',context:{}});
+  s=K.advance({request_id:rid,stage:'usage_plan',payload:{plan:K.makeUsagePlan(receiptInput,{page:'test'})},provenance:'system'});
+  assert.equal(s.stage,'usage_plan');
   s=K.advance({request_id:rid,stage:'references',payload:{reused:[],missing:[]},provenance:'learned'});
   s=K.advance({request_id:rid,stage:'distill',payload:{spec_draft:'Fix the layout through the verified route.'},provenance:'inferred'});
   s=K.advance({request_id:rid,stage:'decisions',payload:{locked:[{key:'route',value:'harness-after-funnel'}],unresolved:[]},provenance:'explicit'});

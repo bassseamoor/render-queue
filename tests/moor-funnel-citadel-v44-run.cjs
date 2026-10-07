@@ -6,6 +6,7 @@ K._resetForTests();
 const request_id='moor-funnel-citadel-super-blueprint-v1';
 const page0=bp.page0;
 K.open({request_id,input:page0,source:'owner',context:{project:'MOOR OS',surface:'Pulse Beam / Funnel Hall',world:'Morverse',mode:'worldbuilding + implementation'}});
+K.advance({request_id,stage:'usage_plan',provenance:'system',payload:{plan:K.makeUsagePlan(page0,{page:'Pulse Beam / Funnel Hall',source:'owner'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'Project Pulse / Pulse Beam / Funnel Hall',reuse_before_new:true},decomposition_plan:{parallelize_independent_surfaces:true,surfaces:['architecture','worldbuilding','funnel-graph','property','social/economic-future','verification'],preserve_shared_page0:true,reunify_before_blueprint:true,expected_mode:'blueprint-then-build'}})}});
 
 K.write({request_id,kind:'reference',value:{paths:bp.references},source:'repository-audit',provenance:'verified'});
 K.write({request_id,kind:'evidence',value:{questions:bp.funnelQuestions,reason:'Open-ended material questions used to distill the location rather than presuppose a visual solution.'},source:'super-blueprint',provenance:'explicit'});

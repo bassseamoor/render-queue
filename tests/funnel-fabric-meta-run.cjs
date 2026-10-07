@@ -25,6 +25,7 @@ kernel.open({
     ]
   }
 });
+kernel.advance({request_id:requestId,stage:'usage_plan',provenance:'system',payload:{plan:kernel.makeUsagePlan(page0,{page:'Funnel Fabric meta-run',source:'sebastian-chat'},{decomposition_plan:{parallelize_independent_surfaces:true,surfaces:['recursive-cases','solver-society','resource-governance','foundry','verification'],preserve_shared_page0:true,reunify_before_blueprint:true,expected_mode:'blueprint-then-build'},execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'blueprint/funnel-fabric.blueprint.json',reuse_before_new:true}})}});
 
 kernel.write({request_id:requestId,kind:'reference',source:'current-thread',provenance:'explicit',value:{
   name:'Sebastian solver correction',

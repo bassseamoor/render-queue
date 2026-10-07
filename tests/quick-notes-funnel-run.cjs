@@ -6,6 +6,7 @@ const bp=JSON.parse(fs.readFileSync('blueprint/quick-notes.blueprint.json','utf8
 F._resetForTests();
 const id='quick-notes-v1';
 F.open({request_id:id,input:bp.page0,source:'Sebastian / Quick Notes',context:{destination:'Project Pulse'}});
+F.advance({request_id:id,stage:'usage_plan',provenance:'system',payload:{plan:F.makeUsagePlan(bp.page0,{page:'Project Pulse',source:'Sebastian / Quick Notes'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'Project Pulse',reuse_before_new:true}})}});
 F.advance({request_id:id,stage:'references',provenance:'verified',payload:{
   reused:[
     {path:'environment-engine-core.js',reason:'Reuse canonical presentation tokens lightly rather than creating another visual system.'},
