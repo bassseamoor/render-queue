@@ -79,7 +79,7 @@ function summarize(ledger){
 function pipelineLabel(stage){
   return {
     requested:'Requested',funneled:'Funnel',blueprint:'Blueprint',building:'Build',
-    verified:'Verified',pulse:'Pulse',main:'Main',owner-visible:'Owner visible'
+    verified:'Verified',pulse:'Pulse',main:'Main','owner-visible':'Owner visible'
   }[stage]||stage;
 }
 function githubCommitToEvent(c){
