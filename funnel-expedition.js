@@ -124,6 +124,16 @@ function investigateDimension(dimension, page0){
 
 /* Gen-2: parent-shaped children with real topology */
 function runChildInvestigation(parent, childIdx, page0){
+  // Child failure handling: if parent is malformed, report failure as evidence
+  if(!parent||!parent.findings||!Array.isArray(parent.findings)){
+    return {
+      parent:parent?.seat||'unknown', child:childIdx,
+      focus:'parent-malformed', page0_hash:page0.hash,
+      finding:{type:'unresolved',content:`Child ${childIdx}: parent malformed, cannot investigate`,dimension:'failure-modes'},
+      parent_update:{action:'disqualify',detail:`Child ${childIdx} reports parent malformed`},
+      failed:true,
+    };
+  }
   // Child topology DETERMINED BY parent results
   const parentDims=[...new Set(parent.findings.map(f=>f.dimension))];
   const parentUnresolved=parent.unresolved.map(u=>u.content);
