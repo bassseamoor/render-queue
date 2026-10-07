@@ -5,6 +5,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
 'use strict';
 const DB='moor.file-handles.v1', STORE='handles', PRIMARY='primary-root';
+const MOOR_ROOT='MOOR', APP_DATA='app-data';
 function supported(){return !!(root&&root.showDirectoryPicker&&root.indexedDB)}
 function cleanSegment(x){return String(x||'').replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,' ').trim().slice(0,120)||'untitled'}
 function openDb(){
@@ -39,11 +40,29 @@ async function permission(handle,mode,request){
   if(request&&handle.requestPermission&&await handle.requestPermission(opts)==='granted')return true;
   return false;
 }
+async function initializeRoot(handle){
+  await ensureDir(handle,[MOOR_ROOT,APP_DATA]);
+  const readme=[
+    'MOOR local data root',
+    '',
+    'These files are durable backing storage for MOOR applications.',
+    'The intended interface is the MOOR app that owns each directory, not manual filesystem editing.',
+    '',
+    'Structure:',
+    '  MOOR/app-data/<app-id>/...',
+    '',
+    'Do not move or rename app-data files while MOOR apps are using them.'
+  ].join('\n');
+  const existing=await readText(handle,[MOOR_ROOT],'README.txt');
+  if(existing==null)await writeText(handle,[MOOR_ROOT],'README.txt',readme+'\n');
+  return handle;
+}
 async function connect(){
   if(!supported())throw new Error('File System Access API is unavailable in this browser.');
   const handle=await root.showDirectoryPicker({mode:'readwrite'});
   if(!await permission(handle,'readwrite',true))throw new Error('Read/write permission was not granted.');
   await remember(handle,PRIMARY);
+  await initializeRoot(handle);
   return handle;
 }
 async function primary(requestPermission){
@@ -80,5 +99,13 @@ async function readJson(rootHandle,segments,name,fallback){
 async function writeJson(rootHandle,segments,name,value){
   return writeText(rootHandle,segments,name,JSON.stringify(value,null,2)+'\n');
 }
-return Object.freeze({DB,STORE,PRIMARY,supported,cleanSegment,connect,remembered,primary,permission,ensureDir,readText,writeText,readJson,writeJson});
+function appSegments(appId,more){return [MOOR_ROOT,APP_DATA,cleanSegment(appId)].concat(Array.isArray(more)?more:[])}
+async function readAppJson(rootHandle,appId,name,fallback){return readJson(rootHandle,appSegments(appId),name,fallback)}
+async function writeAppJson(rootHandle,appId,name,value){await initializeRoot(rootHandle);return writeJson(rootHandle,appSegments(appId),name,value)}
+async function readAppText(rootHandle,appId,name){return readText(rootHandle,appSegments(appId),name)}
+async function writeAppText(rootHandle,appId,name,text){await initializeRoot(rootHandle);return writeText(rootHandle,appSegments(appId),name,text)}
+return Object.freeze({
+  DB,STORE,PRIMARY,MOOR_ROOT,APP_DATA,supported,cleanSegment,connect,remembered,primary,permission,initializeRoot,
+  ensureDir,readText,writeText,readJson,writeJson,appSegments,readAppJson,writeAppJson,readAppText,writeAppText
+});
 });
