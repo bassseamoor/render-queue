@@ -125,7 +125,12 @@ function extractSemantics(text){
   });
   return facts;
 }
-function addFact(arr,f){const k=f.text+'|'+f.sentence;f._k=k;if(!arr.some(x=>x._k===k)){delete f._k;arr.push(f);}}
+function addFact(arr,f){
+  // dedup by normalized text: same fact stated repeatedly -> single entry (first occurrence)
+  const key=f.text.toLowerCase().trim();
+  if(arr.some(x=>x.text.toLowerCase().trim()===key))return;
+  arr.push(f);
+}
 /* attach the normalized source text for implication rules that need raw-text matching */
 function extractSemanticsWithText(text){
   const facts=extractSemantics(text);
