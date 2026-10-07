@@ -252,6 +252,15 @@ for c in comps:
 # Platform-level items that must survive every dashboard rebuild. These are not
 # derived from the legacy COMPS inventory, so regeneration must add them explicitly.
 PRESERVED_PLATFORM_ITEMS = {
+    'blueprintpg03': {
+        'label': 'PG-03 · The Seed Tree', 'file': 'pulse-component-extensions.js',
+        'component': 'PG-03 REV2 / semantic-key-v1',
+        'component_source': 'blueprint/pg-03-stable-seed-substream-standard.blueprint.json',
+        'page': 'pulse-dashboard.html?tool=blueprintpg03',
+        'depends_on': ['blueprint-pg03-seed-tree.html','procedural-recipe-core.js','procedural-recipe-schema.json','procedural-generator-inventory.json'],
+        'tags': ['cat:interface','cat:compdata','kind:blueprint','prov:funnel-sealed','src:blueprint/pg-03-stable-seed-substream-standard.blueprint.json'],
+        'honest_limits': 'Sealed build blueprint only until a separate v44 runtime execution receipt authorizes PG-03 implementation.'
+    },
     'funnel-usage-plan': {
         'label': 'Funnel Usage Plan', 'file': 'funnel-usage-plan-core.js',
         'component': 'Funnel Usage Plan v2',
