@@ -5,7 +5,18 @@ const bp=require('../blueprint/dt06-mobile-semantic-parity.blueprint.json');
 
 const PAGE0='Holy wow use the damn Funnel. Automate the redundant part of this task, ask the Funnel what to do, and execute the selected build instead of manually re-planning the same work.';
 const base='runtime-release-base';
-const packet=Loop.planNext({owner_directive:PAGE0,repository_base:base});
+const live=require('../blueprint-choreography-state.json');
+const dt06Fixture=JSON.parse(JSON.stringify(live));
+dt06Fixture.slices['DT-06']={
+  status:'blueprint-sealed-runtime-partial',
+  evidence:[
+    'blueprint/dt06-mobile-semantic-parity.blueprint.json',
+    'blueprint/dt06-mobile-semantic-parity.seal.v2.json',
+    'tests/dt06-blueprint-funnel-run.cjs',
+    'tests/dt06-blueprint-standard-checks.cjs'
+  ]
+};
+const packet=Loop.planNext({owner_directive:PAGE0,repository_base:base,evidence:dt06Fixture});
 assert.equal(packet.next_slice.slice_id,'DT-06');
 assert.equal(packet.action,'execute-sealed-blueprint');
 
