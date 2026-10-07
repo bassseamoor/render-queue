@@ -91,7 +91,7 @@ textarea{
     <div class="panelHead">
       <div><div class="brand">Quick Notes</div><div class="sub">local · instant · simple</div></div>
       <div class="actions">
-        <button class="iconBtn" id="newFolder" title="New folder">＋</button>
+        <button class="iconBtn" id="ssdBtn" title="Connect durable SSD storage">SSD</button><button class="iconBtn" id="newFolder" title="New folder">＋</button>
       </div>
     </div>
     <div class="search"><input id="search" placeholder="Search notes"></div>
@@ -118,7 +118,7 @@ textarea{
     </div>
     <div class="bottomBar">
       <span id="wordCount">0 words</span>
-      <span>⌘/Ctrl N · new note</span>
+      <span id="storageStatus">browser fallback</span>
     </div>
   </main>
 </div>
@@ -134,12 +134,13 @@ textarea{
   </div>
 </div>
 <script src="quick-notes-core.js"></script>
+<script src="moor-local-files.js"></script>
 <script src="environment-engine-core.js"></script>
 <script>
 (function(){
 'use strict';
 const Q=window.MOORQuickNotes;
-let state=Q.load(), query='', saveTimer=null, modalAction=null;
+let state=Q.load(), query='', saveTimer=null, modalAction=null, ssdHandle=null;
 const $=s=>document.querySelector(s);
 const tree=$('#tree'),noteList=$('#noteList'),title=$('#title'),body=$('#body'),saveState=$('#saveState'),menu=$('#menu');
 try{
@@ -158,8 +159,56 @@ function pathFor(id){
   while(cur&&guard++<50){out.unshift(cur.name);cur=cur.parentId===Q.ROOT?null:Q.folderById(state,cur.parentId)}
   return ['All Notes',...out];
 }
+function latestStamp(s){
+  const stamps=[...(s.notes||[]).map(x=>x.updatedAt||x.createdAt||''),...(s.folders||[]).map(x=>x.updatedAt||x.createdAt||'')];
+  return stamps.sort().pop()||'';
+}
+function mergeStates(a,b){
+  a=Q.normalize(a);b=Q.normalize(b);
+  const fm=new Map();
+  [...a.folders,...b.folders].forEach(f=>{
+    const old=fm.get(f.id);
+    if(!old||String(f.updatedAt||f.createdAt||'')>=String(old.updatedAt||old.createdAt||''))fm.set(f.id,f);
+  });
+  const nm=new Map();
+  [...a.notes,...b.notes].forEach(n=>{
+    const old=nm.get(n.id);
+    if(!old||String(n.updatedAt||n.createdAt||'')>=String(old.updatedAt||old.createdAt||''))nm.set(n.id,n);
+  });
+  return Q.normalize({...a,folders:[...fm.values()],notes:[...nm.values()]});
+}
+async function saveSSD(){
+  if(!ssdHandle||!window.MOORLocalFiles)return;
+  try{
+    await MOORLocalFiles.writeAppJson(ssdHandle,'quick-notes','state.json',{
+      schema:'moor.quick-notes.storage',version:1,savedAt:new Date().toISOString(),state
+    });
+    $('#storageStatus').textContent='SSD · MOOR/app-data/quick-notes';
+    $('#ssdBtn').textContent='SSD✓';
+  }catch(e){
+    $('#storageStatus').textContent='browser fallback · SSD write failed';
+    console.warn('Quick Notes SSD write failed',e);
+  }
+}
+async function loadSSD(){
+  if(!ssdHandle||!window.MOORLocalFiles)return;
+  try{
+    const disk=await MOORLocalFiles.readAppJson(ssdHandle,'quick-notes','state.json',null);
+    if(disk&&disk.state){
+      state=mergeStates(state,disk.state);
+      state=Q.save(state);
+    }else{
+      await saveSSD();
+    }
+    $('#storageStatus').textContent='SSD · MOOR/app-data/quick-notes';
+    $('#ssdBtn').textContent='SSD✓';
+  }catch(e){
+    console.warn('Quick Notes SSD load failed',e);
+  }
+}
 function persist(){
   state=Q.save(state);saveState.textContent='Saved';
+  saveSSD();
 }
 function scheduleSave(){
   saveState.textContent='Saving…';clearTimeout(saveTimer);saveTimer=setTimeout(persist,280);
@@ -239,6 +288,12 @@ function syncEditor(){
 function countWords(){
   const text=body.value.trim();const n=text?text.split(/\s+/).length:0;$('#wordCount').textContent=n+' word'+(n===1?'':'s');
 }
+$('#ssdBtn').onclick=async()=>{
+  try{
+    ssdHandle=await MOORLocalFiles.connect();
+    await loadSSD();render();
+  }catch(e){alert(e.message||String(e))}
+};
 $('#newNote').onclick=createNote;
 $('#newFolder').onclick=()=>showFolderDialog(state.selectedFolder,null);
 $('#search').oninput=e=>{query=e.target.value.toLowerCase();renderNotes()};
@@ -258,8 +313,19 @@ document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='n'){e.preventDefault();showFolderDialog(state.selectedFolder,null)}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();persist()}
 });
-if(!state.notes.length){state=Q.createNote(state,Q.ROOT).state;persist()}
-render();
+if(!state.notes.length){state=Q.createNote(state,Q.ROOT).state;Q.save(state)}
+(async function initStorage(){
+  if(window.MOORLocalFiles&&MOORLocalFiles.supported()){
+    try{
+      ssdHandle=await MOORLocalFiles.primary(false);
+      if(ssdHandle)await loadSSD();
+      else $('#storageStatus').textContent='browser fallback · connect SSD once';
+    }catch(e){$('#storageStatus').textContent='browser fallback'}
+  }else{
+    $('#storageStatus').textContent='browser fallback · File System Access unavailable';
+  }
+  render();
+})();
 })();
 </script>
 </body>
