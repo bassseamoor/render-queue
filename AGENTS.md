@@ -84,3 +84,8 @@ Run `node tests/pulse-checks.cjs` before publishing Pulse changes. Escape `<` as
 - Preserve `blueprint/funnel-core.js` and `blueprint/funnel-ui.js` in the standalone build. Run `node tests/funnel-checks.cjs` before publishing.
 - There is one canonical owner answer per question, with revision history. Model outputs update opinion lanes only. Never overwrite owner answers from model results. Retain ledger, opinions, snapshot IDs, review requests, resolutions, learned rules and cadence across exports/imports.
 - Green is clarity/alignment, never implementation or permanent completion. NONE performs explicit rule checks and does not claim semantic inference. External reviewer execution is manual copy/paste; cadence only queues while the page is open.
+
+
+## Funnel usage planning
+
+Any Funnel use must follow the request-specific Page-0-bound Usage Plan from `funnel-usage-plan-core.js` before reference resolution. Funnel rules constrain the process; the Usage Plan says how this run will use the process.
