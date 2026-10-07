@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MOOR Quick Notes</title>
+<style>
+:root{
+  --bg:#08101a;--bg2:#0e1a27;--glass:rgba(12,21,33,.64);--glass2:rgba(15,26,40,.78);
+  --line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.16);--text:#f4f8fc;--muted:#91a2b4;
+  --soft:#c8d4df;--accent:#aee8ff;--danger:#ffb1a5;
+}
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}
+body{
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);
+  background:
+    radial-gradient(1200px 800px at 18% 8%,rgba(71,128,166,.18),transparent 62%),
+    radial-gradient(900px 700px at 86% 84%,rgba(85,116,150,.14),transparent 62%),
+    linear-gradient(140deg,var(--bg),var(--bg2));
+}
+button,input,textarea{font:inherit}
+.app{height:100%;padding:18px;display:grid;grid-template-columns:240px 280px minmax(0,1fr);gap:12px}
+.glass{
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.026)),var(--glass);
+  border:1px solid var(--line);border-radius:22px;backdrop-filter:blur(28px) saturate(130%);
+  box-shadow:0 24px 80px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.04);
+  min-height:0;
+}
+.panel{display:flex;flex-direction:column;overflow:hidden}
+.panelHead{padding:15px 15px 11px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand{font-weight:700;font-size:13px;letter-spacing:.01em}.sub{font-size:10px;color:var(--muted);margin-top:2px}
+.actions{display:flex;gap:6px}
+.iconBtn,.btn{
+  border:1px solid var(--line);background:rgba(255,255,255,.045);color:var(--soft);
+  border-radius:11px;cursor:pointer;transition:.16s ease;
+}
+.iconBtn{width:31px;height:31px;display:grid;place-items:center;font-size:15px}
+.btn{padding:7px 10px;font-size:11px}
+.iconBtn:hover,.btn:hover{background:rgba(255,255,255,.08);border-color:var(--line2);color:white}
+.search{padding:0 12px 10px}
+.search input,.titleInput{
+  width:100%;border:1px solid transparent;background:rgba(255,255,255,.035);color:var(--text);
+  outline:none;border-radius:12px;padding:9px 11px;
+}
+.search input::placeholder,.titleInput::placeholder,textarea::placeholder{color:#708295}
+.search input:focus,.titleInput:focus{border-color:rgba(174,232,255,.28);background:rgba(255,255,255,.05)}
+.tree,.noteList{overflow:auto;scrollbar-width:none;padding:4px 8px 10px}.tree::-webkit-scrollbar,.noteList::-webkit-scrollbar{display:none}
+.folderRow,.noteRow{
+  display:flex;align-items:center;gap:8px;border-radius:11px;padding:8px 9px;color:#c8d4de;cursor:pointer;
+  border:1px solid transparent;user-select:none;
+}
+.folderRow:hover,.noteRow:hover{background:rgba(255,255,255,.035)}
+.folderRow.active,.noteRow.active{background:rgba(174,232,255,.10);border-color:rgba(174,232,255,.15);color:white}
+.folderDot{width:8px;height:8px;border:1px solid rgba(174,232,255,.75);border-radius:3px;box-shadow:0 0 12px rgba(174,232,255,.18)}
+.folderName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.count{margin-left:auto;color:#728598;font-size:10px}
+.rootRow{font-weight:600}
+.noteRow{display:block;padding:10px 11px}
+.noteTitle{font-size:12px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.notePreview{font-size:10px;line-height:1.35;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.noteTime{font-size:9px;color:#6f8091;margin-top:6px}
+.empty{color:#718396;font-size:11px;line-height:1.5;padding:14px 12px}
+.editor{position:relative}
+.editorTop{padding:15px 16px 10px;display:flex;align-items:center;gap:9px;border-bottom:1px solid rgba(255,255,255,.055)}
+.crumb{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.saveState{margin-left:auto;font-size:10px;color:#7f93a6}
+.editorBody{flex:1;display:flex;flex-direction:column;min-height:0;padding:18px}
+.titleInput{font-size:24px;font-weight:680;letter-spacing:-.025em;background:transparent;padding:3px 0 10px;border-radius:0}
+.titleInput:focus{background:transparent;border-color:transparent}
+textarea{
+  flex:1;resize:none;width:100%;border:0;outline:0;background:transparent;color:#dce5ed;
+  font:15px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:8px 0 20px;
+}
+.bottomBar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px 13px;border-top:1px solid rgba(255,255,255,.055);font-size:10px;color:var(--muted)}
+.hidden{display:none!important}
+.menu{position:fixed;z-index:30;min-width:150px;padding:6px;border:1px solid var(--line);background:rgba(11,19,30,.94);backdrop-filter:blur(24px);border-radius:12px;box-shadow:0 20px 70px rgba(0,0,0,.35)}
+.menu button{width:100%;text-align:left;padding:8px 9px;border:0;background:transparent;color:#cfd9e3;border-radius:8px;cursor:pointer;font-size:11px}.menu button:hover{background:rgba(255,255,255,.055)}.menu button.danger{color:var(--danger)}
+.modalBack{position:fixed;inset:0;background:rgba(3,7,12,.44);display:grid;place-items:center;z-index:40;padding:20px}
+.modal{width:min(380px,100%);padding:16px}.modal h3{font-size:14px;margin:0 0 10px}.modal input{width:100%;padding:9px 10px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:10px;color:white;outline:none}.modal .row{display:flex;justify-content:flex-end;gap:7px;margin-top:12px}
+@media(max-width:920px){
+  .app{grid-template-columns:210px minmax(0,1fr)}.notesPanel{display:none}
+}
+@media(max-width:650px){
+  .app{padding:8px;grid-template-columns:1fr}.foldersPanel{display:none}.editor{border-radius:18px}.editorTop{padding-top:12px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="glass panel foldersPanel">
+    <div class="panelHead">
+      <div><div class="brand">Quick Notes</div><div class="sub">local · instant · simple</div></div>
+      <div class="actions">
+        <button class="iconBtn" id="newFolder" title="New folder">＋</button>
+      </div>
+    </div>
+    <div class="search"><input id="search" placeholder="Search notes"></div>
+    <div class="tree" id="tree"></div>
+  </aside>
+
+  <aside class="glass panel notesPanel">
+    <div class="panelHead">
+      <div><div class="brand" id="folderTitle">All Notes</div><div class="sub" id="folderMeta">0 notes</div></div>
+      <button class="iconBtn" id="newNote" title="New note">＋</button>
+    </div>
+    <div class="noteList" id="noteList"></div>
+  </aside>
+
+  <main class="glass panel editor">
+    <div class="editorTop">
+      <div class="crumb" id="crumb">All Notes</div>
+      <div class="saveState" id="saveState">Saved</div>
+      <button class="iconBtn" id="moreBtn" title="Note actions">⋯</button>
+    </div>
+    <div class="editorBody" id="editorBody">
+      <input class="titleInput" id="title" placeholder="Untitled">
+      <textarea id="body" placeholder="Paste or type anything…"></textarea>
+    </div>
+    <div class="bottomBar">
+      <span id="wordCount">0 words</span>
+      <span>⌘/Ctrl N · new note</span>
+    </div>
+  </main>
+</div>
+<div id="menu" class="menu hidden"></div>
+<div id="modal" class="modalBack hidden">
+  <div class="glass modal">
+    <h3 id="modalTitle">New folder</h3>
+    <input id="modalInput" autocomplete="off">
+    <div class="row">
+      <button class="btn" id="modalCancel">Cancel</button>
+      <button class="btn" id="modalOk">Save</button>
+    </div>
+  </div>
+</div>
+<script src="quick-notes-core.js"></script>
+<script src="environment-engine-core.js"></script>
+<script>
+(function(){
+'use strict';
+const Q=window.MOORQuickNotes;
+let state=Q.load(), query='', saveTimer=null, modalAction=null;
+const $=s=>document.querySelector(s);
+const tree=$('#tree'),noteList=$('#noteList'),title=$('#title'),body=$('#body'),saveState=$('#saveState'),menu=$('#menu');
+try{
+  if(window.EnvironmentEngine){
+    const r=EnvironmentEngine.compile({seed:'MOOR-QUICK-NOTES',profile:'workspace',hours:8,fps:30});
+    const t=EnvironmentEngine.presentationTokens(r);
+    document.documentElement.style.setProperty('--accent',t['--moor-env-accent']);
+  }
+}catch(e){}
+
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function folderName(id){return id===Q.ROOT?'All Notes':(Q.folderById(state,id)||{name:'Folder'}).name}
+function pathFor(id){
+  if(id===Q.ROOT)return ['All Notes'];
+  const out=[];let cur=Q.folderById(state,id),guard=0;
+  while(cur&&guard++<50){out.unshift(cur.name);cur=cur.parentId===Q.ROOT?null:Q.folderById(state,cur.parentId)}
+  return ['All Notes',...out];
+}
+function persist(){
+  state=Q.save(state);saveState.textContent='Saved';
+}
+function scheduleSave(){
+  saveState.textContent='Saving…';clearTimeout(saveTimer);saveTimer=setTimeout(persist,280);
+}
+function noteCount(folderId){return state.notes.filter(n=>(n.folderId||Q.ROOT)===folderId).length}
+function renderTree(){
+  let html='<div class="folderRow rootRow '+(state.selectedFolder===Q.ROOT?'active':'')+'" data-folder="root"><i class="folderDot"></i><span class="folderName">All Notes</span><span class="count">'+state.notes.length+'</span></div>';
+  function walk(parent,depth){
+    Q.children(state,parent).forEach(f=>{
+      html+='<div class="folderRow '+(state.selectedFolder===f.id?'active':'')+'" data-folder="'+esc(f.id)+'" style="padding-left:'+(10+depth*16)+'px"><i class="folderDot"></i><span class="folderName">'+esc(f.name)+'</span><span class="count">'+noteCount(f.id)+'</span></div>';
+      walk(f.id,depth+1);
+    });
+  }
+  walk(Q.ROOT,0);tree.innerHTML=html;
+  tree.querySelectorAll('[data-folder]').forEach(el=>{
+    el.onclick=()=>{state.selectedFolder=el.dataset.folder;state.selectedNote=null;persist();render();};
+    el.oncontextmenu=e=>{e.preventDefault();showFolderMenu(e.clientX,e.clientY,el.dataset.folder)};
+  });
+}
+function renderNotes(){
+  const list=state.selectedFolder===Q.ROOT
+    ? state.notes.filter(n=>!query||n.title.toLowerCase().includes(query)||n.body.toLowerCase().includes(query)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))
+    : Q.notesInFolder(state,state.selectedFolder,query);
+  $('#folderTitle').textContent=folderName(state.selectedFolder);
+  $('#folderMeta').textContent=list.length+' note'+(list.length===1?'':'s');
+  if(!list.length){noteList.innerHTML='<div class="empty">No notes here yet.<br>Press + and start typing.</div>';return}
+  noteList.innerHTML=list.map(n=>{
+    const pv=(n.body||'').replace(/\s+/g,' ').trim().slice(0,90)||'Empty note';
+    return '<div class="noteRow '+(state.selectedNote===n.id?'active':'')+'" data-note="'+esc(n.id)+'"><div class="noteTitle">'+esc(n.title||'Untitled')+'</div><div class="notePreview">'+esc(pv)+'</div><div class="noteTime">'+new Date(n.updatedAt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+'</div></div>';
+  }).join('');
+  noteList.querySelectorAll('[data-note]').forEach(el=>el.onclick=()=>{state.selectedNote=el.dataset.note;persist();renderEditor();renderNotes()});
+}
+function renderEditor(){
+  const n=Q.noteById(state,state.selectedNote);
+  const disabled=!n;
+  title.disabled=disabled;body.disabled=disabled;$('#moreBtn').disabled=disabled;
+  if(!n){
+    title.value='';body.value='';title.placeholder='Untitled';body.placeholder='Select a note or create a new one…';$('#crumb').textContent=pathFor(state.selectedFolder).join(' / ');$('#wordCount').textContent='0 words';return;
+  }
+  title.value=n.title||'';body.value=n.body||'';$('#crumb').textContent=pathFor(n.folderId||Q.ROOT).join(' / ');
+  countWords();
+}
+function render(){renderTree();renderNotes();renderEditor()}
+function createNote(){
+  const out=Q.createNote(state,state.selectedFolder);state=out.state;persist();render();setTimeout(()=>body.focus(),0);
+}
+function showFolderDialog(parentId,renameId){
+  modalAction={parentId,renameId};$('#modalTitle').textContent=renameId?'Rename folder':'New folder';
+  $('#modalInput').value=renameId?(Q.folderById(state,renameId)||{}).name||'':'';
+  $('#modal').classList.remove('hidden');setTimeout(()=>$('#modalInput').focus(),0);
+}
+function closeModal(){modalAction=null;$('#modal').classList.add('hidden')}
+function showFolderMenu(x,y,id){
+  if(id===Q.ROOT){
+    menu.innerHTML='<button data-a="sub">New folder</button>';
+  }else{
+    menu.innerHTML='<button data-a="sub">New subfolder</button><button data-a="rename">Rename</button><button class="danger" data-a="delete">Delete folder</button>';
+  }
+  menu.style.left=Math.min(x,window.innerWidth-170)+'px';menu.style.top=Math.min(y,window.innerHeight-140)+'px';menu.classList.remove('hidden');
+  menu.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    menu.classList.add('hidden');
+    if(b.dataset.a==='sub')showFolderDialog(id,null);
+    if(b.dataset.a==='rename')showFolderDialog(null,id);
+    if(b.dataset.a==='delete'){state=Q.deleteFolder(state,id);persist();render()}
+  });
+}
+function showNoteMenu(){
+  const n=Q.noteById(state,state.selectedNote);if(!n)return;
+  const r=$('#moreBtn').getBoundingClientRect();menu.innerHTML='<button data-a="delete" class="danger">Delete note</button>';
+  menu.style.left=Math.min(r.left,window.innerWidth-170)+'px';menu.style.top=(r.bottom+6)+'px';menu.classList.remove('hidden');
+  menu.querySelector('[data-a="delete"]').onclick=()=>{state=Q.deleteNote(state,n.id);menu.classList.add('hidden');persist();render()};
+}
+function syncEditor(){
+  const n=Q.noteById(state,state.selectedNote);if(!n)return;
+  state=Q.updateNote(state,n.id,{title:title.value||'Untitled',body:body.value});scheduleSave();renderNotes();countWords();
+}
+function countWords(){
+  const text=body.value.trim();const n=text?text.split(/\s+/).length:0;$('#wordCount').textContent=n+' word'+(n===1?'':'s');
+}
+$('#newNote').onclick=createNote;
+$('#newFolder').onclick=()=>showFolderDialog(state.selectedFolder,null);
+$('#search').oninput=e=>{query=e.target.value.toLowerCase();renderNotes()};
+title.oninput=syncEditor;body.oninput=syncEditor;
+$('#moreBtn').onclick=showNoteMenu;
+$('#modalCancel').onclick=closeModal;
+$('#modalOk').onclick=()=>{
+  const v=$('#modalInput').value.trim();if(!v)return;
+  if(modalAction.renameId)state=Q.renameFolder(state,modalAction.renameId,v);
+  else state=Q.createFolder(state,v,modalAction.parentId).state;
+  persist();closeModal();render();
+};
+$('#modalInput').onkeydown=e=>{if(e.key==='Enter')$('#modalOk').click();if(e.key==='Escape')closeModal()};
+document.addEventListener('click',e=>{if(!menu.contains(e.target)&&e.target!==$('#moreBtn'))menu.classList.add('hidden')});
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();createNote()}
+  if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='n'){e.preventDefault();showFolderDialog(state.selectedFolder,null)}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();persist()}
+});
+if(!state.notes.length){state=Q.createNote(state,Q.ROOT).state;persist()}
+render();
+})();
+</script>
+</body>
+</html>
