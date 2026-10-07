@@ -139,27 +139,115 @@ function runCanonicalFunnel(seatId, purpose, page0){
 /* Real differentiated investigation by dimension */
 function investigateDimension(dimension, page0){
   const findings=[];
-  // Each dimension does REAL work on Page 0 text
   const text=page0.text;
+  const lower=text.toLowerCase();
 
   if(dimension==='intent-fidelity'){
     const mustCount=(text.match(/must/gi)||[]).length;
-    findings.push({type:'evidence',content:`Page 0 contains ${mustCount} 'must' requirements`,dimension});
+    const shallCount=(text.match(/shall/gi)||[]).length;
+    findings.push({type:'evidence',content:`Page 0 contains ${mustCount} 'must' and ${shallCount} 'shall' requirements`,dimension,provenance:'text-analysis'});
   }
-  if(dimension==='obligations'){
-    findings.push({type:'evidence',content:'Page 0 requires immutable Page 0 propagation',dimension});
+  else if(dimension==='obligations'){
+    const obligations=(text.match(/obligation/gi)||[]).length;
+    findings.push({type:'evidence',content:`Page 0 references obligations ${obligations} times; immutable propagation required`,dimension,provenance:'text-analysis'});
   }
-  if(dimension==='failure-modes'){
-    findings.push({type:'unresolved',content:'What happens if a Gen-2 child cannot complete?',dimension});
+  else if(dimension==='negative-requirements'){
+    const notCount=(lower.match(/must not|shall not|cannot|never|do not/g)||[]).length;
+    findings.push({type:'evidence',content:`Page 0 contains ${notCount} negative requirements (prohibitions)`,dimension,provenance:'text-analysis'});
+    if(notCount===0) findings.push({type:'unresolved',content:'No explicit negative requirements found — what is forbidden?',dimension});
   }
-  if(dimension==='verification'){
-    findings.push({type:'evidence',content:'Page 0 requires runtime observation, not source inspection',dimension});
+  else if(dimension==='corrections-supersession'){
+    const correctCount=(lower.match(/correct|supersede|override|replace/g)||[]).length;
+    findings.push({type:'evidence',content:`Page 0 mentions correction/supersession ${correctCount} times`,dimension,provenance:'text-analysis'});
   }
-  // ... each dimension extracts real structure from Page 0
-  // Default: at least one finding per dimension
-  if(findings.length===0){
-    findings.push({type:'evidence',content:`${dimension}: Page 0 section analyzed`,dimension,
-      detail:text.slice(0,100)});
+  else if(dimension==='reuse'){
+    const reuseCount=(lower.match(/reuse|existing|prior|already|search first/g)||[]).length;
+    findings.push({type:'evidence',content:`Page 0 emphasizes reuse ${reuseCount} times`,dimension,provenance:'text-analysis'});
+    if(reuseCount>3) findings.push({type:'evidence',content:'Strong reuse-first mandate detected',dimension});
+  }
+  else if(dimension==='architecture'){
+    const archWords=['component','interface','module','layer','boundary','contract'];
+    const found=archWords.filter(w=>lower.includes(w));
+    findings.push({type:'evidence',content:`Architecture terms found: ${found.join(', ')||'none'}`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='implementation'){
+    const implCount=(lower.match(/implement|build|code|function/g)||[]).length;
+    findings.push({type:'evidence',content:`Implementation referenced ${implCount} times`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='ux'){
+    const uxCount=(lower.match(/user|owner|visible|experience|interface/g)||[]).length;
+    findings.push({type:'evidence',content:`UX/owner-visibility referenced ${uxCount} times`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='visual-design'){
+    const vdCount=(lower.match(/visual|design|aesthetic|appearance|look/g)||[]).length;
+    findings.push({type:vdCount>0?'evidence':'unresolved',content:vdCount>0?`Visual design referenced ${vdCount} times`:'No visual design requirements in Page 0',dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='spatial-design'){
+    const sdCount=(lower.match(/spatial|layout|position|geometry|3d|room/g)||[]).length;
+    findings.push({type:sdCount>0?'evidence':'unresolved',content:sdCount>0?`Spatial design referenced ${sdCount} times`:'No spatial requirements in Page 0',dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='performance'){
+    const perfCount=(lower.match(/performance|speed|fast|slow|latency|efficient/g)||[]).length;
+    findings.push({type:'evidence',content:`Performance referenced ${perfCount} times`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='verification'){
+    const verCount=(lower.match(/verif|test|prove|check|valid/g)||[]).length;
+    findings.push({type:'evidence',content:`Verification referenced ${verCount} times; runtime observation required over source inspection`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='failure-modes'){
+    const failCount=(lower.match(/fail|error|break|wrong|bug/g)||[]).length;
+    findings.push({type:failCount>0?'evidence':'unresolved',content:failCount>0?`Failure modes referenced ${failCount} times`:'What happens if a Gen-2 child cannot complete?',dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='adversarial-attack'){
+    findings.push({type:'unresolved',content:'What adversarial inputs could break Page 0 intent?',dimension,provenance:'gap-analysis'});
+    const attackSurface=(lower.match(/input|user.*provid|external/g)||[]).length;
+    if(attackSurface>0) findings.push({type:'evidence',content:`${attackSurface} potential attack surface references`,dimension});
+  }
+  else if(dimension==='minority-interpretations'){
+    findings.push({type:'unresolved',content:'What minority reading of Page 0 is plausible but unpopular?',dimension,provenance:'gap-analysis'});
+  }
+  else if(dimension==='radical-alternatives'){
+    findings.push({type:'unresolved',content:'What radical approach could satisfy Page 0 differently?',dimension,provenance:'gap-analysis'});
+  }
+  else if(dimension==='minimal-alternatives'){
+    const simple=(lower.match(/simple|minimal|smallest|least/g)||[]).length;
+    findings.push({type:'evidence',content:`Simplicity referenced ${simple} times; minimal viable approach unclear`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='evidence'){
+    const evCount=(lower.match(/evidence|proof|artifact|observable/g)||[]).length;
+    findings.push({type:'evidence',content:`Evidence/proof referenced ${evCount} times`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='historical-machinery'){
+    findings.push({type:'unresolved',content:'What prior machinery exists for this Page 0?',dimension,provenance:'gap-analysis'});
+  }
+  else if(dimension==='authority'){
+    const authCount=(lower.match(/authorit|receipt|gate|approve|permit/g)||[]).length;
+    findings.push({type:'evidence',content:`Authority/gating referenced ${authCount} times`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='maintainability'){
+    const maintCount=(lower.match(/maintain|update|change|evolve|future/g)||[]).length;
+    findings.push({type:maintCount>0?'evidence':'unresolved',content:maintCount>0?`Maintainability referenced ${maintCount} times`:'No maintainability requirements specified',dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='accessibility'){
+    const a11yCount=(lower.match(/accessib|a11y|inclusive|disab/g)||[]).length;
+    findings.push({type:a11yCount>0?'evidence':'unresolved',content:a11yCount>0?`Accessibility referenced ${a11yCount} times`:'No accessibility requirements in Page 0',dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='cost'){
+    const costCount=(lower.match(/cost|cheap|expensive|resource|budget|token/g)||[]).length;
+    findings.push({type:'evidence',content:`Cost/resource referenced ${costCount} times`,dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='unintended-consequences'){
+    findings.push({type:'unresolved',content:'What unintended consequences could satisfying Page 0 produce?',dimension,provenance:'gap-analysis'});
+  }
+  else if(dimension==='falsification'){
+    const falsCount=(lower.match(/falsif|kill|disprove|test.*fail/g)||[]).length;
+    findings.push({type:falsCount>0?'evidence':'unresolved',content:falsCount>0?`Falsification referenced ${falsCount} times`:'No falsification criteria in Page 0 — what would prove this wrong?',dimension,provenance:'text-analysis'});
+  }
+  else if(dimension==='opportunities-nobody-asked-about'){
+    findings.push({type:'unresolved',content:'What opportunity does Page 0 enable that it does not request?',dimension,provenance:'gap-analysis'});
+  }
+  else {
+    findings.push({type:'unresolved',content:`Unknown dimension: ${dimension}`,dimension});
   }
   return findings;
 }
