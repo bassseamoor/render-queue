@@ -320,9 +320,9 @@ PRESERVED_PLATFORM_ITEMS = {
         'component': 'DT-06 REV 2 executable blueprint',
         'component_source': 'blueprint/dt06-mobile-semantic-parity.blueprint.json',
         'page': 'pulse-dashboard.html?tool=blueprintdt06',
-        'depends_on': ['blueprint/dt06-mobile-semantic-parity.seal.json','blueprint-sop.html','blueprint-standard.html','blueprint-deep-links.html','factory-twin-core.js','pulse-beam-funnel-hall.js','pulse-beam-funnel-hall.html'],
+        'depends_on': ['blueprint/dt06-mobile-semantic-parity.seal.v2.json','blueprint-sop.html','blueprint-standard.html','blueprint-deep-links.html','factory-twin-core.js','pulse-beam-funnel-hall.js','pulse-beam-funnel-hall.html'],
         'tags': ['cat:interface','cat:compdata','kind:blueprint','prov:v44-sealed','see:blueprintsop','see:blueprintstd','see:blueprintdl'],
-        'honest_limits': 'Blueprint only. Receipt 1338b036b9803451 authorizes publication of the plan, not DT-06 runtime implementation.'
+        'honest_limits': 'Blueprint only. Receipt 345048cb648d5f5b authorizes publication of the plan, not DT-06 runtime implementation.'
     },
     'software-factory': {
         'label': 'MOOR Software Factory', 'file': 'software-factory-core.js',
