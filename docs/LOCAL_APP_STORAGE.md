@@ -1,6 +1,6 @@
 # MOOR local app storage
 
-MOOR applications are the interface. The SSD is durable backing storage.
+MOOR applications are the interface. The SSD is durable backing storage. Backing data lives under `MOOR/app-data/`.
 
 ## Layout
 
