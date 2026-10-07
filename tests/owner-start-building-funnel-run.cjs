@@ -9,6 +9,8 @@ const PAGE0="Yep. I guess, uh, that's kind of the plan, right? Because we're sto
 function run(id,distill,locked,spec,destination,done){
   K._resetForTests();
   let s=K.open({request_id:id,input:PAGE0,source:'owner',context:{project:'MOOR',mode:'build'}});
+  const usagePlan=K.makeUsagePlan(PAGE0,{page:'Project Pulse',source:'owner'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination,reuse_before_new:true},verification_plan:{compare_to_page0:true,require_done_criteria:true,verify_requested_path:true,checks:done.slice(),write_failures_back_as_evidence:true}});
+  s=K.advance({request_id:id,stage:'usage_plan',payload:{plan:usagePlan},provenance:'system'});
   s=K.advance({request_id:id,stage:'references',payload:{reused:[
     {id:'FUNNEL.md',kind:'law'},{id:'blueprint/blueprint-choreography.blueprint.json',kind:'plan'},
     {id:'blueprint-choreography-state.json',kind:'evidence'},{id:'blueprint-choreography-core.js',kind:'machine'}
@@ -19,6 +21,7 @@ function run(id,distill,locked,spec,destination,done){
   s=K.advance({request_id:id,stage:'replay',payload:{page0_verified:true,page0_hash:K.hash(PAGE0),obligations,substitutions:[]},provenance:'verified'});
   s=K.advance({request_id:id,stage:'verdict',payload:{spec:{...spec,obligations},destination,done_criteria:done},provenance:'verified'});
   assert(K.verifyReceipt(s.receipt));
+  assert.equal(s.receipt.usage_plan_hash,s.stages.usage_plan.plan_hash);
   return s.receipt;
 }
 
