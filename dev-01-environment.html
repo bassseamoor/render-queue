@@ -164,11 +164,20 @@ return {create:function(canvas,opts){
 /* Entry UI: decoupled from Three.js module. Works even if module fails. */
 window.__entered=false;
 window.__entryError=null;
+function diag(msg){
+  var d=document.getElementById('diag');
+  if(!d){d=document.createElement('div');d.id='diag';
+    d.style.cssText='position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.85);color:#0f0;font:11px monospace;padding:8px;z-index:99;max-height:40%;overflow:auto;white-space:pre-wrap;';
+    document.body.appendChild(d);}
+  d.textContent+=msg+'\n';
+}
 function dismissEntry(){
   var el=document.getElementById('enter');
   if(el)el.style.display='none';
   window.__entered=true;
+  diag('entry dismissed');
 }
+window.__diag=diag;
 document.addEventListener('DOMContentLoaded',function(){
   var el=document.getElementById('enter');
   if(el){
@@ -186,7 +195,8 @@ window.addEventListener('error',function(e){
     }
   }
 },true);
-</script></head>
+</script>
+<script>window.addEventListener('error',function(e){if(window.__diag)window.__diag('ERROR: '+(e.message||e.type)+' @ '+(e.filename||'').split('/').pop());},true);</script></head>
 <body>
 <div id="app"></div>
 <div id="hud"><div class="t">DEV-01 · THE EMPTY CATHEDRAL</div><div class="s">320 × 180 × 90 FT — FLY THE VOLUME</div></div>
@@ -194,11 +204,13 @@ window.addEventListener('error',function(e){
 <div id="enter"><div class="box"><h1>THE EMPTY CATHEDRAL</h1><p>BLUEPRINT DEV-01 · REV 9 — LIVE ENVIRONMENT</p><span class="go">ENTER</span></div></div>
 <script type="module">
 import * as THREE from './three.module.js';
+window.__diag&&window.__diag('three.js loaded');
 
 /* 1 unit = 1 foot. 320 x 180 x 90 ft, column-free. */
 const W=320, D=180, H=90;
 
 const renderer=new THREE.WebGLRenderer({antialias:true});
+window.__diag&&window.__diag('renderer created');
 renderer.setSize(innerWidth,innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled=true;
@@ -570,6 +582,7 @@ function tick(){
   streamTex.needsUpdate=true;
   renderer.render(scene,camera);
 }
+window.__diag&&window.__diag('starting tick');
 tick();
 addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
