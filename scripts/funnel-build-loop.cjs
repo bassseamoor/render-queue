@@ -9,6 +9,52 @@ const WR=require('../worker-release-core.js');
 function readJson(p){return JSON.parse(fs.readFileSync(path.join(__dirname,'..',p),'utf8'))}
 function existingFile(ref){try{return fs.existsSync(path.join(__dirname,'..',ref))}catch(_){return false}}
 function firstEvidence(ev,rx){return (ev&&ev.evidence||[]).find(x=>rx.test(String(x)))||null}
+function slug(x){return String(x||'slice').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}
+function parentForSlice(sliceId){
+  const library=readJson('pulse-blueprint-farm-library.json');
+  for(const entry of (library.blueprints||[])){
+    if(!entry.path||!existingFile(entry.path))continue;
+    const bp=readJson(entry.path),slice=(bp.implementationSlices||[]).find(x=>String(x.id)===String(sliceId));
+    if(slice)return {entry,bp,slice};
+  }
+  return null;
+}
+function blueprintPacket(next){
+  const hit=parentForSlice(next.slice_id);
+  if(!hit)return null;
+  const artifact='blueprint/'+String(next.slice_id).toLowerCase()+'-'+slug(next.name)+'.blueprint.json';
+  const tool='blueprint'+String(next.slice_id).toLowerCase().replace(/[^a-z0-9]/g,'');
+  return {
+    schema:'moor.blueprint-authoring-packet',version:1,
+    slice_id:next.slice_id,
+    parent_ref:hit.entry.path,
+    parent_title:hit.bp.title,
+    slice_spec:copy(hit.slice),
+    artifact_suggestion:artifact,
+    pulse_tool_suggestion:tool,
+    scope:'blueprint publication only; runtime implementation requires a separate v44 verdict',
+    standards:{
+      sop:'pulse-dashboard.html?tool=blueprintsop',
+      standard:'pulse-dashboard.html?tool=blueprintstd',
+      exemplar:'pulse-dashboard.html?tool=blueprintdl'
+    },
+    required_sections:[
+      'SELL: promise, stakes, click',
+      'SPEC: exact existing source anchors and exact delta only',
+      'VALUES: every parameter/value/formula and why it is exact',
+      'CODE/DATA: copyable exact construction contract',
+      'INTERFACES: inputs, outputs, authority boundary, non-goals',
+      'SHOW: comic-book visual hierarchy with semantic color',
+      'VERIFY: claim-level executable assertions',
+      'DELIVERY: Pulse registration and pulse-dashboard.html?tool=<id> owner link',
+      'L5: current v44 usage-plan-bound sealed BUILD/FAIL verdict'
+    ],
+    no_replatform:true,
+    unresolved_decisions_must_be_zero:true
+  };
+}
+
+function copy(x){return x==null?x:JSON.parse(JSON.stringify(x));}
 
 function planNext(input){
   input=input||{};
@@ -81,10 +127,12 @@ function planNext(input){
     const vj=WR.validateJob(release,job);if(!vj.ok)throw Error('job invalid: '+vj.errors.join('; '));
   }
 
+  const blueprint_authoring=action==='prepare-blueprint'?blueprintPacket(next):null;
   return {
     schema:'moor.funnel-build-loop',version:1,
     action,
     next_slice:next,
+    blueprint_authoring,
     observed_status:observed.status||null,
     blueprint_ref:blueprintRef,
     seal_ref:sealRef,
