@@ -87,11 +87,14 @@ class AdaptivePromptGenerator {
     const prompt = `${opener.text} — ${constraint.text}\n\n${challenge.text}\n\n${closer.text}`;
     const id = crypto.createHash('sha256').update(prompt).digest('hex').slice(0, 12);
 
+    const _self = selfScore(prompt);
     return {
       id,
       prompt,
       components: [opener.id, constraint.id, challenge.id, closer.id],
       seed: seed || null,
+      self_score: _self.score,
+      self_checks: _self.checks,
     };
   }
 
@@ -154,4 +157,53 @@ class AdaptivePromptGenerator {
   }
 }
 
-module.exports = { AdaptivePromptGenerator, COMPONENTS };
+
+// SELF-SCORING: the generator evaluates its own prompts structurally.
+// No human needed. Scores 0-1 based on discriminating criteria.
+function selfScore(prompt) {
+  let score = 0.5;  // start neutral
+  const checks = [];
+  const lower = prompt.toLowerCase();
+
+  // Positive: has commitment mechanism (+0.15)
+  if (/bet on|one shot|stand behind|commit/i.test(prompt)) {
+    score += 0.15; checks.push('+commitment');
+  }
+  // Positive: kills hedging (+0.15)
+  if (/skip.*caveat|don't hedge|no preamble|give it straight/i.test(prompt)) {
+    score += 0.15; checks.push('+anti-hedge');
+  }
+  // Positive: gives permission to challenge (+0.1)
+  if (/say so|push back|question is dumb|challenge/i.test(prompt)) {
+    score += 0.1; checks.push('+challenge');
+  }
+  // Positive: concrete target (+0.1)
+  if (/one thing|load-bearing|matters most/i.test(prompt)) {
+    score += 0.1; checks.push('+focus');
+  }
+  // Negative: generic flattery (-0.2)
+  if (/you're amazing|you're the best|as an ai language/i.test(prompt)) {
+    score -= 0.2; checks.push('-flattery');
+  }
+  // Negative: hedging in the prompt itself (-0.15)
+  if (/maybe|perhaps|if you don't mind|would you kindly/i.test(prompt)) {
+    score -= 0.15; checks.push('-hedging');
+  }
+  // Negative: too long (-0.1)
+  if (prompt.length > 800) {
+    score -= 0.1; checks.push('-too-long');
+  }
+  // Negative: too short (-0.1)
+  if (prompt.length < 150) {
+    score -= 0.1; checks.push('-too-short');
+  }
+  // Positive: has problem placeholder (+0.05)
+  if (/\[PROBLEM\]/.test(prompt)) {
+    score += 0.05; checks.push('+placeholder');
+  }
+
+  score = Math.max(0, Math.min(1, score));
+  return { score: +score.toFixed(2), checks };
+}
+
+module.exports = { AdaptivePromptGenerator, COMPONENTS, selfScore };
