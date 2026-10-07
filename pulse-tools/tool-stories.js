@@ -1,0 +1,1 @@
+(function(){window.PulseTools=window.PulseTools||{};window.PulseTools['comp-stories']={id:'comp-stories',title:'Funnel in Three Stories',page:'https://bassseamoor.github.io/render-queue/funnel-stories.html',description:'LEGO, five-year-old, and Big Table: the Funnel told three ways.',open(){window.open(this.page,'_blank');}};})();
