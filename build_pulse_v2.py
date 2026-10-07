@@ -312,8 +312,17 @@ PRESERVED_PLATFORM_ITEMS = {
         'component_source': 'blueprint/blueprint-farm.blueprint.json',
         'page': 'blueprint-farm.html',
         'depends_on': ['pulse-blueprint-farm-library.json','pulse-slice-release-ledger.json','blueprint-choreography-core.js','blueprint-choreography-state.json','blueprint-comparison-core.js','blueprint/funnel-maintenance-modernization.blueprint.json','blueprint/factory-digital-twin.blueprint.json','blueprint/seeded-procedural-toolchain.blueprint.json','blueprint/worker-execution-orchestration.blueprint.json','blueprint/blueprint-choreography.blueprint.json'],
-        'tags': ['cat:creation','cat:compdata','kind:blueprint-farm','prov:ultra-funnel','prov:bf-01'],
-        'honest_limits': 'Read-only planning/inspection slice. BF-01 is the only released slice.'
+        'tags': ['cat:creation','cat:compdata','kind:blueprint-farm','prov:ultra-funnel','prov:explicit-release-ledger'],
+        'honest_limits': 'Read-only planning/inspection. Execution is explicit and release-ledger governed; the Farm never auto-releases the next slice.'
+    },
+    'blueprintdt06': {
+        'label': 'DT-06 · Mobile Truth', 'file': 'pulse-component-extensions.js',
+        'component': 'DT-06 REV 2 executable blueprint',
+        'component_source': 'blueprint/dt06-mobile-semantic-parity.blueprint.json',
+        'page': 'pulse-dashboard.html?tool=blueprintdt06',
+        'depends_on': ['blueprint/dt06-mobile-semantic-parity.seal.json','blueprint-sop.html','blueprint-standard.html','blueprint-deep-links.html','factory-twin-core.js','pulse-beam-funnel-hall.js','pulse-beam-funnel-hall.html'],
+        'tags': ['cat:interface','cat:compdata','kind:blueprint','prov:v44-sealed','see:blueprintsop','see:blueprintstd','see:blueprintdl'],
+        'honest_limits': 'Blueprint only. Receipt 1338b036b9803451 authorizes publication of the plan, not DT-06 runtime implementation.'
     },
     'software-factory': {
         'label': 'MOOR Software Factory', 'file': 'software-factory-core.js',
