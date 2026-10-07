@@ -11,7 +11,9 @@
  * 4. Obligation ledgers compressed to deltas.
  * 5. META-LEVERAGE: champion purposes seed next run (compounding).
  * 6. PARALLELIZATION: shared evidence pool, duplicate detection during (not after).
- * Page 0: Sebastian's verbatim 259-line truth-alignment request
+ * Page 0 (expedition): Sebastian's verbatim 460-line 256² specification (PAGE0-VERBATIM.txt)
+ * Page 0 (truth-alignment audit): Sebastian's verbatim 259-line audit request (separate document)
+ * These are TWO DIFFERENT Page 0s for two different tasks. Not a discrepancy.
  *
  * WHAT CHANGED FROM v2:
  * - Gen-1: 256 REAL canonical funnel runs (K.open → verdict → receipt each)
@@ -105,6 +107,8 @@ function runCanonicalFunnel(seatId, purpose, page0){
     done_criteria:['Investigated','Findings recorded']
   },provenance:'verified'});
 
+  // V6: share evidence through pool, measure duplicates avoided
+  findings.forEach(f=>{ if(!shareEvidence(f)) recordMetric('duplicates_avoided'); });
   return {
     seat:seatId, dimension:purpose.dimension,
     receipt:s.receipt.fingerprint,
@@ -323,10 +327,26 @@ function pulseView(evidence){
 let _championPurposes=null;
 function setChampionPurposes(purposes){ _championPurposes=purposes; }
 function getChampionPurposes(){ return _championPurposes; }
-// Next run can seed purposes from previous champion's winning dimensions
+// V6: Champion purposes ACTUALLY seed next run (not just stored)
+function getWeightedDimensions(){
+  const champ=getChampionPurposes();
+  if(!champ||!champ.winning_dimensions||champ.winning_dimensions.length===0){
+    return DIMENSIONS; // no champion yet, use all
+  }
+  // Weight: champion's winning dimensions get 3x representation
+  const weighted=[];
+  DIMENSIONS.forEach(d=>{
+    const weight=champ.winning_dimensions.includes(d)?3:1;
+    for(let i=0;i<weight;i++) weighted.push(d);
+  });
+  return weighted;
+}
 
 /* V5 PARALLELIZATION: shared evidence pool */
 const _evidencePool=new Map(); // content-hash -> finding
+/* V6 MEASUREMENT: module-level metrics */
+const _metrics={tokens_saved:0, cache_hits:0, cache_misses:0, duplicates_avoided:0, escalations_avoided:0};
+function recordMetric(k,n){ _metrics[k]=(_metrics[k]||0)+(n||1); }
 function shareEvidence(finding){
   const h=crypto.createHash('sha256').update(JSON.stringify(finding.content)).digest('hex').slice(0,16);
   if(!_evidencePool.has(h)){
@@ -338,4 +358,10 @@ function shareEvidence(finding){
 function getEvidencePoolSize(){ return _evidencePool.size; }
 
 module.exports={getPage0, getPage0Ref, runCanonicalFunnel, runChildInvestigation, runMatchFunnel, reconverge, pulseView,
-  setChampionPurposes, getChampionPurposes, shareEvidence, getEvidencePoolSize, DIMENSIONS};
+  setChampionPurposes, getChampionPurposes, getWeightedDimensions, shareEvidence, getEvidencePoolSize,
+  // V6 MEASUREMENT: prove leverage actually occurred
+  recordMetric,
+  getMetrics(){ return {..._metrics,
+    evidence_pool_size:getEvidencePoolSize(),
+    obs_cache_size:Object.keys(global._obsCache||{}).length}; },
+  DIMENSIONS};
