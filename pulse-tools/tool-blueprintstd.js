@@ -13,7 +13,7 @@ var frame=null;
 function mount(host,c){
   host.innerHTML='';
   frame=document.createElement('iframe');
-  frame.src='blueprint-standard.html';
+  frame.src='blueprint-standard.html?v='+encodeURIComponent((c&&c.version)||'1');
   frame.title=(c&&c.label)||'Blueprint Standard';
   frame.setAttribute('loading','lazy');
   frame.style.cssText='width:100%;height:78vh;min-height:520px;border:0;display:block;'+

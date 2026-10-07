@@ -13,7 +13,7 @@ var frame=null;
 function mount(host,c){
   host.innerHTML='';
   frame=document.createElement('iframe');
-  frame.src='concierge-cut.html';
+  frame.src='concierge-cut.html?v='+encodeURIComponent((c&&c.version)||'1');
   frame.title=(c&&c.label)||'Concierge Cut';
   frame.setAttribute('loading','lazy');
   frame.style.cssText='width:100%;height:78vh;min-height:520px;border:0;display:block;'+

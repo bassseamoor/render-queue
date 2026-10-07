@@ -13,7 +13,7 @@ var frame=null;
 function mount(host,c){
   host.innerHTML='';
   frame=document.createElement('iframe');
-  frame.src='blueprint-devenv.html';
+  frame.src='blueprint-devenv.html?v='+encodeURIComponent((c&&c.version)||'1');
   frame.title=(c&&c.label)||'DEV-01 blueprint';
   frame.setAttribute('loading','lazy');
   frame.style.cssText='width:100%;height:78vh;min-height:520px;border:0;display:block;'+

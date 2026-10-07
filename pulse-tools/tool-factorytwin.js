@@ -14,7 +14,7 @@ var frame=null;
 function mount(host,c){
   host.innerHTML='';
   frame=document.createElement('iframe');
-  frame.src='factory-twin.html';
+  frame.src='factory-twin.html?v='+encodeURIComponent((c&&c.version)||'1');
   frame.title=(c&&c.label)||'Factory Twin';
   frame.setAttribute('loading','lazy');
   frame.style.cssText='width:100%;height:78vh;min-height:520px;border:0;display:block;'+
