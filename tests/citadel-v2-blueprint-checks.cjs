@@ -2,7 +2,7 @@ const fs=require('node:fs'),assert=require('node:assert/strict'),crypto=require(
 const bp=require('../blueprint/funnel-citadel-v2.blueprint.json');
 const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 const src=fs.readFileSync('pulse-beam-funnel-hall.js','utf8');
-assert.equal(bp.version,2);assert.equal(bp.plates.length,21);assert.equal(sha(src),bp.runtime_sha256,'baseline drift: re-Funnel, do not silently rebase');
+assert.equal(bp.version,2);assert(fs.readFileSync('pulse-dashboard.html','utf8').includes(bp.delivery_hook.after),'Pulse loader must use new cache key');assert.equal(bp.plates.length,21);assert.equal(sha(src),bp.runtime_sha256,'baseline drift: re-Funnel, do not silently rebase');
 assert.equal(bp.plates.map(p=>p.code).join(''),src,'plates must cover every byte once');
 let end=0;for(const p of bp.plates){assert.equal(p.start_line,end+1);end=p.end_line;assert.equal(sha(p.code),p.code_sha256);assert.equal(sha(p.anchor),p.anchor_sha256);assert.equal(src.split(p.anchor).length-1,1,p.id+' unique anchor');assert(p.contract&&p.done&&p.why);}
 let patched=src;for(const p of bp.patches){assert.equal(patched.split(p.before).length-1,1,p.id+' exact unique patch anchor');patched=patched.replace(p.before,p.after);assert(p.assertion&&p.why);}
