@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Blueprint Factory — Production Pipeline SOP</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{background:#07060e;color:#d7e3f4;font:16px/1.65 -apple-system,"Segoe UI",Inter,Roboto,sans-serif;padding:0 0 80px}
+  .wrap{max-width:840px;margin:0 auto;padding:0 20px}
+  .hero{padding:72px 20px 56px;text-align:center;background:
+    radial-gradient(700px 380px at 50% 10%, rgba(150,110,255,.16), transparent 70%),
+    radial-gradient(500px 340px at 85% 95%, rgba(255,200,40,.08), transparent 70%)}
+  .kicker{letter-spacing:.3em;font-size:11px;color:#b79bff;text-transform:uppercase;margin-bottom:14px}
+  .hero h1{font-size:clamp(38px,7.5vw,68px);line-height:1.0;font-weight:900;letter-spacing:-.015em;
+    background:linear-gradient(100deg,#fff 15%,#b79bff 50%,#ffd479 90%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:14px}
+  .hero .tag{font-size:17px;color:#9fb4d0;max-width:620px;margin:0 auto}
+  .hero .tag b{color:#b79bff}
+  section{margin:40px 0}
+  .shead{margin-bottom:16px}
+  .shead .lbl{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.28em;color:#b79bff;margin-bottom:8px}
+  .shead h2{font-size:clamp(24px,4vw,34px);font-weight:800;color:#fff;letter-spacing:-.01em}
+  .shead p{color:#8fa3bd;margin-top:8px;max-width:640px}
+  b{color:#fff}
+  /* stepper */
+  .steps{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .stab{flex:1;min-width:86px;text-align:center;padding:10px 6px;border-radius:10px;cursor:pointer;
+    background:rgba(20,16,38,.55);border:1px solid rgba(150,110,255,.16);color:#8fa3bd;
+    font-size:13px;font-weight:700;transition:all .15s}
+  .stab small{display:block;font-weight:400;font-size:11px;color:#5f7189;margin-top:2px}
+  .stab.on{background:rgba(150,110,255,.14);border-color:rgba(150,110,255,.5);color:#fff}
+  .stab.on small{color:#b79bff}
+  .sdetail{display:none;background:rgba(20,16,38,.6);border:1px solid rgba(150,110,255,.25);border-radius:14px;padding:20px 22px}
+  .sdetail.on{display:block}
+  .sdetail h3{color:#b79bff;font-size:20px;margin-bottom:8px}
+  .sdetail h3 span{color:#5f7189;font-weight:400;font-size:14px}
+  .sdetail p{color:#c4d3e8;font-size:14.5px;margin-bottom:8px}
+  .sdetail p:last-child{margin-bottom:0}
+  .sdetail code{background:rgba(150,110,255,.12);padding:1px 7px;border-radius:6px;font-size:13px;color:#d6c6ff}
+  /* library */
+  .lib{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:620px){.lib{grid-template-columns:1fr}}
+  .comp{background:rgba(20,16,38,.6);border:1px solid rgba(150,110,255,.16);border-radius:12px;padding:14px 16px}
+  .comp h4{color:#fff;font-size:15px;margin-bottom:4px}
+  .comp .contract{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#b79bff;margin-bottom:6px}
+  .comp p{font-size:13px;color:#a9bdd6;margin:0}
+  /* gap rule */
+  .rule{border-left:3px solid #ffd479;background:rgba(255,212,121,.06);padding:14px 18px;border-radius:0 12px 12px 0;margin:14px 0}
+  .rule p{margin:0;color:#e8d9b0;font-size:14.5px}
+  .rule b{color:#ffd479}
+  .rule ol{margin:8px 0 0 20px;color:#d8c9a0;font-size:14px}
+  .rule li{margin-bottom:4px}
+  /* collab */
+  .collab{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  @media(max-width:620px){.collab{grid-template-columns:1fr}}
+  .ccard{border-radius:12px;padding:16px}
+  .ccard h4{font-size:14px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+  .ccard ul{margin:0 0 0 18px;font-size:13.5px;color:#a9bdd6}
+  .ccard li{margin-bottom:4px}
+  .ccard.user{background:rgba(255,212,121,.07);border:1px solid rgba(255,212,121,.25)}
+  .ccard.user h4{color:#ffd479}
+  .ccard.pipe{background:rgba(150,110,255,.08);border:1px solid rgba(150,110,255,.3)}
+  .ccard.pipe h4{color:#b79bff}
+  .ccard.rev{background:rgba(127,224,168,.06);border:1px solid rgba(127,224,168,.25)}
+  .ccard.rev h4{color:#7fe0a8}
+  .card{background:rgba(20,16,38,.6);border:1px solid rgba(150,110,255,.14);border-radius:14px;padding:18px 20px;margin-bottom:12px}
+  .card p{color:#c4d3e8;margin-bottom:8px;font-size:14.5px}.card p:last-child{margin-bottom:0}
+  .foot{margin-top:36px;color:#5f7189;font-size:13px;text-align:center}
+  .foot code{background:rgba(150,110,255,.1);padding:1px 6px;border-radius:6px;font-size:13px;color:#d6c6ff}
+</style>
+</head>
+<body>
+  <div class="hero"><div class="wrap">
+    <div class="kicker">Production Pipeline SOP · Active</div>
+    <h1>THE BLUEPRINT<br>FACTORY</h1>
+    <div class="tag">How good-looking blueprints get <b>made</b> — the collaborative production pipeline. Components from generators, gaps assembled by the LLM, everything comic-book clean.</div>
+  </div></div>
+
+  <div class="wrap">
+    <section>
+      <div class="shead"><div class="lbl">THE PIPELINE</div><h2>Six stages, one blueprint.</h2>
+        <p>Tap a stage. The pipeline renders precision — it does not invent it. No nail-level spec, no pipeline.</p></div>
+      <div class="steps" id="tabs">
+        <div class="stab on" data-l="0">P1<small>Intake</small></div>
+        <div class="stab" data-l="1">P2<small>Select</small></div>
+        <div class="stab" data-l="2">P3<small>Fill</small></div>
+        <div class="stab" data-l="3">P4<small>Gap</small></div>
+        <div class="stab" data-l="4">P5<small>Compose</small></div>
+        <div class="stab" data-l="5">P6<small>Verify</small></div>
+      </div>
+      <div class="sdetail on" data-d="0"><h3>P1 — Intake <span>the raw material</span></h3>
+        <p>Collect the nail-level spec: exact hooks, exact code, exact values. Plus user notes, the click (the SELL in one breath), and ids of referenced blueprints.</p><p><b>Gate:</b> no spec, no pipeline.</p></div>
+      <div class="sdetail" data-d="1"><h3>P2 — Select <span>choose the components</span></h3>
+        <p>Map each part of the spec to library components. SELL gets <code>hero-plate</code> / <code>sell-grid</code> / <code>punch</code>. SPEC gets one <code>spec-plate</code> per instruction. Contracts get <code>data-table</code>. Proof gets <code>assert-list</code>.</p><p>Every component earns its place.</p></div>
+      <div class="sdetail" data-d="2"><h3>P3 — Fill <span>procedural, data-driven</span></h3>
+        <p>Spec data into component contracts. Code goes into code-blocks verbatim. Values go into tables with their whys. No editorializing inside components — <b>the data speaks.</b></p></div>
+      <div class="sdetail" data-d="3"><h3>P4 — Gap assembly <span>the LLM steps in</span></h3>
+        <p>Where no library component fits the demonstration need, the LLM assembles a new one: designs it, builds it, fills it. The new component is named, given a data contract, and <b>enters the library</b> — so the library grows and the LLM is needed less over time.</p></div>
+      <div class="sdetail" data-d="4"><h3>P5 — Compose <span>comic-book layout</span></h3>
+        <p>SELL opens loud. SPEC goes deep. DATA is exact. VERIFY closes with proof. Rhythm: hero, beats, reveals. Color with intent. Progress looks cool, intelligence looks exciting.</p></div>
+      <div class="sdetail" data-d="5"><h3>P6 — Verify <span>against the bar</span></h3>
+        <p>Does the craft show? Does it survive the rogues gallery? Is every instruction executable to the nail? Failures recurse to the failing stage — never a full rebuild for a local failure.</p></div>
+    </section>
+
+    <section>
+      <div class="shead"><div class="lbl">COMPONENT LIBRARY</div><h2>Pick, don't invent.</h2>
+        <p>Fixed data contracts. Fill the data, get the component. Library first, LLM second — always.</p></div>
+      <div class="lib">
+        <div class="comp"><h4>hero-plate</h4><div class="contract">plate_no, title, sub, stamps[]</div><p>The SELL opener. Massive title, spec stamps.</p></div>
+        <div class="comp"><h4>section-head</h4><div class="contract">label, title, intro</div><p>SELL / SPEC / DATA / VERIFY openers.</p></div>
+        <div class="comp"><h4>sell-grid</h4><div class="contract">pairs[{title, body}]</div><p>Before/after, problem/promise.</p></div>
+        <div class="comp"><h4>punch</h4><div class="contract">html</div><p>The one-line click, centered, loud.</p></div>
+        <div class="comp"><h4>spec-plate</h4><div class="contract">num, title, fn, anchor, code, values[], note</div><p>One build instruction, to the nail.</p></div>
+        <div class="comp"><h4>data-table</h4><div class="contract">rows[{datum, value}]</div><p>Contracts, parameters, exact values.</p></div>
+        <div class="comp"><h4>assert-list</h4><div class="contract">assertions[]</div><p>Verification checks, not vibes.</p></div>
+        <div class="comp"><h4>code-block</h4><div class="contract">language, code, annotations</div><p>Exact implementation, annotated.</p></div>
+      </div>
+      <div class="rule"><p><b>The gap rule:</b></p><ol>
+        <li>Library first — always prefer an existing component.</li>
+        <li>LLM assembles only what generators cannot, and must justify why no library component fit.</li>
+        <li>New components enter the library with a data contract — or they don't enter.</li>
+      </ol></div>
+    </section>
+
+    <section>
+      <div class="shead"><div class="lbl">COLLABORATION</div><h2>Two sides, one blueprint.</h2></div>
+      <div class="collab">
+        <div class="ccard user"><h4>You bring</h4><ul><li>Intent and notes</li><li>The click</li><li>References</li><li>Taste — the final QA, especially SHOW</li></ul></div>
+        <div class="ccard pipe"><h4>Pipeline brings</h4><ul><li>Component selection</li><li>Procedural fill</li><li>Gap assembly</li><li>Composition + verification</li></ul></div>
+        <div class="ccard rev"><h4>Review</h4><ul><li>Read the blueprint page</li><li>Name the failing stage</li><li>Pipeline recurses there</li><li>Never a full rebuild for a local failure</li></ul></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shead"><div class="lbl">REFERENCES</div><h2>Blueprints reference blueprints.</h2></div>
+      <div class="card"><p>Blueprints cite each other by id — DL-02 cites SOP v1, this pipeline cites the Standard. In Pulse, references are <b>deep links</b> (<code>dashboard?tool=&lt;id&gt;</code>): the reader jumps inside the platform, never out. A blueprint's reference list is data, maintained like any other contract.</p></div>
+    </section>
+
+    <section>
+      <div class="shead"><div class="lbl">VERSIONING</div><h2>Copied, not invented.</h2></div>
+      <div class="card"><p>Blueprint versions ride the existing Pulse version pipeline — same pattern, less work. The page header carries the version (<code>REV 2</code>), the COMPS <code>version</code> field bumps with it, and the manifest <code>component</code> string records version + what changed. Builders build from a version, never "the latest." A version bump re-runs P6 Verify.</p></div>
+    </section>
+
+    <div class="foot">Production SOP v1 · Authority: Sebastian Moore (PL) · Sealed funnel v44 receipt <code>07b2db76d95e9085</code><br>Canonical: moor-spec/MOOR-BLUEPRINT-PRODUCTION-SOP.md · Extends: MOOR-BLUEPRINT-SOP.md (the HOW for L4 SHOW)</div>
+  </div>
+<script>
+(function(){
+  var tabs=document.querySelectorAll('#tabs .stab');
+  var ds=document.querySelectorAll('.sdetail');
+  tabs.forEach(function(t){
+    t.addEventListener('click',function(){
+      tabs.forEach(function(x){x.classList.remove('on')});
+      ds.forEach(function(x){x.classList.remove('on')});
+      t.classList.add('on');
+      document.querySelector('.sdetail[data-d="'+t.getAttribute('data-l')+'"]').classList.add('on');
+    });
+  });
+})();
+window.addEventListener('error',function(e){document.title='ERR '+(e.message||'').slice(0,40)});
+</script>
+</body>
+</html>
