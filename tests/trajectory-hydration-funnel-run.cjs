@@ -6,6 +6,7 @@ const bp=JSON.parse(fs.readFileSync('blueprint/trajectory-canonical-hydration.bl
 F._resetForTests();
 const id='trajectory-canonical-hydration-v1';
 F.open({request_id:id,input:bp.page0,source:'Sebastian / empty Trajectory diagnosis',context:{destination:'Project Pulse / Trajectory'}});
+F.advance({request_id:id,stage:'usage_plan',provenance:'system',payload:{plan:F.makeUsagePlan(bp.page0,{page:'trajectory-ledger.html',source:'Sebastian / empty Trajectory diagnosis'},{execution_plan:{build_required:true,builder:'Harness/builders after Funnel authorization',destination:'Project Pulse / Trajectory',reuse_before_new:true}})}});
 F.advance({request_id:id,stage:'references',provenance:'verified',payload:{
   reused:[
     {path:'trajectory-ledger.html',reason:'Existing localStorage-only Trajectory surface.'},
@@ -33,5 +34,6 @@ F.advance({request_id:id,stage:'verdict',provenance:'verified',payload:{
   destination:'Project Pulse / Trajectory',done_criteria:bp.done_criteria
 }});
 const s=F.inspect(id);assert(s.receipt);assert.equal(F.verifyReceipt(s.receipt),true);
+assert.equal(s.receipt.usage_plan_hash,s.stages.usage_plan.plan_hash,'receipt must bind current Funnel usage plan');
 assert.equal(F.executionPacket(s.receipt).spec.blueprint_id,bp.id);
 console.log('PASS: sealed Funnel issued canonical Trajectory hydration receipt '+s.receipt.fingerprint);
