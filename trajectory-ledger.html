@@ -23,7 +23,7 @@ button,input,textarea,select{font:inherit}button{cursor:pointer;color:inherit}.s
 <div class="shell">
   <div class="top">
     <div class="brand"><div class="eyebrow">MOOR · cumulative truth</div><h1>Trajectory</h1><p class="muted">The parallel story of what you meant, what the Funnel asked for, and what reality actually produced. The score is an evidence-scoped estimate, never a replacement for your judgment.</p></div>
-    <div class="btnrow"><a class="btn" href="convergence-funnel.html" style="text-decoration:none">Open Funnel</a><button class="btn" id="exportBtn">Export ledger</button><button class="btn" id="importBtn">Import</button><input id="importFile" type="file" accept="application/json" hidden></div>
+    <div class="btnrow"><a class="btn" href="convergence-funnel.html" style="text-decoration:none">Open Funnel</a><button class="btn" id="refreshBtn">Refresh history</button><button class="btn" id="ssdBtn">Connect SSD</button><button class="btn" id="exportBtn">Export ledger</button><button class="btn" id="importBtn">Import</button><input id="importFile" type="file" accept="application/json" hidden></div>
   </div>
 
   <section class="hero">
@@ -60,17 +60,100 @@ button,input,textarea,select{font:inherit}button{cursor:pointer;color:inherit}.s
       </div>
     </div>
   </section>
-  <div class="foot">Component: trajectory-ledger · storage: browser-local <code>moor.trajectory.v1</code> · append-only by default · Funnel writes compatible checkpoints automatically.</div>
+  <div class="foot" id="storageFoot">Component: trajectory-ledger · loading canonical history…</div>
 </div>
+<script src="moor-local-files.js"></script>
 <script>
 (function(){
+'use strict';
 const KEY='moor.trajectory.v1';
+const APP_ID='trajectory';
+const SSD_FILE='local-checkpoints.json';
+const CACHE_FILE='canonical-cache.json';
+const REPO_API='https://api.github.com/repos/bassseamoor/render-queue/contents/trajectory/events?ref=main';
 const $=id=>document.getElementById(id);
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-function load(){try{const x=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}}
-function save(rows){localStorage.setItem(KEY,JSON.stringify(rows))}
-let rows=load(), selected=rows.length?rows.length-1:-1;
+let localRows=loadBrowser(), canonicalRows=[], rows=[], selected=-1, ssdHandle=null;
 
+function checkpointId(r){
+  if(r&&r.checkpoint_id)return String(r.checkpoint_id);
+  if(r&&r.id)return String(r.id);
+  return [r&&r.source||'local',r&&r.at||'',r&&r.artifact||'',r&&r.title||''].join('|');
+}
+function normalizeRow(r){
+  r=r&&typeof r==='object'?r:{};
+  return {...r,checkpoint_id:checkpointId(r),assessors:Array.isArray(r.assessors)?r.assessors:[]};
+}
+function mergeRows(){
+  const map=new Map();
+  canonicalRows.map(normalizeRow).forEach(r=>map.set(checkpointId(r),r));
+  localRows.map(normalizeRow).forEach(r=>{if(!map.has(checkpointId(r)))map.set(checkpointId(r),r)});
+  rows=[...map.values()].sort((a,b)=>String(a.at||'').localeCompare(String(b.at||'')));
+  if(selected<0&&rows.length)selected=rows.length-1;
+  else if(selected>=rows.length)selected=rows.length-1;
+}
+function loadBrowser(){try{const x=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}}
+function saveBrowser(){localStorage.setItem(KEY,JSON.stringify(localRows))}
+function localStamp(list){
+  return (list||[]).reduce((m,r)=>String(r.updatedAt||r.at||'')>m?String(r.updatedAt||r.at||''):m,'');
+}
+async function loadSSDLocal(){
+  if(!ssdHandle||!window.MOORLocalFiles)return;
+  try{
+    const x=await MOORLocalFiles.readAppJson(ssdHandle,APP_ID,SSD_FILE,null);
+    const disk=x&&Array.isArray(x.checkpoints)?x.checkpoints:[];
+    const merged=new Map();
+    localRows.map(normalizeRow).forEach(r=>merged.set(checkpointId(r),r));
+    disk.map(normalizeRow).forEach(r=>merged.set(checkpointId(r),r));
+    localRows=[...merged.values()].sort((a,b)=>String(a.at||'').localeCompare(String(b.at||'')));
+    saveBrowser();
+    await saveSSDLocal();
+  }catch(e){console.warn('Trajectory SSD load failed',e)}
+}
+async function saveSSDLocal(){
+  if(!ssdHandle||!window.MOORLocalFiles)return;
+  try{
+    await MOORLocalFiles.writeAppJson(ssdHandle,APP_ID,SSD_FILE,{
+      schema:'moor.trajectory.local-ledger',version:1,savedAt:new Date().toISOString(),checkpoints:localRows
+    });
+  }catch(e){console.warn('Trajectory SSD save failed',e)}
+}
+async function saveCanonicalCache(){
+  if(!ssdHandle||!window.MOORLocalFiles)return;
+  try{
+    await MOORLocalFiles.writeAppJson(ssdHandle,APP_ID,CACHE_FILE,{
+      schema:'moor.trajectory.canonical-cache',version:1,savedAt:new Date().toISOString(),checkpoints:canonicalRows
+    });
+  }catch(e){console.warn('Trajectory cache save failed',e)}
+}
+async function loadCanonical(){
+  let loaded=[];
+  try{
+    const r=await fetch(REPO_API,{cache:'no-store',headers:{Accept:'application/vnd.github+json'}});
+    if(!r.ok)throw new Error('GitHub '+r.status);
+    const files=(await r.json()).filter(x=>x.type==='file'&&/\.json$/i.test(x.name));
+    const results=await Promise.all(files.map(async x=>{
+      try{
+        const rr=await fetch(x.download_url+'?ts='+Date.now(),{cache:'no-store'});
+        if(!rr.ok)return null;
+        const j=await rr.json();
+        return j&&j.schema==='moor.trajectory-checkpoint'?j:null;
+      }catch(_){return null}
+    }));
+    loaded=results.filter(Boolean);
+    canonicalRows=loaded;
+    await saveCanonicalCache();
+    return;
+  }catch(e){console.warn('Canonical Trajectory hydration failed',e)}
+  if(ssdHandle&&window.MOORLocalFiles){
+    try{
+      const cache=await MOORLocalFiles.readAppJson(ssdHandle,APP_ID,CACHE_FILE,null);
+      canonicalRows=cache&&Array.isArray(cache.checkpoints)?cache.checkpoints:[];
+      return;
+    }catch(e){console.warn('Trajectory cache read failed',e)}
+  }
+  canonicalRows=[];
+}
 function scoreOf(r){
   const a=Array.isArray(r.assessors)?r.assessors.filter(x=>Number.isFinite(+x.score)&&Number.isFinite(+x.confidence)):[];
   if(!a.length && Number.isFinite(+r.systemEstimate)) return {score:clamp(+r.systemEstimate,0,100),confidence:clamp(Number.isFinite(+r.systemConfidence)?+r.systemConfidence:50,0,100)};
@@ -86,51 +169,90 @@ function trend(){
   const d=scored[scored.length-1].v.score-scored[scored.length-2].v.score;
   return d>=3?{label:'Rising +'+Math.round(d),cls:'rising',delta:d}:d<=-3?{label:'Drifting '+Math.round(d),cls:'drifting',delta:d}:{label:'Holding '+(d>=0?'+':'')+Math.round(d),cls:'holding',delta:d};
 }
+function storageText(){
+  const local=localRows.length,canon=canonicalRows.length;
+  return 'Component: trajectory-ledger · '+canon+' canonical + '+local+' local checkpoints · '+(ssdHandle?'SSD backing connected':'browser cache active; SSD not connected')+' · app data lives under MOOR/app-data/trajectory/';
+}
 function render(){
+  mergeRows();
   const latest=[...rows].reverse().find(r=>scoreOf(r));
-  const m=latest?scoreOf(latest):null, t=trend();
+  const m=latest?scoreOf(latest):null,t=trend();
   $('metricNum').textContent=m?Math.round(m.score):'—';
   $('metricBar').style.width=m?clamp(m.score,0,100)+'%':'0%';
   $('confidenceText').textContent=m?'Evidence confidence: '+Math.round(m.confidence)+'% · estimate, not truth.':'No evidence-backed estimate yet.';
   $('trend').textContent=t.label;$('trend').className='trend '+t.cls;
+  $('storageFoot').textContent=storageText();
+  $('ssdBtn').textContent=ssdHandle?'SSD connected':'Connect SSD';
   if(selected<0||!rows[selected]){
-    $('intentText').textContent='No checkpoints yet. Record one here or send an iteration through the Convergence Funnel.';
+    $('intentText').textContent='No checkpoints available.';
     $('funnelText').textContent='—';$('resultText').textContent='—';$('artifactText').textContent='';$('assessors').innerHTML='<div class="empty">No assessor reports yet.</div>';
-  } else {
+  }else{
     const r=rows[selected];
     $('intentText').textContent=r.originalIntent||r.intent||'—';
     $('funnelText').textContent=r.funnelIntent||r.funnel||'—';
     $('resultText').textContent=r.builtResult||r.result||'—';
     $('artifactText').textContent=r.artifact?'Artifact · '+r.artifact:'';
     const a=Array.isArray(r.assessors)?r.assessors:[];
-    $('assessors').innerHTML=a.length?a.map(x=>'<div class="assessor"><div class="assessor-top"><b>'+esc(x.name||'Evaluator')+'</b><span class="n">'+Math.round(+x.score||0)+'/100</span></div><p>'+esc(x.equipment||x.modality||'equipment unspecified')+' · confidence '+Math.round(+x.confidence||0)+'%</p>'+(x.note?'<p>'+esc(x.note)+'</p>':'')+'</div>').join(''):'<div class="empty">No assessor reports on this checkpoint.</div>';
+    $('assessors').innerHTML=a.length?a.map(x=>'<div class="assessor"><div class="assessor-top"><b>'+esc(x.name||'Evaluator')+'</b><span class="n">'+Math.round(+x.score||0)+'/100</span></div><p>'+esc(x.equipment||x.modality||'equipment unspecified')+' · confidence '+Math.round(+x.confidence||0)+'%</p>'+(x.note?'<p>'+esc(x.note)+'</p>':'')+'</div>').join(''):'<div class="empty">Unscored is valid. No assessor report was invented.</div>';
   }
   $('timeline').innerHTML=rows.length?rows.slice().reverse().map((r,rev)=>{
-    const i=rows.length-1-rev, m=scoreOf(r), when=r.at?new Date(r.at).toLocaleString():'undated';
-    return '<div class="row '+(i===selected?'active':'')+'" data-i="'+i+'"><div class="rowtop"><span class="rowtitle">'+esc(r.title||r.artifact||('Checkpoint '+(i+1)))+'</span><span class="score">'+(m?Math.round(m.score):'—')+'</span></div><div class="meta">'+esc(when)+' · '+esc(r.source||'manual')+'</div><span class="chip system">'+esc((r.assessors&&r.assessors[0]&&r.assessors[0].name)||'unassessed')+'</span></div>';
-  }).join(''):'<div class="empty">The ledger is empty. That is valid: no synthetic history is invented.</div>';
+    const i=rows.length-1-rev,m=scoreOf(r),when=r.at?new Date(r.at).toLocaleString():'undated';
+    const src=/repository-canonical/.test(r.source||'')?'canonical':'local';
+    return '<div class="row '+(i===selected?'active':'')+'" data-i="'+i+'"><div class="rowtop"><span class="rowtitle">'+esc(r.title||r.artifact||('Checkpoint '+(i+1)))+'</span><span class="score">'+(m?Math.round(m.score):'—')+'</span></div><div class="meta">'+esc(when)+' · '+esc(r.source||'manual')+'</div><span class="chip system">'+src+'</span><span class="chip">'+esc((r.assessors&&r.assessors[0]&&r.assessors[0].name)||'unscored')+'</span></div>';
+  }).join(''):'<div class="empty">No canonical or local checkpoints could be loaded.</div>';
   document.querySelectorAll('.row').forEach(el=>el.onclick=()=>{selected=+el.dataset.i;render()});
 }
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-$('recordBtn').onclick=()=>{
-  const score=$('fScore').value===''?null:clamp(+$('fScore').value,0,100), conf=$('fConf').value===''?null:clamp(+$('fConf').value,0,100);
+async function appendLocal(x){
+  localRows.push(normalizeRow({...x,checkpoint_id:x.checkpoint_id||('local-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7)),schema:x.schema||'moor.trajectory.checkpoint.v1',at:x.at||new Date().toISOString()}));
+  saveBrowser();await saveSSDLocal();mergeRows();selected=rows.length-1;render();
+  return localRows[localRows.length-1];
+}
+$('recordBtn').onclick=async()=>{
+  const score=$('fScore').value===''?null:clamp(+$('fScore').value,0,100),conf=$('fConf').value===''?null:clamp(+$('fConf').value,0,100);
   const assessor=(score==null)?[]:[{name:$('fEvaluator').value.trim()||'Manual evaluator',equipment:$('fEvaluator').value.trim()||'unspecified',score,confidence:conf==null?50:conf,note:'Manual checkpoint estimate.'}];
-  rows.push({schema:'moor.trajectory.checkpoint.v1',at:new Date().toISOString(),source:'manual',title:'Manual checkpoint',originalIntent:$('fIntent').value.trim(),funnelIntent:$('fFunnel').value.trim(),builtResult:$('fResult').value.trim(),artifact:$('fArtifact').value.trim(),assessors:assessor});
-  save(rows);selected=rows.length-1;['fIntent','fFunnel','fResult','fArtifact','fScore','fConf','fEvaluator'].forEach(id=>$(id).value='');render();
+  await appendLocal({source:'manual',title:'Manual checkpoint',originalIntent:$('fIntent').value.trim(),funnelIntent:$('fFunnel').value.trim(),builtResult:$('fResult').value.trim(),artifact:$('fArtifact').value.trim(),assessors:assessor});
+  ['fIntent','fFunnel','fResult','fArtifact','fScore','fConf','fEvaluator'].forEach(id=>$(id).value='');
+};
+$('refreshBtn').onclick=async()=>{await loadCanonical();render()};
+$('ssdBtn').onclick=async()=>{
+  try{
+    ssdHandle=await MOORLocalFiles.connect();
+    await loadSSDLocal();await saveCanonicalCache();render();
+  }catch(e){alert(e.message||String(e))}
 };
 $('exportBtn').onclick=()=>{
-  const blob=new Blob([JSON.stringify({format:'moor.trajectory-ledger.v1',exportedAt:new Date().toISOString(),checkpoints:rows},null,2)],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({format:'moor.trajectory-ledger.v2',exportedAt:new Date().toISOString(),checkpoints:rows},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='moor-trajectory-ledger.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 $('importBtn').onclick=()=>$('importFile').click();
 $('importFile').onchange=async e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
-  try{const j=JSON.parse(await f.text());const incoming=Array.isArray(j)?j:(Array.isArray(j.checkpoints)?j.checkpoints:[]);rows=rows.concat(incoming);save(rows);selected=rows.length-1;render()}catch(err){alert('Import is not a valid Trajectory ledger JSON.')}
+  try{
+    const j=JSON.parse(await f.text()),incoming=Array.isArray(j)?j:(Array.isArray(j.checkpoints)?j.checkpoints:[]);
+    const m=new Map(localRows.map(r=>[checkpointId(r),normalizeRow(r)]));
+    incoming.map(normalizeRow).forEach(r=>m.set(checkpointId(r),r));
+    localRows=[...m.values()];saveBrowser();await saveSSDLocal();mergeRows();selected=rows.length-1;render();
+  }catch(err){alert('Import is not a valid Trajectory ledger JSON.')}
   e.target.value='';
 };
-window.addEventListener('storage',e=>{if(e.key===KEY){rows=load();selected=rows.length?rows.length-1:-1;render()}});
-window.MOOR_TRAJECTORY={version:'1.0.0',key:KEY,get:()=>load(),append:(x)=>{const a=load();a.push({...x,schema:x.schema||'moor.trajectory.checkpoint.v1',at:x.at||new Date().toISOString()});save(a);rows=a;selected=a.length-1;render();return a[a.length-1]},score:scoreOf};
-render();
+window.addEventListener('storage',async e=>{
+  if(e.key===KEY){
+    localRows=loadBrowser();
+    await saveSSDLocal();
+    mergeRows();selected=rows.length?rows.length-1:-1;render();
+  }
+});
+window.MOOR_TRAJECTORY={
+  version:'2.0.0',key:KEY,get:()=>rows.slice(),
+  append:appendLocal,score:scoreOf,refresh:async()=>{await loadCanonical();render();return rows.slice()}
+};
+(async function init(){
+  if(window.MOORLocalFiles&&MOORLocalFiles.supported()){
+    try{ssdHandle=await MOORLocalFiles.primary(false);if(ssdHandle)await loadSSDLocal()}catch(e){}
+  }
+  await loadCanonical();mergeRows();selected=rows.length?rows.length-1:-1;render();
+})();
 })();
 </script>
 </body>
