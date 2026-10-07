@@ -255,28 +255,57 @@ for(let z=-70;z<=70;z+=35){
   beam.position.set(0,82,z);scene.add(beam);
 }
 
-/* ---------- lighting: cinematic pools of warm light in darkness ---------- */
-scene.add(new THREE.AmbientLight(0x1a1a22,0.5));
+/* ---------- studio lighting: 4 presets per blueprint REV 8 ---------- */
+const LIGHT_PRESETS={
+  ambient:  {temp:0xffc98a, tempK:3200, ambient:0.20, pool:500,  rim:0x4a5a78, rimI:0.25, label:'AMBIENT 3200K'},
+  work:     {temp:0xffddb0, tempK:4000, ambient:0.60, pool:1400, rim:0x6a7a98, rimI:0.45, label:'WORK 4000K'},
+  cinematic:{temp:0xffb46b, tempK:2800, ambient:0.15, pool:1200, rim:0x3a4a68, rimI:0.30, label:'CINEMATIC 2800K'},
+  pulse:    {temp:0xffe8c8, tempK:4500, ambient:0.40, pool:1000, rim:0x5a6a88, rimI:0.40, label:'PULSE 4500K'},
+};
+const ambLight=new THREE.AmbientLight(0x1a1a22,0.15);
+scene.add(ambLight);
 
-function warmPool(x,z,intensity=900){
-  const s=new THREE.SpotLight(0xffc98a,intensity,120,Math.PI/5,0.45,1.6);
-  s.position.set(x,80,z);
-  s.target.position.set(x,0,z);
-  s.castShadow=true;s.shadow.mapSize.set(1024,1024);
-  scene.add(s);scene.add(s.target);
-  // visible fixture
+const poolLights=[];
+function warmPool(x,z){
+  const s=new THREE.SpotLight(0xffb46b,1200,120,Math.PI/5,0.45,1.6);
+  s.position.set(x,80,z); s.target.position.set(x,0,z);
+  s.castShadow=true; s.shadow.mapSize.set(1024,1024);
+  scene.add(s); scene.add(s.target); poolLights.push(s);
   const fix=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.8,2.5,12),
     new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.4,metalness:0.8}));
-  fix.position.set(x,80,z);scene.add(fix);
+  fix.position.set(x,80,z); scene.add(fix);
 }
-warmPool(0,0,1200);       // command node
-warmPool(-80,-40,700); warmPool(80,-40,700);
-warmPool(-80,40,700);  warmPool(80,40,700);
-warmPool(0,-70,500);   warmPool(0,70,500);
+warmPool(0,0); warmPool(-80,-40); warmPool(80,-40);
+warmPool(-80,40); warmPool(80,40); warmPool(0,-70); warmPool(0,70);
 
-/* cool rim from the membrane */
-const rim=new THREE.DirectionalLight(0x4a5a78,0.35);
-rim.position.set(0,40,-100);scene.add(rim);
+const rim=new THREE.DirectionalLight(0x3a4a68,0.30);
+rim.position.set(0,40,-100); scene.add(rim);
+
+/* emitter fixtures on truss grid (visual, emissive) */
+const emitterMat=new THREE.MeshStandardMaterial({color:0x111111,emissive:0xffb46b,emissiveIntensity:0.8});
+const emitterGeo=new THREE.BoxGeometry(2,0.5,2);
+for(let gx=-3;gx<=3;gx++)for(let gz=-2;gz<=2;gz++){
+  const e=new THREE.Mesh(emitterGeo,emitterMat);
+  e.position.set(gx*40,83,gz*40); scene.add(e);
+}
+
+let currentPreset='cinematic';
+function applyPreset(name){
+  const p=LIGHT_PRESETS[name]; if(!p) return;
+  currentPreset=name;
+  ambLight.intensity=p.ambient;
+  poolLights.forEach(s=>{s.color.setHex(p.temp); s.intensity=p.pool;});
+  rim.color.setHex(p.rim); rim.intensity=p.rimI;
+  emitterMat.emissive.setHex(p.temp);
+  const ind=document.getElementById('light-preset');
+  if(ind) ind.textContent=p.label;
+}
+applyPreset('cinematic');
+// keys 1-4 switch presets
+addEventListener('keydown',e=>{
+  const map={'1':'ambient','2':'work','3':'cinematic','4':'pulse'};
+  if(map[e.key]) applyPreset(map[e.key]);
+});
 
 /* ---------- command node: glass desk, 6 monitors in arc, chair ---------- */
 const node=new THREE.Group();
