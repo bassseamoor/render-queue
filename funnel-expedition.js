@@ -69,7 +69,7 @@ const DIMENSIONS=[
 
 /* REAL canonical funnel run for a Gen-1 seat */
 function runCanonicalFunnel(seatId, purpose, page0){
-  K._resetForTests();
+  // NO _resetForTests(): unique request_id provides isolation. Reset destroys prior receipts.
   // MULTIPLIER #8 (page0-by-reference): use hash + lazy ref, not full text embedding.
   // Full text available via getPage0().text on demand. Saves ~10KB per seat × 256 = ~2.5MB.
   const page0Ref = getPage0Ref();
@@ -228,8 +228,8 @@ function reconverge(seats){
 
 /* Real canonical Match Funnel */
 function runMatchFunnel(candidateA, candidateB, page0, matchId){
-  K._resetForTests();
-  const input=`MATCH FUNNEL ${matchId}\n\nEXACT PAGE 0 (hash ${page0.hash.slice(0,16)}):\n${page0.text}\n\nCandidate A (${candidateA.seat}):\n- Dimension: ${candidateA.dimension}\n- Evidence: ${candidateA.evidence.length}\n- Unresolved: ${candidateA.unresolved.length}\n- Receipt: ${candidateA.receipt}\n\nCandidate B (${candidateB.seat}):\n- Dimension: ${candidateB.dimension}\n- Evidence: ${candidateB.evidence.length}\n- Unresolved: ${candidateB.unresolved.length}\n- Receipt: ${candidateB.receipt}\n\nDecide: which is stronger realization of Page 0?`;
+  // NO _resetForTests(): unique request_id provides isolation.
+  const input=`MATCH FUNNEL ${matchId}\n\nPage 0 ref: hash=${page0.hash.slice(0,16)}\n\nCandidate A (${candidateA.seat}):\n- Dimension: ${candidateA.dimension}\n- Evidence: ${candidateA.evidence.length}\n- Unresolved: ${candidateA.unresolved.length}\n- Receipt: ${candidateA.receipt}\n\nCandidate B (${candidateB.seat}):\n- Dimension: ${candidateB.dimension}\n- Evidence: ${candidateB.evidence.length}\n- Unresolved: ${candidateB.unresolved.length}\n- Receipt: ${candidateB.receipt}\n\nDecide: which is stronger realization of Page 0?`;
 
   let s=K.open({request_id:`match-${matchId}`,input,source:'expedition-match',context:{match:matchId}});
   const plan=K.makeUsagePlan(input,{match:matchId});
