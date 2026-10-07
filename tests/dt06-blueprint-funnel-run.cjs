@@ -6,7 +6,7 @@ class FixedDate extends RealDate{
 }
 global.Date=FixedDate;
 const K=require('../funnel-kernel.js');
-const seal=require('../blueprint/dt06-mobile-semantic-parity.seal.json');
+const seal=require('../blueprint/dt06-mobile-semantic-parity.seal.v2.json');
 
 const PAGE0=`Read the Blueprint SOP first: https://bassseamoor.github.io/render-queue/pulse-dashboard.html?tool=blueprintsop
 
@@ -33,6 +33,46 @@ Continue your blueprint work under this SOP. When it's done, a builder should be
 K._resetForTests();
 const id=seal.request_id;
 let s=K.open({request_id:id,input:PAGE0,source:'owner',context:{project:'MOOR Blueprint Farm',slice:'DT-06',mode:'blueprint-only'}});
+const usagePlan=K.makeUsagePlan(PAGE0,{project:'MOOR Blueprint Farm',slice:'DT-06',mode:'blueprint-only',source:'owner'},{
+  execution_plan:{
+    build_required:true,
+    builder:'Blueprint authoring only; no DT-06 runtime implementation',
+    destination:'Project Pulse / dashboard?tool=blueprintdt06',
+    reuse_before_new:true,
+    steps:[
+      'reuse SOP/Standard/exemplar and current Hall/Twin anchors',
+      'author exact DT-06 blueprint delta',
+      'verify blueprint claims and Pulse registration'
+    ]
+  },
+  verification_plan:{
+    compare_to_page0:true,
+    require_done_criteria:true,
+    verify_requested_path:true,
+    checks:[
+      'all Page 0 obligations accounted for',
+      'usage plan followed or explicitly revised before references',
+      'selected references/machinery provenance retained',
+      'sealed v44 verdict validates',
+      'exact live anchors and locked values are asserted',
+      'all owner-visible links stay inside Pulse',
+      'no DT-06 runtime implementation is claimed',
+      'no unapproved substitution'
+    ],
+    write_failures_back_as_evidence:true
+  },
+  output_plan:{
+    preserve_provenance:true,
+    record_usage_plan:true,
+    record_references:true,
+    record_failures:true,
+    compact_after_verification:true,
+    pulse_tool:'blueprintdt06',
+    presentation:'comic-book SELL/SPEC/SHOW with claim-level assertions'
+  }
+});
+s=K.advance({request_id:id,stage:'usage_plan',payload:{plan:usagePlan},provenance:'system'});
+assert.equal(s.stages.usage_plan.plan_hash,seal.usage_plan_hash,'checked-in seal must bind the current Page-0 usage plan');
 s=K.advance({request_id:id,stage:'references',payload:{reused:[
   {id:'blueprint-sop.html',kind:'SOP'},
   {id:'blueprint-standard.html',kind:'standard'},
@@ -71,7 +111,10 @@ assert(K.verifyReceipt(s.receipt),'v44 must verify its own receipt');
 assert.equal(s.receipt.fingerprint,seal.receipt_fingerprint,'checked-in seal must match deterministic v44 receipt');
 assert.equal(s.receipt.ledger_head,seal.ledger_head);
 assert.equal(s.receipt.page0_hash,seal.page0_hash);
+assert.equal(s.receipt.usage_plan_hash,seal.usage_plan_hash);
+assert.equal(s.receipt.funnel_revision,seal.funnel_revision);
+assert.equal(s.receipt.version,seal.kernel_receipt_version);
 assert.equal(seal.verdict,'BUILD');
 assert.equal(seal.runtime_implementation_authorized,false,'blueprint seal must not authorize DT-06 runtime implementation');
 
-console.log(JSON.stringify({pass:true,law_version:K.law_version,verdict:seal.verdict,receipt:s.receipt.fingerprint,destination:s.receipt.destination,runtime_implementation_authorized:false},null,2));
+console.log(JSON.stringify({pass:true,law_version:K.law_version,funnel_revision:K.revision,usage_plan_hash:s.receipt.usage_plan_hash,verdict:seal.verdict,receipt:s.receipt.fingerprint,destination:s.receipt.destination,runtime_implementation_authorized:false},null,2));
