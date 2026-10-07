@@ -30,6 +30,7 @@
 'use strict';
 const crypto=require('crypto');
 const K=require('/home/hatch/workspace/moor-recovery/funnel-kernel.js');
+let M9=null; try{ M9=require('./nine-multipliers.js'); }catch(e){ try{ M9=require('/tmp/decide-mult.js'); }catch(e2){} }
 
 // Page 0 for the expedition itself (the 256² spec)
 let _page0=null;
@@ -97,6 +98,10 @@ function predictForwardErrors(seatId, purpose, page0) {
 }
 
 function runCanonicalFunnel(seatId, purpose, page0){
+  // M1: Freeze evaluation contract — success cannot redefine success
+  const _evalContract = M9 ? M9.freezeEvaluationContract(page0.text || '',
+    ['Seat investigated dimension: '+purpose.dimension, 'Findings recorded'],
+    ['Findings contradict Page 0']) : null;
   // NO _resetForTests(): unique request_id provides isolation. Reset destroys prior receipts.
   // MULTIPLIER #8 (page0-by-reference): use hash + lazy ref, not full text embedding.
   // Full text available via getPage0().text on demand. Saves ~10KB per seat × 256 = ~2.5MB.
@@ -131,9 +136,24 @@ function runCanonicalFunnel(seatId, purpose, page0){
   } else {
     recordMetric('cache_misses');
     // Findings: differentiated by dimension (real investigative work)
-    findings = investigateDimension(purpose.dimension, page0);
+    try {
+      findings = investigateDimension(purpose.dimension, page0);
+    } catch(invErr) {
+      // M3: Capitalize failure into infrastructure
+      const _cap = M9 ? M9.capitalizeFailure({what:'investigation_failed', why:invErr.message, input:purpose.dimension, component:'investigateDimension'}) : null;
+      findings = [{type:'unresolved', content:'Investigation failed: '+invErr.message.slice(0,100), dimension: purpose.dimension,
+        capitalized: _cap ? _cap.signature : null}];
+    }
     // Cache for future seats
     _evidencePool.set('dim:'+poolKey, {findings, conclusive: findings.length > 0, dimension: purpose.dimension});
+  }
+
+  // M4: Bidirectional replay — forward observer alongside backward check
+  const _bidi = M9 ? M9.bidirectionalReplay(
+    {id: seatId, page0_hash: page0.hash, evidence: findings.map(f=>({content:f.content}))},
+    {hash: page0.hash}, 3) : null;
+  if (_bidi && _bidi.forward.risks.length > 0) {
+    findings.push({type:'unresolved', content:'Forward observer risks: '+_bidi.forward.risks.join('; '), dimension: purpose.dimension});
   }
 
   // V5: obligation ledger deltas — cache by input hash
