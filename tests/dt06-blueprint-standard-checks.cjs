@@ -2,7 +2,7 @@ const fs=require('node:fs');
 const assert=require('node:assert/strict');
 
 const bp=require('../blueprint/dt06-mobile-semantic-parity.blueprint.json');
-const seal=require('../blueprint/dt06-mobile-semantic-parity.seal.json');
+const seal=require('../blueprint/dt06-mobile-semantic-parity.seal.v2.json');
 const js=fs.readFileSync('pulse-beam-funnel-hall.js','utf8');
 const html=fs.readFileSync('pulse-beam-funnel-hall.html','utf8');
 const visual=fs.readFileSync('blueprint-dt06-mobile-parity.html','utf8');
@@ -20,7 +20,11 @@ assert.equal(bp.runtime_implementation_authorized,false,'blueprint publication m
 
 assert.equal(seal.authority,'v44-sealed');
 assert.equal(seal.verdict,'BUILD');
-assert.equal(seal.receipt_fingerprint,'1338b036b9803451');
+assert.equal(seal.version,2);
+assert.equal(seal.funnel_revision,'usage-plan-1');
+assert.equal(seal.kernel_receipt_version,2);
+assert.equal(seal.usage_plan_hash,'13236e86');
+assert.equal(seal.receipt_fingerprint,'345048cb648d5f5b');
 assert.equal(seal.runtime_implementation_authorized,false);
 assert.equal(seal.destination,'Project Pulse / dashboard?tool=blueprintdt06');
 
@@ -78,7 +82,7 @@ for(const marker of [
   'VERIFY // NOT VIBES',
   'SEALED BLUEPRINT · BUILD',
   'class="plate"',
-  '1338b036b9803451'
+  '345048cb648d5f5b'
 ]) assert(visual.includes(marker),'visual blueprint missing standard marker '+marker);
 
 assert(!/target=["']_blank["']/.test(visual),'DT-06 blueprint must not open owner links outside Pulse');
@@ -93,6 +97,7 @@ assert(ext.includes("_q.get('tool')||_q.get('component')"),'late extension regis
 assert(manifest.items&&manifest.items.blueprintdt06,'Pulse manifest must index DT-06 blueprint');
 assert.equal(manifest.items.blueprintdt06.page,'pulse-dashboard.html?tool=blueprintdt06');
 assert(manifest.items.blueprintdt06.honest_limits.includes('not DT-06 runtime implementation'));
+assert(manifest.items.blueprintdt06.depends_on.includes('blueprint/dt06-mobile-semantic-parity.seal.v2.json'));
 assert(build.includes("'blueprintdt06':"),'Pulse rebuild must preserve DT-06 blueprint manifest entry');
 
 const touch=bp.builder_handoff.touch_order;
