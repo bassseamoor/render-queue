@@ -11,7 +11,9 @@ assert(summary.counts.total>=5,'bootstrap ledger unexpectedly small');
 
 const trajectory=summary.items.find(x=>x.id==='trajectory');
 assert(trajectory,'Trajectory missing from Dev Feed ledger');
-assert(trajectory.state.gap.includes('artifact-exists-not-in-pulse'),'historical/current visibility gap should remain until owner-visible completion is appended');
+assert(trajectory.events.some(e=>e.id==='trajectory:visibility-gap'&&e.status==='gap'),'historical Trajectory visibility gap must remain preserved as evidence');
+assert.equal(trajectory.state.owner_visible,true,'Trajectory should now be owner-visible after append-only repair evidence');
+assert(!trajectory.state.gap.includes('artifact-exists-not-in-pulse'),'current Trajectory state should no longer report the repaired Pulse visibility gap');
 
 const html=fs.readFileSync('dev-feed.html','utf8');
 for(const needle of [
