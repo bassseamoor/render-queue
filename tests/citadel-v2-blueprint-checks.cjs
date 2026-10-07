@@ -2,10 +2,23 @@ const fs=require('node:fs'),assert=require('node:assert/strict'),crypto=require(
 const bp=require('../blueprint/funnel-citadel-v2.blueprint.json');
 const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 const src=fs.readFileSync('pulse-beam-funnel-hall.js','utf8');
-assert.equal(bp.version,2);assert(fs.readFileSync('pulse-dashboard.html','utf8').includes(bp.delivery_hook.after),'Pulse loader must use new cache key');assert.equal(bp.plates.length,21);assert.equal(sha(src),bp.runtime_sha256,'baseline drift: re-Funnel, do not silently rebase');
-assert.equal(bp.plates.map(p=>p.code).join(''),src,'plates must cover every byte once');
-let end=0;for(const p of bp.plates){assert.equal(p.start_line,end+1);end=p.end_line;assert.equal(sha(p.code),p.code_sha256);assert.equal(sha(p.anchor),p.anchor_sha256);assert.equal(src.split(p.anchor).length-1,1,p.id+' unique anchor');assert(p.contract&&p.done&&p.why);}
-let patched=src;for(const p of bp.patches){assert.equal(patched.split(p.before).length-1,1,p.id+' exact unique patch anchor');patched=patched.replace(p.before,p.after);assert(p.assertion&&p.why);}
+const baseline=bp.plates.map(p=>p.code).join('');
+const lineage=require('../blueprint/funnel-citadel-v2.runtime-lineage.json');
+assert.equal(bp.version,2);assert(fs.readFileSync('pulse-dashboard.html','utf8').includes(bp.delivery_hook.after),'Pulse loader must use new cache key');assert.equal(bp.plates.length,21);
+assert.equal(sha(baseline),bp.runtime_sha256,'pinned FC-02 plate bytes must still reconstruct the sealed baseline exactly');
+const currentHash=sha(src);
+if(currentHash!==bp.runtime_sha256){
+  assert.equal(lineage.baseline_runtime_sha256,bp.runtime_sha256,'runtime drift requires explicit lineage from the pinned baseline');
+  assert.equal(lineage.baseline_status,'historical-pinned');
+  assert.equal(lineage.successor.slice_id,'DT-06');
+  assert.equal(lineage.successor.runtime_sha256,currentHash,'authorized successor hash must match current Hall exactly');
+  assert.equal(lineage.re_funnel_verification,'tests/citadel-v2-lineage-funnel-run.cjs');
+  assert(src.includes('window.FACTORY_TWIN_VIEW_STATE=Object.freeze({'),'current successor must carry DT-06 semantic parity runtime');
+}else{
+  assert.equal(baseline,src,'plates must cover every byte once while FC-02 remains current');
+}
+let end=0;for(const p of bp.plates){assert.equal(p.start_line,end+1);end=p.end_line;assert.equal(sha(p.code),p.code_sha256);assert.equal(sha(p.anchor),p.anchor_sha256);assert.equal(baseline.split(p.anchor).length-1,1,p.id+' unique anchor in pinned baseline');assert(p.contract&&p.done&&p.why);}
+let patched=baseline;for(const p of bp.patches){assert.equal(patched.split(p.before).length-1,1,p.id+' exact unique patch anchor');patched=patched.replace(p.before,p.after);assert(p.assertion&&p.why);}
 const syntax=spawnSync(process.execPath,['--check','--input-type=module'],{input:patched,encoding:'utf8'});assert.equal(syntax.status,0,syntax.stderr);
 assert(!patched.includes('SphereGeometry'));assert(!patched.includes('ConeGeometry'));assert(patched.includes('window.FUNNEL_ENVIRONMENT_GRAPH'));
 const near=(a,b,t=1e-4)=>assert(Math.abs(a-b)<t,`${a} != ${b}`);
@@ -20,4 +33,5 @@ const html=fs.readFileSync('blueprint-funnel-citadel-v2.html','utf8');for(const 
 for(const m of html.matchAll(/href="([^"]+)"/g))assert(m[1].startsWith('#')||m[1].startsWith('pulse-dashboard.html?tool='),'owner links must stay inside Pulse');
 assert(html.includes('PLANNED · NOT APPLIED'));assert(html.includes('runtime repair release remains separate'));
 if(process.argv.includes('--registered')){const reg=fs.readFileSync('pulse-component-extensions.js','utf8'),manifest=JSON.parse(fs.readFileSync('pulse-manifest.json'));assert(reg.includes('"id":"blueprintfc2"'));assert.equal(manifest.items.blueprintfc2.page,'pulse-dashboard.html?tool=blueprintfc2');}
-console.log('PASS: 21 exact plates / 4 unique executable repairs / geometry equations / Pulse-only links / honest scope');
+if(currentHash!==bp.runtime_sha256)require('./citadel-v2-lineage-funnel-run.cjs');
+console.log('PASS: FC-02 preserves its exact sealed baseline; authorized successor drift is append-only lineage, never a silent plate rebase.');
