@@ -33,4 +33,21 @@ assert.equal(out.release.repository_base,'fixture-main-sha');
 assert.equal(out.job.objective,'Execute sealed DT-06 blueprint exactly; do not re-plan the platform.');
 for(const p of ['factory-twin-core.js','funnel-kernel.js','software-factory-core.js'])assert(out.do_not_touch.includes(p));
 assert.equal(out.authority,'planner only; v44 execution receipt still required before build');
-console.log('PASS: Funnel build loop regression uses a sealed-DT06 fixture, reuses its existing blueprint, and emits the exact scoped builder packet without depending on live current-slice state.');
+
+const liveOut=Loop.planNext({
+  owner_directive:'Use the Funnel to select the next unfinished slice and automate repetitive blueprint preparation.',
+  repository_base:'live-state-fixture'
+});
+assert(liveOut.next_slice&&liveOut.next_slice.slice_id,'live loop must select an unfinished eligible slice');
+if(liveOut.action==='prepare-blueprint'){
+  const p=liveOut.blueprint_authoring;
+  assert(p&&p.slice_id===liveOut.next_slice.slice_id,'unblueprinted slice must receive an authoring packet');
+  assert(p.parent_ref&&p.slice_spec&&p.slice_spec.id===liveOut.next_slice.slice_id,'authoring packet must resolve the canonical parent slice');
+  assert.equal(p.scope,'blueprint publication only; runtime implementation requires a separate v44 verdict');
+  assert.equal(p.standards.exemplar,'pulse-dashboard.html?tool=blueprintdl');
+  assert(p.required_sections.some(x=>x.startsWith('SPEC:')));
+  assert(p.required_sections.some(x=>x.startsWith('L5:')));
+}
+if(liveOut.action==='execute-sealed-blueprint')assert(liveOut.release&&liveOut.job,'sealed live slice must produce release/job packets');
+
+console.log('PASS: Funnel build loop regression reuses sealed machinery, while live state automatically emits either a scoped build packet or a complete Blueprint SOP authoring packet. CURRENT NEXT: '+liveOut.next_slice.slice_id+' / '+liveOut.action);
