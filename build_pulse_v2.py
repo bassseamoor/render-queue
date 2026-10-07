@@ -284,7 +284,7 @@ PRESERVED_PLATFORM_ITEMS = {
         'component': 'MOOR Trajectory Ledger',
         'component_source': 'trajectory-ledger.component-project.json',
         'page': 'trajectory-ledger.html',
-        'depends_on': ['convergence-funnel.component-project.json','moor-local-files.js','trajectory/checkpoint-schema.json','trajectory/events/'],
+        'depends_on': ['convergence-funnel.component-project.json','moor-local-files.js','trajectory/checkpoint-schema.json','trajectory/canonical-seed.json','trajectory/events/'],
         'tags': ['cat:creation','cat:compdata','cat:interface','kind:trajectory-ledger','prov:funnel','prov:append-only','dep:file-system-access','tool:trajectoryLedger'],
         'honest_limits': 'Evidence-scoped estimate of intent/result alignment; canonical history hydrates from repository checkpoints, while local/manual state uses SSD app-data when permission exists and browser storage as fallback.'
     },
