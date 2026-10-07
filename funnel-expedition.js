@@ -117,6 +117,15 @@ function runCanonicalFunnel(seatId, purpose, page0){
   s=K.advance({request_id:`exp-seat-${seatId}`,stage:'references',payload:{reused:[
     {id:'page0-verbatim',role:'Immutable Page 0.'},
   ],missing:[]},provenance:'learned'});
+  // M2: Composition-first — what % of needed capabilities already exist?
+  const _decomp = M9 ? M9.decomposeCapability(purpose.purpose || '', [
+    {id:'kernel-v44', provides:['funnel','receipt','verification'], verified:true},
+    {id:'evidence-pool', provides:['evidence','deduplication'], verified:true},
+    {id:'tournament', provides:['competition','selection'], verified:true},
+  ]) : null;
+  if (_decomp && _decomp.percent_exists < 100) {
+    recordMetric('composition_gap');
+  }
   s=K.advance({request_id:`exp-seat-${seatId}`,stage:'distill',payload:{
     spec_draft:`Investigate Page 0 from ${purpose.dimension} angle. Findings: []`
   },provenance:'inferred'});
@@ -422,6 +431,11 @@ function getCompetitiveRanking() {
 
 /* Real canonical Match Funnel */
 function runMatchFunnel(candidateA, candidateB, page0, matchId){
+  // M6: Design discriminating experiment — what observation separates A from B?
+  const _discrim = M9 ? M9.designDiscriminatingExperiment(
+    `Candidate ${candidateA.seat} (${candidateA.dimension})`,
+    `Candidate ${candidateB.seat} (${candidateB.dimension})`
+  ) : null;
   // NO _resetForTests(): unique request_id provides isolation.
   const input=`MATCH FUNNEL ${matchId}\n\nPage 0 ref: hash=${page0.hash.slice(0,16)}\n\nCandidate A (${candidateA.seat}):\n- Dimension: ${candidateA.dimension}\n- Evidence: ${candidateA.evidence.length}\n- Unresolved: ${candidateA.unresolved.length}\n- Receipt: ${candidateA.receipt}\n\nCandidate B (${candidateB.seat}):\n- Dimension: ${candidateB.dimension}\n- Evidence: ${candidateB.evidence.length}\n- Unresolved: ${candidateB.unresolved.length}\n- Receipt: ${candidateB.receipt}\n\nDecide: which is stronger realization of Page 0?`;
 
@@ -586,6 +600,15 @@ function getEvidencePoolSize(){ return _evidencePool.size; }
 /* GENERATIVE MULTI-PERSPECTIVE QUESTIONS — open-minded, not assumptive.
  * Generate questions from adversarial, naive, expert, and alien perspectives.
  * Do not assume the solution shape. */
+// M5: Question economy — score questions by information gain per interruption
+function scoreQuestionsByROI(questions, possibleWorlds) {
+  if (!M9) return questions;
+  return questions.map(q => {
+    const scored = M9.scoreQuestion({text: q.question, eliminates: Math.floor(possibleWorlds * 0.2)}, possibleWorlds);
+    return {...q, roi: scored.roi, worth_asking: scored.worth_asking};
+  }).filter(q => q.worth_asking);
+}
+
 function generateMultiPerspectiveQuestions(page0, dimension) {
   const text = (page0.text || '').slice(0, 500);
   return [
