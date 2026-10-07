@@ -284,18 +284,18 @@ PRESERVED_PLATFORM_ITEMS = {
         'component': 'MOOR Trajectory Ledger',
         'component_source': 'trajectory-ledger.component-project.json',
         'page': 'trajectory-ledger.html',
-        'depends_on': ['convergence-funnel.component-project.json'],
-        'tags': ['cat:creation','cat:compdata','cat:interface','kind:trajectory-ledger','prov:funnel','prov:append-only','tool:trajectoryLedger'],
-        'honest_limits': 'Evidence-scoped estimate of intent/result alignment; confidence and assessor modality remain visible.'
+        'depends_on': ['convergence-funnel.component-project.json','moor-local-files.js','trajectory/checkpoint-schema.json','trajectory/events/'],
+        'tags': ['cat:creation','cat:compdata','cat:interface','kind:trajectory-ledger','prov:funnel','prov:append-only','dep:file-system-access','tool:trajectoryLedger'],
+        'honest_limits': 'Evidence-scoped estimate of intent/result alignment; canonical history hydrates from repository checkpoints, while local/manual state uses SSD app-data when permission exists and browser storage as fallback.'
     },
     'quick-notes': {
         'label': 'Quick Notes', 'file': 'quick-notes-core.js',
         'component': 'MOOR Quick Notes v1',
         'component_source': 'blueprint/quick-notes.blueprint.json',
         'page': 'quick-notes.html',
-        'depends_on': ['environment-engine-core.js'],
-        'tags': ['cat:creation','cat:compdata','cat:interface','kind:interactive','dep:localstorage','src:quick-notes','tool:quickNotes'],
-        'honest_limits': 'Device/browser-local persistence only in v1. No cloud sync, collaboration, attachments, or OS-level filesystem access.'
+        'depends_on': ['environment-engine-core.js','moor-local-files.js'],
+        'tags': ['cat:creation','cat:compdata','cat:interface','kind:interactive','dep:localstorage','dep:file-system-access','src:quick-notes','tool:quickNotes'],
+        'honest_limits': 'Uses SSD-backed MOOR/app-data/quick-notes/state.json after one explicit browser permission grant, with browser storage as fallback. No cloud sync, collaboration, or automatic cross-device replication.'
     },
     'environment-engine': {
         'label': 'MOOR Environment Engine', 'file': 'environment-engine-core.js',
