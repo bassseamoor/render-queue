@@ -70,15 +70,16 @@
        border:1px solid rgba(255,255,255,.18);background:rgba(10,10,12,.35)}
   #nub{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;
        background:rgba(232,228,218,.35);border:1px solid rgba(255,255,255,.25)}
-  /* blueprint workspace: drafting instrument — square, thin borders, dark neutrals */
-  #bp{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;
-      background:rgba(4,4,6,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-  #bp.open{display:flex}
-  #bp-panel{width:min(1180px,94vw);height:min(760px,90vh);min-width:320px;min-height:420px;
+  /* blueprint workspace: drafting instrument — square, thin borders, dark neutrals.
+     Non-occluding: no dimming backdrop; the 3D room stays visible and alive behind it. */
+  #bp{position:fixed;inset:0;z-index:30;display:none;pointer-events:none}
+  #bp.open{display:block}
+  #bp-panel{position:absolute;pointer-events:auto;width:min(1180px,94vw);height:min(760px,90vh);min-width:320px;min-height:420px;
       background:#0a0a0c;border:1px solid rgba(255,255,255,.1);border-radius:4px;
       display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6);overflow:hidden}
   #bp-bar{flex:none;height:52px;display:flex;align-items:center;gap:12px;padding:0 8px 0 16px;
-      border-bottom:1px solid rgba(255,255,255,.08)}
+      border-bottom:1px solid rgba(255,255,255,.08);
+      cursor:move;touch-action:none;user-select:none;-webkit-user-select:none}
   #bp-title{flex:1;font-size:12px;letter-spacing:.22em;color:#e8e4da;font-weight:600}
   #bp-seal{font-size:10px;letter-spacing:.06em;color:#5d594f;white-space:nowrap}
   #bp-close,#bp-actions button,#bp-askgo,#bp-result-close{
@@ -122,6 +123,29 @@
       border-top:1px solid rgba(255,255,255,.08)}
   #bp-status{flex:1;font-size:11px;letter-spacing:.04em;color:#8a8478;overflow:hidden;
       text-overflow:ellipsis;white-space:nowrap}
+  /* blueprint catalog: minimal card browser — same instrument language, non-occluding */
+  #bpcat{position:fixed;inset:0;z-index:31;display:none;pointer-events:none}
+  #bpcat.open{display:block}
+  #bpcat-panel{position:absolute;pointer-events:auto;width:min(560px,92vw);height:min(560px,80vh);
+      min-width:300px;min-height:300px;background:#0a0a0c;border:1px solid rgba(255,255,255,.1);
+      border-radius:4px;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6);overflow:hidden}
+  #bpcat-bar{flex:none;height:52px;display:flex;align-items:center;gap:12px;padding:0 8px 0 16px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      cursor:move;touch-action:none;user-select:none;-webkit-user-select:none}
+  #bpcat-title{flex:1;font-size:12px;letter-spacing:.22em;color:#e8e4da;font-weight:600}
+  #bpcat-close{min-height:40px;padding:0 16px;border-radius:4px;cursor:pointer;
+      font-size:12px;letter-spacing:.08em;color:#d8d4c8;
+      background:rgba(30,30,34,.8);border:1px solid rgba(255,255,255,.14)}
+  #bpcat-close:hover{border-color:rgba(255,255,255,.3);color:#fff}
+  #bpcat-grid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));
+      gap:16px;padding:16px;align-content:start}
+  .bpcard{border:0;background:transparent;padding:0;cursor:pointer;display:flex;
+      flex-direction:column;gap:8px;text-align:left}
+  .bpcard img{width:100%;aspect-ratio:1/1;display:block;border-radius:2px;background:#101013}
+  .bpcard-name{font-size:12px;letter-spacing:.02em;color:#e8e4da;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis}
+  .bpcard:hover .bpcard-name{color:#fff}
+  #bpcat-empty{padding:24px 16px;font-size:12px;letter-spacing:.06em;color:#5d594f}
   @media (max-width:720px){
     #bp-body{flex-direction:column}
     #bp-notes{width:100%;height:42%;min-width:0}
@@ -157,6 +181,12 @@
     <div id="bp-actions"><span id="bp-status"></span><button id="bp-generate" class="primary">generate blueprint</button><button id="bp-save">save</button><button id="bp-ask">ask</button></div>
   </div>
 </div>
+<div id="bpcat" aria-hidden="true" role="dialog" aria-label="blueprint catalog">
+  <div id="bpcat-panel">
+    <div id="bpcat-bar"><span id="bpcat-title">catalog</span><button id="bpcat-close">close</button></div>
+    <div id="bpcat-grid"></div>
+  </div>
+</div>
 
 <script src="./cathedral-core.js"></script>
 <script src="./funnel-usage-plan-core.js"></script>
@@ -187,6 +217,9 @@ var funnelOK = !!(K && FF && typeof FF.compile === 'function' && typeof FF.execu
 var LS_B = 'abandoned-cathedral.blueprint.v1';
 var LS_F = 'abandoned-cathedral.blueprint.notes.free';
 var LS_C = 'abandoned-cathedral.blueprint.notes.context';
+var LS_BC = 'abandoned-cathedral.blueprints.catalog.v1';
+var LS_BPPOS = 'abandoned-cathedral.blueprint.panel.pos.v1';
+var LS_CATPOS = 'abandoned-cathedral.blueprint.catalog.pos.v1';
 
 function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
@@ -244,6 +277,7 @@ function syncButtons() {
 function openBP() {
   syncFields(); syncSeal(); syncButtons(); status(funnelOK ? '' : 'funnel machinery unavailable');
   E.root.classList.add('open'); E.root.setAttribute('aria-hidden', 'false');
+  if (bpDrag) bpDrag.place();
   E.free.focus();
 }
 function closeBP() {
@@ -293,6 +327,158 @@ dragify(E.vdiv, false, function (d, init, start) {
   E.notes.style.width = w + 'px';
 });
 
+/* ---------- draggable floating panels: bar-drag, viewport-clamped, position persisted ---------- */
+function makeDraggable(bar, panel, posKey) {
+  function applyPos(x, y) {
+    var r = panel.getBoundingClientRect();
+    var vw = window.innerWidth, vh = window.innerHeight;
+    x = clamp(x, -(r.width - 80), vw - 80);
+    y = clamp(y, 0, vh - 52);
+    panel.style.left = x + 'px'; panel.style.top = y + 'px';
+    return { x: x, y: y };
+  }
+  function place() {
+    var saved = null;
+    try { saved = JSON.parse(lsGet(posKey) || 'null'); } catch (e) {}
+    var r = panel.getBoundingClientRect();
+    if (saved && typeof saved.x === 'number') applyPos(saved.x, saved.y);
+    else applyPos((window.innerWidth - r.width) / 2, (window.innerHeight - r.height) / 2);
+  }
+  bar.addEventListener('pointerdown', function (e) {
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    try { bar.setPointerCapture(e.pointerId); } catch (err) {}
+    var r = panel.getBoundingClientRect();
+    var ox = e.clientX - r.left, oy = e.clientY - r.top;
+    function mv(ev) {
+      var p = applyPos(ev.clientX - ox, ev.clientY - oy);
+      lsSet(posKey, JSON.stringify(p));
+    }
+    function up() {
+      bar.removeEventListener('pointermove', mv);
+      bar.removeEventListener('pointerup', up);
+      bar.removeEventListener('pointercancel', up);
+    }
+    bar.addEventListener('pointermove', mv);
+    bar.addEventListener('pointerup', up);
+    bar.addEventListener('pointercancel', up);
+  });
+  return { place: place };
+}
+
+/* ---------- catalog: minimal card browser over saved blueprints ---------- */
+var CE = { root: $('bpcat'), panel: $('bpcat-panel'), bar: $('bpcat-bar'), close: $('bpcat-close'), grid: $('bpcat-grid') };
+var thumbCache = {};
+function catalogLoad() {
+  try { var a = JSON.parse(lsGet(LS_BC) || '[]'); return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+}
+function catalogSave(list) { lsSet(LS_BC, JSON.stringify(list)); }
+function nameFromContent(content) {
+  var line = String(content).split('\n').map(function (s) { return s.trim(); }).filter(Boolean)[0] || '';
+  line = line.replace(/^BLUEPRINT\s*[—–-]\s*/i, '');
+  return (line || 'untitled blueprint').slice(0, 48);
+}
+/* one-time migration of the legacy single blueprint record */
+(function migrateCatalog() {
+  if (catalogLoad().length) return;
+  try {
+    var s = JSON.parse(lsGet(LS_B) || 'null');
+    if (s && typeof s.content === 'string' && s.content.trim()) {
+      catalogSave([{
+        id: s.id || ('bp-' + Date.now().toString(36)),
+        name: nameFromContent(s.content),
+        content: s.content, version: s.version || 1,
+        savedAt: s.savedAt || new Date().toISOString(), receipt: s.receipt || null
+      }]);
+    }
+  } catch (e) {}
+})();
+function fnv1a(str) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/* deterministic identifier tile — blueprints are text artifacts; this is a visual
+   identifier, never presented as a content preview */
+function thumbFor(rec) {
+  if (thumbCache[rec.id]) return thumbCache[rec.id];
+  var c = document.createElement('canvas'); c.width = 144; c.height = 144;
+  var g = c.getContext('2d');
+  g.fillStyle = '#101013'; g.fillRect(0, 0, 144, 144);
+  var rnd = mulberry32(fnv1a(rec.id + '|' + String(rec.content).slice(0, 400)));
+  for (var i = 0; i < 7; i++) {
+    var a = rnd() * Math.PI * 2;
+    var cx = 72 + (rnd() - 0.5) * 60, cy = 72 + (rnd() - 0.5) * 60;
+    var r = 20 + rnd() * 60;
+    g.strokeStyle = i === 0 ? 'rgba(0,82,255,.28)'
+      : 'rgba(232,228,218,' + (0.05 + rnd() * 0.10).toFixed(2) + ')';
+    g.lineWidth = 1 + rnd() * 1.5;
+    g.beginPath();
+    if (rnd() < 0.5) { g.arc(cx, cy, r * 0.5, a, a + 1 + rnd() * 3); }
+    else {
+      g.moveTo(cx + Math.cos(a) * r * 0.5, cy + Math.sin(a) * r * 0.5);
+      g.lineTo(cx - Math.cos(a) * r * 0.5, cy - Math.sin(a) * r * 0.5);
+    }
+    g.stroke();
+  }
+  var url = c.toDataURL('image/png');
+  thumbCache[rec.id] = url;
+  return url;
+}
+function renderCatalog() {
+  CE.grid.innerHTML = '';
+  var list = catalogLoad();
+  if (!list.length) {
+    var d = document.createElement('div');
+    d.id = 'bpcat-empty'; d.textContent = 'no saved blueprints';
+    CE.grid.appendChild(d);
+    return;
+  }
+  list.forEach(function (rec) {
+    var b = document.createElement('button');
+    b.className = 'bpcard';
+    b.setAttribute('aria-label', 'open blueprint ' + rec.name);
+    var img = document.createElement('img');
+    img.src = thumbFor(rec); img.alt = ''; img.draggable = false;
+    var nm = document.createElement('span');
+    nm.className = 'bpcard-name'; nm.textContent = rec.name;
+    b.appendChild(img); b.appendChild(nm);
+    b.addEventListener('click', function () { openRecordInEditor(rec); });
+    CE.grid.appendChild(b);
+  });
+}
+var bpDrag = makeDraggable($('bp-bar'), $('bp-panel'), LS_BPPOS);
+var catDrag = makeDraggable(CE.bar, CE.panel, LS_CATPOS);
+function openCatalog() {
+  renderCatalog();
+  CE.root.classList.add('open'); CE.root.setAttribute('aria-hidden', 'false');
+  catDrag.place();
+}
+function closeCatalog() {
+  CE.root.classList.remove('open'); CE.root.setAttribute('aria-hidden', 'true');
+}
+window.__bpcatOpen = function () { return CE.root.classList.contains('open'); };
+/* clicking a card opens the blueprint in the editor window, loaded as the current blueprint */
+function openRecordInEditor(rec) {
+  bp.blueprintContent = rec.content;
+  bp.saved = { id: rec.id, version: rec.version, savedAt: rec.savedAt, receipt: rec.receipt };
+  lsSet(LS_B, JSON.stringify({
+    id: rec.id, version: rec.version, savedAt: rec.savedAt,
+    content: rec.content, receipt: rec.receipt
+  }));
+  closeCatalog();
+  openBP();
+}
+
 /* ---------- inputs: three states, never merged ---------- */
 E.free.addEventListener('input', function () { bp.freeNotes = E.free.value; lsSet(LS_F, bp.freeNotes); syncButtons(); });
 E.ctx.addEventListener('input', function () { bp.contextNotes = E.ctx.value; lsSet(LS_C, bp.contextNotes); syncButtons(); });
@@ -301,6 +487,7 @@ E.askq.addEventListener('input', syncButtons);
 E.close.addEventListener('click', closeBP);
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape' && window.__bpOpen()) closeBP();
+  if (e.key === 'Escape' && window.__bpcatOpen()) closeCatalog();
 });
 
 /* ---------- funnel: the real invocation path ---------- */
@@ -389,12 +576,18 @@ function onSave() {
   bp.isSaving = true; syncButtons(); status('saving…');
   setTimeout(function () {
     try {
-      var v = (bp.saved && bp.saved.version || 0) + 1;
+      var list = catalogLoad();
+      var maxv = 0;
+      for (var i = 0; i < list.length; i++) { if (list[i].version > maxv) maxv = list[i].version; }
+      var v = maxv + 1;
       var rec = {
-        id: 'bp-' + Date.now().toString(36),
-        version: v, savedAt: new Date().toISOString(),
-        content: content, receipt: bp.lastReceipt
+        id: 'bp-' + Date.now().toString(36) + '-' + v.toString(36),
+        name: nameFromContent(content), version: v,
+        savedAt: new Date().toISOString(), content: content,
+        receipt: bp.lastReceipt || (bp.saved && bp.saved.receipt) || null
       };
+      list.unshift(rec);
+      catalogSave(list);
       if (!lsSet(LS_B, JSON.stringify(rec))) throw new Error('storage unavailable');
       bp.saved = { id: rec.id, version: v, savedAt: rec.savedAt, receipt: rec.receipt };
       status('saved v' + v);
@@ -483,6 +676,14 @@ document.addEventListener('DOMContentLoaded', function () {
     b.addEventListener('click', openBP);
     tools.appendChild(b);
   }
+  if (tools && !$('bpcat-toolbtn')) {
+    var cb = document.createElement('button');
+    cb.id = 'bpcat-toolbtn'; cb.textContent = 'catalog';
+    cb.setAttribute('aria-label', 'open blueprint catalog');
+    cb.addEventListener('click', openCatalog);
+    tools.appendChild(cb);
+  }
+  CE.close.addEventListener('click', closeCatalog);
   syncFields(); syncSeal(); syncButtons();
 });
 
@@ -497,7 +698,40 @@ window.__bp = {
   },
   setCanvas: function (t) { bp.blueprintContent = String(t); E.canvas.value = bp.blueprintContent; syncButtons(); },
   generate: onGenerate, save: onSave, askGo: onAskGo,
-  funnelOK: function () { return funnelOK; }
+  funnelOK: function () { return funnelOK; },
+  panelPos: function () { var r = $('bp-panel').getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; },
+  backdropGone: function () {
+    var cs = getComputedStyle($('bp'));
+    var bg = (cs.backgroundColor || '').replace(/\s+/g, '');
+    var noBg = (bg === 'rgba(0,0,0,0)' || bg === 'transparent' || bg === '');
+    var noBlur = !cs.backdropFilter || cs.backdropFilter === 'none';
+    var nonBlocking = (cs.pointerEvents || '') === 'none';
+    var panelSolid = getComputedStyle($('bp-panel')).pointerEvents === 'auto';
+    return noBg && noBlur && nonBlocking && panelSolid;
+  },
+  catalog: {
+    open: openCatalog, close: closeCatalog,
+    count: function () { return catalogLoad().length; },
+    cards: function () { return CE.grid.querySelectorAll('.bpcard').length; },
+    cardBorderless: function () {
+      var cs = CE.grid.querySelectorAll('.bpcard');
+      for (var i = 0; i < cs.length; i++) {
+        var b = getComputedStyle(cs[i]);
+        if (b.borderWidth !== '0px' || b.borderStyle !== 'none') return false;
+      }
+      return true;
+    },
+    cardHasImageAndName: function () {
+      var cs = CE.grid.querySelectorAll('.bpcard');
+      for (var i = 0; i < cs.length; i++) {
+        if (!cs[i].querySelector('img') || !cs[i].querySelector('.bpcard-name') ||
+            !cs[i].querySelector('.bpcard-name').textContent.trim()) return false;
+      }
+      return cs.length > 0;
+    },
+    openCard: function (i) { var c = CE.grid.querySelectorAll('.bpcard')[i]; if (c) c.click(); },
+    cardName: function (i) { var c = CE.grid.querySelectorAll('.bpcard')[i]; return c ? c.querySelector('.bpcard-name').textContent : null; }
+  }
 };
 
 })();
