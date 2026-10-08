@@ -12,28 +12,30 @@
   'use strict';
 
   var NAME = 'abandoned cathedral';
-  var VERSION = '1.0.0';
+  var VERSION = '1.1.0';
 
   // Sealed DEV-01 geometry, feet. 1 unit = 1 ft.
   var ROOM = { W: 320, D: 180, H: 90, CEILING: 84 };
 
-  // Command-node monitor geometry: 48" 16:9 screens, 110° arc at r = 42 in.
-  var MONITOR = { count: 6, arcDeg: 110, radiusIn: 42, diagIn: 48, ratioW: 16, ratioH: 9 };
+  // Command-node monitor geometry (owner-ordered 2026-10-07: no intersections, modern design):
+  // 6x 32" 16:9 slim-bezel floating panels, 140° arc at r = 84 in (7 ft) — chord 3.39ft > 2.32ft screen width.
+  var MONITOR = { count: 6, arcDeg: 140, radiusIn: 84, diagIn: 32, ratioW: 16, ratioH: 9 };
   // Ceiling fixtures: barn-door theatricals on 18-in mount arms under the 84 ft plane.
   var FIXTURE = { armIn: 18, rows: [-2, -1, 0, 1, 2], cols: [-3, -2, -1, 0, 1, 2, 3], spacingFt: 40 };
 
   function rad(d) { return d * Math.PI / 180; }
 
-  // 6 monitor transforms on a 110° arc at r=42in.
+  // 6 monitor transforms on a 140° arc at r=84in. Chord between neighbors (3.39ft)
+  // exceeds screen width (2.32ft): zero intersections, verified by scripted Box3 test.
   // Positions are relative to the arc center (the chair), feet; +z toward the chair.
   function monitorArc() {
     var out = [];
-    var step = MONITOR.arcDeg / (MONITOR.count - 1); // 22°
+    var step = MONITOR.arcDeg / (MONITOR.count - 1); // 28°
     var r = MONITOR.radiusIn / 12;
     var wIn = MONITOR.diagIn * MONITOR.ratioW / Math.sqrt(MONITOR.ratioW * MONITOR.ratioW + MONITOR.ratioH * MONITOR.ratioH);
     var hIn = MONITOR.diagIn * MONITOR.ratioH / Math.sqrt(MONITOR.ratioW * MONITOR.ratioW + MONITOR.ratioH * MONITOR.ratioH);
     for (var i = 0; i < MONITOR.count; i++) {
-      var aDeg = (i - (MONITOR.count - 1) / 2) * step; // -55 .. +55
+      var aDeg = (i - (MONITOR.count - 1) / 2) * step; // -70 .. +70
       var a = rad(aDeg);
       out.push({
         index: i,
@@ -134,6 +136,30 @@
         what: 'evergreen context seal — standing owner context bundle',
         verdict: 'verifyReceipt:true',
         verdictPath: '~/workspace/funnel/verdicts/evergreen-context-v1.md'
+      },
+      {
+        receipt: '12a6b8f95feeabca',
+        what: 'cathedral lighting fix seal — "ok its too dark i cant see", legibility pass',
+        verdict: 'verifyReceipt:true',
+        verdictPath: '~/workspace/funnel/verdicts/cathedral-lighting-v1.md'
+      },
+      {
+        receipt: '37f42c698b1f3ff4',
+        what: 'cathedral camera containment seal — walls are the only hard limit',
+        verdict: 'verifyReceipt:true',
+        verdictPath: '~/workspace/funnel/verdicts/cathedral-containment-v1.md'
+      },
+      {
+        receipt: 'b69e27120b8ffda0',
+        what: 'cathedral minecraft movement seal — creative-mode free camera',
+        verdict: 'verifyReceipt:true',
+        verdictPath: '~/workspace/funnel/verdicts/cathedral-movement-v1.md'
+      },
+      {
+        receipt: 'c900429153e364ef',
+        what: 'cathedral monitor fix seal — no intersections, modern redesign',
+        verdict: 'verifyReceipt:true',
+        verdictPath: '~/workspace/funnel/verdicts/cathedral-monitors-v1.md'
       }
     ];
   }
@@ -162,17 +188,20 @@
     ck('room-h-90', ROOM.H === 90);
     ck('room-ceiling-84', ROOM.CEILING === 84);
 
-    // --- monitors: 6 in a 110° arc at r=42in, 48" 16:9 ---
+    // --- monitors: 6 in a 140° arc at r=84in, 32" 16:9, non-intersecting ---
     var m = monitorArc();
     ck('monitor-count-6', m.length === 6);
     var span = m[m.length - 1].angleDeg - m[0].angleDeg;
-    ck('monitor-arc-110', Math.abs(span - 110) < 1e-9, 'span=' + span);
-    ck('monitor-radius-42in', m.every(function (x) { return x.radiusIn === 42; }));
+    ck('monitor-arc-140', Math.abs(span - 140) < 1e-9, 'span=' + span);
+    ck('monitor-radius-84in', m.every(function (x) { return x.radiusIn === 84; }));
     var diag = Math.sqrt(m[0].screenWIn * m[0].screenWIn + m[0].screenHIn * m[0].screenHIn);
     var ratio = m[0].screenWIn / m[0].screenHIn;
-    ck('monitor-screen-48in-16x9',
-      Math.abs(diag - 48) < 0.05 && Math.abs(ratio - 16 / 9) < 0.01,
+    ck('monitor-screen-32in-16x9',
+      Math.abs(diag - 32) < 0.05 && Math.abs(ratio - 16 / 9) < 0.01,
       'diag=' + diag.toFixed(3) + ' ratio=' + ratio.toFixed(4));
+    // no-intersection: chord between neighbors must exceed screen width + margin
+    var chord = 2 * (m[0].radiusIn / 12) * Math.sin((Math.PI / 180) * (m[1].angleDeg - m[0].angleDeg) / 2);
+    ck('monitor-no-intersect', chord > m[0].screenWft + 0.5, 'chord=' + chord.toFixed(2) + 'ft');
 
     // --- fixtures: 5×7 barn-door rows, 18in arms ---
     var f = fixtureRows();
@@ -193,7 +222,7 @@
 
     // --- receipts: bundled, real, labeled ---
     var r = receipts();
-    ck('receipts-5-labeled', r.length === 5 &&
+    ck('receipts-9-labeled', r.length === 9 &&
       r.every(function (x) { return /^[0-9a-f]{12,16}$/.test(x.receipt) && x.what && x.verdictPath; }),
       r.map(function (x) { return x.receipt; }).join(','));
 

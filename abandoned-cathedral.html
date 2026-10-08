@@ -63,16 +63,25 @@
   #overlay iframe{position:absolute;top:56px;left:0;right:0;bottom:0;width:100%;height:calc(100% - 56px);border:0;background:#0b0b0d}
   #fail{position:fixed;inset:0;z-index:99;display:none;align-items:center;justify-content:center;
         background:#0a0a0c;color:#e8e4da;font-size:14px;text-align:center;padding:24px}
+  /* minecraft movement: crosshair + touch joystick + fly buttons */
+  #xhair{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;
+         background:rgba(232,228,218,.85);z-index:15;display:none;pointer-events:none}
+  #joy{position:fixed;width:120px;height:120px;border-radius:50%;z-index:15;display:none;pointer-events:none;
+       border:1px solid rgba(255,255,255,.18);background:rgba(10,10,12,.35)}
+  #nub{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;
+       background:rgba(232,228,218,.35);border:1px solid rgba(255,255,255,.25)}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="hud"><div class="t">abandoned cathedral</div><div class="s" id="zone">zone a · command node</div><div class="v">virtual dev environment — no physical room</div></div>
-<div id="hint">one finger orbit · pinch zoom · two-finger pan · tap a monitor</div>
+<div id="hint">loading…</div>
 <div id="tools" role="toolbar" aria-label="tools"></div>
 <div id="vantage"></div>
 <div id="overlay"><div class="bar"><span class="dot"></span><span class="name" id="ovname"></span><button id="ovclose">close</button></div><iframe id="ovframe" title="tool" allow="fullscreen"></iframe></div>
 <div id="fail"></div>
+<div id="xhair"></div>
+<div id="joy"><div id="nub"></div></div>
 <script src="./cathedral-core.js"></script>
 <script>
 /* Entry guard: works even if the 3D module fails. No canvas resize happens here. */
@@ -298,19 +307,27 @@ const MON_DEF=[
   {key:'decide',  title:'decisions', url:'funnel-evolution-record.html',kind:'decisions'},
 ];
 const monitors=[], monitorHit=[];
-const bezelMat=new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.5,metalness:0.6});
+// modern industrial design: slim dark-metal bezel, floating glass back, thin brushed stand
+const bezelMat=new THREE.MeshStandardMaterial({color:0x0c0c0e,roughness:0.35,metalness:0.75});
+const standMat=new THREE.MeshStandardMaterial({color:0x2b2b30,roughness:0.28,metalness:0.9});
+const panelGlassMat=new THREE.MeshPhysicalMaterial({color:0x9fb4c8,transparent:true,opacity:0.10,roughness:0.06,metalness:0});
 C.monitorArc().forEach((t,i)=>{
   const def=MON_DEF[i];
   const grp=new THREE.Group();
-  const bezel=new THREE.Mesh(new THREE.BoxGeometry(t.screenWft+0.28,t.screenHft+0.28,0.22),bezelMat);
-  grp.add(bezel);
+  const glass=new THREE.Mesh(new THREE.PlaneGeometry(t.screenWft+0.55,t.screenHft+0.55),panelGlassMat);
+  glass.position.z=-0.05; grp.add(glass); // floating glass back panel
+  const bezel=new THREE.Mesh(new THREE.BoxGeometry(t.screenWft+0.12,t.screenHft+0.12,0.07),bezelMat);
+  grp.add(bezel); // slim bezel
   const [mc,mg]=makeCanvas(512,288);
   const tex=canvasTex(mc);
   const scr=new THREE.Mesh(new THREE.PlaneGeometry(t.screenWft,t.screenHft),
     new THREE.MeshBasicMaterial({map:tex,toneMapped:false}));
-  scr.position.z=0.13; grp.add(scr);
-  const stand=new THREE.Mesh(new THREE.BoxGeometry(0.35,1.2,0.35),bezelMat);
-  stand.position.y=-(t.screenHft/2+0.6); grp.add(stand);
+  scr.position.z=0.045; grp.add(scr);
+  const neckH=4.7-t.screenHft/2-0.06; // elegant thin neck, floor-standing
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,neckH,12),standMat);
+  neck.position.y=-4.7+neckH/2; grp.add(neck);
+  const mbase=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.56,0.09,24),standMat);
+  mbase.position.y=-4.7+0.045; grp.add(mbase);
   grp.position.set(t.xFt,4.7,1.8+t.zFt);
   grp.rotation.y=t.yawDeg*Math.PI/180;
   grp.userData={def:def,canvas:mc,g:mg,tex:tex,title:def.title,url:def.url,loaded:false};
@@ -515,121 +532,133 @@ drawTimeline();
   plaque.position.set(4.5,3.9,3); plaque.rotation.x=-0.22; node.add(plaque);
 }
 
-/* ---------- camera controls: touch-first ---------- */
-const cam={yaw:0,pitch:-0.04,dist:23,tx:0,ty:7.2,tz:36,fly:false};
+/* ---------- camera: minecraft creative-style free camera ---------- */
+const player={x:0,y:5.5,z:47,yaw:0,pitch:-0.04}; // chair vantage, facing the command node
 function applyCam(){
-  const cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch);
-  camera.position.set(
-    cam.tx+cam.dist*cp*Math.sin(cam.yaw),
-    cam.ty+cam.dist*sp,
-    cam.tz+cam.dist*cp*Math.cos(cam.yaw));
-  camera.lookAt(cam.tx,cam.ty,cam.tz);
+  clampPlayer();
+  camera.position.set(player.x,player.y,player.z);
+  camera.rotation.order='YXZ';
+  camera.rotation.set(player.pitch,player.yaw,0);
+}
+/* room containment (sealed DEV-01 volume 320x180x90 ft, visible ceiling 84):
+   walls are the ONLY hard limit — motion inside the room is untouched */
+function clampPlayer(){
+  player.x=Math.max(-157,Math.min(157,player.x));
+  player.y=Math.max(1.2,Math.min(81,player.y));
+  player.z=Math.max(-87,Math.min(87,player.z));
 }
 applyCam();
 const VANTAGE={
-  chair:{pos:[0,5.5,47],tgt:[0,5.5,35]},
-  wall:{pos:[0,14,-30],tgt:[0,28,-88]},
-  aisle:{pos:[-90,12,62],tgt:[0,24,-10]},
+  chair:{pos:[0,5.5,47],yaw:0,pitch:-0.04},
+  wall:{pos:[0,14,-30],yaw:0,pitch:0.24},
+  aisle:{pos:[-90,12,62],yaw:-0.9,pitch:0.10},
 };
+function goVantage(v){
+  player.x=v.pos[0]; player.y=v.pos[1]; player.z=v.pos[2];
+  player.yaw=v.yaw; player.pitch=v.pitch; applyCam();
+}
 const dom=renderer.domElement;
 window.__camera=camera; // headless test hook: render+readPixels in one synchronous task
+window.__player=player; window.__applyCam=applyCam; window.__look=look; window.__moveStep=moveStep;
+function look(dx,dy){ // mouse-look / drag-look
+  player.yaw-=dx*0.0042;
+  player.pitch=Math.max(-1.45,Math.min(1.45,player.pitch-dy*0.0042));
+}
+/* movement: WASD/arrows on the horizontal plane relative to yaw, Space up, Shift down.
+   Forward key moves AWAY from the viewer: at yaw=0 (facing -z), W decreases z. */
+const keys={};
+const joy={active:false,f:0,s:0,id:null,ox:0,oy:0};
+let flyUp=false, flyDown=false;
+const SPEED=26; // ft/s, creative-flight feel
+function moveStep(dt){
+  const sy=Math.sin(player.yaw), cy=Math.cos(player.yaw);
+  let f=0,s=0;
+  if(keys.KeyW||keys.ArrowUp)f+=1; if(keys.KeyS||keys.ArrowDown)f-=1;
+  if(keys.KeyD||keys.ArrowRight)s+=1; if(keys.KeyA||keys.ArrowLeft)s-=1;
+  f+=joy.f; s+=joy.s;
+  const l=Math.hypot(f,s); if(l>1){ f/=l; s/=l; }
+  const sp=SPEED*dt;
+  player.x+=(-sy*f+cy*s)*sp;
+  player.z+=(-cy*f-sy*s)*sp;
+  if(keys.Space||flyUp)player.y+=sp;
+  if(keys.ShiftLeft||keys.ShiftRight||flyDown)player.y-=sp;
+}
+window.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(e.code==='Space')e.preventDefault();
+});
+window.addEventListener('keyup',e=>{ keys[e.code]=false; });
+// desktop: click canvas -> pointer-lock mouse look; click while locked -> use crosshair
+const isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+dom.addEventListener('click',e=>{
+  if(isTouch)return;
+  if(document.pointerLockElement===dom){ tapCenter(); }
+  else{ try{ dom.requestPointerLock(); }catch(err){} }
+});
+document.addEventListener('pointerlockchange',()=>{
+  document.getElementById('xhair').style.display=(document.pointerLockElement===dom)?'block':'none';
+});
+document.addEventListener('mousemove',e=>{
+  if(document.pointerLockElement===dom){ look(e.movementX,e.movementY); applyCam(); }
+});
+// touch: left-half virtual joystick (move), right-half drag (look), tap still opens tools
 const ptrs=new Map();
 let tapC=null;
+const joyBase=document.getElementById('joy'), joyNub=document.getElementById('nub');
 dom.addEventListener('touchstart',e=>{
   e.preventDefault();
-  for(const t of e.changedTouches) ptrs.set(t.identifier,{x:t.clientX,y:t.clientY});
-  if(e.touches.length===1){ const t=e.touches[0]; tapC={x:t.clientX,y:t.clientY,at:performance.now()}; }
+  for(const t of e.changedTouches){
+    ptrs.set(t.identifier,{lx:t.clientX,ly:t.clientY});
+    if(t.clientX<innerWidth/2&&joy.id===null){
+      joy.id=t.identifier; joy.active=true; joy.ox=t.clientX; joy.oy=t.clientY; joy.f=0; joy.s=0;
+      joyBase.style.display='block';
+      joyBase.style.left=(t.clientX-60)+'px'; joyBase.style.top=(t.clientY-60)+'px';
+      joyNub.style.transform='translate(0px,0px)';
+    }
+  }
+  if(e.changedTouches.length===1){ const t=e.changedTouches[0]; tapC={x:t.clientX,y:t.clientY,at:performance.now()}; }
   else tapC=null;
-  pinch0=pinchDist(e);
 },{passive:false});
 dom.addEventListener('touchmove',e=>{
   e.preventDefault();
-  if(e.touches.length===1&&ptrs.size===1){
-    const t=e.touches[0],p=ptrs.get(t.identifier);
-    if(p){
-      const dx=t.clientX-p.x,dy=t.clientY-p.y;
-      if(cam.fly){ cam.yaw-=dx*0.004; cam.pitch-=dy*0.004; }
-      else { cam.yaw-=dx*0.005; cam.pitch=Math.max(-1.2,Math.min(1.2,cam.pitch-dy*0.005)); }
-      p.x=t.clientX; p.y=t.clientY;
-      if(tapC&&(Math.abs(t.clientX-tapC.x)>12||Math.abs(t.clientY-tapC.y)>12)) tapC=null;
+  for(const t of e.changedTouches){
+    const p=ptrs.get(t.identifier); if(!p)continue;
+    const dx=t.clientX-p.lx, dy=t.clientY-p.ly;
+    if(t.identifier===joy.id){
+      const jx=t.clientX-joy.ox, jy=t.clientY-joy.oy;
+      const cl=Math.hypot(jx,jy), max=48, k=cl>max?max/cl:1;
+      joy.s=Math.max(-1,Math.min(1,jx*k/max)); joy.f=Math.max(-1,Math.min(1,-jy*k/max));
+      joyNub.style.transform='translate('+(jx*k)+'px,'+(jy*k)+'px)';
+    }else{
+      look(dx*1.2,dy*1.2); applyCam();
     }
-  }else if(e.touches.length===2){
-    const a=e.touches[0],b=e.touches[1];
-    const pa=ptrs.get(a.identifier),pb=ptrs.get(b.identifier);
-    if(pa&&pb){
-      if(cam.fly){
-        const d=(a.clientY-pa.y+b.clientY-pb.y)/2; // vertical = dolly
-        const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd);
-        cam.tx+=fwd.x*d*0.12; cam.ty+=fwd.y*d*0.12; cam.tz+=fwd.z*d*0.12;
-        const sx=(a.clientX-pa.x+b.clientX-pb.x)/2; // horizontal = strafe
-        const rgt=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
-        cam.tx+=rgt.x*sx*0.12; cam.tz+=rgt.z*sx*0.12;
-      }else{
-        // pinch zoom + two-finger pan
-        const d1=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-        if(pinch0>0) cam.dist=Math.max(4,Math.min(160,cam.dist*pinch0/d1));
-        const mx=(a.clientX-pa.x+b.clientX-pb.x)/2,my=(a.clientY-pa.y+b.clientY-pb.y)/2;
-        const s=cam.dist/600;
-        const sy=Math.sin(cam.yaw),cy=Math.cos(cam.yaw);
-        cam.tx-= (mx*cy)*s; cam.tz+=(mx*sy)*s; cam.ty+=(my)*s;
-        clampTarget();
-      }
-      pa.x=a.clientX; pa.y=a.clientY; pb.x=b.clientX; pb.y=b.clientY;
-      pinch0=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-    }
-    tapC=null;
+    p.lx=t.clientX; p.ly=t.clientY;
+    if(tapC&&(Math.abs(t.clientX-tapC.x)>12||Math.abs(t.clientY-tapC.y)>12))tapC=null;
   }
-  applyCam();
 },{passive:false});
-let pinch0=0;
-function pinchDist(e){
-  if(e.touches.length<2) return 0;
-  const a=e.touches[0],b=e.touches[1];
-  return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-}
-function clampTarget(){
-  cam.tx=Math.max(-150,Math.min(150,cam.tx));
-  cam.ty=Math.max(1,Math.min(80,cam.ty));
-  cam.tz=Math.max(-85,Math.min(85,cam.tz));
-}
-dom.addEventListener('touchend',e=>{
-  e.preventDefault();
-  for(const t of e.changedTouches) ptrs.delete(t.identifier);
+function joyEnd(e){
+  for(const t of e.changedTouches){
+    ptrs.delete(t.identifier);
+    if(t.identifier===joy.id){ joy.id=null; joy.active=false; joy.f=0; joy.s=0; joyBase.style.display='none'; }
+  }
   if(tapC&&e.changedTouches.length===1){
     const t=e.changedTouches[0];
-    if(Math.abs(t.clientX-tapC.x)<=12&&Math.abs(t.clientY-tapC.y)<=12&&
-       performance.now()-tapC.at<500) tapAt(t.clientX,t.clientY);
+    if(Math.abs(t.clientX-tapC.x)<=12&&Math.abs(t.clientY-tapC.y)<=12&&performance.now()-tapC.at<500)
+      tapAt(t.clientX,t.clientY);
   }
-  tapC=null; pinch0=0;
-},{passive:false});
-dom.addEventListener('touchcancel',()=>{ptrs.clear();tapC=null;pinch0=0;},{passive:false});
-// desktop: drag orbit + click tap
-let mdrag=null;
-dom.addEventListener('mousedown',e=>{ mdrag={x:e.clientX,y:e.clientY}; });
-window.addEventListener('mousemove',e=>{
-  if(!mdrag) return;
-  cam.yaw-=(e.clientX-mdrag.x)*0.005;
-  cam.pitch=Math.max(-1.2,Math.min(1.2,cam.pitch-(e.clientY-mdrag.y)*0.005));
-  mdrag={x:e.clientX,y:e.clientY}; applyCam();
-});
-window.addEventListener('mouseup',e=>{ mdrag=null; });
-dom.addEventListener('click',e=>tapAt(e.clientX,e.clientY));
-window.addEventListener('wheel',e=>{ cam.dist=Math.max(4,Math.min(160,cam.dist*(e.deltaY>0?1.1:0.9))); applyCam(); },{passive:true});
-// fly keys
-const keys={};
-window.addEventListener('keydown',e=>{ keys[e.code]=true; });
-window.addEventListener('keyup',e=>{ keys[e.code]=false; });
-function flyStep(dt){
-  if(!cam.fly) return;
-  const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd);
-  const rgt=new THREE.Vector3().crossVectors(fwd,new THREE.Vector3(0,1,0)).normalize();
-  const v=new THREE.Vector3();
-  if(keys.KeyW)v.add(fwd); if(keys.KeyS)v.sub(fwd);
-  if(keys.KeyA)v.sub(rgt); if(keys.KeyD)v.add(rgt);
-  if(keys.KeyE||keys.Space)v.y+=1; if(keys.KeyQ||keys.ShiftLeft)v.y-=1;
-  if(v.lengthSq()>0){ v.normalize().multiplyScalar(24*dt);
-    cam.tx+=v.x; cam.ty+=v.y; cam.tz+=v.z; clampTarget(); }
+  tapC=null;
 }
+dom.addEventListener('touchend',joyEnd,{passive:false});
+dom.addEventListener('touchcancel',joyEnd,{passive:false});
+function tapCenter(){ tapAt(Wpx/2,Hpx/2); } // crosshair interaction while pointer-locked
+
+window.__monitorBoxes=function(){
+  const boxes=monitors.map(m=>new THREE.Box3().setFromObject(m));
+  const hits=[];
+  for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++)
+    if(boxes[i].intersectsBox(boxes[j]))hits.push([i,j]);
+  return {count:monitors.length,intersections:hits};
+};
 window.__monitorScreenPos=function(i){
   const mon=monitors[i]; if(!mon) return null;
   const v=new THREE.Vector3(); mon.getWorldPosition(v); v.project(camera);
@@ -681,32 +710,30 @@ QUICK.forEach(q=>{
   toolsEl.appendChild(b);
 });
 const stillBtn=document.createElement('button'); stillBtn.textContent='still';
-const flyBtn=document.createElement('button'); flyBtn.textContent='fly';
+const upBtn=document.createElement('button'); upBtn.textContent='▲';
+const dnBtn=document.createElement('button'); dnBtn.textContent='▼';
+function holdBtn(el,set){
+  el.addEventListener('touchstart',e=>{ e.preventDefault(); set(true); },{passive:false});
+  el.addEventListener('touchend',e=>{ e.preventDefault(); set(false); },{passive:false});
+  el.addEventListener('mousedown',()=>set(true));
+  window.addEventListener('mouseup',()=>set(false));
+}
+holdBtn(upBtn,v=>flyUp=v); holdBtn(dnBtn,v=>flyDown=v);
 function syncToggles(){
   stillBtn.classList.toggle('on',stillMode);
   stillBtn.setAttribute('aria-pressed',String(stillMode));
-  flyBtn.classList.toggle('on',cam.fly);
-  flyBtn.setAttribute('aria-pressed',String(cam.fly));
   document.getElementById('vantage').classList.toggle('show',stillMode);
   document.getElementById('hint').textContent=stillMode?
     'still mode — motion frozen, information preserved · tap a monitor':
-    'one finger orbit · pinch zoom · two-finger pan · tap a monitor';
+    (isTouch?'left stick moves · right side drag looks · ▲▼ fly · tap a monitor'
+            :'click to capture mouse · WASD/arrows move · space up · shift down · esc releases');
 }
 stillBtn.addEventListener('click',()=>{ stillMode=!stillMode; syncToggles(); });
-flyBtn.addEventListener('click',()=>{ cam.fly=!cam.fly; syncToggles(); });
-toolsEl.appendChild(stillBtn); toolsEl.appendChild(flyBtn);
+toolsEl.appendChild(stillBtn); toolsEl.appendChild(upBtn); toolsEl.appendChild(dnBtn);
 const vantEl=document.getElementById('vantage');
 Object.keys(VANTAGE).forEach(k=>{
   const b=document.createElement('button'); b.textContent=k;
-  b.addEventListener('click',()=>{
-    const v=VANTAGE[k];
-    camera.position.set(v.pos[0],v.pos[1],v.pos[2]);
-    cam.tx=v.tgt[0]; cam.ty=v.tgt[1]; cam.tz=v.tgt[2];
-    cam.dist=camera.position.distanceTo(new THREE.Vector3(cam.tx,cam.ty,cam.tz));
-    const off=new THREE.Vector3().subVectors(camera.position,new THREE.Vector3(cam.tx,cam.ty,cam.tz));
-    cam.yaw=Math.atan2(off.x,off.z); cam.pitch=Math.asin(off.y/off.length());
-    applyCam();
-  });
+  b.addEventListener('click',()=>goVantage(VANTAGE[k]));
   vantEl.appendChild(b);
 });
 const zoneEl=document.getElementById('zone');
@@ -723,7 +750,7 @@ function tick(){
   requestAnimationFrame(tick);
   const dt=Math.min(clock.getDelta(),0.05);
   const t=clock.elapsedTime;
-  flyStep(dt);
+  moveStep(dt); applyCam();
   if(!stillMode){
     shaftUniforms.uTime.value=t; // frozen in still mode
     const p=dustGeo.attributes.position.array;
