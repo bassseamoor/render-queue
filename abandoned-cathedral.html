@@ -146,6 +146,40 @@
       overflow:hidden;text-overflow:ellipsis}
   .bpcard:hover .bpcard-name{color:#fff}
   #bpcat-empty{padding:24px 16px;font-size:12px;letter-spacing:.06em;color:#5d594f}
+  /* build console: MAKE environment — same instrument language, non-occluding, draggable */
+  #bld{position:fixed;inset:0;z-index:32;display:none;pointer-events:none}
+  #bld.open{display:block}
+  #bld-panel{position:absolute;pointer-events:auto;width:min(480px,92vw);height:min(600px,84vh);
+      min-width:300px;min-height:320px;background:#0a0a0c;border:1px solid rgba(255,255,255,.1);
+      border-radius:4px;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6);overflow:hidden}
+  #bld-bar{flex:none;height:52px;display:flex;align-items:center;gap:12px;padding:0 8px 0 16px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      cursor:move;touch-action:none;user-select:none;-webkit-user-select:none}
+  #bld-title{flex:1;font-size:12px;letter-spacing:.22em;color:#e8e4da;font-weight:600}
+  #bld-close,#bld-body button{
+      min-height:40px;padding:0 16px;border-radius:4px;cursor:pointer;
+      font-size:12px;letter-spacing:.08em;color:#d8d4c8;
+      background:rgba(30,30,34,.8);border:1px solid rgba(255,255,255,.14)}
+  #bld-close:hover,#bld-body button:hover:not(:disabled){border-color:rgba(255,255,255,.3);color:#fff}
+  #bld-body button:disabled{opacity:.35;cursor:default}
+  #bld-body button.primary{border-color:rgba(0,82,255,.55)}
+  #bld-body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+  .bld-cap{font-size:10px;letter-spacing:.2em;color:#8a8478}
+  #bld-order{width:100%;min-height:96px;resize:vertical;background:#101013;color:#e8e4da;
+      border:1px solid rgba(255,255,255,.1);border-radius:2px;padding:10px 12px;
+      font-family:inherit;font-size:13px;line-height:1.5;box-sizing:border-box}
+  #bld-order:focus{outline:none;border-color:rgba(255,255,255,.28)}
+  .bld-row{display:flex;gap:8px;align-items:center}
+  #bld-draft{flex:1;min-height:40px;background:#101013;color:#d8d4c8;border:1px solid rgba(255,255,255,.1);border-radius:2px;padding:0 10px;font-size:12px;min-width:0}
+  #bld-orders{display:flex;flex-direction:column;gap:8px}
+  .bld-order{border:1px solid rgba(255,255,255,.1);border-radius:2px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+  .bld-order-top{display:flex;align-items:baseline;gap:10px}
+  .bld-order-name{flex:1;font-size:12px;color:#e8e4da;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .bld-order-fp{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#8a8478}
+  .bld-order-status{font-size:11px;letter-spacing:.14em;color:#8a8478}
+  .bld-order-status.live{color:#9fd6a4}
+  .bld-order-actions{display:flex;gap:8px}
+  #bld-note{font-size:11px;line-height:1.5;color:#5d594f;letter-spacing:.02em}
   @media (max-width:720px){
     #bp-body{flex-direction:column}
     #bp-notes{width:100%;height:42%;min-width:0}
@@ -185,6 +219,22 @@
   <div id="bpcat-panel">
     <div id="bpcat-bar"><span id="bpcat-title">catalog</span><button id="bpcat-close">close</button></div>
     <div id="bpcat-grid"></div>
+  </div>
+</div>
+<div id="bld" aria-hidden="true" role="dialog" aria-label="build console">
+  <div id="bld-panel">
+    <div id="bld-bar"><span id="bld-title">build</span><button id="bld-close">close</button></div>
+    <div id="bld-body">
+      <div class="bld-cap">build order</div>
+      <textarea id="bld-order" spellcheck="false" aria-label="build order"></textarea>
+      <div class="bld-row">
+        <select id="bld-draft" aria-label="draft blueprint from catalog"></select>
+        <button id="bld-seal" class="primary">seal build order</button>
+      </div>
+      <div class="bld-cap">orders</div>
+      <div id="bld-orders"></div>
+      <div id="bld-note">Orders are sealed by the quiz funnel (receipt required). Execution is performed by the build agent via the pipeline runner — this console seals and tracks, never pretends to build.</div>
+    </div>
   </div>
 </div>
 
@@ -683,6 +733,13 @@ document.addEventListener('DOMContentLoaded', function () {
     cb.addEventListener('click', openCatalog);
     tools.appendChild(cb);
   }
+  if (tools && !$('bld-toolbtn')) {
+    var bb = document.createElement('button');
+    bb.id = 'bld-toolbtn'; bb.textContent = 'build';
+    bb.setAttribute('aria-label', 'open build console');
+    bb.addEventListener('click', openBuild);
+    tools.appendChild(bb);
+  }
   CE.close.addEventListener('click', closeCatalog);
   syncFields(); syncSeal(); syncButtons();
 });
@@ -732,6 +789,147 @@ window.__bp = {
     openCard: function (i) { var c = CE.grid.querySelectorAll('.bpcard')[i]; if (c) c.click(); },
     cardName: function (i) { var c = CE.grid.querySelectorAll('.bpcard')[i]; return c ? c.querySelector('.bpcard-name').textContent : null; }
   }
+};
+
+
+/* ---------- Build Console: the MAKE environment ----------
+ * Issues sealed build orders through the REAL in-page quiz funnel
+ * (same fabricRun as the blueprint workspace; verifyReceipt required).
+ * Tracks order status by reading PUBLIC GitHub state only.
+ * Execution is agent-side via ~/workspace/build-pipeline/run.py.
+ * The console seals and tracks — it never pretends to build.
+ */
+var LS_BO = 'abandoned-cathedral.build.orders.v1';
+var LS_BLPOS = 'abandoned-cathedral.build.panel.pos.v1';
+var BL = {
+  root: $('bld'), panel: $('bld-panel'), bar: $('bld-bar'), close: $('bld-close'),
+  order: $('bld-order'), draft: $('bld-draft'), seal: $('bld-seal'), orders: $('bld-orders')
+};
+function ordersLoad() { try { var a = JSON.parse(lsGet(LS_BO) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function ordersSave(a) { lsSet(LS_BO, JSON.stringify(a)); }
+function openBuild() { refreshDrafts(); renderOrders(); BL.root.classList.add('open'); BL.root.setAttribute('aria-hidden', 'false'); }
+function closeBuild() { BL.root.classList.remove('open'); BL.root.setAttribute('aria-hidden', 'true'); }
+function refreshDrafts() {
+  var list = (typeof catalogLoad === 'function') ? catalogLoad() : [];
+  BL.draft.innerHTML = '';
+  var o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'typed order (no draft)';
+  BL.draft.appendChild(o0);
+  list.forEach(function (rec, i) {
+    var o = document.createElement('option'); o.value = String(i);
+    o.textContent = 'draft: ' + (rec.name || ('blueprint ' + (i + 1)));
+    BL.draft.appendChild(o);
+  });
+}
+BL.draft.addEventListener('change', function () {
+  var i = parseInt(BL.draft.value, 10);
+  if (isNaN(i)) return;
+  var list = catalogLoad(); var rec = list[i]; if (!rec) return;
+  BL.order.value = 'Build the blueprint "' + (rec.name || 'untitled') + '" (catalog ' + (rec.id || i) + ').\n\n' + String(rec.content || '').slice(0, 4000);
+});
+function sealOrder() {
+  var text = BL.order.value.trim();
+  function flash(msg) { BL.seal.textContent = msg; setTimeout(function () { BL.seal.textContent = 'seal build order'; BL.seal.disabled = false; }, 1400); }
+  if (!text) { flash('empty order'); return; }
+  if (!funnelOK) { flash('funnel unavailable'); return; }
+  BL.seal.disabled = true; BL.seal.textContent = 'sealing…';
+  setTimeout(function () {
+    try {
+      var page0 = 'BUILD ORDER\n\n' + text;
+      var run = fabricRun(page0);
+      var fp = shortFp(run.receipt);
+      var order = { rid: run.rid, page0: page0, page0_hash: K.hash(page0),
+        receipt: run.receipt, fp: fp, issued_at: new Date().toISOString(),
+        status: 'queued', destination: 'bassseamoor/render-queue@main' };
+      var list = ordersLoad(); list.unshift(order); ordersSave(list);
+      BL.order.value = ''; BL.draft.value = '';
+      renderOrders();
+      window.__bldLastOrder = { rid: order.rid, fp: fp, valid: true };
+    } catch (err) {
+      BL.seal.textContent = 'seal failed';
+      setTimeout(function () { BL.seal.textContent = 'seal build order'; BL.seal.disabled = false; }, 1500);
+      return;
+    }
+    BL.seal.disabled = false; BL.seal.textContent = 'seal build order';
+  }, 30);
+}
+function packetFor(order) {
+  return { schema: 'moor.build-order-packet', rid: order.rid, page0: order.page0,
+    page0_hash: order.page0_hash, destination: order.destination,
+    done_criteria: ['sealed receipt verified', 'node --check clean', 'headless 0 pageerrors + 0 console errors', 'stale-tree push + MD5 live verify'],
+    receipt: order.receipt, receipt_fingerprint: order.fp, issued_at: order.issued_at };
+}
+function renderOrders() {
+  var list = ordersLoad();
+  BL.orders.innerHTML = '';
+  if (!list.length) {
+    var e = document.createElement('div'); e.className = 'bld-cap'; e.textContent = 'no orders yet';
+    BL.orders.appendChild(e); return;
+  }
+  list.forEach(function (order, idx) {
+    var d = document.createElement('div'); d.className = 'bld-order';
+    var top = document.createElement('div'); top.className = 'bld-order-top';
+    var nm = document.createElement('span'); nm.className = 'bld-order-name';
+    nm.textContent = order.page0.split('\n').slice(1).join(' ').trim().slice(0, 80) || order.rid;
+    var fp = document.createElement('span'); fp.className = 'bld-order-fp'; fp.textContent = order.fp;
+    top.appendChild(nm); top.appendChild(fp);
+    var st = document.createElement('div');
+    st.className = 'bld-order-status' + (order.status === 'live' ? ' live' : '');
+    st.textContent = String(order.status || 'queued').toUpperCase();
+    var acts = document.createElement('div'); acts.className = 'bld-order-actions';
+    var chk = document.createElement('button'); chk.textContent = 'check status';
+    chk.addEventListener('click', function () { checkOrder(idx); });
+    var cp = document.createElement('button'); cp.textContent = 'copy packet';
+    cp.addEventListener('click', function () {
+      var s = JSON.stringify(packetFor(order), null, 1);
+      function done(ok) { cp.textContent = ok ? 'copied' : 'copy failed'; setTimeout(function () { cp.textContent = 'copy packet'; }, 1200); }
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s).then(function () { done(true); }, function () { done(false); });
+      else done(false);
+    });
+    acts.appendChild(chk); acts.appendChild(cp);
+    d.appendChild(top); d.appendChild(st); d.appendChild(acts);
+    BL.orders.appendChild(d);
+  });
+}
+function checkOrder(idx) {
+  var list = ordersLoad(); var order = list[idx]; if (!order) return;
+  fetch('https://api.github.com/repos/bassseamoor/render-queue/commits?per_page=20')
+    .then(function (r) { return r.json(); })
+    .then(function (commits) {
+      var live = Array.isArray(commits) && commits.some(function (c) {
+        var m = (c && c.commit && c.commit.message) || '';
+        return m.indexOf(order.rid) >= 0 || m.indexOf(order.fp) >= 0;
+      });
+      var fresh = ordersLoad();
+      if (fresh[idx] && fresh[idx].rid === order.rid) {
+        fresh[idx].status = live ? 'live' : 'queued';
+        fresh[idx].checked_at = new Date().toISOString();
+        ordersSave(fresh); renderOrders();
+      }
+      window.__bldLastCheck = { rid: order.rid, live: live };
+    })
+    .catch(function () { window.__bldLastCheck = { rid: order.rid, live: false, error: true }; });
+}
+BL.seal.addEventListener('click', sealOrder);
+BL.close.addEventListener('click', closeBuild);
+makeDraggable(BL.bar, BL.panel, LS_BLPOS);
+/* headless test hooks */
+window.__bld = {
+  open: openBuild, close: closeBuild,
+  funnelOK: function () { return funnelOK; },
+  seal: function (text) { BL.order.value = String(text); sealOrder(); },
+  orders: function () { return ordersLoad(); },
+  renderOrders: renderOrders,
+  checkOrder: checkOrder,
+  packet: function (i) { var o = ordersLoad()[i || 0]; return o ? packetFor(o) : null; },
+  nonOccluding: function () {
+    var cs = getComputedStyle(BL.root);
+    var bg = (cs.backgroundColor || '').replace(/\s+/g, '');
+    return (bg === 'rgba(0,0,0,0)' || bg === 'transparent' || bg === '') &&
+           (!cs.backdropFilter || cs.backdropFilter === 'none') &&
+           (cs.pointerEvents || '') === 'none' &&
+           getComputedStyle(BL.panel).pointerEvents === 'auto';
+  },
+  panelPos: function () { var r = BL.panel.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }
 };
 
 })();
