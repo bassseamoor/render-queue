@@ -177,7 +177,19 @@
   .bld-order-name{flex:1;font-size:12px;color:#e8e4da;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .bld-order-fp{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#8a8478}
   .bld-order-status{font-size:11px;letter-spacing:.14em;color:#8a8478}
-  .bld-order-status.live{color:#9fd6a4}
+  .bld-order-status.st-draft{color:#5d594f}
+  .bld-order-status.st-funneling{color:#8a8478}
+  .bld-order-status.st-sealed{color:#c9b98a}
+  .bld-order-status.st-queued{color:#8a8478}
+  .bld-order-status.st-building{color:#7ab8e8}
+  .bld-order-status.st-verifying{color:#7ab8e8}
+  .bld-order-status.st-live{color:#9fd6a4}
+  .bld-order-status.st-failed{color:#e87a7a}
+  .bld-order-status.st-blocked{color:#e8a03c}
+  .bld-order-status.st-superseded{color:#5d594f;text-decoration:line-through}
+  .bld-order-status.st-needsowner{color:#c99ae8}
+  .bld-order-status.st-held{color:#e8a03c}
+  .bld-order-status.st-rejected{color:#e87a7a}
   .bld-order-actions{display:flex;gap:8px}
   #bld-note{font-size:11px;line-height:1.5;color:#5d594f;letter-spacing:.02em}
   @media (max-width:720px){
@@ -233,7 +245,7 @@
       </div>
       <div class="bld-cap">orders</div>
       <div id="bld-orders"></div>
-      <div id="bld-note">Orders are sealed by the quiz funnel (receipt required). Execution is performed by the build agent via the pipeline runner — this console seals and tracks, never pretends to build.</div>
+      <div id="bld-note">Orders are sealed by the quiz funnel (receipt required) — sealing IS the authorization. Sealed packets enter the durable build queue; the dispatcher runs the gate automatically (receipt &rarr; authorization &rarr; supersession &rarr; scope &rarr; executor) and the runner executes, verifies, and publishes. Check status reads the queue's public state. This console is the control plane — it never pretends to build.</div>
     </div>
   </div>
 </div>
@@ -839,7 +851,7 @@ function sealOrder() {
       var fp = shortFp(run.receipt);
       var order = { rid: run.rid, page0: page0, page0_hash: K.hash(page0),
         receipt: run.receipt, fp: fp, issued_at: new Date().toISOString(),
-        status: 'queued', destination: 'bassseamoor/render-queue@main' };
+        status: 'sealed', destination: 'bassseamoor/render-queue@main' };
       var list = ordersLoad(); list.unshift(order); ordersSave(list);
       BL.order.value = ''; BL.draft.value = '';
       renderOrders();
@@ -855,6 +867,7 @@ function sealOrder() {
 function packetFor(order) {
   return { schema: 'moor.build-order-packet', rid: order.rid, page0: order.page0,
     page0_hash: order.page0_hash, destination: order.destination,
+    executor: 'agent', authorize_execution: true,
     done_criteria: ['sealed receipt verified', 'node --check clean', 'headless 0 pageerrors + 0 console errors', 'stale-tree push + MD5 live verify'],
     receipt: order.receipt, receipt_fingerprint: order.fp, issued_at: order.issued_at };
 }
@@ -873,8 +886,9 @@ function renderOrders() {
     var fp = document.createElement('span'); fp.className = 'bld-order-fp'; fp.textContent = order.fp;
     top.appendChild(nm); top.appendChild(fp);
     var st = document.createElement('div');
-    st.className = 'bld-order-status' + (order.status === 'live' ? ' live' : '');
-    st.textContent = String(order.status || 'queued').toUpperCase();
+    var sk = String(order.status || 'sealed').toLowerCase().replace(/[ _]/g, '');
+    st.className = 'bld-order-status st-' + sk;
+    st.textContent = String(order.status || 'sealed').toUpperCase().replace(/_/g, ' ');
     var acts = document.createElement('div'); acts.className = 'bld-order-actions';
     var chk = document.createElement('button'); chk.textContent = 'check status';
     chk.addEventListener('click', function () { checkOrder(idx); });
@@ -892,22 +906,36 @@ function renderOrders() {
 }
 function checkOrder(idx) {
   var list = ordersLoad(); var order = list[idx]; if (!order) return;
-  fetch('https://api.github.com/repos/bassseamoor/render-queue/commits?per_page=20')
-    .then(function (r) { return r.json(); })
-    .then(function (commits) {
-      var live = Array.isArray(commits) && commits.some(function (c) {
-        var m = (c && c.commit && c.commit.message) || '';
-        return m.indexOf(order.rid) >= 0 || m.indexOf(order.fp) >= 0;
-      });
-      var fresh = ordersLoad();
-      if (fresh[idx] && fresh[idx].rid === order.rid) {
-        fresh[idx].status = live ? 'live' : 'queued';
-        fresh[idx].checked_at = new Date().toISOString();
-        ordersSave(fresh); renderOrders();
-      }
-      window.__bldLastCheck = { rid: order.rid, live: live };
+  function applyStatus(state, via) {
+    var fresh = ordersLoad();
+    if (fresh[idx] && fresh[idx].rid === order.rid) {
+      fresh[idx].status = state;
+      fresh[idx].checked_at = new Date().toISOString();
+      fresh[idx].status_via = via;
+      ordersSave(fresh); renderOrders();
+    }
+    window.__bldLastCheck = { rid: order.rid, state: state, via: via };
+  }
+  /* control plane: the queue publishes build-queue/status/<rid>.json publicly */
+  fetch('https://bassseamoor.github.io/render-queue/build-queue/status/' + encodeURIComponent(order.rid) + '.json?v=' + Date.now())
+    .then(function (r) { if (!r.ok) throw new Error('no status file'); return r.json(); })
+    .then(function (doc) {
+      if (doc && doc.rid === order.rid && doc.state) { applyStatus(String(doc.state), 'queue'); return; }
+      throw new Error('status mismatch');
     })
-    .catch(function () { window.__bldLastCheck = { rid: order.rid, live: false, error: true }; });
+    .catch(function () {
+      /* fallback: commit-message heuristic (pre-queue orders) */
+      fetch('https://api.github.com/repos/bassseamoor/render-queue/commits?per_page=20')
+        .then(function (r) { return r.json(); })
+        .then(function (commits) {
+          var live = Array.isArray(commits) && commits.some(function (c) {
+            var m = (c && c.commit && c.commit.message) || '';
+            return m.indexOf(order.rid) >= 0 || m.indexOf(order.fp) >= 0;
+          });
+          applyStatus(live ? 'live' : (order.status === 'sealed' ? 'sealed' : 'queued'), 'commits');
+        })
+        .catch(function () { window.__bldLastCheck = { rid: order.rid, live: false, error: true }; });
+    });
 }
 BL.seal.addEventListener('click', sealOrder);
 BL.close.addEventListener('click', closeBuild);
