@@ -12,7 +12,7 @@
   'use strict';
 
   var NAME = 'abandoned cathedral';
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.0';
 
   // Sealed DEV-01 geometry, feet. 1 unit = 1 ft.
   var ROOM = { W: 320, D: 180, H: 90, CEILING: 84 };
@@ -70,6 +70,38 @@
     }
     return out;
   }
+
+  // Glass display band: a glass ribbon wrapping all four interior walls —
+  // a BAND, not full-wall coverage. Pure geometry; the page skins it.
+  var GLASS_BAND = { yFt: 14, heightFt: 6, insetFt: 1.5, thicknessFt: 0.25 };
+  function glassBand() {
+    var hw = ROOM.W / 2 - GLASS_BAND.insetFt, hd = ROOM.D / 2 - GLASS_BAND.insetFt;
+    return [
+      { id: 'north', wFt: ROOM.W - GLASS_BAND.insetFt * 2, xFt: 0,   yFt: GLASS_BAND.yFt, zFt: -hd, ryDeg: 0 },
+      { id: 'south', wFt: ROOM.W - GLASS_BAND.insetFt * 2, xFt: 0,   yFt: GLASS_BAND.yFt, zFt:  hd, ryDeg: 180 },
+      { id: 'west',  wFt: ROOM.D - GLASS_BAND.insetFt * 2, xFt: -hw, yFt: GLASS_BAND.yFt, zFt: 0,   ryDeg: 90 },
+      { id: 'east',  wFt: ROOM.D - GLASS_BAND.insetFt * 2, xFt:  hw, yFt: GLASS_BAND.yFt, zFt: 0,   ryDeg: -90 }
+    ];
+  }
+
+  // Lighting presets (ported from DEV-01, adapted to the cathedral rig).
+  // amb/hemi/fill/spot = intensities; *Color = hex; disc = emissive disc intensity.
+  var LIGHT_PRESETS = {
+    ambient:   { label: 'AMBIENT 3200K',   amb: 1.2, hemi: 0.8, spot: 800,  spotColor: 0xffc98a, disc: 0.8, discColor: 0xffc98a, shaft: 0x8a94a8, fill: 0.4 },
+    work:      { label: 'WORK 4000K',      amb: 2.6, hemi: 1.8, spot: 2600, spotColor: 0xfff2df, disc: 2.0, discColor: 0xfff2df, shaft: 0xdfe8f2, fill: 1.0 },
+    cinematic: { label: 'CINEMATIC 2800K', amb: 1.6, hemi: 1.1, spot: 2000, spotColor: 0xffb46b, disc: 1.6, discColor: 0xffd9a0, shaft: 0xcfd6e2, fill: 0.6 },
+    pulse:     { label: 'PULSE 4500K',     amb: 2.0, hemi: 1.5, spot: 2200, spotColor: 0x9fc4ff, disc: 2.2, discColor: 0x7aa8ff, shaft: 0x9fc4ff, fill: 0.9 }
+  };
+  var LIGHT_ORDER = ['ambient', 'work', 'cinematic', 'pulse'];
+
+  // Robot arm joint presets (radians). sx/sz = shoulder, ex = elbow, wx = wrist, grip 0..1.
+  var ARM_PRESETS = {
+    rest:    { label: 'REST',    j: { sx: -0.35, sz: 0,    ex: -2.25, wx: 0.55,  grip: 0.15 } },
+    reach:   { label: 'REACH',   j: { sx: -1.25, sz: 0,    ex: -0.25, wx: 0.35,  grip: 0.50 } },
+    present: { label: 'PRESENT', j: { sx: -2.55, sz: 0.35, ex: -0.45, wx: -0.35, grip: 1.00 } },
+    work:    { label: 'WORK',    j: { sx: -1.55, sz: -0.20, ex: -1.15, wx: 0.85,  grip: 0.35 } }
+  };
+  var ARM_ORDER = ['rest', 'reach', 'present', 'work'];
 
   // Every datum carries {value, source}. Missing → {unavailable:true, source}.
   function label(value, source) {
@@ -167,7 +199,7 @@
   // Inertness proof: the core must not touch DOM or network.
   function _purityViolations() {
     var bad = [];
-    var fns = { ROOM: function () { return ROOM; }, monitorArc: monitorArc, fixtureRows: fixtureRows, label: label, adaptManifest: adaptManifest, adaptCommits: adaptCommits, receipts: receipts, selfCheck: selfCheck };
+    var fns = { ROOM: function () { return ROOM; }, monitorArc: monitorArc, fixtureRows: fixtureRows, glassBand: glassBand, label: label, adaptManifest: adaptManifest, adaptCommits: adaptCommits, receipts: receipts, selfCheck: selfCheck };
     Object.keys(fns).forEach(function (k) {
       var src = '';
       try { src = String(fns[k]); } catch (e) { bad.push(k + ':uninspectable'); return; }
@@ -234,6 +266,17 @@
     // --- naming verbatim ---
     ck('naming-verbatim', NAME === 'abandoned cathedral', NAME);
 
+    // --- glass band: 4 segments wrapping the room, band not full wall ---
+    var gb = glassBand();
+    ck('glassband-4', gb.length === 4);
+    ck('glassband-not-fullwall', gb.every(function (s) { return s.yFt - GLASS_BAND.heightFt / 2 > 0 && s.yFt + GLASS_BAND.heightFt / 2 < ROOM.H; }),
+      'band y=' + GLASS_BAND.yFt + '±' + (GLASS_BAND.heightFt / 2));
+    ck('glassband-in-room', gb.every(function (s) { return Math.abs(s.xFt) <= ROOM.W / 2 && Math.abs(s.zFt) <= ROOM.D / 2; }));
+
+    // --- presets: 4 light, 4 arm, all labeled ---
+    ck('light-presets-4', LIGHT_ORDER.length === 4 && LIGHT_ORDER.every(function (k) { return !!LIGHT_PRESETS[k].label; }));
+    ck('arm-presets-4', ARM_ORDER.length === 4 && ARM_ORDER.every(function (k) { return !!ARM_PRESETS[k].label && !!ARM_PRESETS[k].j; }));
+
     // --- purity: no DOM, no network in the core ---
     var pv = _purityViolations();
     ck('purity', pv.length === 0, pv.join(';') || 'no dom, no network references');
@@ -248,6 +291,12 @@
     ROOM: ROOM,
     monitorArc: monitorArc,
     fixtureRows: fixtureRows,
+    glassBand: glassBand,
+    GLASS_BAND: GLASS_BAND,
+    LIGHT_PRESETS: LIGHT_PRESETS,
+    LIGHT_ORDER: LIGHT_ORDER,
+    ARM_PRESETS: ARM_PRESETS,
+    ARM_ORDER: ARM_ORDER,
     adaptManifest: adaptManifest,
     adaptCommits: adaptCommits,
     receipts: receipts,

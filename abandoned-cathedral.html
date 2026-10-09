@@ -192,6 +192,27 @@
   .bld-order-status.st-rejected{color:#e87a7a}
   .bld-order-actions{display:flex;gap:8px}
   #bld-note{font-size:11px;line-height:1.5;color:#5d594f;letter-spacing:.02em}
+  /* keypad bind panel: same instrument language as the build console */
+  #kpb{position:fixed;inset:0;z-index:32;display:none;pointer-events:none}
+  #kpb.open{display:block}
+  #kpb-panel{position:absolute;pointer-events:auto;width:min(420px,92vw);max-height:84vh;
+      background:#0a0a0c;border:1px solid rgba(255,255,255,.1);
+      border-radius:4px;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.6);overflow:hidden}
+  #kpb-bar{flex:none;height:52px;display:flex;align-items:center;gap:12px;padding:0 8px 0 16px;
+      border-bottom:1px solid rgba(255,255,255,.08);cursor:move;touch-action:none;user-select:none;-webkit-user-select:none}
+  #kpb-title{flex:1;font-size:12px;letter-spacing:.22em;color:#e8e4da;font-weight:600}
+  #kpb-close,#kpb-body button{min-height:40px;padding:0 16px;border-radius:4px;cursor:pointer;
+      font-size:12px;letter-spacing:.08em;color:#d8d4c8;
+      background:rgba(30,30,34,.8);border:1px solid rgba(255,255,255,.14)}
+  #kpb-body{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+  #kpb-body button.primary{border-color:rgba(0,82,255,.55)}
+  #kpb-body select,#kpb-body input{width:100%;min-height:40px;background:#101013;color:#e8e4da;
+      border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:0 10px;font-size:13px}
+  .kpb-cap{font-size:10px;letter-spacing:.2em;color:#8a8478;text-transform:uppercase}
+  #kpb-list{display:flex;flex-direction:column;gap:6px}
+  .kpb-row{display:flex;gap:8px;align-items:center;font-size:12px;color:#b8b2a4}
+  .kpb-row b{color:#e8e4da;min-width:44px}
+  #hud .l{font-size:9px;letter-spacing:.06em;color:#7aa8ff;margin-top:3px}
   @media (max-width:720px){
     #bp-body{flex-direction:column}
     #bp-notes{width:100%;height:42%;min-width:0}
@@ -202,7 +223,7 @@
 </head>
 <body>
 <div id="app"></div>
-<div id="hud"><div class="t">abandoned cathedral</div><div class="s" id="zone">zone a · command node</div><div class="v">virtual dev environment — no physical room</div></div>
+<div id="hud"><div class="t">abandoned cathedral</div><div class="s" id="zone">zone a · command node</div><div class="v">virtual dev environment — no physical room</div><div class="l" id="hud-light"></div></div>
 <div id="hint">loading…</div>
 <div id="tools" role="toolbar" aria-label="tools"></div>
 <div id="vantage"></div>
@@ -233,6 +254,29 @@
     <div id="bpcat-grid"></div>
   </div>
 </div>
+<div id="kpb" aria-hidden="true" role="dialog" aria-label="keypad bindings">
+  <div id="kpb-panel">
+    <div id="kpb-bar"><span id="kpb-title">keypad</span><button id="kpb-close">close</button></div>
+    <div id="kpb-body">
+      <div class="kpb-cap">key</div>
+      <select id="kpb-key" aria-label="key"></select>
+      <div class="kpb-cap">action</div>
+      <select id="kpb-action" aria-label="action">
+        <option value="">— unbound —</option>
+        <option value="overlay">open tool (overlay window)</option>
+        <option value="build">open build console</option>
+        <option value="light">lighting preset</option>
+        <option value="arm">robot arm preset</option>
+        <option value="vantage">camera vantage</option>
+        <option value="screen">monitor screen template</option>
+      </select>
+      <div id="kpb-fields"></div>
+      <button id="kpb-save" class="primary">save binding</button>
+      <div class="kpb-cap">bindings</div>
+      <div id="kpb-list"></div>
+    </div>
+  </div>
+</div>
 <div id="bld" aria-hidden="true" role="dialog" aria-label="build console">
   <div id="bld-panel">
     <div id="bld-bar"><span id="bld-title">build</span><button id="bld-close">close</button></div>
@@ -251,6 +295,7 @@
 </div>
 
 <script src="./cathedral-core.js"></script>
+<script src="./charstream-core.js"></script>
 <script src="./funnel-usage-plan-core.js"></script>
 <script src="./funnel-kernel.js"></script>
 <script src="./funnel-fabric-core.js"></script>
@@ -821,6 +866,7 @@ function ordersLoad() { try { var a = JSON.parse(lsGet(LS_BO) || '[]'); return A
 function ordersSave(a) { lsSet(LS_BO, JSON.stringify(a)); }
 function openBuild() { refreshDrafts(); renderOrders(); BL.root.classList.add('open'); BL.root.setAttribute('aria-hidden', 'false'); }
 function closeBuild() { BL.root.classList.remove('open'); BL.root.setAttribute('aria-hidden', 'true'); }
+window.__openBuild=openBuild; window.__closeBuild=closeBuild;
 function refreshDrafts() {
   var list = (typeof catalogLoad === 'function') ? catalogLoad() : [];
   BL.draft.innerHTML = '';
@@ -1081,7 +1127,38 @@ const slotSpots=[]; // {x,z,ry} on interior faces — shafts hang from these
   });
   scene.add(imR); scene.add(imS);
 }
+/* ---------- glass display band: wraps all four walls, a band — not full-wall ----------
+ * Number-scroll character streams on glass, one canvas per wall (own seed/phase). */
+const bandStreams=[];
+{
+  const bandGlassOpts={color:0x9fb4c8,transparent:true,opacity:0.16,roughness:0.06,
+    metalness:0,clearcoat:1,side:THREE.DoubleSide};
+  C.glassBand().forEach(sg=>{
+    const [cc,cg]=makeCanvas(2048,80);
+    const tex=canvasTex(cc);
+    const mat=new THREE.MeshPhysicalMaterial(Object.assign({},bandGlassOpts,{
+      emissive:0xffffff,emissiveMap:tex,emissiveIntensity:0.85}));
+    const m=new THREE.Mesh(
+      new THREE.BoxGeometry(sg.wFt,C.GLASS_BAND.heightFt,C.GLASS_BAND.thicknessFt),mat);
+    m.position.set(sg.xFt,sg.yFt,sg.zFt);
+    m.rotation.y=sg.ryDeg*Math.PI/180;
+    scene.add(m);
+    const stream=window.CharStream.create(cc,{seed:'band-'+sg.id});
+    stream.start();
+    bandStreams.push({stream:stream,tex:tex,id:sg.id});
+  });
+  // corner posts keep the band continuous around the room
+  const postMat=new THREE.MeshPhysicalMaterial({color:0x9fb4c8,transparent:true,opacity:0.22,
+    roughness:0.05,metalness:0,clearcoat:1});
+  const bhw=R.W/2-C.GLASS_BAND.insetFt, bhd=R.D/2-C.GLASS_BAND.insetFt;
+  [[-bhw,-bhd],[bhw,-bhd],[-bhw,bhd],[bhw,bhd]].forEach(pt=>{
+    const post=new THREE.Mesh(new THREE.BoxGeometry(0.6,C.GLASS_BAND.heightFt+2,0.6),postMat);
+    post.position.set(pt[0],C.GLASS_BAND.yFt,pt[1]); scene.add(post);
+  });
+}
+
 // visible ceiling plane at 84 ft + barn-door fixtures on 18-in arms
+let discMat=null;
 {
   const ceil=new THREE.Mesh(new THREE.PlaneGeometry(R.W,R.D),
     new THREE.MeshStandardMaterial({color:0x0e0e11,roughness:0.92,metalness:0.05}));
@@ -1090,7 +1167,7 @@ const slotSpots=[]; // {x,z,ry} on interior faces — shafts hang from these
   const bodyGeo=new THREE.BoxGeometry(2,1,2);
   const bodyMat=new THREE.MeshStandardMaterial({color:0x131316,roughness:0.5,metalness:0.7});
   const discGeo=new THREE.CircleGeometry(0.9,20);
-  const discMat=new THREE.MeshStandardMaterial({color:0x0a0a0a,emissive:0xffd9a0,emissiveIntensity:1.6});
+  discMat=new THREE.MeshStandardMaterial({color:0x0a0a0a,emissive:0xffd9a0,emissiveIntensity:1.6});
   const armGeo=new THREE.BoxGeometry(0.3,1.5,0.3);
   const imB=new THREE.InstancedMesh(bodyGeo,bodyMat,rows.length);
   const imD=new THREE.InstancedMesh(discGeo,discMat,rows.length);
@@ -1106,16 +1183,35 @@ const slotSpots=[]; // {x,z,ry} on interior faces — shafts hang from these
 }
 
 /* ---------- light: near-black ambient, faint hemisphere, 3 spots ---------- */
-scene.add(new THREE.AmbientLight(0x3a3a44,2.0));
-scene.add(new THREE.HemisphereLight(0x5a6274,0x18181a,1.4));
+const ambLight=new THREE.AmbientLight(0x3a3a44,2.0); scene.add(ambLight);
+const hemiLight=new THREE.HemisphereLight(0x5a6274,0x18181a,1.4); scene.add(hemiLight);
 const fill=new THREE.DirectionalLight(0xcfd6e2,0.8); // soft cool fill on the command node
 fill.position.set(40,60,120); scene.add(fill);
+const spotLights=[];
 function spot(x,z){
   const s=new THREE.SpotLight(0xffd9a8,2000,150,Math.PI/4.5,0.5,1.4);
   s.position.set(x,80,z); s.target.position.set(x,0,z);
-  scene.add(s); scene.add(s.target);
+  scene.add(s); scene.add(s.target); spotLights.push(s);
 }
 spot(0,36); spot(-80,-40); spot(80,-40);
+
+/* ---------- lighting presets (ported from DEV-01, adapted to the cathedral rig) ----------
+ * keys 1-4 · the HUD light button cycles · persisted */
+const LS_LIGHT='abandoned-cathedral.light.v1';
+let lightPreset='cinematic';
+function applyLightPreset(name){
+  const p=C.LIGHT_PRESETS[name]; if(!p) return;
+  lightPreset=name;
+  ambLight.intensity=p.amb; hemiLight.intensity=p.hemi; fill.intensity=p.fill;
+  spotLights.forEach(s=>{ s.color.setHex(p.spotColor); s.intensity=p.spot; });
+  if(discMat){ discMat.emissive.setHex(p.discColor); discMat.emissiveIntensity=p.disc; }
+  shaftUniforms.uColor.value.setHex(p.shaft);
+  const el=document.getElementById('hud-light'); if(el) el.textContent=p.label;
+  try{ localStorage.setItem(LS_LIGHT,name); }catch(e){}
+}
+function cycleLightPreset(){
+  const o=C.LIGHT_ORDER; applyLightPreset(o[(o.indexOf(lightPreset)+1)%o.length]);
+}
 
 /* ---------- light shafts: additive planes, per-frame uTime upload in render() ---------- */
 const shaftUniforms={uTime:{value:0},uColor:{value:new THREE.Color(0xcfd6e2)}};
@@ -1170,6 +1266,63 @@ const chairMat=new THREE.MeshStandardMaterial({color:0x1c1c20,roughness:0.6,meta
   const post=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,2.0,12),legMat); post.position.set(0,1.0,6.2); node.add(post);
 }
 
+/* ---------- robot arms: two articulated arms flanking the command node ----------
+ * Real joints: shoulder → elbow → wrist → gripper. Presets ease between poses.
+ * keys 5-8 · the HUD arms button cycles · persisted */
+const arms=[];
+function buildArm(side){
+  const g=new THREE.Group();
+  const dark=new THREE.MeshStandardMaterial({color:0x16161a,roughness:0.45,metalness:0.8});
+  const accent=new THREE.MeshStandardMaterial({color:0x0a0a0c,roughness:0.4,metalness:0.7,
+    emissive:0x0052FF,emissiveIntensity:0.35});
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.4,1.0,20),dark);
+  base.position.y=0.5; g.add(base);
+  const shoulder=new THREE.Group(); shoulder.position.y=1.15; g.add(shoulder);
+  const upper=new THREE.Mesh(new THREE.BoxGeometry(0.7,4.2,0.7),dark);
+  upper.position.y=2.1; shoulder.add(upper);
+  const sRing=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.9,16),accent);
+  sRing.rotation.z=Math.PI/2; shoulder.add(sRing);
+  const elbow=new THREE.Group(); elbow.position.y=4.2; shoulder.add(elbow);
+  const fore=new THREE.Mesh(new THREE.BoxGeometry(0.55,3.6,0.55),dark);
+  fore.position.y=1.8; elbow.add(fore);
+  const eRing=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.75,16),accent);
+  eRing.rotation.z=Math.PI/2; elbow.add(eRing);
+  const wrist=new THREE.Group(); wrist.position.y=3.6; elbow.add(wrist);
+  const palm=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.5,0.9),dark);
+  wrist.add(palm);
+  const fingers=[];
+  [-0.28,0.28].forEach(x=>{
+    const f=new THREE.Mesh(new THREE.BoxGeometry(0.16,1.0,0.5),dark);
+    f.position.set(x,-0.6,0); wrist.add(f); fingers.push(f);
+  });
+  g.position.set(side*11,0,36);
+  scene.add(g);
+  return {group:g,shoulder:shoulder,elbow:elbow,wrist:wrist,fingers:fingers,
+    cur:{sx:0,sz:0,ex:0,wx:0,grip:0.15},tgt:null};
+}
+arms.push(buildArm(-1),buildArm(1));
+const LS_ARM='abandoned-cathedral.arm.v1';
+let armPreset='rest';
+function poseArm(a,k){
+  const t=a.tgt||a.cur;
+  a.cur.sx+=(t.sx-a.cur.sx)*k; a.cur.sz+=(t.sz-a.cur.sz)*k;
+  a.cur.ex+=(t.ex-a.cur.ex)*k; a.cur.wx+=(t.wx-a.cur.wx)*k;
+  a.cur.grip+=(t.grip-a.cur.grip)*k;
+  a.shoulder.rotation.x=a.cur.sx; a.shoulder.rotation.z=a.cur.sz;
+  a.elbow.rotation.x=a.cur.ex; a.wrist.rotation.x=a.cur.wx;
+  const go=0.28+a.cur.grip*0.35;
+  a.fingers[0].position.x=-go; a.fingers[1].position.x=go;
+}
+function applyArmPose(name,instant){
+  const p=C.ARM_PRESETS[name]; if(!p) return;
+  armPreset=name;
+  arms.forEach(a=>{ a.tgt={sx:p.j.sx,sz:p.j.sz,ex:p.j.ex,wx:p.j.wx,grip:p.j.grip}; if(instant) poseArm(a,1); });
+  try{ localStorage.setItem(LS_ARM,name); }catch(e){}
+}
+function cycleArmPreset(){
+  const o=C.ARM_ORDER; applyArmPose(o[(o.indexOf(armPreset)+1)%o.length]);
+}
+
 /* six LIVE monitors: CanvasTexture dashboards fed by real fetches, every datum source-labeled */
 const MON_DEF=[
   {key:'tools',   title:'tools',     url:'pulse-dashboard.html',        kind:'manifest'},
@@ -1208,6 +1361,194 @@ C.monitorArc().forEach((t,i)=>{
   drawMonitorBooting(mg,def.title);
   tex.needsUpdate=true;
 });
+/* ---------- desk keypad: 3x3 bindable keys ----------
+ * Tap a key to fire its binding; the HUD "keys" button (or bind mode)
+ * opens the binding panel. Bindings persist in localStorage. */
+const LS_KEYS='abandoned-cathedral.keypad.v1';
+const keyHit=[];
+let keypadBindMode=false;
+const keypad={keys:[]};
+const KP_DEFAULTS=[
+  {action:'build'},
+  {action:'overlay',url:'pulse-dashboard.html',title:'pulse'},
+  {action:'overlay',url:'funnel-evolution-record.html',title:'records'},
+  {action:'light',preset:'work'},
+  {action:'light',preset:'cinematic'},
+  {action:'arm',preset:'present'},
+  {action:'vantage',name:'chair'},
+  {action:'screen',monitor:0,kind:'tools'},
+  null,
+];
+let keyBindings=KP_DEFAULTS.map(b=>b?JSON.parse(JSON.stringify(b)):null);
+try{ const s=JSON.parse(localStorage.getItem(LS_KEYS)||'null');
+  if(Array.isArray(s)&&s.length===9) keyBindings=s; }catch(e){}
+function saveKeys(){ try{ localStorage.setItem(LS_KEYS,JSON.stringify(keyBindings)); }catch(e){} }
+function keyLabel(b){
+  if(!b) return '—';
+  if(b.action==='overlay') return (b.title||'tool').slice(0,10);
+  if(b.action==='build') return 'MAKE';
+  if(b.action==='light') return (b.preset||'').slice(0,7).toUpperCase();
+  if(b.action==='arm') return 'ARM '+(b.preset||'').slice(0,5).toUpperCase();
+  if(b.action==='vantage') return (b.name||'').slice(0,7).toUpperCase();
+  if(b.action==='screen') return 'SCR '+(b.kind||'').slice(0,6).toUpperCase();
+  return '?';
+}
+function drawKeyCap(i){
+  const k=keypad.keys[i]; if(!k) return;
+  const g=k.g; g.clearRect(0,0,128,128);
+  g.fillStyle='#101014'; g.fillRect(0,0,128,128);
+  g.fillStyle=keyBindings[i]?'#7aa8ff':'#3a3a42';
+  g.font='700 44px '+MONO; g.textAlign='center';
+  g.fillText(String(i+1),64,58);
+  g.fillStyle=keyBindings[i]?'#e8e4da':'#5d594f';
+  g.font='600 19px '+MONO;
+  g.fillText(keyLabel(keyBindings[i]),64,96);
+  k.tex.needsUpdate=true;
+}
+{
+  const padMat=new THREE.MeshStandardMaterial({color:0x101013,roughness:0.5,metalness:0.6});
+  const kpG=new THREE.Group();
+  kpG.position.set(2.35,2.62,0.75); kpG.rotation.x=-0.18; node.add(kpG);
+  const padBase=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.14,1.6),padMat);
+  kpG.add(padBase);
+  const keyMat=new THREE.MeshStandardMaterial({color:0x1c1c22,roughness:0.4,metalness:0.5,
+    emissive:0x0052FF,emissiveIntensity:0});
+  for(let i=0;i<9;i++){
+    const [kc,kg]=makeCanvas(128,128);
+    const kt=canvasTex(kc);
+    const key=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.16,0.5),keyMat.clone());
+    const cap=new THREE.Mesh(new THREE.PlaneGeometry(0.44,0.44),
+      new THREE.MeshBasicMaterial({map:kt,toneMapped:false,transparent:true}));
+    const col=i%3, row=Math.floor(i/3);
+    key.position.set((col-1)*0.62,0.14,(row-1)*0.55);
+    cap.rotation.x=-Math.PI/2;
+    cap.position.set((col-1)*0.62,0.225,(row-1)*0.55);
+    kpG.add(key); kpG.add(cap);
+    key.userData.keyIndex=i;
+    keypad.keys.push({mesh:key,cap:cap,canvas:kc,g:kg,tex:kt,flash:0});
+    keyHit.push(key);
+    drawKeyCap(i);
+  }
+}
+function flashKey(i){
+  const k=keypad.keys[i]; if(!k) return;
+  k.flash=1; k.mesh.material.emissiveIntensity=0.9;
+}
+function triggerKey(i){
+  flashKey(i);
+  const b=keyBindings[i]; if(!b) return;
+  try{
+    if(b.action==='overlay') openOverlay(b.url,b.title||'tool');
+    else if(b.action==='build'){ if(window.__openBuild) window.__openBuild(); }
+    else if(b.action==='light') applyLightPreset(b.preset);
+    else if(b.action==='arm') applyArmPose(b.preset);
+    else if(b.action==='vantage'&&VANTAGE[b.name]) goVantage(VANTAGE[b.name]);
+    else if(b.action==='screen') setMonitorKind(b.monitor,b.kind);
+  }catch(e){}
+}
+function onKeypadTap(i){
+  if(keypadBindMode){ openKeyBind(i); return; }
+  triggerKey(i);
+}
+/* ---------- keypad bind panel ---------- */
+const KP_URLS=[
+  ['pulse-dashboard.html','pulse'],['funnel-evolution-record.html','records'],
+  ['blueprint-farm.html','farm'],['dev-01-environment.html','dev-01'],
+  ['wonder-feed.html','wonder feed'],['moor-atlas.html','atlas'],
+  ['concierge-cut.html','concierge'],['dev-feed.html','dev feed'],
+];
+function openKeyBind(i){
+  const root=document.getElementById('kpb');
+  const ks=document.getElementById('kpb-key');
+  ks.innerHTML='';
+  for(let k=0;k<9;k++){ const o=document.createElement('option');
+    o.value=String(k); o.textContent='key '+(k+1); ks.appendChild(o); }
+  ks.value=String(i);
+  renderKeyFields();
+  renderKeyList();
+  root.classList.add('open'); root.setAttribute('aria-hidden','false');
+}
+function closeKeyBind(){
+  const root=document.getElementById('kpb');
+  root.classList.remove('open'); root.setAttribute('aria-hidden','true');
+}
+document.getElementById('kpb-close').addEventListener('click',closeKeyBind);
+(function(){
+  var bar=document.getElementById('kpb-bar'), panel=document.getElementById('kpb-panel');
+  var key='abandoned-cathedral.keypad.pos.v1', sx=0, sy=0, ox=0, oy=0, drag=false;
+  function place(x,y){
+    var r=panel.getBoundingClientRect(), vw=innerWidth, vh=innerHeight;
+    x=Math.max(-(r.width-80),Math.min(vw-80,x)); y=Math.max(0,Math.min(vh-60,y));
+    panel.style.left=x+'px'; panel.style.top=y+'px'; panel.style.right='auto'; panel.style.bottom='auto';
+  }
+  try{ var p=JSON.parse(localStorage.getItem(key)||'null'); if(p) place(p.x,p.y); }
+  catch(e){ panel.style.right='14px'; panel.style.top='14px'; }
+  if(!panel.style.left) { panel.style.right='14px'; panel.style.top='14px'; }
+  bar.addEventListener('pointerdown',function(e){ drag=true; sx=e.clientX; sy=e.clientY;
+    var r=panel.getBoundingClientRect(); ox=r.left; oy=r.top; bar.setPointerCapture(e.pointerId); });
+  bar.addEventListener('pointermove',function(e){ if(drag) place(ox+e.clientX-sx, oy+e.clientY-sy); });
+  bar.addEventListener('pointerup',function(){ drag=false;
+    try{ var r=panel.getBoundingClientRect(); localStorage.setItem(key,JSON.stringify({x:r.left,y:r.top})); }catch(e){} });
+})();
+document.getElementById('kpb-key').addEventListener('change',renderKeyFields);
+document.getElementById('kpb-action').addEventListener('change',renderKeyFields);
+function renderKeyFields(){
+  const i=+document.getElementById('kpb-key').value||0;
+  const b=keyBindings[i]||{};
+  const act=document.getElementById('kpb-action');
+  act.value=b.action||'';
+  const f=document.getElementById('kpb-fields');
+  f.innerHTML='';
+  function row(label,el){ const c=document.createElement('div');
+    c.innerHTML='<div class="kpb-cap">'+label+'</div>'; c.appendChild(el); f.appendChild(c); return el; }
+  function sel(opts,val){ const s=document.createElement('select');
+    opts.forEach(o=>{ const op=document.createElement('option');
+      op.value=o[0]; op.textContent=o[1]; s.appendChild(op); });
+    s.value=val||opts[0][0]; return s; }
+  const a=act.value;
+  if(a==='overlay'){
+    const u=row('tool url',sel(KP_URLS.map(x=>[x[0],x[1]+' · '+x[0]]),b.url)); u.id='kpb-url';
+    const other=document.createElement('input'); other.placeholder='or paste another url';
+    other.value=KP_URLS.some(x=>x[0]===b.url)?'':(b.url||''); f.appendChild(other); other.id='kpb-url2';
+    const t=row('title',document.createElement('input')); t.id='kpb-title2'; t.value=b.title||'';
+  }else if(a==='light'){
+    const s=row('preset',sel(C.LIGHT_ORDER.map(k=>[k,C.LIGHT_PRESETS[k].label]),b.preset)); s.id='kpb-preset';
+  }else if(a==='arm'){
+    const s=row('preset',sel(C.ARM_ORDER.map(k=>[k,C.ARM_PRESETS[k].label]),b.preset)); s.id='kpb-preset';
+  }else if(a==='vantage'){
+    const s=row('vantage',sel(Object.keys(VANTAGE).map(k=>[k,k]),b.name)); s.id='kpb-preset';
+  }else if(a==='screen'){
+    const m=row('monitor (1-6)',sel([0,1,2,3,4,5].map(k=>[String(k),'monitor '+(k+1)]),String(b.monitor||0))); m.id='kpb-mon';
+    const k=row('feed',sel(Object.keys(KIND_META).map(k=>[k,k]),b.kind)); k.id='kpb-kind';
+  }
+}
+document.getElementById('kpb-save').addEventListener('click',()=>{
+  const i=+document.getElementById('kpb-key').value||0;
+  const a=document.getElementById('kpb-action').value;
+  let b=null;
+  if(a==='overlay'){
+    const u2=document.getElementById('kpb-url2');
+    const url=(u2&&u2.value.trim())||document.getElementById('kpb-url').value;
+    const title=(document.getElementById('kpb-title2')||{}).value||'tool';
+    b={action:'overlay',url:url,title:title.slice(0,24)};
+  }
+  else if(a==='light') b={action:'light',preset:document.getElementById('kpb-preset').value};
+  else if(a==='arm') b={action:'arm',preset:document.getElementById('kpb-preset').value};
+  else if(a==='vantage') b={action:'vantage',name:document.getElementById('kpb-preset').value};
+  else if(a==='screen') b={action:'screen',monitor:+document.getElementById('kpb-mon').value,
+    kind:document.getElementById('kpb-kind').value};
+  else if(a==='build') b={action:'build'};
+  keyBindings[i]=b; saveKeys(); drawKeyCap(i); renderKeyList();
+});
+function renderKeyList(){
+  const el=document.getElementById('kpb-list'); el.innerHTML='';
+  keyBindings.forEach((b,i)=>{
+    const d=document.createElement('div'); d.className='kpb-row';
+    d.innerHTML='<b>key '+(i+1)+'</b><span></span>';
+    d.lastChild.textContent=keyLabel(b);
+    el.appendChild(d);
+  });
+}
 function drawMonitorBooting(g,title){
   g.fillStyle='#060708'; g.fillRect(0,0,512,288);
   g.fillStyle='#8a8478'; g.font='600 20px '+FONT; g.textAlign='center';
@@ -1240,10 +1581,10 @@ async function fetchJSON(url){
   return await r.json();
 }
 function redraw(mon){ mon.userData.tex.needsUpdate=true; }
+const MON_JOBS={};
 async function loadMonitors(){
-  const jobs=[
-    (async()=>{ // tools
-      const mon=monitors[0],g=mon.userData.g;
+    MON_JOBS.tools=async function(mon){
+      const g=mon.userData.g;
       try{ const j=await fetchJSON('./pulse-manifest.json');
         const a=C.adaptManifest(j);
         if(a.unavailable) throw new Error('unavailable');
@@ -1251,9 +1592,9 @@ async function loadMonitors(){
           [a.liveCount+' live · '+a.deadCount+' dead'],a.source,true);
       }catch(e){ drawMonitorLabeled(g,'tools','',['tap still opens the tool'], 'pulse-manifest.json',false); }
       redraw(mon);
-    })(),
-    (async()=>{ // commits
-      const mon=monitors[1],g=mon.userData.g;
+    };
+    MON_JOBS.commits=async function(mon){
+      const g=mon.userData.g;
       try{ const j=await fetchJSON('https://api.github.com/repos/bassseamoor/render-queue/commits?per_page=10');
         const a=C.adaptCommits(j);
         if(a.unavailable) throw new Error('unavailable');
@@ -1262,17 +1603,17 @@ async function loadMonitors(){
           a.source+' · bassseamoor/render-queue',true);
       }catch(e){ drawMonitorLabeled(g,'commits','',['tap still opens the tool'],'github-commits-api',false); }
       redraw(mon);
-    })(),
-    (async()=>{ // receipts — bundled, always live
-      const mon=monitors[2],g=mon.userData.g;
+    };
+    MON_JOBS.receipts=async function(mon){
+      const g=mon.userData.g;
       const rs=C.receipts();
       drawMonitorLabeled(g,'receipts',String(rs.length),
         rs.slice(0,3).map(r=>r.receipt),
         'bundled — sealed funnel receipts',true);
       redraw(mon);
-    })(),
-    (async()=>{ // dev feed
-      const mon=monitors[3],g=mon.userData.g;
+    };
+    MON_JOBS.devfeed=async function(mon){
+      const g=mon.userData.g;
       try{ const j=await fetchJSON('./dev-feed-ledger.json');
         const items=(j&&j.items)||[];
         const latest=items.length?items[items.length-1]:null;
@@ -1281,9 +1622,9 @@ async function loadMonitors(){
           'dev-feed-ledger.json',true);
       }catch(e){ drawMonitorLabeled(g,'dev feed','',['tap still opens the tool'],'dev-feed-ledger.json',false); }
       redraw(mon);
-    })(),
-    (async()=>{ // farm
-      const mon=monitors[4],g=mon.userData.g;
+    };
+    MON_JOBS.farm=async function(mon){
+      const g=mon.userData.g;
       try{ const j=await fetchJSON('./pulse-blueprint-farm-library.json');
         const bps=(j&&j.blueprints)||[];
         drawMonitorLabeled(g,'farm',String(bps.length),
@@ -1291,9 +1632,9 @@ async function loadMonitors(){
           'pulse-blueprint-farm-library.json',true);
       }catch(e){ drawMonitorLabeled(g,'farm','',['tap still opens the tool'],'pulse-blueprint-farm-library.json',false); }
       redraw(mon);
-    })(),
-    (async()=>{ // decisions
-      const mon=monitors[5],g=mon.userData.g;
+    };
+    MON_JOBS.decisions=async function(mon){
+      const g=mon.userData.g;
       try{ const j=await fetchJSON('./funnel-verdict-outcomes.json');
         const vs=(j&&j.verdicts)||[];
         let n=0; vs.forEach(v=>{ n+=(v.outcomes||[]).length; });
@@ -1302,9 +1643,19 @@ async function loadMonitors(){
           'funnel-verdict-outcomes.json',true);
       }catch(e){ drawMonitorLabeled(g,'decisions','',['tap still opens the tool'],'funnel-verdict-outcomes.json',false); }
       redraw(mon);
-    })(),
-  ];
-  await Promise.allSettled(jobs);
+    };
+  const jobs2=monitors.map((mon,i)=>MON_JOBS[mon.userData.def.kind](mon));
+  await Promise.allSettled(jobs2);
+}
+/* screen templates: re-point any monitor at any feed kind (keypad binding) */
+const KIND_META={};
+MON_DEF.forEach(d=>{ KIND_META[d.kind]={title:d.title,url:d.url}; });
+function setMonitorKind(i,kind){
+  const mon=monitors[i]; if(!mon||!MON_JOBS[kind]||!KIND_META[kind]) return;
+  mon.userData.def={key:kind,title:KIND_META[kind].title,url:KIND_META[kind].url,kind:kind};
+  drawMonitorBooting(mon.userData.g,KIND_META[kind].title);
+  mon.userData.tex.needsUpdate=true;
+  MON_JOBS[kind](mon).catch(()=>{});
 }
 
 /* ---------- membrane: north wall Blueprint Wall frieze (composed, NOT orbs/legend) ---------- */
@@ -1460,6 +1811,11 @@ window.addEventListener('keydown',e=>{
   if(window.__bpOpen&&window.__bpOpen())return;
   keys[e.code]=true;
   if(e.code==='Space')e.preventDefault();
+  const tag=(document.activeElement&&document.activeElement.tagName)||'';
+  if(!/INPUT|TEXTAREA|SELECT/.test(tag)&&e.key>='1'&&e.key<='8'&&e.key.length===1){
+    const li=C.LIGHT_ORDER[+e.key-1]; if(li){ applyLightPreset(li); return; }
+    const ai=C.ARM_ORDER[+e.key-5]; if(ai){ applyArmPose(ai); return; }
+  }
 });
 window.addEventListener('keyup',e=>{ keys[e.code]=false; });
 // desktop: click canvas -> pointer-lock mouse look; click while locked -> use crosshair
@@ -1544,6 +1900,8 @@ const raycaster=new THREE.Raycaster(), ndc=new THREE.Vector2();
 function tapAt(cx,cy){
   ndc.set((cx/Wpx)*2-1,-(cy/Hpx)*2+1);
   raycaster.setFromCamera(ndc,camera);
+  const kh=raycaster.intersectObjects(keyHit,false);
+  if(kh.length){ onKeypadTap(kh[0].object.userData.keyIndex); return; }
   const hits=raycaster.intersectObjects(monitorHit,false);
   if(hits.length){
     let o=hits[0].object;
@@ -1594,6 +1952,7 @@ function holdBtn(el,set){
 }
 holdBtn(upBtn,v=>flyUp=v); holdBtn(dnBtn,v=>flyDown=v);
 function syncToggles(){
+  try{ bandStreams.forEach(b=>{ stillMode?b.stream.stop():b.stream.start(); }); }catch(e){}
   stillBtn.classList.toggle('on',stillMode);
   stillBtn.setAttribute('aria-pressed',String(stillMode));
   document.getElementById('vantage').classList.toggle('show',stillMode);
@@ -1604,6 +1963,19 @@ function syncToggles(){
 }
 stillBtn.addEventListener('click',()=>{ stillMode=!stillMode; syncToggles(); });
 toolsEl.appendChild(stillBtn); toolsEl.appendChild(upBtn); toolsEl.appendChild(dnBtn);
+const lightBtn=document.createElement('button'); lightBtn.textContent='light';
+lightBtn.title='cycle lighting preset (keys 1-4)';
+lightBtn.addEventListener('click',cycleLightPreset);
+const armBtn=document.createElement('button'); armBtn.textContent='arms';
+armBtn.title='cycle robot arm preset (keys 5-8)';
+armBtn.addEventListener('click',cycleArmPreset);
+const keyBtn=document.createElement('button'); keyBtn.textContent='keys';
+keyBtn.title='keypad bind mode: tap a desk key to bind it';
+keyBtn.addEventListener('click',()=>{
+  keypadBindMode=!keypadBindMode;
+  keyBtn.classList.toggle('on',keypadBindMode);
+});
+toolsEl.appendChild(lightBtn); toolsEl.appendChild(armBtn); toolsEl.appendChild(keyBtn);
 const vantEl=document.getElementById('vantage');
 Object.keys(VANTAGE).forEach(k=>{
   const b=document.createElement('button'); b.textContent=k;
@@ -1635,9 +2007,42 @@ function tick(){
     }
     dustGeo.attributes.position.needsUpdate=true;
   }
+  if(!stillMode){
+    for(let bi=0;bi<bandStreams.length;bi++) bandStreams[bi].tex.needsUpdate=true;
+    for(let ai=0;ai<arms.length;ai++){
+      const a=arms[ai]; if(!a.tgt) continue;
+      const k=1-Math.pow(0.002,dt);
+      poseArm(a,k);
+      const tg=a.tgt;
+      const d=Math.abs(tg.sx-a.cur.sx)+Math.abs(tg.sz-a.cur.sz)+Math.abs(tg.ex-a.cur.ex)
+              +Math.abs(tg.wx-a.cur.wx)+Math.abs(tg.grip-a.cur.grip);
+      if(d<0.004){ poseArm(a,1); a.tgt=null; }
+    }
+    for(let ki=0;ki<keypad.keys.length;ki++){
+      const kk=keypad.keys[ki];
+      if(kk.flash>0){ kk.flash-=dt*2.2;
+        kk.mesh.material.emissiveIntensity=Math.max(0,kk.flash)*0.9; }
+    }
+  }
   renderer.render(scene,camera);
   if(firstFrame){ firstFrame=false; window.__ready=true; }
 }
+try{ applyLightPreset(localStorage.getItem(LS_LIGHT)||'cinematic'); }
+catch(e){ try{ applyLightPreset('cinematic'); }catch(e2){} }
+try{ applyArmPose(localStorage.getItem(LS_ARM)||'rest',true); }
+catch(e){ try{ applyArmPose('rest',true); }catch(e2){} }
+window.__room2={
+  glassBand:function(){ return bandStreams.map(b=>b.id); },
+  light:function(n){ if(n) applyLightPreset(n); return lightPreset; },
+  arm:function(n){ if(n) applyArmPose(n); return armPreset; },
+  armJoints:function(){ return arms.map(a=>({sx:+a.cur.sx.toFixed(3),ex:+a.cur.ex.toFixed(3)})); },
+  key:function(i){ triggerKey(i); return keyBindings[i]||null; },
+  bind:function(i,b){ keyBindings[i]=b; saveKeys(); drawKeyCap(i); return keyBindings[i]; },
+  bindings:function(){ return keyBindings.map(keyLabel); },
+  monitorKind:function(i,k){ setMonitorKind(i,k); return monitors[i].userData.def.kind; },
+  buildOpen:function(){ if(window.__openBuild) window.__openBuild(); return document.getElementById('bld').classList.contains('open'); },
+  overlayOpen:function(url,title){ openOverlay(url,title); return window.__overlayOpen(); },
+};
 loadMonitors().catch(()=>{});
 drawFrieze().catch(()=>{});
 tick();

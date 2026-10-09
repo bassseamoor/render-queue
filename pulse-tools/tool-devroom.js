@@ -1,5 +1,5 @@
 /* Dev Room — Pulse adapter.
- * Mounts the standalone dev-01-environment.html (DEV-01, the empty
+ * Mounts the standalone abandoned-cathedral.html (DEV-01, the empty
  * cathedral: his dev room) in an isolated iframe, full-bleed, so its
  * globals never touch the dashboard's. The dashboard's floating
  * "Request anything" bar is hidden while the room is focused and
@@ -7,7 +7,7 @@
  *
  * TAGS: tool:devroom | cat:interface | kind:environment |
  *       dep:none | prov:funnel |
- *       src:dev-01-environment.html
+ *       src:abandoned-cathedral.html
  */
 (function(){
 'use strict';
@@ -20,7 +20,7 @@ function mount(host,c){
   setAskBar(true);
   host.innerHTML='';
   frame=document.createElement('iframe');
-  frame.src='dev-01-environment.html?v='+encodeURIComponent((c&&c.version)||'1');
+  frame.src='abandoned-cathedral.html?v='+encodeURIComponent((c&&c.version)||'1');
   frame.title=(c&&c.label)||'Dev Room';
   frame.setAttribute('loading','eager');
   frame.setAttribute('allow','fullscreen');
