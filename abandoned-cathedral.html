@@ -357,6 +357,7 @@
       <button class="set-btn" onclick="goVantage(VANTAGE.nave)">NAVE</button>
       <button class="set-btn" onclick="goVantage(VANTAGE.wall)">BLUEPRINT WALL</button>
       <button class="set-btn" onclick="goVantage(VANTAGE.museum)">MUSEUM</button>
+      <button class="set-btn" onclick="goVantage(VANTAGE.mapfield)">MAP FIELD</button>
     </div></div>
   </div>
 </div>
@@ -2022,8 +2023,8 @@ var CSS=[
 ].join('\n');
 
 var deckEl=null, tabsEl=null, bodyEl=null;
-var TAB_IDS=['make','params','safety','describe','output','system'];
-var TAB_LABEL={make:'Make',params:'Params',safety:'Safety',describe:'Describe',output:'Output',system:'System'};
+var TAB_IDS=['make','params','safety','describe','output','system','compose'];
+var TAB_LABEL={make:'Make',params:'Params',safety:'Safety',describe:'Describe',output:'Output',system:'System',compose:'Compose'};
 
 function buildDeck(){
   if(deckEl)return;
@@ -2083,6 +2084,8 @@ function renderBody(){
   else if(t==='describe')renderDescribe(bodyEl);
   else if(t==='output')renderOutput(bodyEl);
   else if(t==='system')renderSystem(bodyEl);
+  else if(t==='compose'&&window.__composer)window.__composer.renderTab(bodyEl);
+  try{ if(window.__band)window.__band.refresh(); }catch(e){}
 }
 
 function renderMake(host){
@@ -2358,8 +2361,10 @@ window.__devroomUI=api;
 })();
 
 </script>
+<script src="./hideout-composer.js"></script>
 <script type="module">
 import * as THREE from './three.module.js';
+window.THREE=THREE; /* hideout: expose for map/band modules */
 
 /* ============================================================
    DEV HIDEOUT — reconstructed operator interface
@@ -2685,7 +2690,7 @@ const MON_DEF=[
 const ARM_RIGS={
   focus:      [[-9,10,44,-18],[-3,10.5,42,-6],[3,10.5,42,6],[9,10,44,18],[-6,14.5,45,-9],[6,14.5,45,9]],
   wide:       [[-16,11,40,-30],[-9.5,11.5,37,-17],[ -3,12,35.5,-6],[3,12,35.5,6],[9.5,11.5,37,17],[16,11,40,30]],
-  review:     [[-8,9,40,-12],[0,9,39,0],[8,9,40,12],[-8,14,41,-12],[0,14,40,0],[8,14,41,12]],
+  review:     [[-8,9,40,-12],[0,9,39,0],[8,9,40,12],[-8,14,43.5,-12],[0,14,42.5,0],[8,14,43.5,12]],
   blueprint:  [[-12.5,11,34,0],[-7.5,11,34,0],[-2.5,11,34,0],[2.5,11,34,0],[7.5,11,34,0],[12.5,11,34,0]],
   build:      [[0,11,36,0],[-11,10,42,-24],[-6.5,10,40,-14],[6.5,10,40,14],[11,10,42,24],[0,15.5,42,0]],
   present:    [[-12.5,11,52,180],[-7.5,11,52,180],[-2.5,11,52,180],[2.5,11,52,180],[7.5,11,52,180],[12.5,11,52,180]],
@@ -2745,16 +2750,21 @@ MON_DEF.forEach((def,i)=>makeMonitorRig(i,def));
 const _v1=new THREE.Vector3(), _v2=new THREE.Vector3(), _v3=new THREE.Vector3();
 function poseArmRig(st){
   const p=st.cur;
+  const yawR=p.yaw*Math.PI/180, sy=Math.sin(yawR), cy=Math.cos(yawR);
   st.head.position.set(p.x,p.y,p.z);
-  st.head.rotation.y=p.yaw*Math.PI/180;
-  // post: base -> (base.x, p.y-1, base.z)
-  const topY=p.y-1.2;
-  const ph=Math.max(1,topY-st.base.y);
-  st.post.scale.y=ph; st.post.position.set(st.base.x,st.base.y+ph/2,st.base.z);
-  st.j1.position.set(st.base.x,topY,st.base.z);
-  // boom: post-top -> monitor back (offset behind head)
-  _v1.set(st.base.x,topY,st.base.z);
-  _v2.set(p.x-Math.sin(p.yaw*Math.PI/180)*0.6,p.y,p.z-Math.cos(p.yaw*Math.PI/180)*0.6);
+  st.head.rotation.y=yawR;
+  // elbow j1: 2 units behind the head, low (y=6) — the arm stays under the screens
+  _v1.set(p.x-sy*2,6,p.z-cy*2);
+  // post: low run from the floor base forward to the elbow (passes under all screens)
+  _v2.set(st.base.x,st.base.y,st.base.z);
+  const plen=_v2.distanceTo(_v1);
+  st.post.scale.y=Math.max(0.1,plen);
+  st.post.position.copy(_v2).lerp(_v1,0.5);
+  _v3.copy(_v1).sub(_v2).normalize();
+  st.post.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),_v3);
+  st.j1.position.copy(_v1);
+  // boom: riser from the elbow up behind the head to the back-center mount
+  _v2.set(p.x-sy*0.7,p.y,p.z-cy*0.7);
   const len=_v1.distanceTo(_v2);
   st.boom.scale.y=Math.max(0.1,len);
   st.boom.position.copy(_v1).lerp(_v2,0.5);
@@ -3124,8 +3134,17 @@ function glassBandGeo(){
       mesh.rotation.y=name==='west'?Math.PI/2:-Math.PI/2;
     }
     scene.add(mesh);
+    bandCanvases[bandCanvases.length-1].mesh=mesh;
+    bandCanvases[bandCanvases.length-1].name=name;
+    bandCanvases[bandCanvases.length-1].len=len;
   });
 }
+/* hideout-band: anchor registration for the unified band module */
+window.__bandAnchors={
+  walls:bandCanvases,
+  cycleFlow:cycleFlow,
+  getFlow:function(){ return FLOW_FLOWS[flowIdx]; }
+};
 function cycleFlow(){
   flowIdx=(flowIdx+1)%FLOW_FLOWS.length;
   const flow=FLOW_FLOWS[flowIdx];
@@ -3239,7 +3258,7 @@ const DOCK_CATS=[
     {n:'Museum', p:'Sealed milestones + receipts', fn:()=>flyTo([-150,40,0],'museum')},
   ]},
   {id:'map',  label:'MAP',  icon:'◍', tools:[
-    {n:'System map', p:'Glass band flowchart', fn:()=>cycleFlow()},
+    {n:'System map', p:'Glass band flowchart', fn:()=>{ if(window.__band)window.__band.cycle(); else cycleFlow(); }},
     {n:'Pulse', p:'Main dashboard', fn:()=>openToolUrl('pulse-dashboard.html')},
   ]},
   {id:'records', label:'RECORDS', icon:'☰', tools:[
@@ -3280,7 +3299,7 @@ function renderDock(){
   }
 }
 function openToolUrl(url){
-  const o=$('overlay'), f=$('overlay-frame'), t=$('overlay-title');
+  const o=$('overlay'), f=$('ovframe'), t=$('ovname');
   if(t) t.textContent=url;
   if(f) f.src=url;
   if(o) o.classList.add('open');
@@ -3459,7 +3478,7 @@ function focusMonitor(i){
   flyTo([fx,p.y,fz],'monitor');
   // fullscreen readable view
   const rig2=monitors[i];
-  const o=$('overlay'), f=$('overlay-frame'), t=$('overlay-title');
+  const o=$('overlay'), f=$('ovframe'), t=$('ovname');
   setTimeout(()=>{
     if(t) t.textContent=rig2.userData.def.title+' — monitor '+(i+1);
     if(f) f.src=rig2.userData.def.url;
@@ -3684,11 +3703,13 @@ const VANTAGE={
   nave:    {pos:[-90,18,70],yaw:-0.7,pitch:-0.05},
   wall:    {pos:[0,52,-40],yaw:0,pitch:0.3},
   museum:  {pos:[-120,40,0],yaw:Math.PI/2,pitch:0},
+  mapfield:{pos:[0,72,8],yaw:0,pitch:-1.45},
 };
 function goVantage(v){
   player.x=v.pos[0]; player.y=v.pos[1]; player.z=v.pos[2];
   player.yaw=v.yaw; player.pitch=v.pitch; applyCam();
 }
+window.VANTAGE=VANTAGE; window.goVantage=goVantage;
 const applyArmPose=applyArmPreset; // alias for keypad
 const dom=renderer.domElement;
 window.__camera=camera; window.__player=player; window.__applyCam=applyCam;
@@ -3805,6 +3826,11 @@ function tapAt(cx,cy){
     let o=hits[0].object;
     while(o&&!o.userData.def) o=o.parent;
     if(o){ const idx=monitors.indexOf(monitors.find(m=>m===o)); focusMonitor(monitors.indexOf(o)); }
+  }
+  /* hideout-band: unified band tap (3D raycast, seamless across boundaries) */
+  if(window.__band){
+    const bandHit=window.__band.pick(raycaster);
+    if(bandHit){ window.__band.tap(bandHit); return; }
   }
 }
 /* blueprint semantic zoom */
@@ -3936,6 +3962,22 @@ function init(){
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
 else init();
 
+</script>
+<script src="./hideout-fixes.js"></script>
+<script src="./hideout-band.js"></script>
+<script src="./hideout-map.js"></script>
+<script>
+/* hideout: unified test/dev API aggregator (getters stay current as modules attach) */
+window.__devroom = window.__devroom || {};
+Object.defineProperties(window.__devroom, {
+  band:     {get:function(){ return window.__band || null; }, configurable:true},
+  mapfield: {get:function(){ return window.__mapfield || null; }, configurable:true},
+  composer: {get:function(){ return window.__composer || null; }, configurable:true}
+});
+window.__devroom.composerState = function(){ return window.__composer ? window.__composer.getState() : null; };
+window.__devroom.bundles = function(){ return window.__composer ? window.__composer.listBundles() : []; };
+window.__devroom.conflicts = function(){ return window.__composer ? window.__composer.getConflicts() : []; };
+window.__devroom.mapSelection = function(dim, v){ return window.__composer ? window.__composer.mapSelect(dim, v) : null; };
 </script>
 </body>
 </html>
