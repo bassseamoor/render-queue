@@ -1,7 +1,9 @@
 /* Dev Room — Pulse adapter.
  * Mounts the standalone dev-01-environment.html (DEV-01, the empty
  * cathedral: his dev room) in an isolated iframe, full-bleed, so its
- * globals never touch the dashboard's.
+ * globals never touch the dashboard's. The dashboard's floating
+ * "Request anything" bar is hidden while the room is focused and
+ * restored when he goes back to the catalog.
  *
  * TAGS: tool:devroom | cat:interface | kind:environment |
  *       dep:none | prov:funnel |
@@ -10,7 +12,12 @@
 (function(){
 'use strict';
 var frame=null;
+function setAskBar(hidden){
+  try{var bar=document.getElementById('moor-request-bar');
+    if(bar)bar.style.display=hidden?'none':'';}catch(e){}
+}
 function mount(host,c){
+  setAskBar(true);
   host.innerHTML='';
   frame=document.createElement('iframe');
   frame.src='dev-01-environment.html?v='+encodeURIComponent((c&&c.version)||'1');
@@ -24,6 +31,7 @@ function mount(host,c){
 function unmount(){
   if(frame&&frame.parentNode)frame.parentNode.removeChild(frame);
   frame=null;
+  setAskBar(false);
 }
 TOOLS.devroom={mount:mount,unmount:unmount};
 })();
