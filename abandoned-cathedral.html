@@ -245,7 +245,51 @@
       overflow:hidden;text-overflow:ellipsis}
   .bpcard:hover .bpcard-name{color:#fff}
   #bpcat-empty{padding:24px 16px;font-size:12px;letter-spacing:.06em;color:#5d594f}
-  /* build console: MAKE environment — same instrument language, non-occluding, draggable */
+  /* ---- knowledge command panel (funnel-moor-knowledge-command-2026-10-09) ---- */
+/* knowledge command panel: same instrument language as the build console —
+   non-occluding, draggable, dark translucent chrome */
+#know{position:fixed;inset:0;display:none;z-index:40;pointer-events:none}
+#know.open{display:block;pointer-events:auto}
+#know-panel{position:absolute;right:18px;top:70px;width:min(430px,94vw);max-height:82vh;
+  display:flex;flex-direction:column;background:rgba(8,10,14,.78);
+  backdrop-filter:blur(14px);border:1px solid rgba(0,212,255,.22);border-radius:14px;
+  box-shadow:0 18px 60px rgba(0,0,0,.55);color:#dfe7f2;pointer-events:auto}
+#know-bar{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.08);cursor:move}
+#know-title{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#9fd8ff}
+#know-close{background:none;border:1px solid rgba(255,255,255,.18);color:#dfe7f2;
+  border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer}
+#know-body{padding:12px 14px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#1f8a4c transparent}
+.know-cap{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8a97ad;margin:10px 0 6px}
+#know-q{width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);
+  border:1px solid rgba(0,212,255,.3);border-radius:10px;color:#fff;
+  padding:10px 12px;font-size:14px}
+#know-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.know-chip{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.04);
+  color:#c9d4e6;border-radius:20px;padding:4px 10px;font-size:11px;cursor:pointer}
+.know-chip.on{border-color:rgba(0,212,255,.6);color:#fff;background:rgba(0,212,255,.12)}
+.know-chip .n{opacity:.65;margin-left:4px}
+#know-meta{font-size:11px;color:#8a97ad;margin:8px 0}
+.know-rec{border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:9px 11px;margin:7px 0;
+  background:rgba(255,255,255,.025);cursor:pointer}
+.know-rec:hover{border-color:rgba(0,212,255,.4)}
+.know-rec .rid{font-size:11px;color:#9fd8ff;letter-spacing:.06em}
+.know-rec .cls{display:inline-block;font-size:10px;border-radius:6px;padding:1px 7px;margin-left:8px;
+  background:rgba(0,212,255,.14);color:#bfe9ff}
+.know-rec .cls.v{background:rgba(255,190,60,.16);color:#ffd88a}
+.know-rec .cls.o{background:rgba(255,110,110,.16);color:#ff9d9d}
+.know-rec .cls.g{background:rgba(120,255,170,.14);color:#a9f5c6}
+.know-rec p{font-size:12.5px;line-height:1.45;margin:6px 0 0;color:#d5dde9}
+.know-detail{font-size:12.5px;line-height:1.55}
+.know-detail .k{color:#8a97ad;font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin:10px 0 3px}
+.know-detail code{font-size:11px;color:#9fd8ff;word-break:break-all}
+#know-settings{font-size:11.5px;color:#aeb9cc;line-height:1.6}
+#know-settings b{color:#dfe7f2}
+#know-note{font-size:11px;color:#8a97ad;margin-top:10px;line-height:1.5}
+.know-empty{font-size:12.5px;color:#8a97ad;padding:14px 4px;line-height:1.5}
+@media (max-width:640px){ #know-panel{right:8px;left:8px;top:56px;width:auto} }
+
+/* build console: MAKE environment — same instrument language, non-occluding, draggable */
   #bld{position:fixed;inset:0;z-index:32;display:none;pointer-events:none}
   #bld.open{display:block}
   #bld-panel{position:absolute;pointer-events:auto;width:min(480px,92vw);height:min(600px,84vh);
@@ -468,6 +512,24 @@
       <div class="bld-cap">orders</div>
       <div id="bld-orders"></div>
       <div id="bld-note">Orders are sealed by the quiz funnel (receipt required) — sealing IS the authorization. Sealed packets enter the durable build queue; the dispatcher runs the gate automatically (receipt &rarr; authorization &rarr; supersession &rarr; scope &rarr; executor) and the runner executes, verifies, and publishes. Check status reads the queue's public state. This console is the control plane — it never pretends to build.</div>
+    </div>
+  </div>
+</div>
+
+<!-- knowledge command panel -->
+<div id="know" class="h-overlay" role="dialog" aria-label="knowledge command">
+  <div id="know-panel">
+    <div id="know-bar"><span id="know-title">knowledge</span><button id="know-close" aria-label="close">close</button></div>
+    <div id="know-body">
+      <div class="know-cap">command — plain english</div>
+      <input id="know-q" type="text" spellcheck="false" aria-label="knowledge command"
+             placeholder='try: show me the genuine gaps · what needs my decision · everything about the Smile Engine'>
+      <div id="know-chips" role="toolbar" aria-label="class filter"></div>
+      <div id="know-meta"></div>
+      <div id="know-results"></div>
+      <div class="know-cap">store settings (frozen at creation)</div>
+      <div id="know-settings"></div>
+      <div id="know-note"></div>
     </div>
   </div>
 </div>
@@ -3268,6 +3330,9 @@ const DOCK_CATS=[
   {id:'files', label:'FILES', icon:'▦', tools:[
     {n:'File browser', p:'Canonical repo structure', fn:()=>{ openPanel('files-ov'); loadFileTree(); }},
   ]},
+  {id:'know', label:'KNOW', icon:'❚', tools:[
+    {n:'Knowledge command', p:'Ask the factory anything — triage records, gaps, decisions', fn:()=>window.openKnowledge&&window.openKnowledge()},
+  ]},
   {id:'room', label:'ROOM', icon:'⌂', tools:[
     {n:'Room settings', p:'Lighting, modes, arms', fn:()=>openPanel('settings-ov')},
     {n:'Monitor focus', p:'Fly to a monitor', fn:()=>focusMonitor(0)},
@@ -3304,6 +3369,197 @@ function openToolUrl(url){
   if(f) f.src=url;
   if(o) o.classList.add('open');
 }
+
+/* ---- knowledge command panel (funnel-moor-knowledge-command-2026-10-09; bare JS: anchor is inside <script type="module">) ---- */
+/* KNOWLEDGE COMMAND PANEL — client-side projection of the store snapshot.
+ *
+ * The snapshot (knowledge-snapshot.json, deployed next to this page) is
+ * exported by the PROVEN module build-pipeline/knowledge_command.py via
+ * export_snapshot(). This panel NEVER classifies: it filters and presents.
+ * The deterministic command rules below MIRROR the module's command() so the
+ * panel works offline; the module remains the authority.
+ *
+ * Honesty: V records render with a "reported — unverified" badge. An empty
+ * result renders as an honest empty, never invented content.
+ */
+(function(){
+'use strict';
+var SNAP_URL='knowledge-snapshot.json';
+var CLASS_LABELS={C:'already-canonical/present',A:'alias-or-composition',
+  V:'claim-needing-verification',U:'unresolved-connection',
+  E:'proposed-experiment',G:'genuinely-missing-primitive',
+  R:'rejected/superseded',O:'owner-decision-required'};
+var CLASS_TRIGGERS=[
+  [['genuine gap','missing primitive','genuinely missing'],'G'],
+  [['owner decision','needs my decision','my decision','needs a decision','for me to decide'],'O'],
+  [['proposed experiment','proposals','untested','ideas'],'E'],
+  [['already canonical','canonical','already proven','sealed'],'C'],
+  [['needs verification','unverified','reported proven','reported implemented','reported'],'V'],
+  [['unresolved'],'U'],
+  [['rejected','superseded','killed'],'R'],
+  [['alias','composition','composed'],'A']
+];
+var STOP=new Set(('the a an of to in for on and or me my i you your what show all please list find get give tell is are was were be do does did it its this that these those with about').split(' '));
+var snap=null, activeClass=null;
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function loadSnap(cb){
+  if(snap){cb(snap);return;}
+  fetch(SNAP_URL,{cache:'no-store'}).then(function(r){
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){ snap=j; cb(j); }).catch(function(){
+    snap={records:[],settings:null,class_labels:CLASS_LABELS,missing:true}; cb(snap);
+  });
+}
+
+function runCommand(q, records){
+  q=(q||'').trim().toLowerCase();
+  var cls=null,i,j;
+  for(i=0;i<CLASS_TRIGGERS.length;i++){
+    var ph=CLASS_TRIGGERS[i][0];
+    for(j=0;j<ph.length;j++){ if(q.indexOf(ph[j])>=0){ cls=CLASS_TRIGGERS[i][1]; break; } }
+    if(cls) break;
+  }
+  var scrub=q;
+  CLASS_TRIGGERS.forEach(function(t){ t[0].forEach(function(p){ scrub=scrub.split(p).join(' '); }); });
+  scrub=scrub.replace(/\b(everything|all|show|list|records)\b/g,' ');
+  var toks=(scrub.match(/[a-z0-9]+(?:[-_][a-z0-9]+)*/g)||[])
+    .filter(function(t){ return !STOP.has(t)&&t.length>2; });
+  var out=records.filter(function(r){
+    if(r.status==='INCOMPLETE') return false;
+    if(cls&&r.cls!==cls) return false;
+    if(activeClass&&r.cls!==activeClass) return false;
+    var hay=((r.record_id||'')+' '+(r.text||'')+' '+(r.evidence_note||'')).toLowerCase();
+    return toks.every(function(t){ return hay.indexOf(t)>=0; });
+  });
+  return {cls:cls,tokens:toks,records:out};
+}
+
+function badge(r){
+  var c=r.cls||'?';
+  var extra=c==='V'?' title="reported — unverified: the harvest claimed proof, the evidence never left the chat"':'';
+  return '<span class="cls '+c.toLowerCase()+'"'+extra+'>'+esc(c)+' · '+esc(CLASS_LABELS[c]||'')+'</span>';
+}
+
+function renderResults(res){
+  var box=document.getElementById('know-results');
+  var meta=document.getElementById('know-meta');
+  meta.textContent=res.records.length+' record'+(res.records.length===1?'':'s')+
+    (res.cls?' · class '+res.cls+' ('+CLASS_LABELS[res.cls]+')':'')+
+    (res.tokens.length?' · matching: '+res.tokens.join(', '):'');
+  if(!res.records.length){
+    box.innerHTML='<div class="know-empty">No records match. That is an honest empty — the store has nothing under this request, so nothing is shown.</div>';
+    return;
+  }
+  box.innerHTML=res.records.slice(0,200).map(function(r){
+    return '<div class="know-rec" data-rid="'+esc(r.record_id)+'"><span class="rid">'+esc(r.record_id)+
+      '</span>'+badge(r)+'<p>'+esc((r.text||'').slice(0,220))+
+      ((r.text||'').length>220?'…':'')+'</p></div>';
+  }).join('')+(res.records.length>200?'<div class="know-empty">…and '+(res.records.length-200)+' more — refine the command.</div>':'');
+  box.querySelectorAll('.know-rec').forEach(function(el){
+    el.addEventListener('click',function(){ showDetail(el.getAttribute('data-rid')); });
+  });
+}
+
+function showDetail(rid){
+  var r=(snap.records||[]).find(function(x){return x.record_id===rid;});
+  if(!r) return;
+  var box=document.getElementById('know-results');
+  var s=r.source||{};
+  box.innerHTML='<div class="know-detail"><div><span class="rid" style="font-size:12px;color:#9fd8ff">'+esc(r.record_id)+
+    '</span> '+badge(r)+'</div>'+
+    '<div class="k">record</div><p>'+esc(r.text||'')+'</p>'+
+    '<div class="k">evidence</div><p>'+esc(r.evidence_note||'—')+'</p>'+
+    '<div class="k">provenance</div><p><code>'+
+    esc([s.triage_file||s.ingest_source||'',s.merge_block_file||'',s.chat_ref||'',(s.triage_sha256||s.source_hash||'').slice(0,16)].filter(Boolean).join(' · '))+
+    '</code></p>'+
+    '<div class="k">status</div><p>'+esc(r.status)+
+    (r.status==='PROPOSED'?' — proposed by the machine, never asserted. Needs owner judgment: '+esc((r.needs_judgment||[]).join(', ')):'')+
+    (r.cls==='V'?' — <b>reported, unverified.</b> The harvest claimed proof; the evidence was chat-internal.':'')+'</p>'+
+    '<div class="k">block</div><p>'+esc(r.block||'—')+'</p>'+
+    '<p style="margin-top:10px"><button class="know-chip" id="know-back">← back to results</button></p></div>';
+  document.getElementById('know-back').addEventListener('click',refresh);
+}
+
+function renderChips(){
+  var box=document.getElementById('know-chips');
+  var counts={};
+  (snap.records||[]).forEach(function(r){ if(r.status!=='INCOMPLETE'&&r.cls) counts[r.cls]=(counts[r.cls]||0)+1; });
+  box.innerHTML=Object.keys(CLASS_LABELS).map(function(c){
+    return '<button class="know-chip'+(activeClass===c?' on':'')+'" data-c="'+c+'">'+c+
+      '<span class="n">'+(counts[c]||0)+'</span></button>';
+  }).join('');
+  box.querySelectorAll('.know-chip').forEach(function(el){
+    el.addEventListener('click',function(){
+      activeClass=(activeClass===el.getAttribute('data-c'))?null:el.getAttribute('data-c');
+      renderChips(); refresh();
+    });
+  });
+}
+
+function renderSettings(){
+  var el=document.getElementById('know-settings');
+  var s=snap.settings;
+  if(!s){ el.innerHTML='<span style="color:#8a97ad">no settings in snapshot</span>'; return; }
+  var p=s.presentation||{};
+  el.innerHTML='scope <b>'+esc(s.scope)+'</b> · sources <b>'+esc((s.ingestion_sources||[]).join(', '))+'</b><br>'+
+    'view <b>'+esc(p.default_view)+'</b> · density <b>'+esc(p.density)+'</b> · group by <b>'+esc(p.group_by)+'</b><br>'+
+    'command bar <b>'+esc((s.command_bar_placement||[]).join(' + '))+'</b> · auto-ingest <b>'+(s.auto_ingest?'on':'off')+'</b>'+
+    '<br><span style="color:#8a97ad">frozen at creation · v'+esc(s.settings_version)+'</span>';
+}
+
+function refresh(){
+  loadSnap(function(){
+    renderChips(); renderSettings();
+    var note=document.getElementById('know-note');
+    if(snap.missing){
+      document.getElementById('know-meta').textContent='';
+      document.getElementById('know-results').innerHTML=
+        '<div class="know-empty">No knowledge snapshot deployed yet. Export one with '+
+        '<code>knowledge_command.export_snapshot()</code> and deploy it next to this page.</div>';
+      note.textContent='';
+      return;
+    }
+    note.textContent='Snapshot: '+(snap.records||[]).length+' records · exported '+
+      esc(snap.exported_at||'unknown')+'. The panel filters and presents — it never classifies.';
+    var q=document.getElementById('know-q').value;
+    renderResults(runCommand(q,snap.records||[]));
+  });
+}
+
+function initKnowledgePanel(){
+  var panel=document.getElementById('know');
+  if(!panel||panel.dataset.kinit) return;
+  panel.dataset.kinit='1';
+  document.getElementById('know-close').addEventListener('click',function(){
+    panel.classList.remove('open');
+  });
+  var q=document.getElementById('know-q');
+  q.addEventListener('input',function(){ refresh(); });
+  q.addEventListener('keydown',function(e){ if(e.key==='Enter') refresh(); });
+  // draggable bar (same pattern as build console)
+  var bar=document.getElementById('know-bar'),px=0,py=0,drag=false;
+  var inner=document.getElementById('know-panel');
+  bar.addEventListener('pointerdown',function(e){ drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
+  bar.addEventListener('pointermove',function(e){
+    if(!drag) return;
+    var r=inner.getBoundingClientRect();
+    inner.style.left=(r.left+e.clientX-px)+'px'; inner.style.top=(r.top+e.clientY-py)+'px';
+    inner.style.right='auto'; px=e.clientX; py=e.clientY;
+  });
+  bar.addEventListener('pointerup',function(){ drag=false; });
+  refresh();
+}
+
+function openKnowledge(){ openPanel('know'); initKnowledgePanel(); }
+
+/* dock registration: add a KNOW category to DOCK_CATS (see the patch script's
+   DOCK_ENTRY), or a tool under RECORDS pointing at openKnowledge. */
+window.openKnowledge=openKnowledge;
+window.initKnowledgePanel=initKnowledgePanel;
+})();
 
 /* ---------- funnel Q&A ---------- */
 const KB=[
