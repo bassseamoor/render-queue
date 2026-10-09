@@ -577,6 +577,12 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
  * Replaces the old 7-category nav. Mobile-first: bottom tab bar, single
  * focused tool view, dense scannable rows in the bin. */
 .tabs-on nav.nav{display:none!important}
+/* Simplified UI (2026-10-09): one screen, everything visible. */
+.tabs-on #app{grid-template-columns:minmax(0,1fr)!important}
+.tabs-on #main{max-width:1280px;width:100%;margin:0 auto}
+.tabs-on #bin-results .trows{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+@media (max-width:760px){.tabs-on #bin-results .trows{grid-template-columns:minmax(0,1fr)}}
+@media (min-width:761px){.tabs-on #app:not(.activity-hidden){padding-right:360px}}
 .tabs-on #menu{display:none!important}
 .tabs-on .inventory{display:none!important}
 .tabs-on .category-top{display:none!important}
@@ -8979,12 +8985,12 @@ var COMPS = [
  * you:      you, in your world, with what you make
  * discover: places, tools, experiences — the store-like shelf */
 var TABS = [
-  {id:'bin',      name:'Bin',      icon:'\u25A3', tag:'Every part in one searchable bin.'},
+  {id:'bin',      name:'Everything', icon:'\u25A3', tag:'Every part on one screen.'} /* simplified UI: one screen */,
   {id:'stream',   name:'Stream',   icon:'\u2726', tag:'The magical stream of ideas.'},
   {id:'you',      name:'You',      icon:'\u25C9', tag:'You, in your world, with what you make.'},
   {id:'discover', name:'Discover', icon:'\u25C8', tag:'Places, tools, and experiences.'}
 ];
-function tabName(id){ for(var i=0;i<TABS.length;i++) if(TABS[i].id===id) return TABS[i].name; return 'Bin'; }
+function tabName(id){ for(var i=0;i<TABS.length;i++) if(TABS[i].id===id) return TABS[i].name; return 'Everything'; } /* simplified UI: one screen */
 /* every component lives on exactly one tab */
 function compTab(c){
   if(c.id==='stream'||c.id==='wonder-feed') return 'stream';
@@ -9102,17 +9108,9 @@ function renderEvents(){
 
 /* ---------------- tab bar ---------------- */
 function ensureTabbar(){
+  /* Simplified UI: one screen holds everything — no section tabs. */
   var bar=$('tabbar');
-  if(!bar){
-    bar=document.createElement('nav');
-    bar.id='tabbar'; bar.setAttribute('aria-label','Sections');
-    document.body.appendChild(bar);
-  }
-  bar.innerHTML=TABS.map(function(t){
-    return '<button data-tab="'+t.id+'" class="'+(UI.tab===t.id&&!UI.focus?'on':'')+'" aria-current="'+(UI.tab===t.id?'page':'false')+'">'+
-      '<span class="tb-ic" aria-hidden="true">'+t.icon+'</span><span>'+t.name+'</span></button>';
-  }).join('');
-  bar.style.display=UI.focus?'none':'';
+  if(bar) bar.style.display='none';
 }
 function selectTab(id){
   if(UI.focus) closeComponent(UI.focus, true);
@@ -9239,11 +9237,63 @@ function discoverView(){
   return '<div class="tab-head"><h2>'+t.name+'</h2><p>'+t.tag+'</p></div>'+
     '<div class="heros">'+cards.map(function(c){return heroHTML(c,false);}).join('')+'</div>';
 }
+/* ---------------- everything on one screen ----------------
+ * Simplified UI: open the link and get straight to work. No section tabs,
+ * no hunting. Search on top, your stuff next, then every part as one flat
+ * list. Opening a part still takes you straight into it, full-bleed. */
+function shelfStrip(){
+  var s=shelfData();
+  function names(list, fmt, n){
+    return list.slice(0,n||3).map(function(e){
+      return '<span class="chip">'+esc(fmt(e))+'</span>';
+    }).join('');
+  }
+  function wname(e){ var g=e&&e.genome||{};
+    return (g.type||'wonder')+' \u00B7 '+(g.seed||''); }
+  function pname(p){ return (p&&p.name)||'Untitled part'; }
+  var html='<div class="shelf">';
+  html+='<div class="shelf-card"><div class="shelf-top"><strong>Saved wonders</strong>'+
+    '<span class="count">'+s.wonders.length+'</span></div>';
+  html+=s.wonders.length
+    ? '<div class="chips">'+names(s.wonders,wname)+'</div><button class="vp-ghost" data-open="wonder-feed">Open Wonder Feed</button>'
+    : '<p class="dim">Nothing saved yet.</p><button class="vp-ghost" data-open="wonder-feed">Find wonders</button>';
+  html+='</div>';
+  html+='<div class="shelf-card"><div class="shelf-top"><strong>Canvas parts</strong>'+
+    '<span class="count">'+s.parts.length+'</span></div>';
+  html+=s.parts.length
+    ? '<div class="chips">'+names(s.parts,pname)+'</div><button class="vp-ghost" data-open="more-canvas">Open More Canvas</button>'
+    : '<p class="dim">No parts mixed yet.</p><button class="vp-ghost" data-open="more-canvas">Open More Canvas</button>';
+  html+='</div></div>';
+  return html;
+}
+function recStrip(){
+  if(!window.Smart) return '';
+  var ids=Smart.recommend(3,function(c){ return shownComp(c); });
+  if(!ids.length) return '';
+  return '<section class="bin-sec"><h3>Up next for you</h3><p>Based on what you\u2019ve been opening.</p>'+
+    '<div class="trows">'+ids.map(function(id){ return rowHTML(find(id)); }).join('')+'</div></section>';
+}
+function everythingResults(q){
+  var items=COMPS.filter(function(c){
+    if(!shownComp(c)) return false;
+    if(!q) return true;
+    if(window.Smart) return Smart.matches(c,q,familyText(c));
+    return familyText(c).indexOf(q)>=0;
+  });
+  if(!items.length) return '<div class="empty">No parts match \u201C'+esc(UI.query||'')+'\u201D.</div>';
+  return '<div class="trows">'+items.map(rowHTML).join('')+'</div>';
+}
+function everythingView(){
+  return '<div class="tab-head"><h2>Everything</h2><p>Every part on one screen. Search, then open \u2014 the part itself is the interface.</p>'+
+    '<input id="bin-search" type="search" placeholder="What do you want to work on\u2026" value="'+esc(UI.query||'')+'" aria-label="Search everything"></div>'+
+    continueSection()+
+    recStrip()+
+    '<section class="bin-sec"><h3>Your shelf</h3><p>Everything you made and kept.</p>'+shelfStrip()+'</section>'+
+    '<section class="bin-sec"><h3>All parts</h3><p>Every tool, world, and playground \u2014 one list.</p>'+
+    '<div id="bin-results">'+everythingResults((UI.query||'').toLowerCase())+'</div></section>';
+}
 function tabView(tab){
-  if(tab==='stream') return streamView();
-  if(tab==='you') return youView();
-  if(tab==='discover') return discoverView();
-  return binView();
+  return everythingView();
 }
 
 /* ---------------- focused view: the tool, full-bleed, no card chrome ----------------
@@ -9332,7 +9382,7 @@ function wireStage(){
     s.addEventListener('input',function(){
       UI.query=s.value;
       var r=$('bin-results');
-      if(r) r.innerHTML=binResults(UI.query.toLowerCase());
+      if(r) r.innerHTML=everythingResults(UI.query.toLowerCase());
     });
   }
 }
