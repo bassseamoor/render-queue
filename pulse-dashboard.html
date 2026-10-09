@@ -750,7 +750,7 @@ body.chrome-hidden #chrome-pull{ transform:translate(-50%,0); }
 #tabview .focus-nav { width: auto !important; }
 
 header .pill{color:#06121f;border-color:rgba(6,18,31,.28);background:rgba(6,18,31,.08)}header .icon-btn{color:#06121f}header #menu{color:#06121f}</style>
-\n<link rel="stylesheet" href="pulse-beam.css?v=20261006-beam1">\n</head>
+</head>
 <body>
 <header><button id="menu" class="icon-btn menu-btn" aria-label="Open project navigation" aria-expanded="false">☰</button><div class="brand"><strong>MOOR</strong><span>/ Project Pulse</span></div><div class="head-right"><span class="desktop-status"><i class="dot"></i>Snapshot · no live connection</span><span class="pill">Functional prototype</span><button id="src-toggle" class="btn" aria-label="Underlying source and logic" title="Underlying source and logic — for builders and AIs">&lt;/&gt;</button><button id="activity-toggle" class="btn" aria-expanded="true" aria-controls="activity">Activity</button></div></header>
 <div id="app" class="app"><button class="scrim" id="scrim" aria-label="Close project navigation"></button>
@@ -8862,6 +8862,12 @@ var COMPS = [
    why:'You do not open your workspace. You enter it.',
    technical:'Blueprint DEV-01 rev1, sealed funnel 1a8f7c8549fbd516', source:'blueprint-devenv.html', inMoor:false,
    toolGap:'Product build not started — blueprint only per PL order.'},
+  {id:'devroom', tool:'devroom', toolSrc:'pulse-tools/tool-devroom.js', page:'dev-01-environment.html', version:'1.0', cats:['interface'], icon:'\u25C8', label:'Dev Room',
+   short:'Your dev room: the empty cathedral, live. Open the link, get straight to work.',
+   job:'Enter the warehouse-scale dev room — the empty cathedral with the six-monitor command node. This is where you work; the whole Pulse catalog stays one tap behind you.',
+   why:'You said: cut the chrome, open the link, get straight to work.',
+   technical:'DEV-01 live environment (dev-01-environment.html)', source:'dev-01-environment.html', inMoor:false,
+   toolGap:'Monitors are blank by design — what shows on them is the next build.'},
   {id:'concierge', tool:'concierge', toolSrc:'pulse-tools/tool-concierge.js', page:'concierge-cut.html', version:'1.0', cats:['interface'], icon:'\u25C8', label:'Concierge Cut',
    short:'The assistant earns the right to recommend, then surfaces paid tools at the moment of need.',
    job:'The conversational commerce pattern, packaged as MOOR doctrine: be useful first, then one low-pressure mention of a paid tool at the exact moment of felt need, framed as information. The platform takes a vendor cut; the user is never charged.',
@@ -9463,8 +9469,14 @@ function toast(msg){
 
 if(window.Smart) Smart.init(COMPS);
 render();
-try{ var _dlTool=new URLSearchParams(location.search).get('tool');
-  if(_dlTool && find(_dlTool)) openComponent(_dlTool); }catch(e){}
+/* Deep link (?tool=) and the dev-room default land after every tool adapter
+ * has registered, so the tool mounts instead of falling back to a card. */
+window.addEventListener('DOMContentLoaded',function(){
+  try{ var _dlTool=new URLSearchParams(location.search).get('tool');
+    if(_dlTool && find(_dlTool)){ openComponent(_dlTool); return; }
+    if(find('devroom')) openComponent('devroom');
+  }catch(e){}
+});
 if(window.Smart) Smart.onReady(function(){
   var r=$('bin-results');
   if(r&&(UI.query||'')&&UI.tab==='bin'&&!UI.focus) r.innerHTML=binResults(UI.query.toLowerCase());
@@ -20108,6 +20120,37 @@ TOOLS.blueprintdevenv={mount:mount,unmount:unmount};
 })();
 </script>
 <script>
+/* Dev Room — Pulse adapter.
+ * Mounts the standalone dev-01-environment.html (DEV-01, the empty
+ * cathedral: his dev room) in an isolated iframe, full-bleed, so its
+ * globals never touch the dashboard's.
+ *
+ * TAGS: tool:devroom | cat:interface | kind:environment |
+ *       dep:none | prov:funnel |
+ *       src:dev-01-environment.html
+ */
+(function(){
+'use strict';
+var frame=null;
+function mount(host,c){
+  host.innerHTML='';
+  frame=document.createElement('iframe');
+  frame.src='dev-01-environment.html?v='+encodeURIComponent((c&&c.version)||'1');
+  frame.title=(c&&c.label)||'Dev Room';
+  frame.setAttribute('loading','eager');
+  frame.setAttribute('allow','fullscreen');
+  frame.style.cssText='width:100%;height:calc(100dvh - 60px);min-height:520px;border:0;display:block;'+
+    'background:#050505;';
+  host.appendChild(frame);
+}
+function unmount(){
+  if(frame&&frame.parentNode)frame.parentNode.removeChild(frame);
+  frame=null;
+}
+TOOLS.devroom={mount:mount,unmount:unmount};
+})();
+</script>
+<script>
 /* Funnel Fabric — Pulse tool.
  * Describe what you want a funnel for (messy is fine) -> the Fabric compiles
  * a funnel definition (stages, per-stage questions, usage plan, done criteria)
@@ -21630,7 +21673,7 @@ setInterval(function(){
 },180000);
 </script>
 <script src="wonder-repair-funnel.js?v=20261006-scroll-repair3"></script>
-<script src="effects-funnel.js?v=20261006-fx2"></script>\n<script src="pulse-beam-audit.js?v=20261006-beam1"></script>\n<script src="pulse-beam-component-adapter.js?v=20261006-beam1"></script>\n<script src="pulse-beam.js?v=20261006-beam1"></script>
+<script src="effects-funnel.js?v=20261006-fx2"></script>
 </body>
 </html>
 
