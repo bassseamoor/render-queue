@@ -37,7 +37,15 @@
         border:1px solid rgba(255,255,255,.08);border-radius:99px;padding:9px 16px;white-space:nowrap}
   /* tool quick-list: ≤6, 44px touch targets */
   #tools{position:fixed;right:14px;top:50%;transform:translateY(-50%);z-index:10;
-         display:flex;flex-direction:column;gap:8px}
+         display:flex;flex-direction:column;gap:8px;max-height:92vh;max-height:92dvh;overflow-y:auto;
+         scrollbar-width:thin}
+  /* short viewports (iPhone landscape): compact wrap row, bottom-right, nothing off-screen */
+  @media (max-height:540px){
+    #tools{top:auto;bottom:10px;right:10px;transform:none;max-height:none;overflow:visible;
+           flex-direction:row;flex-wrap:wrap;justify-content:flex-end;max-width:72vw;gap:6px}
+    #tools button{min-height:40px;min-width:0;padding:0 11px;font-size:11px;border-radius:10px}
+    #hint{display:none}
+  }
   #tools button,#vantage button{
         min-height:44px;min-width:44px;padding:0 14px;border-radius:12px;cursor:pointer;
         font-size:12px;letter-spacing:.06em;color:#d8d4c8;
@@ -1128,24 +1136,17 @@ const slotSpots=[]; // {x,z,ry} on interior faces — shafts hang from these
   scene.add(imR); scene.add(imS);
 }
 /* ---------- glass display band: wraps all four walls, a band — not full-wall ----------
- * Number-scroll character streams on glass, one canvas per wall (own seed/phase). */
-const bandStreams=[];
+ * Clean glass. The number-scroll lives on the monitor screens, not the walls. */
 {
   const bandGlassOpts={color:0x9fb4c8,transparent:true,opacity:0.16,roughness:0.06,
     metalness:0,clearcoat:1,side:THREE.DoubleSide};
   C.glassBand().forEach(sg=>{
-    const [cc,cg]=makeCanvas(2048,80);
-    const tex=canvasTex(cc);
-    const mat=new THREE.MeshPhysicalMaterial(Object.assign({},bandGlassOpts,{
-      emissive:0xffffff,emissiveMap:tex,emissiveIntensity:0.85}));
+    const mat=new THREE.MeshPhysicalMaterial(bandGlassOpts);
     const m=new THREE.Mesh(
       new THREE.BoxGeometry(sg.wFt,C.GLASS_BAND.heightFt,C.GLASS_BAND.thicknessFt),mat);
     m.position.set(sg.xFt,sg.yFt,sg.zFt);
     m.rotation.y=sg.ryDeg*Math.PI/180;
     scene.add(m);
-    const stream=window.CharStream.create(cc,{seed:'band-'+sg.id});
-    stream.start();
-    bandStreams.push({stream:stream,tex:tex,id:sg.id});
   });
   // corner posts keep the band continuous around the room
   const postMat=new THREE.MeshPhysicalMaterial({color:0x9fb4c8,transparent:true,opacity:0.22,
@@ -1346,6 +1347,11 @@ C.monitorArc().forEach((t,i)=>{
   grp.add(bezel); // slim bezel
   const [mc,mg]=makeCanvas(512,288);
   const tex=canvasTex(mc);
+  // number-scroll background, own seed per screen — the stream lives ON the screens
+  const [msc,msg]=makeCanvas(256,144);
+  const mstream=window.CharStream.create(msc,{seed:'monitor-'+def.key});
+  mstream.start();
+  mg._streamCanvas=msc; mg._stream=mstream;
   const scr=new THREE.Mesh(new THREE.PlaneGeometry(t.screenWft,t.screenHft),
     new THREE.MeshBasicMaterial({map:tex,toneMapped:false}));
   scr.position.z=0.045; grp.add(scr);
@@ -1549,15 +1555,13 @@ function renderKeyList(){
     el.appendChild(d);
   });
 }
-function drawMonitorBooting(g,title){
-  g.fillStyle='#060708'; g.fillRect(0,0,512,288);
-  g.fillStyle='#8a8478'; g.font='600 20px '+FONT; g.textAlign='center';
-  g.fillText(title.toUpperCase(),256,140);
-  g.fillStyle='#5d594f'; g.font='14px '+FONT; g.fillText('loading…',256,170);
+function paintMonitorBg(g){
+  const sc=g._streamCanvas;
+  if(sc){ g.globalAlpha=0.5; g.drawImage(sc,0,0,512,288); g.globalAlpha=1; }
+  else { g.fillStyle='#060708'; g.fillRect(0,0,512,288); return; }
+  g.fillStyle='rgba(5,6,8,0.80)'; g.fillRect(0,0,512,288);
 }
-function drawMonitorLabeled(g,title,big,lines,source,ok){
-  g._summary={title:title,big:big,lines:lines,source:source,ok:ok};
-  g.fillStyle='#060708'; g.fillRect(0,0,512,288);
+function paintMonitorContent(g,title,big,lines,source,ok){
   g.fillStyle='#8a8478'; g.font='600 17px '+FONT; g.textAlign='left';
   g.fillText(title.toUpperCase(),22,34);
   g.fillStyle='#0052FF'; g.fillRect(22,44,44,3);
@@ -1574,6 +1578,30 @@ function drawMonitorLabeled(g,title,big,lines,source,ok){
   }
   g.fillStyle='#5d594f'; g.font='13px '+FONT; g.textAlign='center';
   g.fillText('source: '+source,256,272);
+}
+function paintMonitorBooting(g,title){
+  g.fillStyle='#8a8478'; g.font='600 20px '+FONT; g.textAlign='center';
+  g.fillText(title.toUpperCase(),256,140);
+  g.fillStyle='#5d594f'; g.font='14px '+FONT; g.fillText('loading…',256,170);
+}
+function drawMonitorBooting(g,title){
+  g._summary=null;
+  paintMonitorBg(g);
+  paintMonitorBooting(g,title);
+}
+function drawMonitorLabeled(g,title,big,lines,source,ok){
+  g._summary={title:title,big:big,lines:lines,source:source,ok:ok};
+  paintMonitorBg(g);
+  paintMonitorContent(g,title,big,lines,source,ok);
+}
+/* full repaint: animated stream bg + current content, every frame */
+function repaintMonitor(mon){
+  const g=mon.userData.g;
+  paintMonitorBg(g);
+  const s=g._summary;
+  if(s) paintMonitorContent(g,s.title,s.big,s.lines,s.source,s.ok);
+  else paintMonitorBooting(g,mon.userData.def.title);
+  mon.userData.tex.needsUpdate=true;
 }
 async function fetchJSON(url){
   const r=await fetch(url,{cache:'no-store'});
@@ -1757,7 +1785,8 @@ drawTimeline();
 }
 
 /* ---------- camera: minecraft creative-style free camera ---------- */
-const player={x:0,y:5.5,z:47,yaw:0,pitch:-0.04}; // chair vantage, facing the command node
+const _phoneEarly=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+const player=_phoneEarly?{x:0,y:11,z:62,yaw:0,pitch:-0.17}:{x:0,y:5.5,z:47,yaw:0,pitch:-0.04}; // chair vantage, facing the command node
 function applyCam(){
   clampPlayer();
   camera.position.set(player.x,player.y,player.z);
@@ -1952,7 +1981,7 @@ function holdBtn(el,set){
 }
 holdBtn(upBtn,v=>flyUp=v); holdBtn(dnBtn,v=>flyDown=v);
 function syncToggles(){
-  try{ bandStreams.forEach(b=>{ stillMode?b.stream.stop():b.stream.start(); }); }catch(e){}
+  try{ monitors.forEach(m=>{ const s=m.userData.g._stream; if(s){ stillMode?s.stop():s.start(); } }); }catch(e){}
   stillBtn.classList.toggle('on',stillMode);
   stillBtn.setAttribute('aria-pressed',String(stillMode));
   document.getElementById('vantage').classList.toggle('show',stillMode);
@@ -2008,7 +2037,7 @@ function tick(){
     dustGeo.attributes.position.needsUpdate=true;
   }
   if(!stillMode){
-    for(let bi=0;bi<bandStreams.length;bi++) bandStreams[bi].tex.needsUpdate=true;
+    for(let mi=0;mi<monitors.length;mi++) repaintMonitor(monitors[mi]);
     for(let ai=0;ai<arms.length;ai++){
       const a=arms[ai]; if(!a.tgt) continue;
       const k=1-Math.pow(0.002,dt);
@@ -2032,7 +2061,7 @@ catch(e){ try{ applyLightPreset('cinematic'); }catch(e2){} }
 try{ applyArmPose(localStorage.getItem(LS_ARM)||'rest',true); }
 catch(e){ try{ applyArmPose('rest',true); }catch(e2){} }
 window.__room2={
-  glassBand:function(){ return bandStreams.map(b=>b.id); },
+  glassBand:function(){ return C.glassBand().map(s=>s.id); },
   light:function(n){ if(n) applyLightPreset(n); return lightPreset; },
   arm:function(n){ if(n) applyArmPose(n); return armPreset; },
   armJoints:function(){ return arms.map(a=>({sx:+a.cur.sx.toFixed(3),ex:+a.cur.ex.toFixed(3)})); },
