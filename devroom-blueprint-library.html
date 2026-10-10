@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MOOR · Blueprint Library</title>
+<style>
+:root{color-scheme:dark;--bg:#02060b;--panel:#07111a;--line:rgba(177,220,245,.16);--text:#f3f8fc;--muted:#8398a8;--ice:#a8e8ff;--green:#4be0a3;--amber:#ffc76a}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+body{min-height:100vh;background:radial-gradient(1000px 550px at 50% -140px,rgba(65,151,190,.12),transparent 70%),var(--bg)}
+header{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line);background:rgba(2,6,11,.88);backdrop-filter:blur(18px)}
+.mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;border:1px solid var(--line);color:var(--ice);font-size:18px}.title{min-width:0}.title strong{display:block;font-size:14px}.title span{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.gate{margin-left:auto;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--green);border:1px solid rgba(75,224,163,.25);border-radius:999px;padding:7px 9px}
+main{display:grid;grid-template-columns:minmax(280px,380px) minmax(0,1fr);gap:12px;max-width:1480px;margin:0 auto;padding:12px}
+.sidebar,.detail{border:1px solid var(--line);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent),var(--panel);border-radius:18px;min-width:0}
+.sidebar{padding:12px;align-self:start;position:sticky;top:78px}.summary{padding:10px 9px 14px;border-bottom:1px solid var(--line);margin-bottom:8px}.summary b{font-size:18px}.summary p{margin:4px 0 0;color:var(--muted);font-size:11px}
+.list{display:flex;flex-direction:column;gap:6px;max-height:70vh;overflow:auto}
+.bp{width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--text);padding:10px;border-radius:12px;cursor:pointer}
+.bp:hover,.bp.on{background:rgba(168,232,255,.06);border-color:var(--line)}
+.bp strong{display:block;font-size:12px}.bp span{display:block;color:var(--muted);font-size:9px;margin-top:2px}
+.pill{display:inline-block;margin-top:6px;margin-right:4px;border-radius:999px;padding:3px 7px;font-size:8px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);color:var(--ice)}
+.pill.sealed{color:var(--green);border-color:rgba(75,224,163,.35)}
+.pill.confirmed{color:var(--amber);border-color:rgba(255,199,106,.4)}
+.detail{padding:18px 20px 30px}.eyebrow{color:var(--ice);font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+.detail h1{font-size:clamp(22px,3.5vw,36px);line-height:1.1;letter-spacing:-.02em;margin:6px 0 10px}
+.meta{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 16px}.meta span{font-size:9px;border:1px solid var(--line);border-radius:999px;padding:5px 8px;color:var(--muted)}
+pre.content{white-space:pre-wrap;word-break:break-word;padding:14px;border-radius:12px;background:#03080d;border:1px solid var(--line);color:#c7d5de;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:60vh;overflow:auto}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+button.act{border:1px solid var(--line);background:rgba(168,232,255,.07);color:var(--text);border-radius:12px;padding:12px 18px;font-size:13px;cursor:pointer}
+button.act.primary{background:rgba(75,224,163,.14);border-color:rgba(75,224,163,.4)}
+button.act:disabled{opacity:.45;cursor:default}
+.note{color:var(--muted);font-size:11px;margin-top:10px}
+.empty{color:var(--muted);padding:30px}
+@media(max-width:780px){main{grid-template-columns:1fr}.sidebar{position:static}.list{max-height:40vh}}
+</style>
+</head>
+<body>
+<header><div class="mark">▤</div><div class="title"><strong>Blueprint Library</strong><span>your blueprints · plain reading</span></div><div class="gate">read only · release gated</div></header>
+<main>
+<aside class="sidebar"><div class="summary"><b id="count">—</b><p>Your funnel blueprints. Nothing here builds anything — confirming sends it to the build console for your review.</p></div><div class="list" id="list"></div></aside>
+<article class="detail" id="detail"><div class="empty">Pick a blueprint on the left to read it.</div></article>
+</main>
+<script>
+(function(){
+'use strict';
+var list=document.getElementById('list'),detail=document.getElementById('detail'),count=document.getElementById('count');
+var lib=null,selected=null,cache={};
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function confirmed(id){try{return !!localStorage.getItem('devroom.bp.confirm.'+id);}catch(e){return false;}}
+function pills(x){
+  var h='<i class="pill'+(x.receipt?' sealed':'')+'">'+esc(x.receipt?'sealed':'listed')+'</i>';
+  if(x.receipt) h+='<i class="pill">'+esc(x.receipt.slice(0,12))+'</i>';
+  if(confirmed(x.id)) h+='<i class="pill confirmed">confirmed by you</i>';
+  return h;
+}
+function renderList(){
+  list.innerHTML='';
+  count.textContent=lib.blueprints.length+' blueprints';
+  lib.blueprints.forEach(function(x){
+    var b=document.createElement('button');
+    b.className='bp'+(selected===x.id?' on':'');
+    b.innerHTML='<strong>'+esc(x.title)+'</strong><span>'+esc(x.date)+' · '+Math.round(x.size/1024)+' KB</span>'+pills(x);
+    b.onclick=function(){select(x);};
+    list.appendChild(b);
+  });
+}
+function select(x){
+  selected=x.id;renderList();
+  detail.innerHTML='<div class="empty">Loading '+esc(x.title)+'…</div>';
+  load(x).then(function(text){
+    var isC=confirmed(x.id);
+    detail.innerHTML=
+      '<div class="eyebrow">'+esc(x.status)+'</div>'+
+      '<h1>'+esc(x.title)+'</h1>'+
+      '<div class="meta"><span>'+esc(x.date)+'</span>'+(x.receipt?'<span>receipt '+esc(x.receipt)+'</span>':'')+'<span>'+esc(x.id)+'</span></div>'+
+      '<pre class="content">'+esc(text)+'</pre>'+
+      '<div class="actions">'+
+      (isC
+        ? '<button class="act" disabled>Confirmed ✓ — recorded on this device</button><button class="act primary" id="toBuild">Send to build console →</button>'
+        : '<button class="act primary" id="confirmBtn">Confirm this blueprint</button>')+
+      '</div>'+
+      (isC
+        ? '<p class="note">Confirmed. Sending it to the build console opens your build surface with this blueprint attached — nothing builds until you say so there.</p>'
+        : '<p class="note">Confirming records your decision on this device. It does not build anything.</p>');
+    var cb=document.getElementById('confirmBtn');
+    if(cb) cb.onclick=function(){confirmBp(x);};
+    var sb=document.getElementById('toBuild');
+    if(sb) sb.onclick=function(){sendToBuild(x);};
+  }).catch(function(e){
+    detail.innerHTML='<div class="empty">Could not load blueprint: '+esc(e.message)+'</div>';
+  });
+}
+function load(x){
+  if(cache[x.id]) return Promise.resolve(cache[x.id]);
+  return fetch(x.file,{cache:'no-store'}).then(function(r){
+    if(!r.ok) throw new Error(x.file+' · '+r.status);
+    return r.text();
+  }).then(function(t){cache[x.id]=t;return t;});
+}
+function confirmBp(x){
+  try{localStorage.setItem('devroom.bp.confirm.'+x.id,JSON.stringify({at:new Date().toISOString(),receipt:x.receipt||null,title:x.title}));}catch(e){}
+  select(x);
+}
+function sendToBuild(x){
+  var msg='Nothing happened — the build console is not reachable from here. Your confirmation is recorded; tell Muse to proceed.';
+  try{
+    var pw=window.parent;
+    if(pw&&pw!==window&&typeof pw.__openBuild==='function'){
+      var ta=pw.document.getElementById('bld-order');
+      if(ta){
+        ta.value='BUILD FROM BLUEPRINT (owner-confirmed in dev-room library)\n\nBlueprint: '+x.title+'\nID: '+x.id+'\nReceipt: '+(x.receipt||'none')+'\nConfirmed: '+new Date().toISOString()+'\n\nBuild exactly what this blueprint specifies. Nothing beyond it.';
+        try{ta.focus();}catch(e){}
+      }
+      pw.__openBuild();
+      msg=null;
+    }
+  }catch(e){}
+  if(msg){
+    detail.insertAdjacentHTML('beforeend','<p class="note">'+esc(msg)+'</p>');
+  }
+}
+fetch('devroom-blueprint-library.json',{cache:'no-store'}).then(function(r){
+  if(!r.ok) throw new Error('devroom-blueprint-library.json · '+r.status);
+  return r.json();
+}).then(function(j){lib=j;renderList();}).catch(function(e){
+  detail.innerHTML='<div class="empty">Blueprint library unavailable: '+esc(e.message)+'</div>';
+});
+})();
+</script>
+</body>
+</html>
