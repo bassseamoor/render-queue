@@ -111,6 +111,19 @@
   #fq-pat{flex:1;min-height:40px;border-radius:10px;border:1px solid rgba(255,255,255,.14);
     background:rgba(255,255,255,.05);color:#fff;font-size:13px;padding:0 12px}
   #fq-note{font-size:11px;margin-top:8px}
+  #mesh-sec{margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
+  #mesh-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.2em;color:#8a97ad;margin-bottom:8px}
+  #mesh-line{font-size:11px;margin-bottom:8px}
+  #mesh-list{display:flex;flex-direction:column;gap:8px;max-height:22vh;overflow-y:auto;margin-bottom:8px}
+  .mesh-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px;font-size:13px;color:#e8e4da}
+  .mesh-item .mesh-b{font-weight:600}
+  .mesh-item .mesh-s{font-size:11px;letter-spacing:.12em;margin-left:8px}
+  .mesh-ready{color:#5eead4}.mesh-staged{color:#e8b34a}.mesh-conflict{color:#ff6b6b}
+  .mesh-item .mesh-n{color:#8a97ad;font-size:12px;display:block;margin-top:2px}
+  #mesh-foot{display:flex;gap:8px;flex-wrap:wrap}
+  #mesh-foot button{min-height:40px;padding:0 14px;border-radius:10px;cursor:pointer;font-size:13px;
+    background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.35);color:#00D4FF}
+  #mesh-note{font-size:11px;margin-top:8px}
   /* settings */
   .set-sec{margin-bottom:18px}
   .set-sec h3{font-size:12px;letter-spacing:.2em;color:#8a97ad;margin-bottom:10px}
@@ -515,6 +528,15 @@
         <button id="fq-savesync">save</button>
       </div>
       <p id="fq-note" class="muted">Nothing is sent on its own. Copy items into chat, or turn on sync and just tell Buster to check the queue.</p>
+    </div>
+    <div id="mesh-sec">
+      <div id="mesh-head"><span>COLONY MESH</span><span id="mesh-count">checking\u2026</span></div>
+      <div id="mesh-line" class="muted"></div>
+      <div id="mesh-list"></div>
+      <div id="mesh-foot">
+        <button id="mesh-refresh">refresh</button>
+      </div>
+      <p id="mesh-note" class="muted">Staged colony builds and what is ready to integrate. Updated by the mesh watch every 4h.</p>
     </div>
   </div>
 </div>
@@ -3452,6 +3474,7 @@ function toast(msg){
 function openPanel(id){
   document.querySelectorAll('.h-overlay').forEach(o=>o.classList.remove('open'));
   const o=$(id); if(o) o.classList.add('open');
+  if(id==='funnel-ov'&&window.meshPull) window.meshPull();
 }
 window.openPanel=openPanel; /* fix 2026-10-09: "/" hotkey (classic script) needs this global */
 function closeOverlays(){
@@ -4123,7 +4146,7 @@ function wireFunnel(){
     };
   }
   const fb=$('funnel-btn'); if(fb) fb.onclick=()=>openPanel('funnel-ov');
-  fqWire();
+  fqWire(); meshWire();
 }
 
 /* ---------- funnel queue for Buster: a queue, never a send path ---------- */
@@ -4248,6 +4271,37 @@ function fqWire(){
   fqSyncStat(fqPat()?'sync: on':'sync: off');
   fqRender();
 }
+
+/* ---------- colony mesh status: staged builds / ready for integration ---------- */
+var MESH_URL='https://api.github.com/repos/bassseamoor/render-queue/contents/queues/colony-mesh-status.json?ref=funnel-queue';
+function meshPull(){
+  var c=$('mesh-count'); if(c) c.textContent='checking\u2026';
+  fetch(MESH_URL,{headers:{'Accept':'application/vnd.github+json'}}).then(function(r){
+    if(r.status===404){ meshRender(null,'no status yet'); return null; }
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){
+    if(!j) return;
+    meshRender(JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\s/g,''))))),'');
+  }).catch(function(){ meshRender(null,'refresh failed'); });
+}
+function meshRender(d,err){
+  var c=$('mesh-count'),l=$('mesh-line'),list=$('mesh-list');
+  if(!d){ if(c) c.textContent=err||'unavailable'; if(l) l.textContent=''; if(list) list.innerHTML=''; return; }
+  var staged=d.staged||[];
+  if(c) c.textContent=staged.length?(staged.length+' staged \u00b7 '+d.ready_count+' ready'):'clear';
+  if(l) l.textContent='line '+(d.line_head||'?')+' \u00b7 checked '+String(d.checked_at||'?').replace('T',' ').replace('Z',' UTC');
+  if(!list) return; list.innerHTML='';
+  if(!staged.length){ list.innerHTML='<div class="mesh-item"><span class="mesh-b">nothing staged</span><span class="mesh-n">every colony upload is meshed into the line</span></div>'; return; }
+  staged.forEach(function(s){
+    var cls=s.kind==='ready'?'mesh-ready':(s.kind==='conflict'?'mesh-conflict':'mesh-staged');
+    var div=document.createElement('div'); div.className='mesh-item';
+    div.innerHTML='<span class="mesh-b">'+String(s.branch).replace(/</g,'&lt;')+'</span><span class="mesh-s '+cls+'">'+String(s.kind||'staged').toUpperCase()+'</span>'+(s.note?'<span class="mesh-n">'+String(s.note).replace(/</g,'&lt;')+'</span>':'');
+    list.appendChild(div);
+  });
+}
+function meshWire(){ var rf=$('mesh-refresh'); if(rf) rf.onclick=function(){ meshPull(); }; }
+window.meshPull=meshPull;
 
 /* ---------- settings: lighting, room modes, arm presets ---------- */
 function renderSettings(){
