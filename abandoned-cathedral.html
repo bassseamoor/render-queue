@@ -113,6 +113,34 @@
     background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.4);color:#00D4FF}
   #funnel-submit{width:100%;margin-top:8px;min-height:48px;border-radius:12px;cursor:pointer;font-size:14px;
     background:rgba(0,212,255,.14);border:1px solid rgba(0,212,255,.4);color:#00D4FF}
+  /* self-run + train sections (2026-10-10) */
+  #selfrun-sec,#train-sec{margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
+  #selfrun-head,#train-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.2em;color:#8a97ad;margin-bottom:8px}
+  #selfrun-kindrow{display:flex;gap:14px;margin:8px 0;font-size:13px;color:#e8e4da}
+  #selfrun-kindrow label{display:flex;gap:6px;align-items:center;cursor:pointer}
+  #selfrun-sec input[type=text],#selfrun-sec textarea,#train-sec input[type=text],#train-sec textarea,#train-sec select{
+    width:100%;box-sizing:border-box;margin:4px 0;min-height:40px;border-radius:10px;
+    border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#fff;font-size:13px;padding:8px 12px}
+  #selfrun-sec textarea,#train-prompt{min-height:64px;resize:vertical;font-family:inherit}
+  #train-sec select option{background:#14161c}
+  .sr-row2{display:flex;gap:8px}.sr-row2>*{flex:1}
+  #selfrun-go,#train-go{width:100%;margin-top:8px;min-height:48px;border-radius:12px;cursor:pointer;font-size:14px;
+    background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.45);color:#4ade80}
+  #train-go{background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.45);color:#c4b5fd}
+  #selfrun-track{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+  .sr-stage{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .sr-dot{font-size:11px;font-weight:700;letter-spacing:.05em;padding:3px 9px;border-radius:20px;border:1px solid rgba(255,255,255,.18);color:#5b6474}
+  .sr-dot.on{color:#00D4FF;border-color:rgba(0,212,255,.5)}
+  .sr-dot.done{color:#4ade80;border-color:rgba(74,222,128,.5)}
+  .sr-dot.bad{color:#f87171;border-color:rgba(248,113,113,.5)}
+  .sr-res{font-size:12px;line-height:1.5;color:#e8e4da;background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:8px 10px;word-break:break-word}
+  .sr-res a{color:#00D4FF}
+  #train-cfg{margin:6px 0;font-size:13px;color:#e8e4da}
+  #train-cfg summary{cursor:pointer;color:#8a97ad;font-size:12px;letter-spacing:.1em}
+  #train-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .sr-note{font-size:12px;color:#8a97ad;line-height:1.5;margin-top:8px}
+
   #fq-sec{margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
   #fq-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.2em;color:#8a97ad;margin-bottom:8px}
   #fq-list{display:flex;flex-direction:column;gap:8px;max-height:22vh;overflow-y:auto;margin-bottom:8px}
@@ -549,6 +577,10 @@
   .kpb-row{display:flex;gap:8px;align-items:center;font-size:12px;color:#b8b2a4}
   .kpb-row b{color:#e8e4da;min-width:44px}
   #hud .l{font-size:9px;letter-spacing:.06em;color:#7aa8ff;margin-top:3px}
+  /* overlap fixes (2026-10-10, funnel-moor-devroom-overlap-fix): stop collisions only, no restyle */
+  #train-cfg:not([open])>div{display:none} /* closed <details> content was leaking over #train-go: author .sr-row2 display:flex beats the UA closed-details hiding */
+  body:has(.h-overlay.open) #holo-fab{display:none} /* SPACES fab (z44) must not float above open modal dialogs (z40) */
+  body #ops-mobile-toggle{bottom:144px} /* MOVE was overlapping GYRO on narrow viewports */
   @media (max-width:720px){
     #bp-body{flex-direction:column}
     #bp-notes{width:100%;height:42%;min-width:0}
@@ -581,6 +613,58 @@
       <button id="funnel-send" aria-label="ask">→</button>
     </div>
     <button id="funnel-submit">Submit as funnel commission</button>
+    <div id="selfrun-sec">
+      <div id="selfrun-head"><span>RUN THE FUNNEL</span><span id="selfrun-stat"></span></div>
+      <p class="muted" style="font-size:12px">Submit a commission the autonomous runner finishes with no one in the loop. The runner checks every ~5 minutes.</p>
+      <div id="selfrun-kindrow">
+        <label><input type="radio" name="sr-kind" value="diagnostic" checked> Diagnostic <span class="muted">— count files</span></label>
+        <label><input type="radio" name="sr-kind" value="build"> Website build <span class="muted">— one page</span></label>
+      </div>
+      <div id="sr-diag">
+        <input id="sr-ext" type="text" placeholder="file extension, e.g. py" autocomplete="off" aria-label="file extension">
+        <input id="sr-dir" type="text" placeholder="directory, e.g. ~/workspace/build-pipeline" autocomplete="off" aria-label="directory">
+      </div>
+      <div id="sr-build" hidden>
+        <input id="sr-title" type="text" placeholder="page title (1-80 chars)" autocomplete="off" aria-label="page title">
+        <input id="sr-heading" type="text" placeholder="section heading (1-60 chars)" autocomplete="off" aria-label="section heading">
+        <textarea id="sr-body" placeholder="section body (1-2000 chars)" aria-label="section body"></textarea>
+        <div class="sr-row2">
+          <select id="sr-palette" aria-label="palette">
+            <option value="ink">ink</option><option value="moss">moss</option>
+            <option value="ember">ember</option><option value="tide">tide</option>
+          </select>
+          <select id="sr-layout" aria-label="layout">
+            <option value="single">single</option><option value="two">two</option><option value="hero">hero</option>
+          </select>
+        </div>
+      </div>
+      <button id="selfrun-go">Run the funnel</button>
+      <div id="selfrun-track"></div>
+      <p class="sr-note">Only diagnostics and one-section website builds run on their own. Anything else lands in WAITING — visible, never dropped — for you or Buster to pick up.</p>
+    </div>
+    <div id="train-sec">
+      <div id="train-head"><span>TRAIN</span><span id="train-stat"></span></div>
+      <p class="muted" style="font-size:12px">Stage a training job for the belt — your 4TB SSD rig.</p>
+      <textarea id="train-prompt" placeholder="training prompt — what should the model learn?" aria-label="training prompt"></textarea>
+      <details id="train-cfg">
+        <summary>TRAINING CONFIG</summary>
+        <div class="sr-row2" style="margin-top:6px">
+          <select id="train-model" aria-label="base model">
+            <option value="qwen3:4b">qwen3:4b</option><option value="qwen3:8b">qwen3:8b</option>
+            <option value="qwen2.5-coder:7b">qwen2.5-coder:7b</option><option value="qwen2.5vl:7b">qwen2.5vl:7b</option>
+          </select>
+          <input id="train-dataset" type="text" placeholder="dataset ref" autocomplete="off" aria-label="dataset ref">
+        </div>
+        <div class="sr-row2">
+          <input id="train-epochs" type="text" placeholder="epochs (3)" autocomplete="off" aria-label="epochs">
+          <input id="train-lr" type="text" placeholder="learn rate (0.0002)" autocomplete="off" aria-label="learning rate">
+          <input id="train-bs" type="text" placeholder="batch (4)" autocomplete="off" aria-label="batch size">
+        </div>
+      </details>
+      <button id="train-go">Queue training job</button>
+      <div id="train-list"></div>
+      <p class="sr-note">This machine has no GPU — nothing trains here. Jobs queue for your SSD rig and run when it is online.</p>
+    </div>
     <div id="fq-sec">
       <div id="fq-head"><span>QUEUE FOR BUSTER</span><span id="fq-count">empty</span></div>
       <div id="fq-list"></div>
@@ -3814,6 +3898,7 @@ function openPanel(id){
   if(id==='funnel-ov'&&window.meshPull) window.meshPull();
   if(id==='funnel-ov'&&window.pipePull) window.pipePull();
   if(id==='funnel-ov'&&window.loopPull) window.loopPull();
+  if(id==='funnel-ov'&&window.trainPull) window.trainPull();
 }
 window.openPanel=openPanel; /* fix 2026-10-09: "/" hotkey (classic script) needs this global */
 function closeOverlays(){
@@ -4610,6 +4695,7 @@ function wireFunnel(){
   }
   const fb=$('funnel-btn'); if(fb) fb.onclick=()=>openPanel('funnel-ov');
   fqWire(); meshWire(); organWire(); pipeWire(); loopWire();
+  srWire(); trainWire(); trainPull();
 }
 
 /* ---------- submit commission to the funnel dispatch inbox ---------- */
@@ -4630,6 +4716,166 @@ function funnelSubmit(){
     toast('submitted to the funnel — watch RESULTS');
   }).catch(function(e){ toast('submit failed: '+(e.message||e)); });
 }
+
+/* ---------- self-run: submit a commission the autonomous runner finishes alone ---------- */
+var SELFRUN_POLL_MS=15000;
+var SR_STAGES=['FILED','ADMITTED','DISPATCHED','RUNNING','COMPLETE'];
+function srKind(){ var r=document.querySelector('input[name="sr-kind"]:checked'); return r?r.value:'diagnostic'; }
+function srNoMarkup(v){ return !/(<script|javascript:|on\w+\s*=)/i.test(v||''); }
+function srRid(){ var d=new Date(); var ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return 'funnel-devroom-'+Date.now().toString(36)+'-'+ds; }
+function selfrunSubmit(){
+  var pat=fqPat();
+  if(!pat){ toast('enable sync first \u2014 submit needs the GitHub token'); return; }
+  var kind=srKind(), words, kspec=null;
+  if(kind==='diagnostic'){
+    var ext=($('sr-ext').value||'').trim().toLowerCase(), dir=($('sr-dir').value||'').trim();
+    if(!/^[a-z0-9]{1,10}$/.test(ext)){ toast('extension: letters/numbers only, e.g. py'); return; }
+    if(!/^~\/workspace\/[A-Za-z0-9_.\/\-]{1,80}$/.test(dir)){ toast('directory must start with ~/workspace/'); return; }
+    words='DIAGNOSTIC (harmless, read-only): count the files ending in .'+ext+' in '+dir+' and report the count and command. Make no changes.';
+  } else {
+    var title=($('sr-title').value||'').trim(), heading=($('sr-heading').value||'').trim(), body=($('sr-body').value||'').trim();
+    if(title.length<1||title.length>80||!srNoMarkup(title)){ toast('title: 1\u201380 chars, no markup'); return; }
+    if(heading.length<1||heading.length>60||!srNoMarkup(heading)){ toast('heading: 1\u201360 chars, no markup'); return; }
+    if(body.length<1||body.length>2000||!srNoMarkup(body)){ toast('body: 1\u20132000 chars, no markup'); return; }
+    words='BUILD (harmless): Build a one-section website titled '+title+' with heading '+heading+'.';
+    kspec={product_class:'website',title:title,sections:[{heading:heading,body:body}],
+           palette:$('sr-palette').value,layout:$('sr-layout').value};
+  }
+  var rid=srRid(), d=new Date();
+  var payload={rid:rid,words:words,kind:kind,build_spec:kspec,submitted_at:d.toISOString(),source:'dev-room-selfrun'};
+  var gb={message:'dev-room: self-run commission '+rid,content:fqB64(JSON.stringify(payload)),branch:'funnel-queue'};
+  toast('submitting\u2026');
+  fqGh('/repos/bassseamoor/render-queue/contents/queues/inbox/'+rid+'.json','PUT',gb,pat).then(function(r){
+    if(!r.ok) throw new Error('http '+r.status);
+    toast('submitted \u2014 tracking '+rid);
+    srTrack(rid,kind);
+  }).catch(function(e){ toast('submit failed: '+(e.message||e)); });
+}
+function srFind(items,rid){ if(!items) return null; for(var i=0;i<items.length;i++){ if(items[i]&&items[i].rid===rid) return items[i]; } return null; }
+function srFindResult(d,rid){
+  var items=d&&(d.items||[]); if(!items.length) return null;
+  for(var i=0;i<items.length;i++){ var it=items[i]; if(!it) continue;
+    var det=it.determination||'';
+    if(det.indexOf(rid)>=0) return it;
+    var p0=it.page0||'';
+    if(p0.split('/').pop().indexOf(rid)===0) return it;
+  }
+  return null;
+}
+var srTimer=null;
+function srTrack(rid,kind){
+  var box=$('selfrun-track'); if(!box) return;
+  box.innerHTML='';
+  var line=document.createElement('div'); line.className='loop-rid'; line.textContent='tracking '+rid; box.appendChild(line);
+  var stages=document.createElement('div'); stages.className='sr-stage'; stages.id='sr-stages'; box.appendChild(stages);
+  var det=document.createElement('div'); det.id='sr-detail'; box.appendChild(det);
+  srPoll(rid,kind);
+  if(srTimer) clearInterval(srTimer);
+  srTimer=setInterval(function(){ srPoll(rid,kind); },SELFRUN_POLL_MS);
+}
+function srPoll(rid,kind){
+  Promise.all([loopGet(LOOP_URLS.req),loopGet(LOOP_URLS.live),loopGet(LOOP_URLS.res)]).then(function(all){
+    var req=srFind(all[0]&&(all[0].items||[]),rid);
+    var live=srFind(all[1]&&(all[1].items||[]),rid);
+    var res=srFindResult(all[2],rid);
+    srRender(rid,kind,req,live,res);
+    var st=req&&(req.status||'');
+    if(st==='COMPLETE'||st==='WAITING'||st==='REFUSED'||st==='FAILED'){ if(srTimer){ clearInterval(srTimer); srTimer=null; } }
+  }).catch(function(){ /* keep polling quietly */ });
+}
+function srRender(rid,kind,req,live,res){
+  var box=$('sr-stages'); if(!box) return;
+  var st=req?(req.status||'FILED'):'FILED';
+  var cur=SR_STAGES.indexOf(st); if(cur<0) cur=(st==='WAITING'||st==='REFUSED'||st==='FAILED')?4:0;
+  box.innerHTML='';
+  var labels=['filed','admitted','dispatched','running','done'];
+  SR_STAGES.forEach(function(s,i){
+    var d=document.createElement('span'); d.className='sr-dot';
+    if(i<cur||st==='COMPLETE') d.classList.add('done');
+    else if(i===cur) d.classList.add('on');
+    if(st==='WAITING'||st==='REFUSED'||st==='FAILED'){ d.classList.remove('on'); if(i===4) d.classList.add('bad'); }
+    d.textContent=labels[i]; box.appendChild(d);
+  });
+  var det=$('sr-detail'); if(!det) return; det.innerHTML='';
+  function kv(k,v){ var d=document.createElement('div'); d.className='sr-res'; d.style.marginTop='6px';
+    var b=document.createElement('b'); b.textContent=k+': '; d.appendChild(b); d.appendChild(document.createTextNode(v==null?'\u2014':String(v))); det.appendChild(d); }
+  if(live&&(live.state==='RUNNING')) kv('live stage', (live.stage||'running')+' \u00b7 '+(live.progress?live.progress.done+'/'+live.progress.total+' stages':''));
+  if(st==='WAITING') kv('state','WAITING \u2014 no autonomous executor for this one; visible for you or Buster, never dropped');
+  if(st==='REFUSED') kv('state','REFUSED \u2014 '+(req.refusal_reason||'see requests panel'));
+  if(res){
+    kv('verdict receipt', res.receipt||'\u2014');
+    kv('result', res.determination||'\u2014');
+    if(kind==='build'){
+      var url='https://raw.githubusercontent.com/bassseamoor/render-queue/funnel-queue/queues/artifacts/'+rid+'.html';
+      var d=document.createElement('div'); d.className='sr-res'; d.style.marginTop='6px';
+      d.appendChild(document.createTextNode('artifact: '));
+      var a=document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener'; a.textContent='open manufactured page'; d.appendChild(a);
+      det.appendChild(d);
+    }
+  } else if(st==='COMPLETE'){
+    kv('result','complete \u2014 verdict publishing shortly');
+  }
+  var ss=$('selfrun-stat'); if(ss) ss.textContent=st.toLowerCase();
+}
+function srWire(){
+  var g=$('selfrun-go'); if(g) g.onclick=selfrunSubmit;
+  var rs=document.querySelectorAll('input[name="sr-kind"]');
+  for(var i=0;i<rs.length;i++){ rs[i].onchange=function(){
+    var k=srKind(); $('sr-diag').hidden=(k!=='diagnostic'); $('sr-build').hidden=(k!=='build');
+  }; }
+}
+/* ---------- train: stage a training job for the belt ---------- */
+var TRAIN_MODELS=['qwen3:4b','qwen3:8b','qwen2.5-coder:7b','qwen2.5vl:7b'];
+function trainSubmit(){
+  var pat=fqPat();
+  if(!pat){ toast('enable sync first \u2014 queueing needs the GitHub token'); return; }
+  var prompt=($('train-prompt').value||'').trim();
+  if(prompt.length<10){ toast('describe what the model should learn (10+ chars)'); return; }
+  var model=$('train-model').value;
+  if(TRAIN_MODELS.indexOf(model)<0){ toast('unknown base model'); return; }
+  var ds=($('train-dataset').value||'').trim();
+  var epochs=parseInt(($('train-epochs').value||'3'),10); if(!(epochs>=1&&epochs<=50)) epochs=3;
+  var lr=parseFloat(($('train-lr').value||'0.0002')); if(!(lr>0&&lr<1)) lr=0.0002;
+  var bs=parseInt(($('train-bs').value||'4'),10); if(!(bs>=1&&bs<=64)) bs=4;
+  var d=new Date(); var dstr=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  var jid='train-'+Date.now().toString(36)+'-'+dstr;
+  var packet={job_id:jid,kind:'train',prompt:prompt,base_model:model,dataset_ref:ds||null,
+    hyperparams:{epochs:epochs,learning_rate:lr,batch_size:bs},
+    status:'queued',queued_at:d.toISOString(),source:'dev-room',
+    executes_on:'ssd-rig (the belt)',
+    note:'staged only \u2014 this machine has no GPU and cannot train; job runs on the SSD rig when it is online'};
+  var gb={message:'dev-room: queue training job '+jid,content:fqB64(JSON.stringify(packet,null,1)),branch:'funnel-queue'};
+  toast('queueing\u2026');
+  fqGh('/repos/bassseamoor/render-queue/contents/queues/train-queue/'+jid+'.json','PUT',gb,pat).then(function(r){
+    if(!r.ok) throw new Error('http '+r.status);
+    $('train-prompt').value='';
+    toast('training job queued for the belt');
+    trainPull();
+  }).catch(function(e){ toast('queue failed: '+(e.message||e)); });
+}
+function trainPull(){
+  var list=$('train-list'); if(!list) return;
+  var stat=$('train-stat'); if(stat) stat.textContent='checking\u2026';
+  fetch('https://api.github.com/repos/bassseamoor/render-queue/contents/queues/train-queue?ref=funnel-queue',
+    {headers:{'Accept':'application/vnd.github+json'}}).then(function(r){
+      if(r.status===404) return [];
+      if(!r.ok) throw new Error('http '+r.status);
+      return r.json();
+    }).then(function(items){
+      list.innerHTML='';
+      if(stat) stat.textContent=items.length?items.length+' queued':'empty';
+      if(!items.length){ var e=document.createElement('div'); e.className='sr-note'; e.textContent='no training jobs queued'; list.appendChild(e); return; }
+      items.filter(function(x){return x&&x.type==='file';}).forEach(function(x){
+        var d=document.createElement('div'); d.className='fq-item';
+        var t=document.createElement('span'); t.className='fq-t'; t.textContent='QUEUED FOR THE BELT'; d.appendChild(t);
+        var p=document.createElement('div'); p.textContent=x.name.replace(/\.json$/,''); d.appendChild(p);
+        list.appendChild(d);
+      });
+    }).catch(function(){ if(stat) stat.textContent='unavailable'; });
+}
+window.trainPull=trainPull;
+function trainWire(){ var g=$('train-go'); if(g) g.onclick=trainSubmit; }
 /* ---------- funnel queue for Buster: a queue, never a send path ---------- */
 /* fix 2026-10-09: fq* helpers need storage globals; the blueprint IIFE's
    lsGet/lsSet are not visible here. Guarded so a future global wins. */
