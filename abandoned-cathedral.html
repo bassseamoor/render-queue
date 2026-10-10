@@ -650,6 +650,19 @@
   </div>
 </div>
 
+<div id="sop-tools-ov" class="h-overlay" role="dialog" aria-label="SOP tools">
+  <div class="h-panel">
+    <button class="h-close" data-close="sop-tools-ov">close</button>
+    <h2>SOP TOOLS</h2>
+    <p class="muted">the 7 Blueprint SOP procedures as executable checks — paste blueprint text, pick a tool, run</p>
+    <div id="sop-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0"></div>
+    <div id="sop-hint" class="muted" style="margin:6px 0"></div>
+    <textarea id="sop-input" style="width:100%;height:110px;background:#0d1117;color:#e8ecf1;border:1px solid #1a2332;border-radius:8px;padding:10px;font-family:monospace;font-size:12px" placeholder="Paste blueprint text here…"></textarea>
+    <div style="margin:10px 0"><button id="sop-run" style="background:#1e3a5f;color:#7dd3fc;border:1px solid #2a4a6f;border-radius:8px;padding:8px 18px;cursor:pointer;font-size:13px">RUN CHECK</button></div>
+    <div id="sop-report" style="max-height:38vh;overflow:auto"></div>
+  </div>
+</div>
+
 <div id="bp-ov" class="h-overlay" role="dialog" aria-label="blueprint detail">
   <div class="h-panel">
     <button class="h-close" data-close="bp-ov">close</button>
@@ -3741,6 +3754,13 @@ const DOCK_CATS=[
   {id:'machines', label:'MACHINES', icon:'⚙', tools:[
     {n:'Flowcharts', p:'Build / need / lifecycle flows', fn:()=>openPanel('flow-ov')},
     {n:'Detached Child', p:'Live child machine', fn:()=>openToolUrl('pulse-dashboard.html')},
+    {n:'SOP-1 API Check', p:'API reality check on blueprint text', fn:()=>openSopTool(1)},
+    {n:'SOP-2 Decisions', p:'Decision rule mechanization check', fn:()=>openSopTool(2)},
+    {n:'SOP-3 Constants', p:'Constant justification check', fn:()=>openSopTool(3)},
+    {n:'SOP-4 Naming', p:'Mechanism naming check', fn:()=>openSopTool(4)},
+    {n:'SOP-5 Failures', p:'Failure mode enumeration check', fn:()=>openSopTool(5)},
+    {n:'SOP-6 Tests', p:'Executable test code check', fn:()=>openSopTool(6)},
+    {n:'SOP-7 Version', p:'Version + hash + compatibility check', fn:()=>openSopTool(7)},
   ]},
   {id:'children', label:'CHILDREN', icon:'◈', tools:[
     {n:'Hosted children', p:'Deployed child instances', fn:()=>openPanel('dash-ov')},
@@ -13389,6 +13409,322 @@ function boot(){
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot);
 else boot();
+})();
+
+</script>
+<script>
+/* SOP TOOLS — the 7 Blueprint SOP procedures as executable checks.
+ * Sealed spec: Blueprint SOP v1.0 (flaw assessment e0285f1b7e23cf6c), v44-sealed.
+ * Each tool takes blueprint text and returns a structured report.
+ * Correct-tools rule: only native DOM/JS plus a self-contained SHA-256 below.
+ * The dev panel's $/openPanel/fnv1a/sha256Hex live inside a closed IIFE and are
+ * NOT reachable from outside — so this module touches nothing it cannot see.
+ * No invented APIs.
+ * TAGS: tool:sop-tools | cat:interface | kind:sop | dep:none | prov:funnel |
+ *       src:abandoned-cathedral.html | sop:blueprint-sop-v1.0 |
+ */
+(function(){
+'use strict';
+
+/* Compact SHA-256 (FIPS 180-4), self-contained so the tools depend on nothing
+ * outside this module. Verified against node crypto in testing. */
+function sopSha256(ascii){
+  function rr(v,a){return (v>>>a)|(v<<(32-a));}
+  var maxWord=Math.pow(2,32), result='';
+  var words=[], asciiBitLength=ascii.length*8;
+  var hash=sopSha256.h=sopSha256.h||[], k=sopSha256.k=sopSha256.k||[];
+  var primeCounter=k.length, isComposite={};
+  for(var candidate=2;primeCounter<64;candidate++){
+    if(!isComposite[candidate]){
+      for(var i=0;i<313;i+=candidate) isComposite[i]=candidate;
+      hash[primeCounter]=(Math.pow(candidate,0.5)*maxWord)|0;
+      k[primeCounter++]=(Math.pow(candidate,1/3)*maxWord)|0;
+    }
+  }
+  ascii+='\x80';
+  while(ascii.length%64-56) ascii+='\x00';
+  for(var i=0;i<ascii.length;i++){
+    var j=ascii.charCodeAt(i);
+    if(j>>8) return ''; // ASCII only
+    words[i>>2]|=j<<((3-i)%4)*8;
+  }
+  words[words.length]=(asciiBitLength/maxWord)|0;
+  words[words.length]=asciiBitLength;
+  for(var j2=0;j2<words.length;){
+    var w=words.slice(j2,j2+=16), oldHash=hash;
+    hash=hash.slice(0,8);
+    for(var i2=0;i2<64;i2++){
+      var w15=w[i2-15], w2=w[i2-2];
+      var a=hash[0], e=hash[4];
+      var temp1=hash[7]
+        +(rr(e,6)^rr(e,11)^rr(e,25))
+        +((e&hash[5])^((~e)&hash[6]))
+        +k[i2]
+        +(w[i2]=(i2<16)?w[i2]:(w[i2-16]+(rr(w15,7)^rr(w15,18)^(w15>>>3))+w[i2-7]+(rr(w2,17)^rr(w2,19)^(w2>>>10)))|0);
+      var temp2=(rr(a,2)^rr(a,13)^rr(a,22))+((a&hash[1])^(a&hash[2])^(hash[1]&hash[2]));
+      hash=[(temp1+temp2)|0].concat(hash);
+      hash[4]=(hash[4]+temp1)|0;
+    }
+    for(var i3=0;i3<8;i3++) hash[i3]=(hash[i3]+oldHash[i3])|0;
+  }
+  for(var i4=0;i4<8;i4++){
+    for(var j3=3;j3+1;j3--){
+      var b=(hash[i4]>>(j3*8))&255;
+      result+=((b<16)?'0':'')+b.toString(16);
+    }
+  }
+  return result;
+}
+
+function sopEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function sopRxEsc(s){return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function sopSentences(text){
+  return String(text).split(/(?<=[.!?])\s+/).map(function(x){return x.trim();}).filter(Boolean);
+}
+function sopCtx(text, idx, before, after){
+  return text.slice(Math.max(0,idx-(before||120)), idx+(after||120)).replace(/\s+/g,' ').trim();
+}
+
+/* ---------- T1: API Reality Check ---------- */
+function sopT1(text){
+  var seen={}, items=[];
+  var re=/\b([A-Za-z_$][\w$]*)(?:\.([A-Za-z_$][\w$]*))?\s*\(/g, m;
+  var SKIP=/^(if|for|while|switch|catch|function|return|typeof|new|do|else)$/;
+  while((m=re.exec(text))){
+    var full=(m[2]?m[1]+'.'+m[2]:m[1]);
+    var name=m[2]||m[1];
+    if(SKIP.test(name)||seen[full]) continue;
+    seen[full]=1;
+    items.push({ref:full, obj:m[1], name:name, method:!!m[2]});
+  }
+  var scripts=[];
+  try{ scripts=Array.prototype.map.call(document.querySelectorAll('script'),function(s){return s.textContent||'';}); }catch(e){ scripts=[]; }
+  // target codebase named by the blueprint?
+  var tm=text.match(/(?:target codebase|codebase|repo|repository)[:\s]+([^\s,;\)]+)/i);
+  var target=tm?tm[1]:null;
+  var pm=text.match(/(\/[A-Za-z0-9_.\-\/]+(?:\/[A-Za-z0-9_.\-]+)+)/);
+  if(!target&&pm) target=pm[1];
+  return items.map(function(r){
+    var ev=null;
+    try{
+      if(r.method){
+        var o=window[r.obj];
+        if(o&&typeof o[r.name]!=='undefined') ev='window.'+r.obj+'.'+r.name+' exists in this dev panel';
+      }else if(typeof window[r.name]!=='undefined') ev='window global "'+r.name+'" exists in this dev panel';
+    }catch(e){}
+    if(!ev){
+      var rx=new RegExp('(?:function\\s+'+sopRxEsc(r.name)+'\\b|(?:var|let|const)\\s+'+sopRxEsc(r.name)+'\\s*=)');
+      for(var i=0;i<scripts.length;i++){
+        if(rx.test(scripts[i])){ ev='"'+r.name+'" defined in inline script #'+(i+1)+' of this dev panel'; break; }
+      }
+    }
+    return {
+      ref:r.ref, kind:r.method?'method':'function',
+      verdict:ev?'EXISTS':'NEEDS-GREP',
+      evidence:ev||('not found in this dev panel — run: grep -rn "'+r.ref+'" '+(target||'<target-codebase>')),
+      target:target
+    };
+  });
+}
+
+/* ---------- T2: Decision Rule Mechanization ---------- */
+function sopT2(text){
+  var out=[];
+  sopSentences(text).forEach(function(sn){
+    if(!/\b(decide\w*|choos\w+|select\w*|determin\w+)\b/i.test(sn)) return;
+    var mech=/(=|→|->|\bif\b|score|formula|\?.*:|\btie\b|weight)/i.test(sn);
+    var io=sn.match(/["“]([^"”]+)["”]/g)||[];
+    out.push({
+      sentence:sn.slice(0,180),
+      quoted_inputs:io.map(function(q){return q.replace(/["“”]/g,'');}).slice(0,4),
+      verdict:mech?'MECHANIZED':'HUMAN-JUDGMENT',
+      note:mech?'contains a rule marker (=, if, score, tie, weight)':'no mechanical rule found — write decide(inputs) → output or split out as its own procedure'
+    });
+  });
+  return out;
+}
+
+/* ---------- T3: Constant Justification ---------- */
+function sopT3(text){
+  var seen={}, out=[];
+  var re=/\b\d+(\.\d+)?\b/g, m;
+  while((m=re.exec(text))){
+    var ctx=sopCtx(text,m.index,90,90);
+    var key=m[0]+'|'+ctx.slice(0,48);
+    if(seen[key]) continue; seen[key]=1;
+    var cls=/test|measur|benchmark|cite/i.test(ctx)?'MEASURED'
+      :/because|follows|deriv|from .{0,20}(equation|law|spec)/i.test(ctx)?'DERIVED'
+      :/default|tunab|validat/i.test(ctx)?'TUNABLE':'UNDECIDED';
+    out.push({number:m[0], context:ctx, justification:cls});
+  }
+  return out;
+}
+
+/* ---------- T4: Mechanism Naming ---------- */
+var SOP_METAPHORS=['socket','bus','pot','pool','fabric','pipeline'];
+function sopT4(text){
+  var out=[];
+  SOP_METAPHORS.forEach(function(met){
+    var re=new RegExp('\\b'+met+'\\b','gi'), m;
+    while((m=re.exec(text))){
+      // mapping check scoped to the SENTENCE containing the metaphor
+      var sStart=text.lastIndexOf('.', m.index)+1, sEnd=text.indexOf('.', m.index);
+      if(sEnd<0) sEnd=text.length;
+      var sent=text.slice(sStart, sEnd);
+      var mapped=/(→|->|=|is a |means |EventEmitter|\bMap\b|function call|module-level|JSON file|database table|\.js\b|\bconst\b|\bclass\b|\bAPI\b)/.test(sent);
+      out.push({
+        metaphor:m[0],
+        context:sent.replace(/\s+/g,' ').trim().slice(0,150),
+        verdict:mapped?'MAPPED':'UNMAPPED',
+        note:mapped?'implementation term found in the same sentence':'no implementation mapping in the same sentence — name the code (file, class, store) a junior dev would open'
+      });
+    }
+  });
+  return out;
+}
+
+/* ---------- T5: Failure Mode Enumeration ---------- */
+var SOP_FAIL_MODES=['unavailable','corrupted','timeout','wrong version'];
+function sopT5(text){
+  var comps={}, order=[];
+  text.split('\n').forEach(function(line){
+    var hm=line.match(/^#{1,4}\s+(.+?)\s*$/);
+    if(hm&&hm[1].trim()&&!order.includes(hm[1].trim())){ order.push(hm[1].trim()); }
+    var bm=line.match(/\*\*(.+?)\*\*/g);
+    if(bm) bm.forEach(function(b){
+      var c=b.replace(/\*/g,'').trim();
+      if(c&&c.length<60&&!/^(step|procedure|test|fail condition|example)/i.test(c)&&!order.includes(c)) order.push(c);
+    });
+  });
+  return order.slice(0,40).map(function(c){
+    var idx=text.indexOf(c);
+    var ctx=text.slice(Math.max(0,idx-300),idx+1500).toLowerCase();
+    var cov=SOP_FAIL_MODES.map(function(md){
+      var key=md.replace(' ','');
+      var ok=ctx.indexOf(md)>=0||ctx.indexOf(key)>=0;
+      if(!ok&&/retr|fallback|\bcatch\b|backoff|degrad|skip|queue/.test(ctx)) ok='partial';
+      return {mode:md, covered:ok===true?'yes':(ok==='partial'?'partial':'no')};
+    });
+    return {component:c, coverage:cov,
+      verdict:cov.every(function(x){return x.covered==='yes';})?'COVERED':(cov.some(function(x){return x.covered!=='no';})?'PARTIAL':'GAP')};
+  });
+}
+
+/* ---------- T6: Test Code, Not Test Descriptions ---------- */
+function sopT6(text){
+  var codeSpans=[], out=[];
+  var re=/```[\s\S]*?```|<pre[\s\S]*?<\/pre>|node -e\b|grep +-r\w* |curl \S+/g, m;
+  while((m=re.exec(text))) codeSpans.push([m.index, m.index+m[0].length]);
+  function nearCode(idx){
+    return codeSpans.some(function(sp){ return idx>sp[0]-600 && idx<sp[1]+600; });
+  }
+  sopSentences(text).forEach(function(sn){
+    if(!/\b(verify|verifies|verified|check|checks|checked|ensure|ensures|validate|validates|validated)\b/i.test(sn)) return;
+    var idx=text.indexOf(sn);
+    out.push({
+      sentence:sn.slice(0,180),
+      verdict:nearCode(idx)?'HAS-TEST':'MISSING-TEST',
+      note:nearCode(idx)?'executable code found within 600 chars':'no executable test nearby — write the code, expected output, and fail action'
+    });
+  });
+  return out;
+}
+
+/* ---------- T7: Version Negotiation ---------- */
+function sopT7(text){
+  var vm=text.match(/(?:version\s*[:=]?\s*)?v?(\d+\.\d+(?:\.\d+)?)/i);
+  var hm=text.match(/\b[0-9a-f]{8,64}\b/i);
+  var compat=/backward.?compat|breaking change|compatib/i.test(text);
+  var hash=sopSha256(text);
+  return [{
+    version_declared:vm?vm[0]:null,
+    hash_declared:hm?hm[0]:null,
+    content_sha256_computed:hash||'unavailable (non-ASCII input)',
+    compatibility_statement:compat?'FOUND':'MISSING',
+    verdict:(vm&&compat)?'TRACKED':'INCOMPLETE',
+    note:'builders reference this version+hash; state backward compatibility explicitly'
+  }];
+}
+
+var SOP_TOOL_DEFS=[
+  {n:1, title:'SOP-1 · API Reality Check',   fn:sopT1, hint:'APIs referenced → exists/missing + citations'},
+  {n:2, title:'SOP-2 · Decision Mechanization', fn:sopT2, hint:'decide/choose/select → mechanized or flagged'},
+  {n:3, title:'SOP-3 · Constant Justification', fn:sopT3, hint:'every number → measured/derived/tunable/UNDECIDED'},
+  {n:4, title:'SOP-4 · Mechanism Naming',    fn:sopT4, hint:'metaphors → implementation mapping or flag'},
+  {n:5, title:'SOP-5 · Failure Enumeration', fn:sopT5, hint:'components → failure coverage per mode'},
+  {n:6, title:'SOP-6 · Executable Tests',    fn:sopT6, hint:'verify/check → test code or missing flag'},
+  {n:7, title:'SOP-7 · Version Negotiation', fn:sopT7, hint:'version + content hash + compatibility'}
+];
+var sopActiveTool=1;
+
+function sopRenderReport(tool, result){
+  var h='<div style="font-size:12px;color:#9fb3c8;margin:8px 0">'+sopEsc(tool.title)+' — '+result.length+' finding(s)</div>';
+  if(!result.length) return h+'<p class="muted">No matches in the pasted text.</p>';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  result.slice(0,60).forEach(function(r){
+    var v=r.verdict||'';
+    var vc=/EXISTS|MECHANIZED|MEASURED|DERIVED|TUNABLE|MAPPED|COVERED|HAS-TEST|TRACKED/.test(v)?'#86efac':/NEEDS-GREP|HUMAN-JUDGMENT|UNDECIDED|UNMAPPED|GAP|MISSING|MISSING-TEST|INCOMPLETE/.test(v)?'#fca5a5':'#fcd34d';
+    var cells=Object.keys(r).filter(function(k){return k!=='verdict';}).map(function(k){
+      var val=r[k];
+      if(Array.isArray(val)) val=val.map(function(x){return typeof x==='object'?JSON.stringify(x):String(x);}).join('; ');
+      else if(typeof val==='object'&&val!==null) val=JSON.stringify(val);
+      return '<td style="border:1px solid #1a2332;padding:6px;vertical-align:top"><span style="color:#64748b">'+sopEsc(k)+':</span><br>'+sopEsc(String(val)).slice(0,400)+'</td>';
+    }).join('');
+    h+='<tr><td style="border:1px solid #1a2332;padding:6px;font-weight:700;color:'+vc+';white-space:nowrap;vertical-align:top">'+sopEsc(v)+'</td>'+cells+'</tr>';
+  });
+  h+='</table>';
+  if(result.length>60) h+='<p class="muted">…'+(result.length-60)+' more (truncated)</p>';
+  return h;
+}
+
+function sopSelect(n){
+  sopActiveTool=n;
+  var tabs=document.querySelectorAll('#sop-tabs button');
+  for(var i=0;i<tabs.length;i++) tabs[i].style.borderColor=(i+1===n)?'#7dd3fc':'#1a2332';
+  var d=SOP_TOOL_DEFS[n-1];
+  var hint=document.getElementById('sop-hint');
+  if(hint) hint.textContent=d.title+' — '+d.hint;
+}
+
+function sopRun(){
+  var ta=document.getElementById('sop-input');
+  var rep=document.getElementById('sop-report');
+  var text=ta?ta.value:'';
+  if(!text.trim()){ rep.innerHTML='<p class="muted">Paste blueprint text first.</p>'; return; }
+  var tool=SOP_TOOL_DEFS[sopActiveTool-1];
+  var result;
+  try{ result=tool.fn(text); }
+  catch(e){ rep.innerHTML='<p style="color:#fca5a5">Tool error: '+sopEsc(e.message)+'</p>'; return; }
+  rep.innerHTML=sopRenderReport(tool, result);
+}
+
+function openSopTool(n){
+  /* openPanel lives inside the dev panel's closed IIFE — do the same DOM work directly */
+  document.querySelectorAll('.h-overlay').forEach(function(o){o.classList.remove('open');});
+  var o=document.getElementById('sop-tools-ov');
+  if(o) o.classList.add('open');
+  sopSelect(n||1);
+}
+window.openSopTool=openSopTool;
+
+function sopInitTabs(){
+  var host=document.getElementById('sop-tabs');
+  if(!host||host.children.length) return;
+  SOP_TOOL_DEFS.forEach(function(d){
+    var b=document.createElement('button');
+    b.textContent='T'+d.n;
+    b.title=d.title+' — '+d.hint;
+    b.style.cssText='background:#0d1117;color:#e8ecf1;border:1px solid #1a2332;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px';
+    b.onclick=(function(n){return function(){sopSelect(n);};})(d.n);
+    host.appendChild(b);
+  });
+  var run=document.getElementById('sop-run');
+  if(run) run.onclick=sopRun;
+  sopSelect(1);
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',sopInitTabs);
+else sopInitTabs();
+
 })();
 
 </script>
