@@ -2304,8 +2304,8 @@ var CSS=[
 ].join('\n');
 
 var deckEl=null, tabsEl=null, bodyEl=null;
-var TAB_IDS=['make','params','safety','describe','output','system','compose'];
-var TAB_LABEL={make:'Make',params:'Params',safety:'Safety',describe:'Describe',output:'Output',system:'System',compose:'Compose'};
+var TAB_IDS=['make','adjust','create'];
+var TAB_LABEL={make:'Make',adjust:'Adjust',create:'Create'};
 
 function buildDeck(){
   if(deckEl)return;
@@ -2339,7 +2339,11 @@ function hideDeck(){
   deckEl.classList.remove('open');
 }
 function setTab(t){
-  if(TAB_IDS.indexOf(t)<0)t='make';
+  if(TAB_IDS.indexOf(t)<0){
+    if(t==='params'||t==='safety'||t==='describe')t='adjust';
+    else if(t==='output'||t==='system'||t==='compose')t='create';
+    else t='make';
+  }
   state.deckTab=t;
   var bs=tabsEl.querySelectorAll('.deck-tab');
   for(var i=0;i<bs.length;i++)bs[i].classList.toggle('on',bs[i].getAttribute('data-tab')===t);
@@ -2360,13 +2364,72 @@ function renderBody(){
   bodyEl.innerHTML='';
   var t=state.deckTab;
   if(t==='make')renderMake(bodyEl);
-  else if(t==='params')renderParams(bodyEl);
-  else if(t==='safety')renderSafety(bodyEl);
-  else if(t==='describe')renderDescribe(bodyEl);
-  else if(t==='output')renderOutput(bodyEl);
-  else if(t==='system')renderSystem(bodyEl);
-  else if(t==='compose'&&window.__composer)window.__composer.renderTab(bodyEl);
+  else if(t==='adjust')renderAdjust(bodyEl);
+  else if(t==='create')renderCreate(bodyEl);
+  else if(t==='params'||t==='safety'||t==='describe'){ state.deckTab='adjust'; renderAdjust(bodyEl); }
+  else if(t==='output'||t==='system'||t==='compose'){ state.deckTab='create'; renderCreate(bodyEl); }
   try{ if(window.__band)window.__band.refresh(); }catch(e){}
+}
+function renderAdjust(host){
+  host.appendChild(el('h3',null,'Adjust — '+esc(currentDef().label)));
+  host.appendChild(el('p','sub','Tune it, pick safety, or describe it. All in one place.'));
+  paramControls(host);
+  host.appendChild(el('h3',null,'Safety'));
+  var srow=el('div','seg');
+  Object.keys(SAFETY).forEach(function(id){
+    var b=el('button','seg-btn'+(id===state.safety?' on':''),esc(SAFETY[id].name));
+    b.type='button';
+    b.addEventListener('click',function(){state.safety=id;renderBody();});
+    srow.appendChild(b);
+  });
+  host.appendChild(srow);
+  host.appendChild(el('p','sub',esc(SAFETY[state.safety].desc)));
+  host.appendChild(el('h3',null,'Or describe it'));
+  var ta=document.createElement('textarea');
+  ta.rows=2;ta.placeholder='A dark two column site about fishing...';
+  ta.value=state.describeText;
+  ta.style.cssText='width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.18);border-radius:10px;color:#e8e4da;padding:12px;font-size:1rem;box-sizing:border-box';
+  ta.addEventListener('input',function(){state.describeText=ta.value;});
+  host.appendChild(ta);
+  var comp=el('button','go-btn','Compile to settings');
+  comp.type='button';
+  comp.addEventListener('click',function(){
+    state.describeText=ta.value;
+    state.compiled=compileDescribe(state.describeText);
+    var p=state.params.website, cp=state.compiled;
+    if(cp.title)p.title=cp.title;
+    if(cp.palette)p.palette=cp.palette;
+    if(cp.layout)p.layout=cp.layout;
+    if(cp.sections.length)p.sections=cp.sections;
+    renderBody();
+    toast('compiled — check the settings above');
+  });
+  host.appendChild(comp);
+}
+function renderCreate(host){
+  var lr=state.lastResult;
+  if(lr&&lr.ok){
+    host.appendChild(el('h3',null,'Made'));
+    host.appendChild(el('div','result-ok','<b>Done.</b> '+lr.verification.checks_passed+'/'+lr.verification.checks_total+' checks passed.'));
+    if(lr.html||lr.artifact){
+      var prev=el('button','go-btn','Preview it');
+      prev.type='button';
+      prev.addEventListener('click',function(){
+        var blob=new Blob([lr.html||lr.artifact],{type:'text/html'});
+        openToolUrl(URL.createObjectURL(blob));
+      });
+      host.appendChild(prev);
+    }
+  } else if(lr){
+    host.appendChild(el('div','result-bad','<b>Refused — '+esc(lr.code)+'</b><p>'+esc(lr.detail)+'</p>'));
+  } else {
+    host.appendChild(el('p','sub','Nothing made yet. Pick what to make, adjust it, then hit the button.'));
+  }
+  var go=el('button','go-btn','Make it');
+  go.type='button';go.style.marginTop='12px';
+  go.addEventListener('click',function(){doGenerate();});
+  host.appendChild(go);
+  host.appendChild(el('p','sub','Sealed pipeline: declared fields only, verification, provenance recorded.'));
 }
 
 function renderMake(host){
@@ -3362,6 +3425,120 @@ const FLOW_FLOWS=[
   {id:'need', name:'NEED FLOW', nodes:['GAP','TYPED NEED','MACHINE','VERIFIER PASS','FIELD ADMISSION','CHANGED TRAVERSAL']},
   {id:'life', name:'MACHINE LIFECYCLE', nodes:['MOOR','MANUFACTURE','VERIFY','SEAL','DETACH','HOST','SERVE']},
 ];
+
+/* ---------- 3D stacked flowchart hologram ---------- */
+/* Three flows as stacked 3D layers above the desk — rotate to view from any angle */
+const flowHolo = new THREE.Group();
+flowHolo.position.set(-14, PY + 8, 46); // left of desk, floating
+scene.add(flowHolo);
+const flowNodes3D = [];
+
+// projector base
+{
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.2, 1.6, 0.5, 16),
+    new THREE.MeshStandardMaterial({color:0x141418, roughness:0.4, metalness:0.7, emissive:0x00D4FF, emissiveIntensity:0.3})
+  );
+  base.position.y = -5.5;
+  flowHolo.add(base);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 1.0, 5, 12, 1, true),
+    new THREE.MeshBasicMaterial({color:0x00D4FF, transparent:true, opacity:0.15, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide})
+  );
+  beam.position.y = -2.8;
+  flowHolo.add(beam);
+}
+
+const FLOW_COLORS = [0x00D4FF, 0x0E9F6E, 0x8B5CF6];
+FLOW_FLOWS.forEach((flow, li) => {
+  const layerY = li * 3.2 - 3.2;
+  const layer = new THREE.Group();
+  layer.position.y = layerY;
+  flowHolo.add(layer);
+
+  // layer plane (transparent)
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(16, 3),
+    new THREE.MeshBasicMaterial({color:FLOW_COLORS[li], transparent:true, opacity:0.06, side:THREE.DoubleSide, depthWrite:false})
+  );
+  plane.rotation.x = -Math.PI/2;
+  layer.add(plane);
+
+  // layer label
+  const [lc, lg] = makeCanvas(512, 64);
+  lg.fillStyle = '#00D4FF'; lg.font = '600 28px ' + FONT; lg.textAlign = 'center';
+  lg.fillText(flow.name, 256, 42);
+  const labelTex = canvasTex(lc);
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(8, 1),
+    new THREE.MeshBasicMaterial({map:labelTex, transparent:true, toneMapped:false, depthWrite:false})
+  );
+  label.position.set(0, 1.2, 0);
+  layer.add(label);
+
+  // nodes
+  const n = flow.nodes.length;
+  const nodeMeshes = [];
+  flow.nodes.forEach((nd, ni) => {
+    const x = (ni - (n-1)/2) * (14 / Math.max(n-1, 1));
+    // node box
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.5, 1.0),
+      new THREE.MeshStandardMaterial({color:0x0a0e14, roughness:0.3, metalness:0.6, emissive:FLOW_COLORS[li], emissiveIntensity:0.7})
+    );
+    box.position.set(x, 0, 0);
+    box.userData = {flow:flow.name, node:nd, layer:li};
+    layer.add(box);
+    nodeMeshes.push(box);
+    flowNodes3D.push(box);
+
+    // node label
+    const [nc, ng] = makeCanvas(256, 64);
+    ng.fillStyle = '#e8f4ff'; ng.font = '600 22px ' + FONT; ng.textAlign = 'center';
+    // wrap long names
+    const words = nd.split(' ');
+    if (words.length > 1 && nd.length > 10) {
+      ng.fillText(words.slice(0, Math.ceil(words.length/2)).join(' '), 128, 26);
+      ng.fillText(words.slice(Math.ceil(words.length/2)).join(' '), 128, 50);
+    } else {
+      ng.fillText(nd, 128, 40);
+    }
+    const ntex = canvasTex(nc);
+    const nlabel = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.7, 0.42),
+      new THREE.MeshBasicMaterial({map:ntex, transparent:true, toneMapped:false, depthWrite:false})
+    );
+    nlabel.position.set(x, 0.45, 0);
+    layer.add(nlabel);
+
+    // connector to next
+    if (ni < n - 1) {
+      const nx = ((ni+1) - (n-1)/2) * (14 / Math.max(n-1, 1));
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x + 0.9, 0, 0),
+        new THREE.Vector3(nx - 0.9, 0, 0)
+      ]);
+      const line = new THREE.Line(lineGeo,
+        new THREE.LineBasicMaterial({color:FLOW_COLORS[li], transparent:true, opacity:0.8}));
+      layer.add(line);
+      // arrow cone
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.12, 0.3, 8),
+        new THREE.MeshBasicMaterial({color:FLOW_COLORS[li]})
+      );
+      cone.position.set(nx - 1.0, 0, 0);
+      cone.rotation.z = -Math.PI/2;
+      layer.add(cone);
+    }
+  });
+});
+
+// slow rotation
+let flowHoloSpin = true;
+function tickFlowHolo(dt) {
+  if (flowHoloSpin && !stillMode) flowHolo.rotation.y += dt * 0.25;
+}
+
 let flowIdx=0;
 const bandCanvases=[];
 function drawFlowBand(g,flow){
@@ -4146,6 +4323,7 @@ const KB=[
   {k:['blueprint','blocked','blocker'], a:'Blueprints live on the north wall. Each panel shows status, version, readiness, blockers, latest receipt. Tap a panel for semantic zoom: product → systems → components → behaviors → states → transitions → evidence → implementation → files.', open:null},
   {k:['receipt','proof','sealed'], a:'Sealed receipts are architectural markers — the museum wall (west) holds Kernel, Verifier, Chronicle, B15, Assembly, Foundry, and more. Tap any milestone for its receipt and proof count.', open:'museum-ov'},
   {k:['file','where is','repo'], a:'The file browser shows the canonical repo structure. Nothing is invented — what you see is what exists on main.', open:'files-ov'},
+  {k:['3d flowchart','stacked','hologram','multidim'], a:'The 3D flowchart hologram floats left of the desk — three flows (Build, Need, Lifecycle) as stacked layers. Drag to orbit, tap a node to pause spin and see its name.', open:null},
   {k:['flowchart','flow','process'], a:'Three flows are live: BUILD (Page 0 → Receipt), NEED (Gap → Changed traversal), LIFECYCLE (Moor → Serve). The glass band cycles them; the flowchart view gives you zoom and tappable nodes.', open:'flow-ov'},
   {k:['light','dark','bright'], a:'Twelve lighting presets live in Room Settings (bottom-left gear): Sanctuary, Sterile White, Deep Blue, Red Alert, Red+Blue, Spotlight, Moving Lights, Lasers, Disco Ball, Disco Floor, Party Mode, Confetti.', open:'settings-ov'},
   {k:['monitor','screen','arm'], a:'Six monitors on robotic arms. Presets: Focus, Wide Command, Review, Blueprint, Build, Presentation, Newsroom — in Room Settings. Tap any monitor to open its tool.', open:'settings-ov'},
@@ -4986,6 +5164,15 @@ const raycaster=new THREE.Raycaster(), ndc=new THREE.Vector2();
 function tapAt(cx,cy){
   ndc.set((cx/Wpx)*2-1,-(cy/Hpx)*2+1);
   raycaster.setFromCamera(ndc,camera);
+  const fh=raycaster.intersectObjects(flowNodes3D,false);
+  if(fh.length){
+    const u=fh[0].object.userData;
+    toast(u.flow+' → '+u.node);
+    flowHoloSpin=!flowHoloSpin;
+    return;
+  }
+  ndc.set((cx/Wpx)*2-1,-(cy/Hpx)*2+1);
+  raycaster.setFromCamera(ndc,camera);
   const kh=raycaster.intersectObjects(keyHit,false);
   if(kh.length){ onKeypadTap(kh[0].object.userData.keyIndex); return; }
   const bh=raycaster.intersectObjects(bpPanels,false);
@@ -5080,6 +5267,7 @@ function tick(){
     stepArmRigs(dt);
     stepLightFx(dt,t);
     if(dust){ dust.rotation.y+=dt*0.004; }
+    tickFlowHolo(dt);
   }
   // repaint monitors (every 3rd frame)
   if(frame%3===0&&!stillMode){
