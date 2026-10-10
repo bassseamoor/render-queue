@@ -39,6 +39,26 @@
     background:rgba(6,10,16,.42);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
     border:1px solid rgba(0,212,255,.35);box-shadow:0 8px 28px rgba(0,0,0,.5)}
   #funnel-btn:active{transform:scale(.97)}
+  #organs-btn{position:fixed;top:70px;left:16px;z-index:30;min-height:44px;padding:0 18px;
+    border-radius:14px;cursor:pointer;font-size:12px;letter-spacing:.24em;font-weight:700;color:#b78cff;
+    background:rgba(6,10,16,.42);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border:1px solid rgba(183,140,255,.35);box-shadow:0 8px 28px rgba(0,0,0,.5)}
+  #organs-btn:active{transform:scale(.97)}
+  #organ-chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+  .organ-chip{font-size:11px;letter-spacing:.08em;padding:6px 12px;border-radius:16px;cursor:pointer;
+    border:1px solid rgba(255,255,255,.14);color:#8a97ad;background:transparent;min-height:32px}
+  .organ-chip.on{border-color:rgba(183,140,255,.6);color:#b78cff}
+  .organ-chip .n{opacity:.7;margin-left:4px}
+  #organ-list{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow-y:auto;margin-top:4px}
+  .organ-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;
+    padding:9px 12px;font-size:13px;color:#e8e4da}
+  .organ-card .o-name{font-weight:700;display:block;margin-bottom:4px}
+  .organ-badges{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
+  .organ-badge{font-size:10px;letter-spacing:.1em;padding:3px 9px;border-radius:12px;
+    border:1px solid rgba(183,140,255,.4);color:#b78cff;text-transform:uppercase}
+  .organ-why{font-size:11px;color:#8a97ad;line-height:1.45}
+  .organ-why div{margin-bottom:2px}
+  .organ-why b{color:#c9c2b4;font-weight:600}
   /* settings gear: bottom-left */
   #settings-gear{position:fixed;left:16px;bottom:16px;z-index:30;width:52px;height:52px;border-radius:50%;
     cursor:pointer;font-size:22px;color:#e8e4da;background:rgba(10,10,12,.6);
@@ -177,6 +197,7 @@
     #dock{bottom:8px}
     .dock-cat{min-width:44px;min-height:44px}
     #funnel-btn{top:8px;left:8px;min-height:42px;padding:0 14px;font-size:11px}
+    #organs-btn{top:58px;left:8px;min-height:38px;padding:0 12px;font-size:10px}
     #settings-gear{left:8px;bottom:8px;width:44px;height:44px}
   }
 
@@ -497,6 +518,7 @@
 <div id="app"></div>
 <div id="hud"><div class="t">dev hideout</div><div class="s" id="zone"></div></div>
 <button id="funnel-btn" aria-label="ask the funnel">[ FUNNEL ]</button>
+<button id="organs-btn" aria-label="organ activation map">[ ORGANS ]</button>
 <button id="settings-gear" aria-label="room settings">⚙</button>
 <div id="dock" role="toolbar" aria-label="tool dock"><button id="dock-toggle" aria-label="collapse dock">–</button></div>
 <button id="gyro-btn" aria-label="gyro look">GYRO</button>
@@ -537,6 +559,20 @@
         <button id="mesh-refresh">refresh</button>
       </div>
       <p id="mesh-note" class="muted">Staged colony builds and what is ready to integrate. Updated by the mesh watch every 4h.</p>
+    </div>
+  </div>
+</div>
+
+<div id="organs-ov" class="h-overlay" role="dialog" aria-label="organ activation map">
+  <div class="h-panel">
+    <button class="h-close" data-close="organs-ov">close</button>
+    <h2>ORGAN MAP</h2>
+    <p class="muted">Live activation states of the funnel's organs. Every state carries its why.</p>
+    <div id="organ-chips"></div>
+    <div id="organ-list"></div>
+    <div class="h-foot">
+      <button id="organ-refresh">refresh</button>
+      <span id="organ-updated" class="muted"></span>
     </div>
   </div>
 </div>
@@ -4182,7 +4218,6 @@ function fqAnswerDiv(html){
   div.innerHTML='<b>funnel</b>'+html;
   div.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPanel(b.dataset.open));
   div.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>openToolUrl(b.dataset.tool));
-  div.querySelectorAll('[data-deck]').forEach(b=>b.onclick=()=>{ if(window.__devroomUI) window.__devroomUI.focusWall(0); });
   return div;
 }
 async function funnelAsk(q){
@@ -4191,19 +4226,6 @@ async function funnelAsk(q){
   const ql=q.toLowerCase();
   log.innerHTML+='<div class="fq"><b>you</b><p>'+fqEsc(q)+'</p></div>';
   log.scrollTop=log.scrollHeight;
-  // 0. make-intent: "make me a website" -> open the direct-making deck
-  if(/\b(make|build|create|generate)\b/.test(ql)){
-    let mk='things';
-    try{
-      const reg=window.__devroomUI?window.__devroomUI.registry():{};
-      const ids=Object.keys(reg);
-      const found=ids.find(id=>ql.includes(id));
-      if(found) mk=reg[found].label||found;
-    }catch(e){}
-    log.appendChild(fqAnswerDiv('<p>Yes — the Direct making deck makes '+fqEsc(mk)+': pick parameters with dials and sliders, choose a safety package, then generate.</p><button data-deck="1">open the making deck</button>'));
-    log.scrollTop=log.scrollHeight;
-    return;
-  }
   // 1. structural KB first (room controls, no network needed)
   let best=null,bs=0;
   KB.forEach(e=>{ let s=0; e.k.forEach(k=>{ if(ql.includes(k)) s+=k.length; }); if(s>bs){bs=s;best=e;} });
@@ -4274,7 +4296,7 @@ function wireFunnel(){
     };
   }
   const fb=$('funnel-btn'); if(fb) fb.onclick=()=>openPanel('funnel-ov');
-  fqWire(); meshWire();
+  fqWire(); meshWire(); organWire();
 }
 
 /* ---------- funnel queue for Buster: a queue, never a send path ---------- */
@@ -4430,6 +4452,65 @@ function meshRender(d,err){
 }
 function meshWire(){ var rf=$('mesh-refresh'); if(rf) rf.onclick=function(){ meshPull(); }; }
 window.meshPull=meshPull;
+
+/* ---------- organ activation map ---------- */
+var ORGAN_URL='https://api.github.com/repos/bassseamoor/render-queue/contents/queues/organ-map.json?ref=funnel-queue';
+var organFilter=null, organData=null;
+var ORGAN_STATE_LABELS={active:'active',sealed:'sealed',staged:'staged',paused:'paused',blocked:'blocked',
+  limited:'limited',interacting:'interacting',waiting:'waiting',next:'next in line',
+  gating:'gating others',lineage:'producing lineage',constraints:'producing constraints'};
+function organPull(){
+  fetch(ORGAN_URL,{headers:{'Accept':'application/vnd.github+json'}}).then(function(r){
+    if(r.status===404){ organRender(null,'no map yet'); return null; }
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){
+    if(!j) return;
+    organData=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\s/g,'')))));
+    organRender(organData,'');
+  }).catch(function(){ organRender(organData,'refresh failed'); });
+}
+function organRender(d,err){
+  var chips=$('organ-chips'), list=$('organ-list'), upd=$('organ-updated');
+  if(!chips||!list) return;
+  chips.innerHTML=''; list.innerHTML='';
+  if(upd) upd.textContent=d?('updated '+String(d.updated_at||'?').replace('T',' ').replace('Z',' UTC')):(err||'');
+  if(!d) return;
+  var counts=d.counts||{};
+  Object.keys(ORGAN_STATE_LABELS).forEach(function(s){
+    var b=document.createElement('button');
+    b.className='organ-chip'+(organFilter===s?' on':'');
+    b.innerHTML=ORGAN_STATE_LABELS[s]+' <span class="n">'+(counts[s]||0)+'</span>';
+    b.onclick=function(){ organFilter=(organFilter===s?null:s); organRender(d,''); };
+    chips.appendChild(b);
+  });
+  (d.organs||[]).forEach(function(o){
+    var states=Object.keys(o.states||{});
+    if(organFilter && states.indexOf(organFilter)<0) return;
+    var card=document.createElement('div'); card.className='organ-card';
+    var nm=document.createElement('span'); nm.className='o-name'; nm.textContent=o.name; card.appendChild(nm);
+    var bd=document.createElement('div'); bd.className='organ-badges';
+    states.forEach(function(s){
+      var bg=document.createElement('span'); bg.className='organ-badge';
+      bg.textContent=ORGAN_STATE_LABELS[s]||s; bd.appendChild(bg);
+    });
+    card.appendChild(bd);
+    var why=document.createElement('div'); why.className='organ-why';
+    states.forEach(function(s){
+      var row=document.createElement('div');
+      var b=document.createElement('b'); b.textContent=(ORGAN_STATE_LABELS[s]||s)+': ';
+      row.appendChild(b); row.appendChild(document.createTextNode(o.states[s]));
+      why.appendChild(row);
+    });
+    card.appendChild(why);
+    list.appendChild(card);
+  });
+}
+function organWire(){
+  var ob=$('organs-btn'); if(ob) ob.onclick=function(){ openPanel('organs-ov'); organPull(); };
+  var rf=$('organ-refresh'); if(rf) rf.onclick=function(){ organPull(); };
+}
+window.organPull=organPull;
 
 /* ---------- settings: lighting, room modes, arm presets ---------- */
 function renderSettings(){
