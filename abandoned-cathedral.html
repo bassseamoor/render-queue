@@ -144,6 +144,23 @@
   #mesh-foot button{min-height:40px;padding:0 14px;border-radius:10px;cursor:pointer;font-size:13px;
     background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.35);color:#00D4FF}
   #mesh-note{font-size:11px;margin-top:8px}
+  #pipe-sec{margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
+  #pipe-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.2em;color:#8a97ad;margin-bottom:8px}
+  #pipe-line{font-size:11px;margin-bottom:8px}
+  #pipe-stages{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .pipe-stage{font-size:11px;letter-spacing:.1em;padding:4px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.14);color:#8a97ad}
+  .pipe-stage.full{border-color:rgba(0,212,255,.5);color:#00D4FF}
+  #pipe-sub{font-size:10px;letter-spacing:.2em;color:#8a97ad;margin:10px 0 8px}
+  #pipe-list{display:flex;flex-direction:column;gap:8px;max-height:24vh;overflow-y:auto;margin-bottom:8px}
+  .pipe-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px;font-size:13px;color:#e8e4da}
+  .pipe-item .pipe-t{font-weight:600;display:block}
+  .pipe-item .pipe-r{color:#8a97ad;font-size:11px;display:block;margin:2px 0 6px}
+  .pipe-item button{min-height:36px;padding:0 14px;border-radius:8px;cursor:pointer;font-size:12px;
+    background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.35);color:#00D4FF}
+  #pipe-foot{display:flex;gap:8px;flex-wrap:wrap}
+  #pipe-foot button{min-height:40px;padding:0 14px;border-radius:10px;cursor:pointer;font-size:13px;
+    background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.35);color:#00D4FF}
+  #pipe-note{font-size:11px;margin-top:8px}
   /* settings */
   .set-sec{margin-bottom:18px}
   .set-sec h3{font-size:12px;letter-spacing:.2em;color:#8a97ad;margin-bottom:10px}
@@ -559,6 +576,17 @@
         <button id="mesh-refresh">refresh</button>
       </div>
       <p id="mesh-note" class="muted">Staged colony builds and what is ready to integrate. Updated by the mesh watch every 4h.</p>
+    </div>
+    <div id="pipe-sec">
+      <div id="pipe-head"><span>DEPLOYMENT PIPELINE</span><span id="pipe-count">checking\u2026</span></div>
+      <div id="pipe-line" class="muted"></div>
+      <div id="pipe-stages"></div>
+      <div id="pipe-sub">SEALED BUILDS READY TO STAGE</div>
+      <div id="pipe-list"></div>
+      <div id="pipe-foot">
+        <button id="pipe-refresh">refresh</button>
+      </div>
+      <p id="pipe-note" class="muted">Staging runs the pipeline entry gate. Deployment always needs your go-ahead, every time.</p>
     </div>
   </div>
 </div>
@@ -3688,6 +3716,7 @@ function openPanel(id){
   document.querySelectorAll('.h-overlay').forEach(o=>o.classList.remove('open'));
   const o=$(id); if(o) o.classList.add('open');
   if(id==='funnel-ov'&&window.meshPull) window.meshPull();
+  if(id==='funnel-ov'&&window.pipePull) window.pipePull();
 }
 window.openPanel=openPanel; /* fix 2026-10-09: "/" hotkey (classic script) needs this global */
 function closeOverlays(){
@@ -4474,7 +4503,7 @@ function wireFunnel(){
     };
   }
   const fb=$('funnel-btn'); if(fb) fb.onclick=()=>openPanel('funnel-ov');
-  fqWire(); meshWire(); organWire();
+  fqWire(); meshWire(); organWire(); pipeWire();
 }
 
 /* ---------- funnel queue for Buster: a queue, never a send path ---------- */
@@ -4689,6 +4718,45 @@ function organWire(){
   var rf=$('organ-refresh'); if(rf) rf.onclick=function(){ organPull(); };
 }
 window.organPull=organPull;
+
+/* ---------- deployment pipeline: staged builds, stageable sealed builds ---------- */
+var PIPE_URL='https://api.github.com/repos/bassseamoor/render-queue/contents/queues/pipeline-status.json?ref=funnel-queue';
+function pipePull(){
+  var c=$('pipe-count'); if(c) c.textContent='checking\u2026';
+  fetch(PIPE_URL,{headers:{'Accept':'application/vnd.github+json'}}).then(function(r){
+    if(r.status===404){ pipeRender(null,'no status yet'); return null; }
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){
+    if(!j) return;
+    pipeRender(JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\s/g,''))))),'');
+  }).catch(function(){ pipeRender(null,'refresh failed'); });
+}
+function pipeRender(d,err){
+  var c=$('pipe-count'),l=$('pipe-line'),st=$('pipe-stages'),list=$('pipe-list');
+  if(!d){ if(c) c.textContent=err||'unavailable'; if(l) l.textContent=''; if(st) st.innerHTML=''; if(list) list.innerHTML=''; return; }
+  var stages=d.stages||{}, names=['STAGED','INTEGRATED','TESTED','DEPLOYED'], total=0;
+  names.forEach(function(n){ total+=(stages[n]||[]).length; });
+  if(c) c.textContent=total?(total+' in pipeline'):'empty';
+  if(l) l.textContent='updated '+String(d.updated_at||'?').replace('T',' ').replace('Z',' UTC');
+  if(st){ st.innerHTML=''; names.forEach(function(n){
+    var k=(stages[n]||[]).length, s=document.createElement('span');
+    s.className='pipe-stage'+(k?' full':''); s.textContent=n+' '+k; st.appendChild(s);
+  }); }
+  if(!list) return; list.innerHTML='';
+  var items=d.stageable||[];
+  if(!items.length){ list.innerHTML='<div class="pipe-item"><span class="pipe-t">nothing stageable</span><span class="pipe-r">no sealed builds pass the entry gate right now</span></div>'; return; }
+  items.forEach(function(b){
+    var div=document.createElement('div'); div.className='pipe-item';
+    var t=document.createElement('span'); t.className='pipe-t'; t.textContent=b.title||b.rid; div.appendChild(t);
+    var r=document.createElement('span'); r.className='pipe-r'; r.textContent='receipt '+b.receipt; div.appendChild(r);
+    var btn=document.createElement('button'); btn.textContent='stage it';
+    btn.onclick=function(){ fqAdd('stage '+b.rid+' into the deployment pipeline'); toast('queued for Buster'); };
+    div.appendChild(btn); list.appendChild(div);
+  });
+}
+function pipeWire(){ var rf=$('pipe-refresh'); if(rf) rf.onclick=function(){ pipePull(); }; }
+window.pipePull=pipePull;
 
 /* ---------- settings: lighting, room modes, arm presets ---------- */
 function renderSettings(){
