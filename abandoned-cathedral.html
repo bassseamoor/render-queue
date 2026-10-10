@@ -111,6 +111,8 @@
     background:rgba(0,212,255,.14);border:1px solid rgba(0,212,255,.4);color:#00D4FF}
   #funnel-queue{min-width:52px;min-height:48px;border-radius:12px;cursor:pointer;font-size:15px;
     background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.4);color:#00D4FF}
+  #funnel-submit{width:100%;margin-top:8px;min-height:48px;border-radius:12px;cursor:pointer;font-size:14px;
+    background:rgba(0,212,255,.14);border:1px solid rgba(0,212,255,.4);color:#00D4FF}
   #fq-sec{margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
   #fq-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.2em;color:#8a97ad;margin-bottom:8px}
   #fq-list{display:flex;flex-direction:column;gap:8px;max-height:22vh;overflow-y:auto;margin-bottom:8px}
@@ -578,6 +580,7 @@
       <button id="funnel-queue" aria-label="queue for Buster" title="queue for Buster">+Q</button>
       <button id="funnel-send" aria-label="ask">→</button>
     </div>
+    <button id="funnel-submit">Submit as funnel commission</button>
     <div id="fq-sec">
       <div id="fq-head"><span>QUEUE FOR BUSTER</span><span id="fq-count">empty</span></div>
       <div id="fq-list"></div>
@@ -4591,6 +4594,7 @@ async function funnelAsk(q){
 function wireFunnel(){
   const inp=$('funnel-input'), send=$('funnel-send'), mic=$('funnel-mic');
   if(send) send.onclick=()=>{ const v=inp.value.trim(); if(v){ inp.value=''; funnelAsk(v); } };
+  const fsub=$('funnel-submit'); if(fsub) fsub.onclick=()=>funnelSubmit();
   if(inp) inp.onkeydown=e=>{ if(e.key==='Enter'){ const v=inp.value.trim(); if(v){ inp.value=''; funnelAsk(v); } } };
   if(mic){
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -4607,6 +4611,24 @@ function wireFunnel(){
   fqWire(); meshWire(); organWire(); pipeWire(); loopWire();
 }
 
+/* ---------- submit commission to the funnel dispatch inbox ---------- */
+function funnelSubmit(){
+  var inp=$('funnel-input'); var v=(inp.value||'').trim();
+  if(!v){ toast('type a commission first'); return; }
+  var pat=fqPat();
+  if(!pat){ toast('enable sync first — submit needs the GitHub token'); return; }
+  var d=new Date();
+  var ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  var rid='funnel-devroom-'+Date.now().toString(36)+'-'+ds;
+  var payload={rid:rid,words:v,kind:null,submitted_at:d.toISOString(),source:'dev-room'};
+  var body={message:'dev-room: submit commission '+rid,content:fqB64(JSON.stringify(payload)),branch:'funnel-queue'};
+  toast('submitting…');
+  fqGh('/repos/bassseamoor/render-queue/contents/queues/inbox/'+rid+'.json','PUT',body,pat).then(function(r){
+    if(!r.ok) throw new Error('http '+r.status);
+    inp.value='';
+    toast('submitted to the funnel — watch RESULTS');
+  }).catch(function(e){ toast('submit failed: '+(e.message||e)); });
+}
 /* ---------- funnel queue for Buster: a queue, never a send path ---------- */
 /* fix 2026-10-09: fq* helpers need storage globals; the blueprint IIFE's
    lsGet/lsSet are not visible here. Guarded so a future global wins. */
