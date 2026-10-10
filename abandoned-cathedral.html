@@ -14098,5 +14098,48 @@ else sopInitTabs();
 })();
 
 </script>
+<!-- Pulse Beam: private shell (reconnected 2026-10-10 per Sebastian).
+     Token-gated: the shell mounts ONLY on unlocked browsers. The unlock
+     token lives only in the script below and in the private URL shared
+     with the owner; everyone else gets the plain dashboard. -->
+<script>
+(function(){
+'use strict';
+var TOKEN='619f035f82f0f9f9ce86ee08c9496877';
+var LSKEY='pulse-beam-unlock';
+var V='20261006-beam1';
+function beamParam(){
+  var qs=window.location.search||'';
+  if(qs.charAt(0)==='?')qs=qs.slice(1);
+  var out=null;
+  qs.split('&').forEach(function(p){
+    var i=p.indexOf('=');
+    if(i>0&&p.slice(0,i)==='beam')out=p.slice(i+1);
+  });
+  return out;
+}
+var unlocked=false;
+try{
+  var pv=beamParam();
+  if(pv!==null&&decodeURIComponent(pv)===TOKEN){
+    try{window.localStorage.setItem(LSKEY,'1');}catch(e){}
+    try{window.history.replaceState(null,'',window.location.pathname+window.location.hash);}catch(e){}
+    unlocked=true;
+  }else{
+    try{unlocked=window.localStorage.getItem(LSKEY)==='1';}catch(e){unlocked=false;}
+  }
+}catch(e){unlocked=false;}
+if(!unlocked)return;
+var l=document.createElement('link');
+l.rel='stylesheet';l.href='pulse-beam.css?v='+V;
+document.head.appendChild(l);
+['pulse-beam-audit.js','pulse-beam-component-adapter.js','pulse-beam.js'].forEach(function(s){
+  var sc=document.createElement('script');
+  sc.async=false;sc.src=s+'?v='+V;
+  document.body.appendChild(sc);
+});
+})();
+</script>
 </body>
 </html>
+
