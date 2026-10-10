@@ -395,6 +395,14 @@
 .tick-empty code{color:#9fd8ff}
 #ticker-note{font-size:10.5px;color:#6b7688;margin-top:10px;line-height:1.5}
 @media (max-width:640px){ #ticker-panel{right:8px;left:8px;top:56px;width:auto} }
+/* PANEL-CONTRACT-FIX v1 */
+/* PANEL-CONTRACT-FIX v1: side panels must not veil the viewport on open.
+   know/ticker roots reuse .h-overlay (full-screen dim+blur); override to the
+   build console's non-occluding pattern. Inner panels keep pointer-events:auto. */
+#know,#ticker{position:fixed;inset:0;z-index:40;display:none;pointer-events:none;
+  background:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+#know.open,#ticker.open{display:block}
+
 
 /* build console: MAKE environment — same instrument language, non-occluding, draggable */
   #bld{position:fixed;inset:0;z-index:32;display:none;pointer-events:none}
@@ -3445,6 +3453,7 @@ function openPanel(id){
   document.querySelectorAll('.h-overlay').forEach(o=>o.classList.remove('open'));
   const o=$(id); if(o) o.classList.add('open');
 }
+window.openPanel=openPanel; /* fix 2026-10-09: "/" hotkey (classic script) needs this global */
 function closeOverlays(){
   document.querySelectorAll('.h-overlay').forEach(o=>o.classList.remove('open'));
 }
@@ -3698,7 +3707,7 @@ function initKnowledgePanel(){
   // draggable bar (same pattern as build console)
   var bar=document.getElementById('know-bar'),px=0,py=0,drag=false;
   var inner=document.getElementById('know-panel');
-  bar.addEventListener('pointerdown',function(e){ drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
+  bar.addEventListener('pointerdown',function(e){ if(e.target.closest('button')) return; drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
   bar.addEventListener('pointermove',function(e){
     if(!drag) return;
     var r=inner.getBoundingClientRect();
@@ -4050,7 +4059,7 @@ function initTickerPanel(){
   /* draggable bar (same pattern as build console / knowledge panel) */
   var bar=document.getElementById('ticker-bar'),px=0,py=0,drag=false;
   var inner=document.getElementById('ticker-panel');
-  bar.addEventListener('pointerdown',function(e){ drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
+  bar.addEventListener('pointerdown',function(e){ if(e.target.closest('button')) return; drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
   bar.addEventListener('pointermove',function(e){
     if(!drag) return;
     var r=inner.getBoundingClientRect();
@@ -4118,6 +4127,10 @@ function wireFunnel(){
 }
 
 /* ---------- funnel queue for Buster: a queue, never a send path ---------- */
+/* fix 2026-10-09: fq* helpers need storage globals; the blueprint IIFE's
+   lsGet/lsSet are not visible here. Guarded so a future global wins. */
+if(typeof lsGet==='undefined'){ window.lsGet=function(k){ try{return window.localStorage.getItem(k);}catch(e){return null;} }; }
+if(typeof lsSet==='undefined'){ window.lsSet=function(k,v){ try{window.localStorage.setItem(k,v);return true;}catch(e){return false;} }; }
 var FQ_KEY='hideout.funnel.queue.v1', FQ_PAT='hideout.funnel.queuePat.v1', fqPushT=null;
 function fqLoad(){ try{var a=JSON.parse(lsGet(FQ_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return[];} }
 function fqStore(l){ lsSet(FQ_KEY,JSON.stringify(l)); }
