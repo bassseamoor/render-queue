@@ -3536,10 +3536,10 @@ function paintMonitorBooting(g,title){
   g.fillStyle='#5d594f'; g.font='20px '+FONT; g.fillText('loading…',384,244);
 }
 function drawMonitorBooting(g,title){
-  g._summary=null; paintMonitorBg(g); paintMonitorBooting(g,title);
+  g._summary=null; g._dirty=true; paintMonitorBg(g); paintMonitorBooting(g,title);
 }
 function drawMonitorLabeled(g,title,big,lines,source,ok){
-  g._summary={title:title,big:big,lines:lines,source:source,ok:ok};
+  g._summary={title:title,big:big,lines:lines,source:source,ok:ok}; g._dirty=true;
   paintMonitorBg(g); paintMonitorContent(g,title,big,lines,source,ok);
 }
 function repaintMonitor(rig){
@@ -4480,6 +4480,8 @@ function renderEvents(){
 /* ---------- refresh / init ---------- */
 
 function refresh(){
+  var _tp=document.getElementById('ticker');
+  if(_tp&&!_tp.classList.contains('open')) return; /* interval idles when panel closed */
   _em=null;
   loadStatus(function(){
     var has=renderStale();
@@ -4622,6 +4624,7 @@ async function funnelAsk(q){
   const log=$('funnel-log'); if(!log) return;
   const ql=q.toLowerCase();
   log.innerHTML+='<div class="fq"><b>you</b><p>'+fqEsc(q)+'</p></div>';
+  while(log.children.length>120) log.removeChild(log.firstChild); /* bounded log */
   log.scrollTop=log.scrollHeight;
   // 1. structural KB first (room controls, no network needed)
   let best=null,bs=0;
@@ -4674,6 +4677,7 @@ async function funnelAsk(q){
     else html='<p>I don\'t have that one. I can search your tools, capabilities, receipts, blueprints, files, flowcharts, lighting, monitors, and builds. Try "where is the crawler" or "show live capabilities".</p>';
   }
   log.appendChild(fqAnswerDiv(html));
+  while(log.children.length>120) log.removeChild(log.firstChild); /* bounded log */
   log.scrollTop=log.scrollHeight;
 }
 
@@ -4775,6 +4779,7 @@ function srTrack(rid,kind){
   srTimer=setInterval(function(){ srPoll(rid,kind); },SELFRUN_POLL_MS);
 }
 function srPoll(rid,kind){
+  if(document.hidden) return; /* don't burn radio/battery backgrounded; catches up on return */
   Promise.all([loopGet(LOOP_URLS.req),loopGet(LOOP_URLS.live),loopGet(LOOP_URLS.res)]).then(function(all){
     var req=srFind(all[0]&&(all[0].items||[]),rid);
     var live=srFind(all[1]&&(all[1].items||[]),rid);
@@ -5973,9 +5978,10 @@ function tick(){
     if(dust){ dust.rotation.y+=dt*0.004; }
     tickFlowHolo(dt);
   }
-  // repaint monitors (every 3rd frame)
+  // repaint monitors only when content changed (dirty flag). Static monitor
+  // content was redundantly repainted + re-uploaded to GPU ~20x/sec.
   if(frame%3===0&&!stillMode){
-    monitors.forEach(repaintMonitor);
+    monitors.forEach(m=>{ var mg=m.userData.g; if(mg._dirty){ repaintMonitor(m); mg._dirty=false; } });
   }
   // key flash decay
   keypad.keys.forEach(k=>{
@@ -8208,11 +8214,14 @@ function relayout(){
 function stillMode(){
   try{ return window.__stillMode && window.__stillMode(); }catch(e){ return false; }
 }
+var _animTick=0;
 function animLoop(){
   if(!animOn) return;
   requestAnimationFrame(animLoop);
   if(stillMode()) return;
-  particleT+=0.008;
+  _animTick++;
+  if(_animTick%3!==0) return; /* CPU particle update throttled 3x; phase scaled to match */
+  particleT+=0.024;
   if(particles){
     var p=particles.geometry.attributes.position.array;
     for(var i=0;i<p.length;i+=3){
