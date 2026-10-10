@@ -89,6 +89,28 @@
     background:rgba(255,255,255,.05);color:#fff;font-size:15px;padding:0 14px}
   #funnel-send,#funnel-mic{min-width:52px;min-height:48px;border-radius:12px;cursor:pointer;font-size:17px;
     background:rgba(0,212,255,.14);border:1px solid rgba(0,212,255,.4);color:#00D4FF}
+  #funnel-queue{min-width:52px;min-height:48px;border-radius:12px;cursor:pointer;font-size:15px;
+    background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.4);color:#00D4FF}
+  #fq-sec{margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
+  #fq-head{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.2em;color:#8a97ad;margin-bottom:8px}
+  #fq-list{display:flex;flex-direction:column;gap:8px;max-height:22vh;overflow-y:auto;margin-bottom:8px}
+  .fq-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 10px;font-size:13px;color:#e8e4da}
+  .fq-item .fq-t{color:#8a97ad;font-size:10px;letter-spacing:.15em;margin-bottom:4px;display:block}
+  .fq-item.done{opacity:.55}
+  .fq-item.done .fq-t{color:#5eead4}
+  .fq-acts{display:flex;gap:6px;margin-top:6px}
+  .fq-acts button{min-height:34px;padding:0 12px;border-radius:8px;cursor:pointer;font-size:12px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#e8e4da}
+  #fq-foot{display:flex;gap:8px;flex-wrap:wrap}
+  #fq-foot button{min-height:40px;padding:0 14px;border-radius:10px;cursor:pointer;font-size:13px;
+    background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.35);color:#00D4FF}
+  #fq-sync{margin-top:8px;font-size:12px;color:#8a97ad;display:flex;gap:8px;align-items:center}
+  #fq-sync button{min-height:32px;padding:0 12px;border-radius:8px;cursor:pointer;font-size:12px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#e8e4da}
+  #fq-syncrow{margin-top:8px;display:flex;gap:8px}
+  #fq-pat{flex:1;min-height:40px;border-radius:10px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.05);color:#fff;font-size:13px;padding:0 12px}
+  #fq-note{font-size:11px;margin-top:8px}
   /* settings */
   .set-sec{margin-bottom:18px}
   .set-sec h3{font-size:12px;letter-spacing:.2em;color:#8a97ad;margin-bottom:10px}
@@ -373,14 +395,6 @@
 .tick-empty code{color:#9fd8ff}
 #ticker-note{font-size:10.5px;color:#6b7688;margin-top:10px;line-height:1.5}
 @media (max-width:640px){ #ticker-panel{right:8px;left:8px;top:56px;width:auto} }
-/* PANEL-CONTRACT-FIX v1 */
-/* PANEL-CONTRACT-FIX v1: side panels must not veil the viewport on open.
-   know/ticker roots reuse .h-overlay (full-screen dim+blur); override to the
-   build console's non-occluding pattern. Inner panels keep pointer-events:auto. */
-#know,#ticker{position:fixed;inset:0;z-index:40;display:none;pointer-events:none;
-  background:none;backdrop-filter:none;-webkit-backdrop-filter:none}
-#know.open,#ticker.open{display:block}
-
 
 /* build console: MAKE environment — same instrument language, non-occluding, draggable */
   #bld{position:fixed;inset:0;z-index:32;display:none;pointer-events:none}
@@ -471,12 +485,28 @@
   <div class="h-panel">
     <button class="h-close" data-close="funnel-ov">close</button>
     <h2>FUNNEL</h2>
-    <p class="muted">Ask about the room, tools, blueprints, capabilities, records, builds, or state.</p>
+    <p class="muted">Ask about the room, tools, or state — or queue requests for Buster with +Q. Press / anywhere to open.</p>
     <div id="funnel-log"></div>
     <div id="funnel-askrow">
       <input id="funnel-input" placeholder="what can Moor do right now?" autocomplete="off" aria-label="funnel question">
       <button id="funnel-mic" aria-label="dictate">🎤</button>
+      <button id="funnel-queue" aria-label="queue for Buster" title="queue for Buster">+Q</button>
       <button id="funnel-send" aria-label="ask">→</button>
+    </div>
+    <div id="fq-sec">
+      <div id="fq-head"><span>QUEUE FOR BUSTER</span><span id="fq-count">empty</span></div>
+      <div id="fq-list"></div>
+      <div id="fq-foot">
+        <button id="fq-copyall">copy all</button>
+        <button id="fq-refresh">refresh</button>
+        <button id="fq-clear">clear</button>
+      </div>
+      <div id="fq-sync"><span id="fq-syncstat">sync: off</span><button id="fq-syncbtn">set up</button></div>
+      <div id="fq-syncrow" hidden>
+        <input id="fq-pat" type="password" placeholder="GitHub token (Contents: write on render-queue)" autocomplete="off" aria-label="github token">
+        <button id="fq-savesync">save</button>
+      </div>
+      <p id="fq-note" class="muted">Nothing is sent on its own. Copy items into chat, or turn on sync and just tell Buster to check the queue.</p>
     </div>
   </div>
 </div>
@@ -3668,7 +3698,7 @@ function initKnowledgePanel(){
   // draggable bar (same pattern as build console)
   var bar=document.getElementById('know-bar'),px=0,py=0,drag=false;
   var inner=document.getElementById('know-panel');
-  bar.addEventListener('pointerdown',function(e){ if(e.target.closest('button')) return; drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
+  bar.addEventListener('pointerdown',function(e){ drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
   bar.addEventListener('pointermove',function(e){
     if(!drag) return;
     var r=inner.getBoundingClientRect();
@@ -4020,7 +4050,7 @@ function initTickerPanel(){
   /* draggable bar (same pattern as build console / knowledge panel) */
   var bar=document.getElementById('ticker-bar'),px=0,py=0,drag=false;
   var inner=document.getElementById('ticker-panel');
-  bar.addEventListener('pointerdown',function(e){ if(e.target.closest('button')) return; drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
+  bar.addEventListener('pointerdown',function(e){ drag=true;px=e.clientX;py=e.clientY;bar.setPointerCapture(e.pointerId); });
   bar.addEventListener('pointermove',function(e){
     if(!drag) return;
     var r=inner.getBoundingClientRect();
@@ -4084,6 +4114,126 @@ function wireFunnel(){
     };
   }
   const fb=$('funnel-btn'); if(fb) fb.onclick=()=>openPanel('funnel-ov');
+  fqWire();
+}
+
+/* ---------- funnel queue for Buster: a queue, never a send path ---------- */
+var FQ_KEY='hideout.funnel.queue.v1', FQ_PAT='hideout.funnel.queuePat.v1', fqPushT=null;
+function fqLoad(){ try{var a=JSON.parse(lsGet(FQ_KEY)||'[]');return Array.isArray(a)?a:[];}catch(e){return[];} }
+function fqStore(l){ lsSet(FQ_KEY,JSON.stringify(l)); }
+function fqAdd(text){
+  var l=fqLoad();
+  l.push({id:'q'+Date.now().toString(36)+Math.floor(Math.random()*1296).toString(36),text:text,at:new Date().toISOString(),status:'queued'});
+  fqStore(l); fqSchedulePush(); fqRender(); toast('queued for Buster');
+}
+function fqDoCopy(str,btn,okLabel){
+  function done(ok){ if(btn){var o=btn.dataset.label||btn.textContent;btn.dataset.label=o;btn.textContent=ok?(okLabel||'copied'):'copy failed';setTimeout(function(){btn.textContent=btn.dataset.label;},1200);} else toast(ok?'copied':'copy failed'); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(str).then(function(){done(true);},function(){done(false);}); }
+  else{ try{var ta=document.createElement('textarea');ta.value=str;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();done(true);}catch(e){done(false);} }
+}
+function fqRender(){
+  var list=$('fq-list'); if(!list) return;
+  var items=fqLoad(), open=items.filter(function(i){return i.status!=='done';});
+  var c=$('fq-count'); if(c) c.textContent=items.length?open.length+' queued':'empty';
+  list.innerHTML='';
+  if(!items.length){ list.innerHTML='<div class="muted" style="font-size:12px">nothing queued \u2014 type above and hit +Q</div>'; return; }
+  items.forEach(function(it){
+    var d=document.createElement('div'); d.className='fq-item'+(it.status==='done'?' done':'');
+    var t=document.createElement('span'); t.className='fq-t';
+    var dt=''; try{ dt=new Date(it.at).toLocaleString(); }catch(e){}
+    t.textContent=(it.status==='done'?'DONE \u00b7 ':'')+dt;
+    var p=document.createElement('div'); p.textContent=it.text;
+    var acts=document.createElement('div'); acts.className='fq-acts';
+    var cp=document.createElement('button'); cp.textContent='copy';
+    cp.onclick=function(){ fqDoCopy(it.text,cp); };
+    var del=document.createElement('button'); del.textContent='\u2715'; del.setAttribute('aria-label','remove');
+    del.onclick=function(){ fqStore(fqLoad().filter(function(x){return x.id!==it.id;})); fqSchedulePush(); fqRender(); };
+    acts.appendChild(cp); acts.appendChild(del);
+    d.appendChild(t); d.appendChild(p); d.appendChild(acts);
+    list.appendChild(d);
+  });
+}
+function fqSyncStat(s){ var e=$('fq-syncstat'); if(e) e.textContent=s; }
+function fqPat(){ return lsGet(FQ_PAT)||''; }
+function fqB64(s){ return btoa(unescape(encodeURIComponent(s))); }
+function fqGh(path,method,body,pat){
+  var o={method:method||'GET',headers:{'Accept':'application/vnd.github+json','Authorization':'Bearer '+pat}};
+  if(body) o.body=JSON.stringify(body);
+  return fetch('https://api.github.com'+path,o);
+}
+function fqEnsureBranch(pat){
+  return fqGh('/repos/bassseamoor/render-queue/git/ref/heads/funnel-queue','GET',null,pat).then(function(r){
+    if(r.status===200) return null;
+    return fqGh('/repos/bassseamoor/render-queue/git/ref/heads/main','GET',null,pat).then(function(m){
+      if(!m.ok) throw new Error('no main ref');
+      return m.json();
+    }).then(function(mj){
+      return fqGh('/repos/bassseamoor/render-queue/git/refs','POST',{ref:'refs/heads/funnel-queue',sha:mj.object.sha},pat);
+    }).then(function(c){ if(!c.ok&&c.status!==422) throw new Error('branch create '+c.status); return null; });
+  });
+}
+function fqPush(){
+  var pat=fqPat(); if(!pat) return Promise.resolve();
+  fqSyncStat('syncing\u2026');
+  return fqEnsureBranch(pat).then(function(){
+    return fqGh('/repos/bassseamoor/render-queue/contents/queues/funnel-queue.json?ref=funnel-queue','GET',null,pat);
+  }).then(function(ex){
+    var p=ex.status===200?ex.json():Promise.resolve(null);
+    return p.then(function(ej){
+      var payload={message:'funnel queue sync',content:fqB64(JSON.stringify({updated_at:new Date().toISOString(),items:fqLoad()},null,1)),branch:'funnel-queue'};
+      if(ej&&ej.sha) payload.sha=ej.sha;
+      return fqGh('/repos/bassseamoor/render-queue/contents/queues/funnel-queue.json','PUT',payload,pat);
+    });
+  }).then(function(put){
+    if(!put.ok) throw new Error('push '+put.status);
+    fqSyncStat('synced '+new Date().toLocaleTimeString());
+  }).catch(function(){ fqSyncStat('sync failed \u2014 will retry'); });
+}
+function fqSchedulePush(){ if(!fqPat()) return; if(fqPushT) clearTimeout(fqPushT); fqPushT=setTimeout(fqPush,2500); }
+function fqTestPush(){
+  var pat=fqPat(); fqSyncStat('testing\u2026');
+  fqGh('/repos/bassseamoor/render-queue','GET',null,pat).then(function(m){
+    if(!m.ok) throw new Error('token rejected');
+    return fqPush();
+  }).then(function(){ toast('queue sync on'); }).catch(function(){ fqSyncStat('sync: off \u2014 token failed'); });
+}
+function fqPull(){
+  fetch('https://api.github.com/repos/bassseamoor/render-queue/contents/queues/funnel-queue.json?ref=funnel-queue',{headers:{'Accept':'application/vnd.github+json'}}).then(function(r){
+    if(r.status===404){ toast('nothing synced yet'); return null; }
+    if(!r.ok) throw new Error('http '+r.status);
+    return r.json();
+  }).then(function(j){
+    if(!j) return;
+    var data=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\s/g,'')))));
+    var byId={}; fqLoad().forEach(function(i){ byId[i.id]=i; });
+    (data.items||[]).forEach(function(ri){ if(byId[ri.id]){ if(ri.status) byId[ri.id].status=ri.status; } else byId[ri.id]=ri; });
+    fqStore(Object.keys(byId).map(function(k){ return byId[k]; }));
+    fqRender(); toast('queue refreshed');
+  }).catch(function(){ toast('refresh failed'); });
+}
+function fqWire(){
+  var qa=$('funnel-queue');
+  if(qa) qa.onclick=function(){ var inp=$('funnel-input'); var v=inp.value.trim(); if(v){ inp.value=''; fqAdd(v); } };
+  var ca=$('fq-copyall');
+  if(ca) ca.onclick=function(){
+    var items=fqLoad().filter(function(i){return i.status!=='done';});
+    if(!items.length){ toast('queue is empty'); return; }
+    fqDoCopy(items.map(function(it,n){return (n+1)+'. '+it.text;}).join('\n\n'),ca,'copied all');
+  };
+  var cl=$('fq-clear');
+  if(cl) cl.onclick=function(){ if(!fqLoad().length) return; if(confirm('clear the funnel queue?')){ fqStore([]); fqSchedulePush(); fqRender(); } };
+  var rf=$('fq-refresh');
+  if(rf) rf.onclick=function(){ fqPull(); };
+  var sb=$('fq-syncbtn');
+  if(sb) sb.onclick=function(){ var r=$('fq-syncrow'); r.hidden=!r.hidden; if(!r.hidden){ var p=$('fq-pat'); if(p) p.value=fqPat(); } };
+  var sv=$('fq-savesync');
+  if(sv) sv.onclick=function(){
+    var p=$('fq-pat'); var v=(p.value||'').trim();
+    if(!v){ lsSet(FQ_PAT,''); fqSyncStat('sync: off'); $('fq-syncrow').hidden=true; return; }
+    lsSet(FQ_PAT,v); if(p) p.value=''; $('fq-syncrow').hidden=true; fqTestPush();
+  };
+  fqSyncStat(fqPat()?'sync: on':'sync: off');
+  fqRender();
 }
 
 /* ---------- settings: lighting, room modes, arm presets ---------- */
@@ -4477,6 +4627,15 @@ window.addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.code==='Space')e.preventDefault();
   const tag=(document.activeElement&&document.activeElement.tagName)||'';
+  var ae=document.activeElement;
+  var typing=/INPUT|TEXTAREA|SELECT/.test(tag)||(ae&&ae.isContentEditable);
+  if(!typing&&e.key==='/'){
+    e.preventDefault();
+    var fov=$('funnel-ov');
+    if(fov&&fov.classList.contains('open')){ fov.classList.remove('open'); }
+    else{ openPanel('funnel-ov'); var fi=$('funnel-input'); if(fi) setTimeout(function(){fi.focus();},60); }
+    return;
+  }
   if(!/INPUT|TEXTAREA|SELECT/.test(tag)&&e.key>='1'&&e.key<='9'&&e.key.length===1){
     const n=+e.key;
     if(n<=LIGHT_ORDER.length){ applyLightPreset(LIGHT_ORDER[n-1]); renderSettings(); return; }
