@@ -42,22 +42,46 @@
   #selfcheck .ok { color: #4ade80; } #selfcheck .bad { color: #f87171; }
   .hint { font-size: 12px; color: #7c879d; }
   #changes { font-size: 13px; color: #c7d3e8; }
+
+  /* event log */
+  #view-log { max-width: 880px; margin: 0 auto; padding: 18px 22px 48px; }
+  .ev-item { border: 1px solid #232d45; border-radius: 12px; margin-bottom: 10px; background: #0d1220; overflow: hidden; }
+  .ev-head { width: 100%; display: flex; align-items: center; gap: 12px; background: none; border: none; color: #dbe2ee; padding: 14px 16px; cursor: pointer; text-align: left; font-size: 15px; font-family: inherit; }
+  .ev-head:hover { background: #111a2e; }
+  .ev-date { color: #7c879d; font-size: 13px; min-width: 92px; font-variant-numeric: tabular-nums; }
+  .ev-title { flex: 1; font-weight: 600; }
+  .pill { font-size: 11px; font-weight: 700; letter-spacing: .04em; border-radius: 20px; padding: 3px 10px; text-transform: uppercase; white-space: nowrap; }
+  .pill.proven { background: #123a26; color: #4ade80; border: 1px solid #1f5c3a; }
+  .pill.failed { background: #3d1414; color: #f87171; border: 1px solid #6b2222; }
+  .pill.sealed { background: #1a2233; color: #93a0b8; border: 1px solid #2a3550; }
+  .ev-chev { color: #7c879d; transition: transform .15s; }
+  .ev-item.open .ev-chev { transform: rotate(90deg); }
+  .ev-body { padding: 0 18px 16px 120px; }
+  .ev-desc { margin: 0 0 10px; font-size: 14px; line-height: 1.55; color: #c7d3e8; }
+  .ev-meta { font-size: 12px; color: #7c879d; }
+  .ev-meta code { background: #141b2a; padding: 1px 6px; border-radius: 5px; color: #aeb9cf; }
+  #data-badge { margin-top: 10px; }
+  .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; margin-right: 6px; }
+  .demo-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #fbbf24; margin-right: 6px; }
+  #view-log .log-head { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 2px 14px; }
+  #view-log .log-head h2 { margin: 0; font-size: 17px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Funnel Evolution Record</h1>
-  <div class="sub">A read-only lens over Funnel history. It draws exact structural snapshots of the
-  Funnel over time as an inspectable graph — nothing is scored, ranked, or rearranged, and the
-  drawing never changes what happened. Colors mark structural roles and recorded changes only;
-  they say nothing about how good, fast, or smart anything is.</div>
+  <div class="sub">Every sealed funnel commission, newest first. New entries appear automatically
+  as verdicts are sealed — no manual updates. The graph tabs show the same history as exact
+  structural snapshots; colors mark structural roles and recorded changes only.</div>
   <blockquote>"Preserve the exact topology. Improve the lens. Never improve the picture by changing what happened."</blockquote>
-  <div class="hint">Demo data: every node is labeled <b>demo</b> in its evidence text. Receipts shown are real sealed receipt ids, used only as example labels.</div>
+  <div class="hint" id="data-badge"><span class="demo-dot"></span>demo data — live record not loaded yet</div>
 </header>
 
+<div id="view-log"></div>
 <div id="controls">
   <div class="tabs">
-    <button id="tab-single" class="active">Single</button>
+    <button id="tab-log" class="active">Log</button>
+    <button id="tab-single">Single</button>
     <button id="tab-timeline">Timeline</button>
     <button id="tab-compare">Compare</button>
   </div>
@@ -78,6 +102,7 @@
   <div class="ctl"><label><input type="checkbox" id="chk-bundle" checked> bundle edges</label></div>
   <div class="ctl"><label><input type="checkbox" id="chk-labels" checked> labels</label></div>
 </div>
+<div id="view-graph" style="display:none">
 <div id="controls" style="border-top:none">
   <div id="filters"></div>
   <div class="hint" id="filter-count"></div>
@@ -95,6 +120,7 @@
 
 <div id="legend"></div>
 
+</div>
 <div id="selfcheck">
   <h2>Self-check <span class="hint">— runs the core's own determinism and diff-correctness proof on load</span></h2>
   <div id="sc-rows"></div>
@@ -196,7 +222,7 @@ function s2w(v, x, y) { return { x: (x - v.ox) / v.scale, y: (y - v.oy) / v.scal
 
 // ---------- state ----------
 var state = {
-  mode: 'single', snapIdx: 2, cmpA: 0, cmpB: 2, cmpMode: 'side',
+  mode: 'log', snapIdx: 0, cmpA: 0, cmpB: 0, cmpMode: 'side',
   hiddenRoles: {}, bundled: true, showLabels: true,
   selected: null, selectedSnap: null, playing: false, playTimer: null
 };
@@ -575,11 +601,17 @@ function buildLegend() {
 // ---------- controls ----------
 function setMode(m) {
   state.mode = m;
+  var isLog = (m === 'log');
+  document.getElementById('view-log').style.display = isLog ? '' : 'none';
+  document.getElementById('view-graph').style.display = isLog ? 'none' : '';
+  ['log', 'single', 'timeline', 'compare'].forEach(function (x) {
+    var t = document.getElementById('tab-' + x);
+    if (t) t.classList.toggle('active', x === m);
+  });
   ['single', 'timeline', 'compare'].forEach(function (x) {
-    document.getElementById('tab-' + x).classList.toggle('active', x === m);
     document.getElementById('ctl-' + x).style.display = x === m ? '' : 'none';
   });
-  fitAll();
+  if (isLog) renderLog(); else { resize(); fitAll(); }
 }
 function fillSelect(sel, selected) {
   sel.innerHTML = SNAPS.map(function (s, i) {
@@ -588,6 +620,7 @@ function fillSelect(sel, selected) {
   }).join('');
 }
 
+document.getElementById('tab-log').onclick = function () { setMode('log'); };
 document.getElementById('tab-single').onclick = function () { setMode('single'); };
 document.getElementById('tab-timeline').onclick = function () { setMode('timeline'); };
 document.getElementById('tab-compare').onclick = function () { setMode('compare'); };
@@ -596,11 +629,10 @@ document.getElementById('chk-bundle').onchange = function (e) { state.bundled = 
 document.getElementById('chk-labels').onchange = function (e) { state.showLabels = e.target.checked; render(); };
 
 var selSnap = document.getElementById('sel-snap');
-fillSelect(selSnap, 2);
 selSnap.onchange = function () { state.snapIdx = +selSnap.value; fitAll(); };
 
 var selA = document.getElementById('sel-a'), selB = document.getElementById('sel-b');
-fillSelect(selA, 0); fillSelect(selB, 2);
+
 selA.onchange = function () { state.cmpA = +selA.value; fitAll(); };
 selB.onchange = function () { state.cmpB = +selB.value; fitAll(); };
 document.querySelectorAll('input[name="cmpmode"]').forEach(function (r) {
@@ -641,13 +673,78 @@ function runSelfCheck() {
   document.getElementById('sc-rows').innerHTML = html;
 }
 
+// ---------- event log ----------
+var EVENTS = [];
+function detPill(det) {
+  var d = String(det || '').toUpperCase();
+  var cls = 'sealed', label = det || 'Sealed';
+  if (/^PROVEN/.test(d)) { cls = 'proven'; label = 'Proven'; }
+  else if (/FAIL|NOT JUSTIFIED|REJECT/.test(d)) { cls = 'failed'; }
+  return '<span class="pill ' + cls + '">' + esc(label) + '</span>';
+}
+function renderLog() {
+  var host = document.getElementById('view-log');
+  if (!EVENTS.length) {
+    host.innerHTML = '<div class="hint" style="padding:20px 4px">Live event data is not available ' +
+      '(evolution-record-data.json could not be loaded). The graph tabs show the built-in demo record.</div>';
+    return;
+  }
+  var html = '<div class="log-head"><h2>Sealed commissions</h2>' +
+    '<span class="hint">' + EVENTS.length + ' events</span></div>';
+  for (var i = EVENTS.length - 1; i >= 0; i--) {
+    var e = EVENTS[i];
+    html += '<div class="ev-item">' +
+      '<button class="ev-head">' +
+      '<span class="ev-date">' + esc(e.date) + '</span>' +
+      '<span class="ev-title">' + esc(e.title) + '</span>' +
+      detPill(e.determination) +
+      '<span class="ev-chev">\u25b8</span></button>' +
+      '<div class="ev-body" hidden>' +
+      '<p class="ev-desc">' + esc(e.description) + '</p>' +
+      '<div class="ev-meta">' +
+      (e.receipt ? 'Receipt <code>' + esc(e.receipt) + '</code> &middot; ' : '') +
+      (e.rid ? 'RID <code>' + esc(e.rid) + '</code> &middot; ' : '') +
+      esc(e.verdict) + '</div></div></div>';
+  }
+  host.innerHTML = html;
+  host.querySelectorAll('.ev-head').forEach(function (b) {
+    b.onclick = function () {
+      var item = b.parentNode, body = item.querySelector('.ev-body');
+      var open = body.hidden;
+      body.hidden = !open;
+      item.classList.toggle('open', open);
+    };
+  });
+}
+
 // ---------- boot ----------
-buildFilters();
-buildLegend();
-runSelfCheck();
-scrubLabel.textContent = SNAPS[2].id + ' (current)';
-resize();
-fitAll();
+function setBadge(live, text) {
+  document.getElementById('data-badge').innerHTML =
+    '<span class="' + (live ? 'live-dot' : 'demo-dot') + '"></span>' + esc(text);
+}
+function boot() {
+  var last = SNAPS.length - 1;
+  state.snapIdx = last; state.cmpA = 0; state.cmpB = last;
+  var scrub = document.getElementById('scrub');
+  scrub.max = last; scrub.value = last;
+  buildFilters(); buildLegend(); runSelfCheck();
+  fillSelect(selSnap, last); fillSelect(selA, 0); fillSelect(selB, last);
+  scrubLabel.textContent = SNAPS[last].id + (SNAPS[last].meta.current ? ' (current)' : '');
+  renderLog();
+  resize(); fitAll();
+}
+fetch('evolution-record-data.json', { cache: 'no-store' })
+  .then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+  .then(function (d) {
+    if (d && Array.isArray(d.snapshots) && d.snapshots.length) {
+      SNAPS = d.snapshots;
+      EVENTS = Array.isArray(d.events) ? d.events : [];
+      setBadge(true, 'live record — ' + EVENTS.length + ' sealed commissions \u00b7 updated ' +
+        String(d.generated_at || '').slice(0, 10));
+    } else { setBadge(false, 'demo data — live record file was empty'); }
+    boot();
+  })
+  .catch(function () { setBadge(false, 'demo data — live record not loaded'); boot(); });
 })();
 </script>
 </body>
