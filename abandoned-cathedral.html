@@ -4116,20 +4116,134 @@ const KB=[
   {k:['build','make','order'], a:'The build console takes sealed build orders → queue → agents → receipts. Open it from the BUILD dock category.', open:null},
   {k:['next','what should i do','stuck'], a:'Suggested: open the capability dashboard, pick one LIVE capability, and run it through the build console. Or ask about a specific blueprint blocker.', open:'dash-ov'},
 ];
-function funnelAsk(q){
+/* ---------- funnel Q&A: real search over tools, capabilities, receipts ---------- */
+let _fqManifest=null, _fqManifestLoading=null;
+function fqGetManifest(){
+  if(_fqManifest) return Promise.resolve(_fqManifest);
+  if(_fqManifestLoading) return _fqManifestLoading;
+  _fqManifestLoading=fetch('./pulse-manifest.json',{cache:'no-store'}).then(r=>r.json()).then(j=>{
+    _fqManifest=j; return j;
+  }).catch(()=>null);
+  return _fqManifestLoading;
+}
+function fqToolSearch(ql){
+  if(!_fqManifest) return [];
+  const tools=_fqManifest.tools||_fqManifest.components||[];
+  const words=ql.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>2);
+  const hits=[];
+  tools.forEach(t=>{
+    const name=String(t.label||t.name||t.id||'').toLowerCase();
+    const desc=String(t.description||t.short||t.tag||'').toLowerCase();
+    const id=String(t.id||'').toLowerCase();
+    let s=0;
+    words.forEach(w=>{
+      if(id===w||name===w) s+=10;
+      else if(id.includes(w)||name.includes(w)) s+=5;
+      else if(desc.includes(w)) s+=2;
+    });
+    if(s>0) hits.push({t:t,s:s});
+  });
+  hits.sort((a,b)=>b.s-a.s);
+  return hits.slice(0,5).map(h=>h.t);
+}
+function fqCapSearch(ql){
+  const out=[];
+  if(typeof CAP_GROUPS==='undefined') return out;
+  const words=ql.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>2);
+  CAP_GROUPS.forEach(g=>{
+    g.items.forEach(it=>{
+      const n=String(it[0]).toLowerCase();
+      let s=0;
+      words.forEach(w=>{ if(n===w) s+=10; else if(n.includes(w)) s+=5; });
+      if(s>0) out.push({g:g.g,n:it[0],st:it[1],note:it[2],s:s});
+    });
+  });
+  out.sort((a,b)=>b.s-a.s);
+  return out.slice(0,5);
+}
+function fqReceiptSearch(ql){
+  try{
+    const rs=(C&&C.receipts&&C.receipts())||[];
+    const words=ql.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>2);
+    const out=[];
+    rs.forEach(r=>{
+      const txt=String(r.label||''+' '+r.receipt||'').toLowerCase();
+      let s=0;
+      words.forEach(w=>{ if(txt.includes(w)) s+=3; });
+      if(s>0) out.push({r:r,s:s});
+    });
+    out.sort((a,b)=>b.s-a.s);
+    return out.slice(0,3);
+  }catch(e){ return []; }
+}
+function fqEsc(s){ return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fqAnswerDiv(html){
+  const div=document.createElement('div'); div.className='fa';
+  div.innerHTML='<b>funnel</b>'+html;
+  div.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPanel(b.dataset.open));
+  div.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>openToolUrl(b.dataset.tool));
+  return div;
+}
+async function funnelAsk(q){
   openPanel('funnel-ov');
   const log=$('funnel-log'); if(!log) return;
   const ql=q.toLowerCase();
-  log.innerHTML+='<div class="fq"><b>you</b><p>'+q.replace(/</g,'&lt;')+'</p></div>';
+  log.innerHTML+='<div class="fq"><b>you</b><p>'+fqEsc(q)+'</p></div>';
+  log.scrollTop=log.scrollHeight;
+  // 1. structural KB first (room controls, no network needed)
   let best=null,bs=0;
   KB.forEach(e=>{ let s=0; e.k.forEach(k=>{ if(ql.includes(k)) s+=k.length; }); if(s>bs){bs=s;best=e;} });
-  const ans=best?best.a:'I can answer about capabilities, blueprints, receipts, files, flowcharts, lighting, monitors, and builds. Try "what can Moor do right now?"';
-  const div=document.createElement('div'); div.className='fa';
-  div.innerHTML='<b>funnel</b><p>'+ans+'</p>'+(best&&best.open?'<button data-open="'+best.open+'">open it</button>':'');
-  log.appendChild(div);
-  div.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPanel(b.dataset.open));
+  // 2. real searches (manifest loads async)
+  await fqGetManifest();
+  const tools=fqToolSearch(ql);
+  let caps=fqCapSearch(ql);
+  let receipts=fqReceiptSearch(ql);
+  // general asks: "show (live) capabilities", "show receipts/proof"
+  if(/capabilit/.test(ql) && !caps.length && typeof CAP_GROUPS!=='undefined'){
+    caps=[];
+    CAP_GROUPS.forEach(g=>g.items.forEach(it=>{
+      if(!/live/.test(ql) || it[1]==='live') caps.push({g:g.g,n:it[0],st:it[1],note:it[2],s:1});
+    }));
+    caps=caps.slice(0,12);
+  }
+  if(/receipt|proof/.test(ql) && !receipts.length){
+    try{ receipts=((C&&C.receipts&&C.receipts())||[]).slice(0,5).map(r=>({r:r,s:1})); }catch(e){}
+  }
+  let html='';
+  if(tools.length){
+    html+='<p>Found in your tools:</p>';
+    tools.forEach(t=>{
+      const label=fqEsc(t.label||t.name||t.id);
+      const url=t.url||t.tool||((t.id||'')+'.html');
+      html+='<div style="margin:8px 0;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:8px">'+
+        '<strong>'+label+'</strong><br><span style="font-size:12px;color:#8a97ad">'+fqEsc(t.description||t.short||'')+'</span><br>'+
+        '<button data-tool="'+fqEsc(url)+'">open '+label+'</button></div>';
+    });
+  }
+  if(caps.length){
+    html+='<p>Capabilities:</p>';
+    caps.forEach(c=>{
+      html+='<div style="margin:6px 0"><span class="cap-dot" style="background:'+(ST_COL[c.st]||'#6B7280')+';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px"></span>'+
+        '<strong>'+fqEsc(c.n)+'</strong> <em style="color:#8a97ad">'+fqEsc(c.st)+'</em> <span style="font-size:11px;color:#5d6b80">'+fqEsc(c.g)+'</span></div>';
+    });
+    if(!tools.length) html+='<button data-open="dash-ov">open dashboard</button>';
+  }
+  if(receipts.length){
+    html+='<p>Receipts:</p>';
+    receipts.forEach(o=>{
+      html+='<div style="margin:6px 0;font-size:13px"><strong>'+fqEsc(o.r.label||'sealed')+'</strong><br>'+
+        '<span style="font-family:monospace;color:#8a97ad">'+fqEsc(o.r.receipt||'')+'</span></div>';
+    });
+    if(!tools.length&&!caps.length) html+='<button data-open="museum-ov">open museum</button>';
+  }
+  if(!html){
+    if(best) html='<p>'+best.a+'</p>'+(best.open?'<button data-open="'+best.open+'">open it</button>':'');
+    else html='<p>I don\'t have that one. I can search your tools, capabilities, receipts, blueprints, files, flowcharts, lighting, monitors, and builds. Try "where is the crawler" or "show live capabilities".</p>';
+  }
+  log.appendChild(fqAnswerDiv(html));
   log.scrollTop=log.scrollHeight;
 }
+
 function wireFunnel(){
   const inp=$('funnel-input'), send=$('funnel-send'), mic=$('funnel-mic');
   if(send) send.onclick=()=>{ const v=inp.value.trim(); if(v){ inp.value=''; funnelAsk(v); } };
