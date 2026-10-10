@@ -4182,6 +4182,7 @@ function fqAnswerDiv(html){
   div.innerHTML='<b>funnel</b>'+html;
   div.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openPanel(b.dataset.open));
   div.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>openToolUrl(b.dataset.tool));
+  div.querySelectorAll('[data-deck]').forEach(b=>b.onclick=()=>{ if(window.__devroomUI) window.__devroomUI.focusWall(0); });
   return div;
 }
 async function funnelAsk(q){
@@ -4190,6 +4191,19 @@ async function funnelAsk(q){
   const ql=q.toLowerCase();
   log.innerHTML+='<div class="fq"><b>you</b><p>'+fqEsc(q)+'</p></div>';
   log.scrollTop=log.scrollHeight;
+  // 0. make-intent: "make me a website" -> open the direct-making deck
+  if(/\b(make|build|create|generate)\b/.test(ql)){
+    let mk='things';
+    try{
+      const reg=window.__devroomUI?window.__devroomUI.registry():{};
+      const ids=Object.keys(reg);
+      const found=ids.find(id=>ql.includes(id));
+      if(found) mk=reg[found].label||found;
+    }catch(e){}
+    log.appendChild(fqAnswerDiv('<p>Yes — the Direct making deck makes '+fqEsc(mk)+': pick parameters with dials and sliders, choose a safety package, then generate.</p><button data-deck="1">open the making deck</button>'));
+    log.scrollTop=log.scrollHeight;
+    return;
+  }
   // 1. structural KB first (room controls, no network needed)
   let best=null,bs=0;
   KB.forEach(e=>{ let s=0; e.k.forEach(k=>{ if(ql.includes(k)) s+=k.length; }); if(s>bs){bs=s;best=e;} });
