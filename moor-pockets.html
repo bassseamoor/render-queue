@@ -1,0 +1,1897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Moor Pockets</title>
+<style>
+  :root { --bg:#0a0b0d; --panel:#0e1013; --txt:#e8eaed; --dim:#8a93a0; --line:rgba(255,255,255,.08); --acc:#7fd08a; --warn:#e0a35e; --bad:#e0705e; --r:14px; --r2:9px; }
+  * { box-sizing:border-box; }
+  html,body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.5 -apple-system,system-ui,"SF Pro Text",sans-serif; overflow:hidden; }
+  /* ---------- panels under the sliding screen ---------- */
+  #side { position:fixed; top:0; bottom:0; left:0; width:66%; max-width:340px; background:var(--panel);
+    border-right:1px solid var(--line); z-index:10; overflow-y:auto; padding:26px 20px; touch-action:pan-y; }
+  #agentside { position:fixed; top:0; bottom:0; right:0; width:66%; max-width:340px; background:var(--panel);
+    border-left:1px solid var(--line); z-index:10; overflow-y:auto; padding:22px 18px; touch-action:pan-y; }
+  .side-title { font-size:12px; letter-spacing:3px; color:var(--dim); margin-bottom:8px; }
+  /* pocket tree: quiet navigator, not a panel */
+  .trow .tname { flex:1; }
+  .taskbtn { width:27px; height:27px; border-radius:50%; background:var(--txt); color:#000; flex-shrink:0;
+    border:none; box-shadow:none; font-size:17px; line-height:1; padding:0 0 2px; cursor:pointer;
+    -webkit-appearance:none; appearance:none; -webkit-tap-highlight-color:transparent; }
+  .taskbtn:active { transform:scale(.92); }
+  /* task panel: slides in from the right, under the sheet */
+  #taskside { position:fixed; top:0; bottom:0; right:0; width:88%; max-width:420px; background:var(--panel);
+    border-left:1px solid var(--line); z-index:15; overflow-y:auto; padding:26px 20px 60px; touch-action:pan-y; }
+  .tlabel { font-size:11px; letter-spacing:2px; color:var(--dim); text-transform:uppercase;
+    padding:16px 2px 8px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .tlabel.cur { color:var(--txt); }
+  .trow { display:flex; align-items:center; gap:10px; padding:11px 2px; font-size:15px;
+    border-bottom:1px solid var(--line); cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .trow.cur { font-weight:700; }
+  .trow .tdot { color:var(--acc); font-size:11px; width:14px; flex-shrink:0; }
+  .trow.tnew { color:var(--dim); border-bottom:none; margin-top:6px; }
+  .dimblock { margin-bottom:6px; }
+  .dimname { font-size:16px; font-weight:600; padding:12px 4px; cursor:pointer; border-bottom:1px solid var(--line); -webkit-tap-highlight-color:transparent; }
+  .tabs { display:flex; border-bottom:1px solid var(--line); }
+  .tab { flex:1; font-size:13px; padding:10px 4px; text-align:center; color:var(--dim); cursor:pointer; -webkit-tap-highlight-color:transparent;
+    border-right:1px solid var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tab:last-child { border-right:none; }
+  .tab.active { color:#000; background:var(--txt); font-weight:600; }
+  .tab.empty { color:#3a3f47; cursor:default; }
+  .side-actions { margin-top:18px; display:grid; gap:0; border-top:1px solid var(--line); }
+  .side-actions button { border:none; border-bottom:1px solid var(--line); background:none; text-align:left;
+    padding:14px 4px; font-size:14px; color:var(--txt); cursor:pointer; }
+  .side-actions button:hover { background:#14161a; }
+  /* ---------- main screen (slides to reveal panels) ---------- */
+  #view { position:fixed; top:0; right:0; bottom:0; left:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    background:var(--bg); z-index:20; transition:transform .22s ease; touch-action:pan-y; box-shadow:none; }
+  .wrap { max-width:760px; margin:0 auto; padding:26px 22px 60px; }
+  .vhead { border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:0; }
+  .vhead .crumb { font-size:11px; letter-spacing:2px; color:var(--dim); text-transform:uppercase; }
+  .vhead h2 { margin:6px 0 2px; font-size:24px; font-weight:700; letter-spacing:.5px; }
+  .vhead .sub { color:var(--dim); font-size:13px; }
+  .sect { background:#101216; border:none; border-radius:var(--r);
+    padding:18px; margin:14px 0; box-shadow:0 6px 20px rgba(0,0,0,.35); }
+  .sect > h3 { margin:0 0 12px; font-size:11px; letter-spacing:2px; color:var(--dim); text-transform:uppercase; font-weight:600; }
+  .abody { max-height:0; overflow:hidden; transition:max-height .34s cubic-bezier(.32,.72,.28,1); margin:10px 0 12px; }
+  /* ---------- pocket composition: identity → command → contents ---------- */
+  .phead { margin-bottom:24px; }
+  .eyebrow { font-size:11px; letter-spacing:3px; color:var(--dim); text-transform:uppercase; }
+  .pname { font-size:30px; font-weight:700; margin:8px 0 2px; letter-spacing:.5px; }
+  .ppurpose { font-size:14px; color:var(--dim); }
+  .pchips { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+  .group { margin:0 0 28px; }
+  .group.cmd, .group.harness { margin-bottom:32px; }
+  .glabel { font-size:11px; letter-spacing:3px; color:var(--dim); text-transform:uppercase; padding:0 2px 8px; }
+  .grows { border-top:1px solid var(--line); }
+  .grow { display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:14px 2px; border-bottom:1px solid var(--line); cursor:pointer;
+    -webkit-tap-highlight-color:transparent; }
+  .grow-t { font-size:15px; }
+  .grow-t .gsub { color:var(--dim); font-size:13px; font-weight:400; }
+  .grow-d { font-size:13px; color:var(--dim); margin-top:3px; }
+  .grow-r { display:flex; align-items:center; gap:10px; color:var(--dim); font-size:13px; flex-shrink:0; }
+  .grow-r .cnt.hot { color:var(--txt); font-weight:700; }
+  .grow-r .qcount { font-variant-numeric:tabular-nums; }
+  .startlink { color:var(--txt); font-weight:600; white-space:nowrap; }
+  .chev { font-size:18px; color:var(--dim); display:inline-block; transition:transform .25s ease; line-height:1; }
+  .grow.open .chev { transform:rotate(90deg); color:var(--txt); }
+  /* the raised dark panel — deployed only when a row opens */
+  .panel { background:#101216; border-radius:var(--r); box-shadow:0 8px 24px rgba(0,0,0,.45); padding:16px 18px; }
+  .rowline { display:flex; gap:8px; }
+  input[type=text], textarea, select { -webkit-appearance:none; appearance:none; background:#14161a; color:var(--txt); border:none;
+    border-radius:var(--r2); padding:12px; font-size:15px; width:100%; }
+  input[type=text]:focus, textarea:focus { outline:none; box-shadow:0 0 0 2px rgba(255,255,255,.12); }
+  textarea { min-height:76px; resize:vertical; }
+  button { -webkit-appearance:none; appearance:none; -webkit-tap-highlight-color:transparent; outline:none;
+    background:#1a1d22; color:var(--txt); border:none; border-radius:var(--r2);
+    padding:12px 18px; font-size:14px; cursor:pointer; box-shadow:none; }
+  button:focus { outline:none; }
+  button:active { background:#22262c; }
+  button.primary { background:var(--txt); color:#000; border:none; font-weight:600; box-shadow:none; }
+  button.small { padding:7px 12px; font-size:12px; }
+  button.on { color:var(--acc); }
+  button.sel { color:var(--warn); }
+  .lockbtn { width:42px; height:42px; border-radius:50%; border:1px solid currentColor; background:none;
+    display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:none; padding:0; flex:none; }
+  .lockbtn.red { color:var(--bad); }
+  .lockbtn.green { color:var(--acc); }
+  .backbtn { background:none; border:none; box-shadow:none; color:var(--dim); font-size:14px;
+    padding:10px 0 2px; cursor:pointer; text-align:left; }
+  .stage { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .stage:last-child { border-bottom:none; }
+  .stage .inf { flex:1; } .stage .n { font-weight:600; font-size:13px; } .stage .d { color:var(--dim); font-size:12px; }
+  .stream { font-size:13px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .ev { padding:6px 0; border-bottom:1px solid var(--line); display:flex; gap:10px; }
+  .ev .tm { color:var(--dim); font-size:11px; white-space:nowrap; padding-top:2px; }
+  .ev.pass .tx { color:var(--acc); } .ev.fail .tx { color:var(--bad); } .ev.q .tx { color:var(--warn); } .ev.seal .tx { color:#9fd0a5; }
+  .list .it { padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .list .k { color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:2px; }
+  .list .ts { color:var(--dim); font-size:11px; }
+  .qa { background:#101216; border:none; border-radius:var(--r);
+    padding:18px; margin:0 0 14px; box-shadow:0 6px 20px rgba(0,0,0,.35); }
+  .qa .qq { font-weight:600; margin-bottom:12px; font-size:16px; }
+  .qa .rowline { margin-top:10px; }
+  .qa .rej { color:var(--bad); font-size:12px; margin-top:10px; }
+  .qa .note, .note { color:var(--dim); font-size:12px; }
+  .welcome { text-align:center; padding:20vh 30px; color:var(--dim); }
+  .welcome .big { font-size:13px; letter-spacing:4px; margin-bottom:14px; color:var(--txt); }
+  .pill { display:inline-block; font-size:10px; border:1px solid rgba(255,255,255,.22); border-radius:20px; padding:3px 10px; letter-spacing:1px; color:var(--dim); margin-right:6px; }
+  .depthrow { display:flex; gap:6px; }
+  .err { color:var(--bad); font-size:12px; margin-top:8px; }
+  .vc { font-size:10px; letter-spacing:1px; padding:2px 8px; border:1px solid var(--line); }
+  .vc.pass { color:var(--acc); border-color:var(--acc); }
+  .vc.fail { color:var(--bad); border-color:var(--bad); }
+  .qlabel { font-size:16px; font-weight:600; margin-bottom:8px; }
+  .vhead.home h2 { font-size:34px; }
+  .nextmove { display:block; width:100%; text-align:left; background:#15171c; color:var(--txt);
+    border:none; border-radius:var(--r); padding:18px; font-size:17px; font-weight:700;
+    margin:16px 0 4px; cursor:pointer; box-shadow:none; }
+  .nextmove .sub { display:block; font-size:13px; color:var(--dim); font-weight:400; margin-top:4px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; border:1px solid var(--line); margin-right:6px; }
+  .dot.on { background:var(--acc); border-color:var(--acc); }
+  .quizq { font-size:24px; font-weight:700; margin:6px 0 4px; }
+  .md .mdh { font-weight:700; font-size:15px; margin:10px 0 4px; }
+  .md .mdli { margin:3px 0 3px 14px; }
+  .md code { font-family:monospace; background:#0c0e11; padding:1px 5px; font-size:12px; }
+  .folders { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .fchip { -webkit-appearance:none; appearance:none; -webkit-tap-highlight-color:transparent; font-size:14px; padding:9px 16px; border:none; border-radius:20px; color:var(--dim); cursor:pointer; background:#1a1d22; box-shadow:none; }
+  .fchip.on { color:#000; background:var(--txt); font-weight:600; }
+  .frow { display:flex; justify-content:space-between; align-items:center; padding:15px 0; font-size:15px; border-bottom:1px solid var(--line); cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .frow .cnt { color:var(--dim); }
+  /* ---------- notification bell: global chrome, top right ---------- */
+  #bellBtn { position:fixed; top:calc(10px + env(safe-area-inset-top,0px)); right:12px; z-index:40;
+    background:none; border:none; box-shadow:none; padding:10px; border-radius:50%; color:var(--dim);
+    -webkit-appearance:none; appearance:none; -webkit-tap-highlight-color:transparent; cursor:pointer; }
+  #bellBtn:active { color:var(--txt); }
+  #bellBadge { position:absolute; top:4px; right:4px; min-width:16px; height:16px; border-radius:9px;
+    background:var(--bad); color:#fff; font-size:10px; font-weight:700; line-height:16px; text-align:center; padding:0 4px; }
+  #bellDrop { position:fixed; top:calc(54px + env(safe-area-inset-top,0px)); right:12px; width:280px; max-width:82vw;
+    background:#101216; border-radius:var(--r); box-shadow:0 12px 32px rgba(0,0,0,.55); z-index:41;
+    max-height:60vh; overflow-y:auto; }
+  /* top-right cluster: library · settings · notifications */
+  #libBtn { position:fixed; top:calc(10px + env(safe-area-inset-top,0px)); right:96px; z-index:40;
+    background:none; border:none; box-shadow:none; padding:10px; border-radius:50%; color:var(--dim);
+    -webkit-appearance:none; appearance:none; -webkit-tap-highlight-color:transparent; cursor:pointer; }
+  #libBtn:active { color:var(--txt); }
+  #gearBtn { position:fixed; top:calc(10px + env(safe-area-inset-top,0px)); right:54px; z-index:40;
+    background:none; border:none; box-shadow:none; padding:10px; border-radius:50%; color:var(--dim);
+    -webkit-appearance:none; appearance:none; -webkit-tap-highlight-color:transparent; cursor:pointer; }
+  #gearBtn:active { color:var(--txt); }
+  #setDrop { position:fixed; top:calc(54px + env(safe-area-inset-top,0px)); right:12px; width:280px; max-width:82vw;
+    background:#101216; border-radius:var(--r); box-shadow:0 12px 32px rgba(0,0,0,.55); z-index:41;
+    max-height:60vh; overflow-y:auto; }
+  /* library: the clean app grid */
+  #libOverlay { position:fixed; inset:0; z-index:60; background:var(--bg); overflow-y:auto; }
+  .libGrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .libTile { background:#101216; border-radius:var(--r); padding:18px 16px; cursor:pointer;
+    box-shadow:0 8px 24px rgba(0,0,0,.35); -webkit-tap-highlight-color:transparent; }
+  .libTile:active { transform:scale(.97); }
+  .libTile .lt { font-size:16px; font-weight:600; }
+  .libTile .ls { font-size:12px; color:var(--dim); margin-top:4px; }
+  .libTile.new { color:var(--dim); display:flex; align-items:center; justify-content:center; min-height:96px; }
+  /* filter rule editors */
+  .fedit { padding:10px 2px 4px; }
+  .fhint { font-size:11px; color:var(--dim); margin-bottom:8px; }
+  .frow2 { display:flex; gap:8px; }
+  .frow2 input { flex:1; }
+  .frow2 #fNum { max-width:90px; flex:none; }
+  /* file document view */
+  #docText { width:100%; min-height:280px; }
+  .docro { white-space:normal; font-size:14px; line-height:1.55; color:var(--txt);
+    background:#101216; border-radius:var(--r); padding:16px; }
+  .btn.danger { background:#2a1214; color:#ff8a8a; box-shadow:none; }
+  .nrow { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 16px;
+    border-bottom:1px solid var(--line); cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .nrow:last-child { border-bottom:none; }
+  .nrow .nt { font-size:14px; }
+  .nrow .nsub { font-size:12px; color:var(--dim); margin-top:2px; }
+  /* ---------- new-pocket FAB: the one element allowed a higher layer ---------- */
+  #fabBtn { position:fixed; bottom:calc(22px + env(safe-area-inset-bottom,0px)); right:20px; z-index:40;
+    width:58px; height:58px; border-radius:50%; background:var(--txt); color:#000;
+    border:none; box-shadow:0 10px 28px rgba(0,0,0,.55); font-size:30px; line-height:1; font-weight:400;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    -webkit-appearance:none; appearance:none; -webkit-tap-highlight-color:transparent;
+    transition:transform .15s ease; padding:0 0 2px; }
+  #fabBtn:active { transform:scale(.93); }
+  #fabBtn.open { transform:rotate(45deg); }
+  #fabBtn.open:active { transform:rotate(45deg) scale(.93); }
+  #fabMenu { position:fixed; bottom:calc(94px + env(safe-area-inset-bottom,0px)); right:20px; z-index:41;
+    background:#101216; border-radius:var(--r); box-shadow:0 12px 32px rgba(0,0,0,.55);
+    min-width:200px; max-width:78vw; overflow:hidden; }
+</style>
+</head>
+<body>
+<aside id="side">
+    <div class="side-title">MOOR<br>POCKETS</div>
+    <div class="trow tmain" id="bMainS"><span class="tname">Main storage</span><span class="chev">›</span></div>
+    <div class="tlabel">Pockets</div>
+    <div id="dimList"></div>
+    <div class="trow tnew" id="bNewDim">+ New pocket</div>
+    <div id="dimForm"></div>
+</aside>
+<aside id="agentside">
+    <div class="side-title">AGENTS</div>
+    <div id="agentPanel"></div>
+</aside>
+<aside id="taskside">
+    <div id="taskBody"></div>
+</aside>
+<main id="view"></main>
+<button id="bellBtn" aria-label="notifications"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><span id="bellBadge" style="display:none"></span></button>
+<div id="bellDrop" style="display:none"></div>
+<button id="fabBtn" aria-label="new">+</button>
+<div id="fabMenu" style="display:none"></div>
+<button id="libBtn" aria-label="library"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+<button id="gearBtn" aria-label="settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+<div id="setDrop" style="display:none"></div>
+<div id="libOverlay" style="display:none"><div class="wrap">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+    <div class="eyebrow">Library</div>
+    <button class="backbtn" id="libClose">✕ Close</button>
+  </div>
+  <div class="libGrid" id="libGrid"></div>
+</div></div>
+
+<script>
+"use strict";
+/* Moor pockets host harnesses. Each pocket: one lead + up to 3 agents.
+   The pocket's filter gates everything kept. Event stream is unfilterable audit.
+   Brain is a stub — plug a real model in at stubBrain(). */
+
+const PREFIX="harness.";
+const DB = {
+  load(k,d){ try{ const v=localStorage.getItem(PREFIX+k); return v?JSON.parse(v):d; }catch(e){ return d; } },
+  save(k,v){ try{ localStorage.setItem(PREFIX+k, JSON.stringify(v)); }catch(e){} }
+};
+const uid = () => "x"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const nowT = () => new Date().toLocaleTimeString([], {hour12:false});
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const MAX_AGENTS = 3;
+
+/* ---------------- filter stages ---------------- */
+const STOP = new Set("a,an,the,and,or,of,to,in,on,for,with,by,from,as,at,is,are,was,were,be,been,it,its,this,that,these,those,i,you,we,they,he,she,my,your,our,their,me,him,her,us,do,does,did,can,could,should,would,will,just,very,really,so,up,out,about,into,over,after,before,not,no,yes,if,then,than,too,also,how,what,when,where,who,why,which".split(","));
+const words = s => String(s||"").toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter(w=>w.length>3 && !STOP.has(w));
+/* the filter's rules are the user's — word lists and thresholds editable per pocket */
+const DEFAULT_FILTER={vague:"thing,things,stuff,something,somehow,etc.,various,miscellaneous,and so on",
+  assume:"assume,assumes,assumed,assuming,assumption,probably,likely,presumably,i guess,should be fine",
+  groundedMin:2,taskMin:2};
+function fconf(dim){ return Object.assign({},DEFAULT_FILTER,dim.filterConfig||{}); }
+function escReg(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
+let fStageOpen=null;
+const STAGES = [
+  { id:"no-vague", name:"No vague words", desc:"Rejects filler like thing, stuff, etc.",
+    kinds:["purpose","answer","note","result"],
+    check(res,ctx,dim){ const list=fconf(dim).vague.split(",").map(s=>s.trim()).filter(Boolean);
+      if(!list.length) return {pass:true,note:"no filler"};
+      const m=String(res).match(new RegExp("\\b("+list.map(escReg).join("|")+")\\b","i"));
+      return m?{pass:false,note:'vague word "'+m[1]+'"'}:{pass:true,note:"no filler"}; } },
+  { id:"no-assumption", name:"No assumptions", desc:"Rejects probably, assume, likely.",
+    kinds:["purpose","answer","note","result"],
+    check(res,ctx,dim){ const list=fconf(dim).assume.split(",").map(s=>s.trim()).filter(Boolean);
+      if(!list.length) return {pass:true,note:"no assumptions"};
+      const m=String(res).match(new RegExp("\\b("+list.map(escReg).join("|")+")\\b","i"));
+      return m?{pass:false,note:'assumes: "'+m[1]+'"'}:{pass:true,note:"no assumptions"}; } },
+  { id:"grounded", name:"Grounded", desc:"Agent output must reuse specifics already in the pocket.",
+    kinds:["note","result"],
+    check(res,ctx,dim){ const aw=new Set(); (ctx.answers||[]).forEach(a=>words(a).forEach(w=>aw.add(w)));
+      if(!aw.size) return {pass:true,note:"nothing to ground in yet"};
+      const need=Math.max(1,+fconf(dim).groundedMin||2);
+      const rw=new Set(words(res)); let hit=0; aw.forEach(w=>{ if(rw.has(w)) hit++; });
+      return hit>=need?{pass:true,note:hit+" specifics carried over"}:{pass:false,note:"only "+hit+" pocket specifics present (needs "+need+")"}; } },
+  { id:"on-task", name:"On purpose", desc:"Stays on the pocket's purpose. Answers are new information — exempt.",
+    kinds:["purpose","note","result"],
+    check(res,ctx,dim){ const need=Math.max(1,+fconf(dim).taskMin||2);
+      const tw=new Set(words(ctx.task)); const rw=new Set(words(res)); let hit=0; tw.forEach(w=>{ if(rw.has(w)) hit++; });
+      return hit>=need?{pass:true,note:"on purpose"}:{pass:false,note:"drifted from purpose ("+hit+"/"+need+")"}; } },
+];
+
+/* ---------------- question generators (lead-owned) ---------------- */
+function genOutward(input, priorQs){
+  const qs=[], lower=String(input).toLowerCase(), seen=new Set(priorQs||[]);
+  const push=q=>{ if(!seen.has(q)&&!qs.includes(q)) qs.push(q); };
+  const vh=lower.match(/\b(thing|things|stuff|something|somehow|etc|various)\b/);
+  if(vh) push('When you say "'+vh[1]+'", what specifically do you mean?');
+  const pr=lower.match(/\b(it|they|them)\b/);
+  if(pr) push('You said "'+pr[1]+'" — what does that refer to?');
+  if(/(make|build|create|write|plan|design|do|handle)/.test(lower) && !/(for|my|our)\s+[a-z]+/.test(lower)) push("Who is this for?");
+  if(/\b(soon|later|asap|quickly|eventually)\b/.test(lower)) push("What timeline are you thinking?");
+  push("What does a good result look like for this?");
+  return qs;
+}
+function genInward(draft, verdicts, depth){
+  const qs=[];
+  verdicts.filter(v=>!v.pass).forEach(v=>qs.push('Your filter flagged "'+v.stage.name+'": '+v.note+'. How do you address that?'));
+  qs.push("Which claim in your result is least supported by what you were told?");
+  qs.push("What are you assuming that nobody stated?");
+  qs.push("If this result is wrong, what is the most likely way?");
+  qs.push("What did you leave out, and why?");
+  return qs.slice(0, depth);
+}
+function stubBrain(task, brief, clarifications, opQuestions){
+  const cl=clarifications||[];
+  const attempt="Attempt — working \""+task+"\": "+brief+". First, pin down the concrete deliverable in the brief. Then execute each element in the order given, checking each against the pocket's purpose before moving on.";
+  const reasoning="Reasoning — "+(cl.length
+    ? cl.length+" auditor clarification"+(cl.length===1?"":"s")+" closed the open points: "+cl.map(c=>c.a).join("; ")+"."
+    : "no auditor clarifications were recorded, so this sticks to the brief's explicit terms and flags gaps instead of filling them.")
+    +(opQuestions&&opQuestions.length?" Operator questions addressed: "+opQuestions.join(" | ")+".":"");
+  const open="Open questions — "+(cl.length
+    ? "none outstanding; the clarifications closed them."
+    : "the brief leaves gaps the auditor did not clarify; they are listed here rather than guessed.");
+  return "Draft for: "+task+"\n\n"+attempt+"\n\n"+reasoning+"\n\n"+open;
+}
+function stubRevise(draft, verdicts){
+  let out=draft;
+  const fixes={"thing":"item","things":"items","stuff":"materials","something":"one element","somehow":"in a defined way","etc.":"", "etc":"", "various":"several","miscellaneous":"mixed","and so on":"",
+    "probably":"","likely":"","presumably":"","assumed":"noted","assumes":"notes","assume":"note","assumption":"note","i guess":"", "should be fine":"verified"};
+  verdicts.filter(v=>!v.pass).forEach(v=>{
+    const m=(v.note.match(/"([^"]+)"/)||[])[1];
+    if(m && fixes[m.toLowerCase()]!==undefined) out=out.replace(new RegExp("\\b"+m.replace(".","\\.")+"\\b","i"), fixes[m.toLowerCase()]);
+  });
+  return out;
+}
+
+/* ---------------- the model: user-connected, OpenAI-compatible ----------------
+   paste a key in Settings → Model and the stubs step aside: the receiver drafts,
+   the lead revises, the auditor clarifies — for real. no key = stubs (current).
+   key stays in this browser's local storage. calls cost per your provider. */
+function modelCfg(){ return DB.load("modelcfg",{baseUrl:"https://api.openai.com/v1",key:"",model:"gpt-4o-mini"}); }
+function saveModelCfg(c){ DB.save("modelcfg",c); }
+function modelOn(){ const c=modelCfg(); return !!(c.key&&c.key.trim()); }
+async function modelCall(system,user){
+  const cfg=modelCfg();
+  if(!cfg.key||!cfg.key.trim()) return null;
+  const r=await fetch(cfg.baseUrl.replace(/\/+$/,"")+"/chat/completions",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+cfg.key.trim()},
+    body:JSON.stringify({model:cfg.model||"gpt-4o-mini",
+      messages:[{role:"system",content:system},{role:"user",content:user}],
+      temperature:0.7,max_tokens:1500})
+  });
+  if(!r.ok){ const t=await r.text().catch(()=> ""); throw new Error("model HTTP "+r.status+" "+String(t).slice(0,120)); }
+  const j=await r.json();
+  const txt=j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content;
+  return (txt||"").trim()||null;
+}
+/* ---------------- state ---------------- */
+let dims = DB.load("dims3", []);
+const dkey = id => "dim3_"+id;
+const getDim = id => dims.find(d=>d.id===id);
+const getAgent = (dim,aid) => dim.agents.find(a=>a.id===aid);
+const entries = id => DB.load(dkey(id), []);
+const saveDims = () => DB.save("dims3", dims);
+function putEntry(did,e){ const s=entries(did); const full=Object.assign({id:uid(),t:nowT(),ts:Date.now()},e); s.push(full); DB.save(dkey(did),s); return full; }
+function log(did,text,cls){ putEntry(did,{kind:"event",text,cls:cls||""}); }
+/* 2026-10-12: outward questions default flipped to off — the auditor clarifies
+   from the audited brief, no live round. migrate stored pockets once, logged. */
+dims.forEach(d=>{
+  if(d.lead&&d.lead.qgen&&d.lead.qgen.outward===true){
+    d.lead.qgen.outward=false;
+    putEntry(d.id,{kind:"event",cls:"q",text:"outward questions → off: the auditor now clarifies from the audited brief (toggle it in the lead panel to step in live)"});
+  }
+});
+saveDims();
+function dimCtx(dim){ return { task:dim.purpose, answers:entries(dim.id).filter(e=>e.kind==="answer").map(e=>e.text).slice(-12) }; }
+function runFilter(dim,text,kind,ctx){
+  return STAGES.filter(s=>dim.filters[s.id] && s.kinds.includes(kind)).map(s=>{
+    const v=s.check(text,ctx||dimCtx(dim),dim); return {stage:s,pass:v.pass,note:v.note};
+  });
+}
+function admit(dim,kind,text,by,ctxOverride,extra){
+  // owner-originated kinds file straight into their folder: event, input, question.
+  // agent-originated kinds (note, result) can only PROPOSE — they wait in
+  // Pending review until the owner accepts them. purpose is the owner's founding act.
+  if(kind==="event"||kind==="input"||kind==="question"){ const be=putEntry(dim.id,Object.assign({kind,text,by:by||""},extra||{})); return {ok:true,id:be.id}; }
+  const verdicts=runFilter(dim,text,kind,ctxOverride);
+  verdicts.forEach(v=>putEntry(dim.id,{kind:"event",cls:v.pass?"pass":"fail",
+    text:(v.pass?"PASS":"FAIL")+" · "+v.stage.name+" — "+v.note+" · on incoming "+kind+(by?" · from "+by:"")}));
+  if(verdicts.length && verdicts.every(v=>v.pass)){
+    if(dim.memoryOn){
+      const proposed=(kind==="note"||kind==="result");
+      const e=putEntry(dim.id,Object.assign({kind,text,by:by||"",pending:proposed},extra||{}));
+      if(proposed) log(dim.id,kind+" proposed by "+by+" — waiting for your word","seal");
+      return {ok:true,pending:proposed,id:e.id};
+    }
+    else log(dim.id,"memory off — "+kind+" seen but not retained","seal");
+    return {ok:true,pending:(kind==="note"||kind==="result")};
+  }
+  if(!verdicts.length) return {ok:true};
+  return {ok:false, reason:verdicts.filter(v=>!v.pass).map(v=>v.stage.name+": "+v.note).join("; ")};
+}
+
+/* ---------------- creation ---------------- */
+function createDimension(name,purpose,spec){
+  const dim={id:uid(),name,purpose,memoryOn:true,orders:[],locks:{},spec:spec||null,
+    filters:Object.fromEntries(STAGES.map(s=>[s.id,true])),
+    lead:{id:uid(),name:name+"-lead",qgen:{outward:false,inward:true,depth:4}},
+    agents:[],created:Date.now()};
+  dims.push(dim);
+  log(dim.id,"pocket sealed — harness inside. Filter armed: "+STAGES.map(s=>s.name).join(", "),"seal");
+  const adm=admit(dim,"purpose",purpose,"owner",{task:purpose,answers:[]});
+  if(!adm.ok){ dims=dims.filter(x=>x.id!==dim.id); return {ok:false,reason:adm.reason}; }
+  log(dim.id,"lead "+dim.lead.name+" runs inside — owns the question generators","seal");
+  saveDims(); return {ok:true,dim};
+}
+function createAgent(dim,name,task){
+  if(dim.agents.length>=MAX_AGENTS) return {ok:false,reason:"this pocket already has "+MAX_AGENTS+" agents"};
+  const a={id:uid(),name,task,created:Date.now()};
+  dim.agents.push(a); saveDims();
+  log(dim.id,"agent "+name+" entered the harness — task: "+task,"seal");
+  return {ok:true,agent:a};
+}
+
+/* ---------------- shell: the whole screen slides to reveal panels ----------------
+   drag right → folders (left) · drag left → agents (right) · both open 3/4 */
+const view=document.getElementById("view"), side=document.getElementById("side"),
+      agentside=document.getElementById("agentside"), taskside=document.getElementById("taskside"),
+      taskBody=document.getElementById("taskBody"),
+      dimList=document.getElementById("dimList"), agentPanel=document.getElementById("agentPanel");
+let current=null, session=null, openSect={};
+let pdir=0; // -1 agents open · 0 closed · 1 folders open
+let taskFor=null; // pocket id — the task panel is open for it
+function sectOpen(dimId,key){ return !!openSect[dimId+":"+key]; }
+/* accordion animation: measure the real height so open/close always glide, never peek */
+function animateWrap(wrap,willOpen){
+  if(wrap._endH){ wrap.removeEventListener("transitionend",wrap._endH); wrap._endH=null; }
+  if(willOpen){
+    wrap.classList.add("open");
+    wrap.style.maxHeight=wrap.scrollHeight+"px";
+    const h=()=>{ wrap.style.maxHeight="none"; wrap.removeEventListener("transitionend",h); wrap._endH=null; };
+    wrap._endH=h; wrap.addEventListener("transitionend",h);
+  }else{
+    wrap.style.maxHeight=wrap.scrollHeight+"px";
+    void wrap.offsetHeight;
+    wrap.classList.remove("open");
+    wrap.style.maxHeight="0px";
+  }
+}
+function abodyHtml(open,inner){
+  return `<div class="abody${open?" open":""}"${open?' style="max-height:none"':""}><div class="sectbody">${inner}</div></div>`;
+}
+/* composition: a quiet row; the raised panel appears only when it opens */
+function growRow(dim,key,titleHtml,metaHtml,inner){
+  const open=sectOpen(dim.id,key);
+  return `<div class="grow${open?" open":""}" data-sect="${key}"><div class="grow-t">${titleHtml}</div>`
+    +`<div class="grow-r">${metaHtml||""}<span class="chev">›</span></div></div>`
+    +abodyHtml(open,`<div class="panel">${inner}</div>`);
+}
+function groupHtml(label,rowsHtml,cls){
+  if(!rowsHtml) return "";
+  return `<div class="group${cls?" "+cls:""}"><div class="glabel">${label}</div><div class="grows">${rowsHtml}</div></div>`;
+}
+function closePanels(){ pdir=0; taskFor=null; view.style.transform=""; view.style.boxShadow="none"; side.style.visibility="hidden"; agentside.style.visibility="hidden"; taskside.style.visibility="hidden"; }
+/* task panel: white button by a pocket → sheet glides left, input panel revealed under it */
+function openTask(pid){
+  const dim=getDim(pid); if(!dim) return;
+  taskFor=pid; pdir=0;
+  side.style.visibility="hidden"; agentside.style.visibility="hidden";
+  renderTaskPanel(dim);
+  taskside.style.visibility="visible";
+  view.style.transform="translateX("+(-view.clientWidth*0.88)+"px)";
+  view.style.boxShadow="24px 0 48px rgba(0,0,0,.65)";
+}
+function closeTask(){
+  taskFor=null;
+  view.style.transform=""; view.style.boxShadow="none";
+  taskside.style.visibility="hidden";
+}
+function renderTaskPanel(dim){
+  const agents=dim.agents;
+  const chips=agents.map((a,i)=>`<button class="fchip${i===0?" on":""}" data-ta="${a.id}">${esc(a.name)}</button>`).join("")
+    +(agents.length<MAX_AGENTS?`<button class="fchip${agents.length?"":" on"}" data-ta="new">+ new</button>`:"");
+  taskBody.innerHTML=`
+    <button class="backbtn" id="taskBack">‹ Back</button>
+    <div class="eyebrow">Submit task</div>
+    <div class="pname" style="font-size:26px;margin:8px 0 2px">${esc(dim.name)}</div>
+    <div class="ppurpose">${esc(dim.purpose)}</div>
+    <div class="glabel" style="margin:22px 0 8px">Agent</div>
+    <div class="folders" id="taskAgents">${chips||'<span class="note">no agents yet</span>'}</div>
+    <div id="taskNameWrap" style="display:none;margin-top:4px"><input type="text" id="taskName" placeholder="new agent name"></div>
+    <div class="glabel" style="margin:18px 0 8px">Task</div>
+    <textarea id="taskIn" rows="4" placeholder="What needs doing?"></textarea>
+    <div class="err" id="taskErr" style="margin-top:8px"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="primary" id="taskGo" style="flex:1;padding:14px">Submit task →</button>
+      <button id="taskStage" style="padding:14px">Stage</button>
+    </div>`;
+  let sel=agents.length?agents[0].id:"new";
+  const syncName=()=>{ document.getElementById("taskNameWrap").style.display=sel==="new"?"":"none"; };
+  syncName();
+  taskBody.querySelectorAll("[data-ta]").forEach(b=>b.onclick=()=>{
+    taskBody.querySelectorAll("[data-ta]").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on"); sel=b.dataset.ta; syncName();
+  });
+  document.getElementById("taskBack").onclick=()=>closeTask();
+  document.getElementById("taskStage").onclick=()=>{
+    const task=document.getElementById("taskIn").value.trim();
+    const err=document.getElementById("taskErr");
+    if(!task){ err.textContent="say what needs doing first"; return; }
+    if(!dim.staged) dim.staged=[];
+    const isNew=sel==="new";
+    dim.staged.push({id:uid(),t:nowT(),text:task,
+      agentId:isNew?null:sel,
+      agentName:isNew?(document.getElementById("taskName").value.trim()||"agent"):null});
+    saveDims();
+    log(dim.id,"prompt staged"+(isNew?" for a new agent":" for "+getAgent(dim,sel).name),"q");
+    closeTask();
+    openSect[dim.id+":staged"]=true;
+    current={type:"dim",id:dim.id}; render();
+  };
+  document.getElementById("taskGo").onclick=()=>{
+    const task=document.getElementById("taskIn").value.trim();
+    const err=document.getElementById("taskErr");
+    if(!task){ err.textContent="say what needs doing first"; return; }
+    let aid=sel;
+    if(sel==="new"){
+      const r=createAgent(dim,document.getElementById("taskName").value.trim()||"agent",task);
+      if(!r.ok){ err.textContent=r.reason; return; }
+      aid=r.agent.id;
+    }
+    closeTask();
+    current={type:"agent",dimId:dim.id,id:aid,brief:task}; render();
+  };
+}
+function agentStatus(dim,a){
+  if(session&&session.agentId===a.id) return "clarifying with auditor";
+  const o=(dim.orders||[]).find(x=>x.agentId===a.id&&x.stage!=="done");
+  if(o) return "dispatch staged · "+o.stage;
+  const n=entries(dim.id).filter(e=>e.pending&&e.by===a.name).length;
+  if(n) return "awaiting your judgment · "+n;
+  return "idle";
+}
+function renderAgentPanel(){
+  let dim=null;
+  if(current&&(current.type==="dim"||current.type==="agent"))
+    dim=getDim(current.type==="dim"?current.id:current.dimId);
+  if(!dim){ agentPanel.innerHTML='<div class="note">Open a pocket first — its agents are handled here.</div>'; return; }
+  const pend=entries(dim.id).filter(e=>e.pending).length;
+  const rows=dim.agents.map(a=>
+    `<div class="frow" data-go-agent="${a.id}"><span>${esc(a.name)}<br><span class="note">${esc(agentStatus(dim,a))}</span></span><span class="cnt">›</span></div>`
+  ).join("");
+  agentPanel.innerHTML=
+    `<div class="frow" data-go-dim="${dim.id}"><span>${esc(dim.name)} <span class="note">· harness</span></span><span class="cnt">›</span></div>`
+    +`<div class="side-title" style="margin:18px 0 4px">SUB-AGENTS</div>`
+    +(rows||'<div class="note">no sub-agents yet — add them from the pocket</div>')
+    +`<div class="frow" data-go-pending="${dim.id}"><span>Pending review <span class="note">(${pend})</span></span><span class="cnt">›</span></div>`;
+  agentPanel.querySelectorAll("[data-go-agent]").forEach(el=>el.onclick=()=>{ current={type:"agent",dimId:dim.id,id:el.dataset.goAgent}; closePanels(); render(); });
+  agentPanel.querySelectorAll("[data-go-dim]").forEach(el=>el.onclick=()=>{ current={type:"dim",id:el.dataset.goDim}; closePanels(); render(); });
+  agentPanel.querySelectorAll("[data-go-pending]").forEach(el=>el.onclick=()=>{ openSect[el.dataset.goPending+":f-pending"]=true; current={type:"dim",id:el.dataset.goPending}; closePanels(); render(); });
+}
+(function(){
+  let drag=false,sx=0,dx=0;
+  const W=()=>view.clientWidth*0.66;
+  const setVis=()=>{
+    const m=/translateX\((-?\d+\.?\d*)px\)/.exec(view.style.transform||"");
+    const cur=m?parseFloat(m[1]):0;
+    side.style.visibility=cur>8?"visible":"hidden";
+    agentside.style.visibility=(cur<-8&&!taskFor)?"visible":"hidden";
+    taskside.style.visibility=taskFor?"visible":"hidden";
+    /* the sheet floats over the panels — the shadow is its edge */
+    view.style.boxShadow=cur>8?"-24px 0 48px rgba(0,0,0,.65)":cur<-8?"24px 0 48px rgba(0,0,0,.65)":"none";
+  };
+  side.style.visibility="hidden"; agentside.style.visibility="hidden"; taskside.style.visibility="hidden";
+  /* swipe from anywhere — the middle page, or the revealed panels (not while the task panel is up) */
+  document.addEventListener("pointerdown",e=>{
+    if(taskFor) return;
+    if(e.target.closest&&e.target.closest("input,textarea,select,button,a")) return;
+    drag=true; sx=e.clientX; dx=0; view.style.transition="none";
+  });
+  document.addEventListener("pointermove",e=>{
+    if(!drag) return;
+    const d=e.clientX-sx;
+    if(!dx&&Math.abs(d)<14) return;
+    dx=d;
+    const w=W(), base=pdir*w;
+    view.style.transform="translateX("+Math.max(-w,Math.min(w,base+d))+"px)";
+    setVis();
+  });
+  const end=()=>{
+    if(!drag) return; drag=false; view.style.transition="";
+    const w=W();
+    if(Math.abs(dx)<14){ view.style.transform=pdir?("translateX("+(pdir*w)+"px)"):""; setVis(); return; }
+    const m=/translateX\((-?\d+\.?\d*)px\)/.exec(view.style.transform||"");
+    const cur=m?parseFloat(m[1]):0;
+    pdir=cur>w*0.45?1:cur<-w*0.45?-1:0;
+    view.style.transform=pdir?("translateX("+(pdir*w)+"px)"):"";
+    setVis();
+    if(pdir===-1) renderAgentPanel();
+  };
+  document.addEventListener("pointerup",end);
+  document.addEventListener("pointercancel",end);
+})();
+
+function renderSide(){
+  dimList.innerHTML=dims.map(d=>{
+    const cur=current&&current.type==="dim"&&current.id===d.id;
+    return `<div class="trow tdim${cur?" cur":""}" data-dim="${d.id}"><span class="tdot">${cur?"●":""}</span><span class="tname">${esc(d.name)}</span><button class="taskbtn" data-task="${d.id}" aria-label="submit task">+</button></div>`;
+  }).join("");
+  const ms=document.getElementById("bMainS");
+  if(ms) ms.classList.toggle("cur", !!(current&&current.type==="main"));
+  dimList.querySelectorAll(".tdim").forEach(el=>el.onclick=()=>{ current={type:"dim",id:el.dataset.dim}; closePanels(); render(); });
+  dimList.querySelectorAll(".taskbtn").forEach(b=>b.onclick=e=>{ e.stopPropagation(); openTask(b.dataset.task); });
+}
+function render(){ const cb=document.getElementById("composerBar"); if(cb) cb.remove(); renderSide(); renderAgentPanel(); updateBell(); updateFab(); if(!current) return renderWelcome(); if(current.type==="newspec") return renderSpec(); if(current.type==="quiz") return renderQuiz(current.id,current.qi||0); if(current.type==="main") return renderMain(); if(current.type==="records"){ const d=getDim(current.id); return d?renderRecords(d):renderWelcome(); } if(current.type==="dim") return renderDim(current.id); if(current.type==="files"){ const d=getDim(current.id); return current.fid?renderFolder(d,current.fid,current.src):renderFiles(d,current.src); } if(current.type==="doc"){ const d=getDim(current.id); return renderDoc(d,current.fid,current.fileId,current.src); } return renderAgent(current.dimId,current.id); }
+function updateFab(){
+  const fab=document.getElementById("fabBtn"); if(!fab) return;
+  fab.style.display=(current&&current.type==="newspec")?"none":""; fab.style.bottom="";
+}
+/* ---------------- notifications: the bell, top right ----------------
+   counts what needs your word: pending proposals + staged dispatches */
+function notifItems(){
+  const items=[];
+  dims.forEach(d=>{
+    const pend=entries(d.id).filter(e=>e.pending);
+    if(pend.length) items.push({t:pend.length+" proposal"+(pend.length===1?"":"s")+" awaiting your word", s:d.name,
+      go:()=>{ openSect[d.id+":f-pending"]=true; current={type:"dim",id:d.id}; closePanels(); render(); }});
+    (d.orders||[]).filter(o=>o.stage!=="done").forEach(o=>{
+      const a=getAgent(d,o.agentId);
+      items.push({t:"Dispatch staged at "+o.stage, s:d.name+(a?" · "+a.name:""),
+        go:()=>{ current={type:"agent",dimId:d.id,id:o.agentId}; closePanels(); render(); }});
+    });
+  });
+  return items;
+}
+function notifCount(){
+  let n=0;
+  dims.forEach(d=>{ n+=entries(d.id).filter(e=>e.pending).length; n+=(d.orders||[]).filter(o=>o.stage!=="done").length; });
+  return n;
+}
+function updateBell(){
+  const badge=document.getElementById("bellBadge"); if(!badge) return;
+  const n=notifCount();
+  badge.style.display=n?"":"none";
+  badge.textContent=n>99?"99+":n;
+}
+(function(){
+  const bell=document.getElementById("bellBtn"), drop=document.getElementById("bellDrop");
+  bell.onclick=e=>{
+    e.stopPropagation();
+    if(drop.style.display!=="none"){ drop.style.display="none"; return; }
+    const items=notifItems();
+    drop.innerHTML=items.length
+      ? items.map((it,i)=>`<div class="nrow" data-ni="${i}"><div><div class="nt">${esc(it.t)}</div><div class="nsub">${esc(it.s)}</div></div><span class="chev">›</span></div>`).join("")
+      : '<div class="nrow" style="cursor:default"><div><div class="nt">All quiet</div><div class="nsub">Nothing needs your word right now.</div></div></div>';
+    drop.querySelectorAll("[data-ni]").forEach(el=>el.onclick=()=>{ drop.style.display="none"; items[+el.dataset.ni].go(); });
+    drop.style.display="";
+  };
+  document.addEventListener("pointerdown",e=>{
+    if(drop.style.display!=="none"&&!e.target.closest("#bellDrop")&&!e.target.closest("#bellBtn")) drop.style.display="none";
+  },true);
+})();
+/* keep the focused field visible above the keyboard.
+   #view and the panels are fixed-position scrollers, so iOS won't lift the
+   field into view itself — without this the keyboard covers what you type. */
+(function(){
+  function scrollerOf(el){
+    let p=el.parentElement;
+    while(p){
+      const cs=getComputedStyle(p);
+      if((cs.overflowY==="auto"||cs.overflowY==="scroll")&&p.scrollHeight>p.clientHeight+4) return p;
+      p=p.parentElement;
+    }
+    return document.scrollingElement||document.body;
+  }
+  function ensureVisible(el){
+    if(!el||!el.getBoundingClientRect) return;
+    const vv=window.visualViewport;
+    const r=el.getBoundingClientRect();
+    const ot=vv?vv.offsetTop:0;
+    const vh=vv?vv.height:window.innerHeight;
+    const margin=16;
+    const elTop=r.top-ot, elBottom=r.bottom-ot;
+    const sc=scrollerOf(el);
+    if(!sc||!isFinite(sc.scrollTop)) return;
+    if(elBottom>vh-margin){
+      sc.scrollTop+=(elBottom-(vh-margin))+8;
+    }else if(elTop<margin){
+      sc.scrollTop-=(margin-elTop);
+    }
+  }
+  let pending=null;
+  document.addEventListener("focusin",e=>{
+    const t=e.target;
+    if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA")){
+      if(pending) clearTimeout(pending);
+      pending=setTimeout(()=>{ ensureVisible(t); pending=null; },380);
+    }
+  });
+  if(window.visualViewport){
+    visualViewport.addEventListener("resize",()=>{
+      const t=document.activeElement;
+      if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA")) ensureVisible(t);
+    });
+  }
+})();
+/* FAB menu: new task or new pocket */
+(function(){
+  const fab=document.getElementById("fabBtn"), menu=document.getElementById("fabMenu");
+  const closeMenu=()=>{ menu.style.display="none"; fab.classList.remove("open"); };
+  const pocketForTask=()=>{
+    if(current&&current.type==="dim") return current.id;
+    if(current&&current.type==="agent") return current.dimId;
+    if(dims.length===1) return dims[0].id;
+    return null;
+  };
+  const showMain=()=>{
+    menu.innerHTML=`<div class="nrow" data-fm="task"><div><div class="nt">New task</div><div class="nsub">submit to a pocket's agent</div></div><span class="chev">›</span></div>`
+      +`<div class="nrow" data-fm="pocket"><div><div class="nt">New pocket</div><div class="nsub">seal a new harness</div></div><span class="chev">›</span></div>`;
+    menu.querySelectorAll("[data-fm]").forEach(el=>el.onclick=()=>{
+      if(el.dataset.fm==="pocket"){ closeMenu(); closePanels(); current={type:"newspec"}; render(); return; }
+      const pid=pocketForTask();
+      if(pid){ closeMenu(); openTask(pid); } else showPicker();
+    });
+  };
+  const showPicker=()=>{
+    if(!dims.length){ closeMenu(); closePanels(); current={type:"newspec"}; render(); return; }
+    menu.innerHTML=`<div class="nrow" style="cursor:default"><div><div class="nt">Which pocket?</div></div></div>`
+      +dims.map(d=>`<div class="nrow" data-fp="${d.id}"><div><div class="nt">${esc(d.name)}</div><div class="nsub">${d.agents.length} agent${d.agents.length===1?"":"s"}</div></div><span class="chev">›</span></div>`).join("");
+    menu.querySelectorAll("[data-fp]").forEach(el=>el.onclick=()=>{ const pid=el.dataset.fp; closeMenu(); openTask(pid); });
+  };
+  fab.onclick=e=>{
+    e.stopPropagation();
+    if(menu.style.display!=="none"){ closeMenu(); return; }
+    showMain();
+    menu.style.display="";
+    fab.classList.add("open");
+  };
+  document.addEventListener("pointerdown",e=>{
+    if(menu.style.display!=="none"&&!e.target.closest("#fabMenu")&&!e.target.closest("#fabBtn")) closeMenu();
+  },true);
+})();
+/* settings: export, reset, about — quiet dropdown under the gear */
+function exportData(){
+  const data={app:"moor-pockets",exported:new Date().toISOString(),
+    pockets:dims.map(d=>({pocket:d,entries:entries(d.id)})),
+    main:DB.load("main",[])};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="moor-pockets-backup.json"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function importData(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const data=JSON.parse(rd.result);
+      if(!data||data.app!=="moor-pockets"||!Array.isArray(data.pockets)) throw new Error("not a moor-pockets export");
+      Object.keys(localStorage).filter(k=>k.startsWith(PREFIX)).forEach(k=>localStorage.removeItem(k));
+      const keep=modelCfg();
+      DB.save("dims3",data.pockets.map(x=>x.pocket));
+      data.pockets.forEach(x=>DB.save(dkey(x.pocket.id),x.entries||[]));
+      if(Array.isArray(data.main)) DB.save("main",data.main);
+      if(keep&&keep.key) saveModelCfg(keep);
+      location.reload();
+    }catch(e){ alert("Import failed: "+String(e.message||e)); }
+  };
+  rd.readAsText(file);
+}
+(function(){
+  const gear=document.getElementById("gearBtn"), drop=document.getElementById("setDrop");
+  let resetArmed=false, resetTimer=null, modelOpen=false, importArmed=false, importTimer=null;
+  const renderDrop=()=>{
+    const mc=modelCfg();
+    drop.innerHTML=`<div class="nrow" data-set="model"><div><div class="nt">Model ${modelOn()?"· connected":"· stub"}</div><div class="nsub">${modelOn()?esc(mc.model||"")+" — tap to change":"connect a model, or the stubs do the work"}</div></div><span class="chev">›</span></div>`
+      +(modelOpen?`<div class="fedit" style="padding:4px 14px 12px"><div class="fhint">OpenAI-compatible endpoint. Key stays in this browser. Calls cost per your provider.</div>`
+        +`<div class="fhint" style="margin-top:8px">base URL</div><input id="mBase" value="${esc(mc.baseUrl||"")}" placeholder="https://api.openai.com/v1">`
+        +`<div class="fhint" style="margin-top:8px">API key</div><input id="mKey" type="password" value="${esc(mc.key||"")}" placeholder="sk-…">`
+        +`<div class="fhint" style="margin-top:8px">model</div><input id="mModel" value="${esc(mc.model||"")}" placeholder="gpt-4o-mini">`
+        +`<div class="frow2" style="margin-top:10px"><button class="small primary" id="mSave">save</button><button class="small" id="mTest">test</button><span class="fhint" id="mMsg" style="align-self:center"></span></div></div>`:"")
+      +`<div class="nrow" data-set="project"><div><div class="nt">Project pocket</div><div class="nsub">put this build inside a pocket, dogfood it</div></div><span class="chev">›</span></div>`
+      +`<div class="nrow" data-set="export"><div><div class="nt">Export data</div><div class="nsub">download every pocket as JSON</div></div><span class="chev">›</span></div>`
+      +`<div class="nrow" data-set="import"><div><div class="nt">${importArmed?"Tap again to import":"Import data"}</div><div class="nsub">${importArmed?"replaces everything here":"bring pockets in from an export file"}</div></div><span class="chev">›</span></div>`
+      +`<div class="nrow" data-set="reset"><div><div class="nt">${resetArmed?"Tap again to confirm":"Reset prototype"}</div><div class="nsub">${resetArmed?"this clears everything":"clears all pockets and entries"}</div></div><span class="chev">›</span></div>`
+      +`<div class="nrow" style="cursor:default"><div><div class="nt">Moor Pockets</div><div class="nsub">prototype · local only · no backend</div></div></div>`;
+    drop.querySelectorAll("[data-set]").forEach(el=>el.onclick=()=>{
+      if(el.dataset.set==="model"){ modelOpen=!modelOpen; renderDrop(); return; }
+      if(el.dataset.set==="project"){ drop.style.display="none"; seedProjectPocket(); return; }
+      if(el.dataset.set==="export"){ drop.style.display="none"; exportData(); return; }
+      if(el.dataset.set==="import"){
+        if(!importArmed){
+          importArmed=true; renderDrop();
+          importTimer=setTimeout(()=>{ importArmed=false; if(drop.style.display!=="none") renderDrop(); },3000);
+          return;
+        }
+        clearTimeout(importTimer); importArmed=false; drop.style.display="none";
+        const fi=document.createElement("input");
+        fi.type="file"; fi.accept=".json,application/json";
+        fi.onchange=()=>{ if(fi.files&&fi.files[0]) importData(fi.files[0]); };
+        fi.click();
+        return;
+      }
+      if(!resetArmed){
+        resetArmed=true; renderDrop();
+        resetTimer=setTimeout(()=>{ resetArmed=false; if(drop.style.display!=="none") renderDrop(); },3000);
+      }else{
+        clearTimeout(resetTimer);
+        Object.keys(localStorage).filter(k=>k.startsWith(PREFIX)).forEach(k=>localStorage.removeItem(k));
+        location.reload();
+      }
+    });
+    const mSave=document.getElementById("mSave");
+    if(mSave) mSave.onclick=()=>{
+      saveModelCfg({baseUrl:document.getElementById("mBase").value.trim()||"https://api.openai.com/v1",
+        key:document.getElementById("mKey").value.trim(), model:document.getElementById("mModel").value.trim()||"gpt-4o-mini"});
+      modelOpen=false; renderDrop();
+    };
+    const mTest=document.getElementById("mTest");
+    if(mTest) mTest.onclick=async()=>{
+      const msg=document.getElementById("mMsg"); msg.textContent="…";
+      saveModelCfg({baseUrl:document.getElementById("mBase").value.trim()||"https://api.openai.com/v1",
+        key:document.getElementById("mKey").value.trim(), model:document.getElementById("mModel").value.trim()||"gpt-4o-mini"});
+      try{ const r=await modelCall("ping","Reply with exactly: ok"); msg.textContent=r==="ok"?"connected ✓":"unexpected reply"; }
+      catch(e){ msg.textContent="failed: "+String(e.message||e).slice(0,60); }
+    };
+  };
+  gear.onclick=e=>{
+    e.stopPropagation();
+    if(drop.style.display!=="none"){ drop.style.display="none"; return; }
+    resetArmed=false; renderDrop(); drop.style.display="";
+  };
+  document.addEventListener("pointerdown",e=>{
+    if(drop.style.display!=="none"&&!e.target.closest("#setDrop")&&!e.target.closest("#gearBtn")) drop.style.display="none";
+  },true);
+})();
+/* library: the clean app grid — every pocket, main storage, new pocket */
+(function(){
+  const btn=document.getElementById("libBtn"), ov=document.getElementById("libOverlay");
+  const close=()=>{ ov.style.display="none"; };
+  document.getElementById("libClose").onclick=close;
+  btn.onclick=e=>{
+    e.stopPropagation();
+    const grid=document.getElementById("libGrid");
+    grid.innerHTML=dims.map(d=>{
+      const pend=entries(d.id).filter(x=>x.pending).length;
+      return `<div class="libTile" data-lib="${d.id}"><div class="lt">${esc(d.name)}</div><div class="ls">${d.agents.length} agent${d.agents.length===1?"":"s"}${pend?" · "+pend+" pending":""}</div></div>`;
+    }).join("")
+    +`<div class="libTile" data-libmain="1"><div class="lt">Main storage</div><div class="ls">shared filing</div></div>`
+    +`<div class="libTile new" data-libnew="1"><div class="lt">+ New pocket</div></div>`;
+    grid.querySelectorAll("[data-lib]").forEach(t=>t.onclick=()=>{ close(); closePanels(); current={type:"dim",id:t.dataset.lib}; render(); });
+    const m=grid.querySelector("[data-libmain]"); if(m) m.onclick=()=>{ close(); closePanels(); current={type:"main"}; render(); };
+    const n=grid.querySelector("[data-libnew]"); if(n) n.onclick=()=>{ close(); closePanels(); current={type:"newspec"}; render(); };
+    ov.style.display="";
+  };
+})();
+/* the next move: every screen names the one thing to do next */
+function nextMoveHtml(label,sub){
+  return `<button class="nextmove" id="nmGo">${esc(label)}<span class="sub">${esc(sub)}</span></button>`;
+}
+
+let feedPocketId=null, feedAgentId="";
+function renderWelcome(){
+  const demoBadge=(typeof DEMO!=="undefined"&&DEMO)?' <span class="pill">SIMULATED</span>':"";
+  if(!dims.length){
+    view.innerHTML=`<div class="wrap"><div class="welcome"><div class="big">HARNESS${demoBadge}</div>
+      <div>Swipe right for folders · swipe left for agents.</div></div>
+      <div class="wrap" style="padding-top:0">${nextMoveHtml("Seal a new pocket","define a harness in 10 questions")}</div></div>`;
+    document.getElementById("nmGo").onclick=()=>{ current={type:"newspec"}; render(); };
+    return;
+  }
+  /* ---- the main page is a feed: everything happening across the pockets,
+     newest first. the composer at the bottom queues requests into a pocket. ---- */
+  if(!feedPocketId||!getDim(feedPocketId)) feedPocketId=dims[0].id;
+  const feed=[];
+  dims.forEach(d=>entries(d.id).filter(e=>e.kind==="event").forEach(e=>feed.push({dimId:d.id,dim:d.name,ts:e.ts||0,t:e.t,text:e.text,cls:e.cls||""})));
+  feed.sort((a,b)=>b.ts-a.ts);
+  const ex=(t,n)=>esc(String(t||"").length>n?String(t).slice(0,n)+"…":String(t||""));
+  const feedHtml=feed.slice(0,60).map(f=>
+    `<div class="ev ${f.cls}" data-feeddim="${f.dimId}" style="cursor:pointer"><span class="tm">${esc(f.t)}</span><span class="tx"><b>${esc(f.dim)}</b> — ${ex(f.text,140)}</span></div>`
+  ).join("");
+  const sub=(typeof DEMO!=="undefined"&&DEMO)
+    ? "simulated workflow — one API key, one agent (marlo), two projects"
+    : "everything happening across your pockets — tap anything to go to its pocket";
+  view.innerHTML=`<div class="wrap" style="padding-bottom:150px"><div class="vhead home"><div class="crumb">today${demoBadge}</div><h2>Feed</h2>
+    <div class="sub">${sub}</div></div>
+    <div class="stream">${feedHtml||'<span class="note">Nothing yet. Send the first request below.</span>'}</div>
+    <div class="frow" data-new="1" style="margin-top:18px"><span>+ New pocket<br><span class="note">define a harness, populate a pocket</span></span><span class="cnt">›</span></div></div>`;
+  view.querySelectorAll("[data-feeddim]").forEach(el=>el.onclick=()=>{ current={type:"dim",id:el.dataset.feeddim}; render(); });
+  const nw=view.querySelector('[data-new="1"]'); if(nw) nw.onclick=()=>{ current={type:"newspec"}; render(); };
+  /* composer bar — lives on the body so the sheet sliding never drags it */
+  const old=document.getElementById("composerBar"); if(old) old.remove();
+  const bar=document.createElement("div");
+  bar.id="composerBar";
+  bar.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:60;background:#101216;border-top:1px solid #26282e;padding:10px 12px calc(10px + env(safe-area-inset-bottom))";
+  const pdim=getDim(feedPocketId);
+  bar.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:flex-end">
+      <input type="text" id="feedIn" placeholder="Tell a pocket what you need…" style="flex:1">
+      <button class="primary" id="feedSend" style="padding:12px 18px">Send</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <span class="note">to</span>
+      <select id="feedPocket" style="flex:1;background:#1b1e23;color:#e8e9eb;border:1px solid #26282e;border-radius:6px;padding:8px;font-size:14px">
+        ${dims.map(d=>`<option value="${d.id}"${d.id===feedPocketId?" selected":""}>${esc(d.name)}</option>`).join("")}
+      </select>
+      <select id="feedAgent" style="flex:1;background:#1b1e23;color:#e8e9eb;border:1px solid #26282e;border-radius:6px;padding:8px;font-size:14px">
+        <option value="">any agent</option>
+        ${(pdim?pdim.agents:[]).map(a=>`<option value="${a.id}"${a.id===feedAgentId?" selected":""}>${esc(a.name)}</option>`).join("")}
+      </select>
+    </div>`;
+  document.body.appendChild(bar);
+  const fab=document.getElementById("fabBtn"); if(fab) fab.style.bottom="128px";
+  const pocketSel=bar.querySelector("#feedPocket"), agentSel=bar.querySelector("#feedAgent"), input=bar.querySelector("#feedIn");
+  pocketSel.onchange=()=>{
+    feedPocketId=pocketSel.value; feedAgentId="";
+    const d=getDim(feedPocketId);
+    agentSel.innerHTML='<option value="">any agent</option>'+(d?d.agents.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join(""):"");
+  };
+  agentSel.onchange=()=>{ feedAgentId=agentSel.value; };
+  const send=()=>{
+    const text=input.value.trim(); if(!text) return;
+    const d=getDim(feedPocketId); if(!d) return;
+    if(!d.staged) d.staged=[];
+    d.staged.push({id:uid(),t:nowT(),text,agentId:feedAgentId||null,agentName:null});
+    saveDims();
+    const a=feedAgentId?getAgent(d,feedAgentId):null;
+    log(d.id,"request queued from the feed"+(a?" for "+a.name:"")+" — "+(text.length>80?text.slice(0,80)+"…":text),"q");
+    current=null; render();
+    const ni=document.getElementById("feedIn"); if(ni) ni.focus();
+  };
+  bar.querySelector("#feedSend").onclick=send;
+  input.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); send(); } });
+  if(window.visualViewport&&!window.__feedVV){
+    window.__feedVV=true;
+    window.visualViewport.addEventListener("resize",()=>{
+      const b=document.getElementById("composerBar"); if(!b) return;
+      const vv=window.visualViewport;
+      b.style.bottom=Math.max(0,window.innerHeight-vv.height-vv.offsetTop)+"px";
+    });
+  }
+}
+function getFolders(){ let f=DB.load("mainfolders",null); if(!f||!f.length){ f=[{id:"general",name:"general"}]; DB.save("mainfolders",f); } return f; }
+function mainFolderSel(){ const f=getFolders(); const s=DB.load("mainfolder_sel","general"); return f.find(x=>x.id===s)?s:"general"; }
+function renderMain(){
+  const es=DB.load("main",[]);
+  const folders=getFolders();
+  const sel=mainFolderSel();
+  const chips=folders.map(f=>`<button class="fchip ${f.id===sel?"on":""}" data-f="${f.id}">${esc(f.name)}</button>`).join("")
+    + `<button class="fchip" id="fAdd">+ folder</button>`;
+  const rows=es.filter(e=>(e.folder||"general")===sel).slice().reverse()
+    .map(e=>`<div class="it"><span class="k">${esc(e.kind)}${e.source?" · from "+esc(e.source):""}</span><br>${esc(e.text)}<br><span class="ts">${esc(e.t)}</span></div>`).join("");
+  view.innerHTML=`<div class="wrap"><div class="vhead"><button class="backbtn" id="bkBtn">‹ Back</button><div class="crumb">bulk · one store</div><h2>Main storage</h2>
+    <div class="sub">folders are views over the one store · implants land in the open folder</div></div>
+    <div class="sect"><div class="folders">${chips}</div><div id="fForm"></div>
+    <div class="list">${rows||'<span class="note">Empty folder.</span>'}</div></div>
+    <div class="group"><div class="glabel">All pockets</div><div class="grows">
+    ${dims.map(d=>{ const nf=folderFiles(d,"notes").length+folderFiles(d,"results").length+folderFiles(d,"inbox").length;
+      return `<div class="grow" data-mp="${d.id}"><div class="growhead"><div><div class="gt">${esc(d.name)}</div><div class="gsub">${d.agents.length} agent${d.agents.length===1?"":"s"} · ${nf} files</div></div><span class="chev">›</span></div></div>`; }).join("")
+      ||'<span class="note">No pockets yet.</span>'}
+    </div></div>
+    <div class="gsub" style="margin-top:10px">Every pocket's folders, browsable and editable — the whole file system from here.</div></div>`;
+  document.getElementById("bkBtn").onclick=()=>{ current=null; render(); };
+  view.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ DB.save("mainfolder_sel",b.dataset.f); render(); });
+  view.querySelectorAll("[data-mp]").forEach(b=>b.onclick=()=>{ current={type:"files",id:b.dataset.mp,src:"main"}; render(); });
+  document.getElementById("fAdd").onclick=()=>{
+    document.getElementById("fForm").innerHTML=`<div class="rowline" style="margin:10px 0"><input type="text" id="nfN" placeholder="folder name"><button class="small primary" id="nfGo">Add</button></div>`;
+    document.getElementById("nfGo").onclick=()=>{
+      const n=document.getElementById("nfN").value.trim(); if(!n) return;
+      const f=getFolders(); const nf={id:uid(),name:n}; f.push(nf); DB.save("mainfolders",f); DB.save("mainfolder_sel",nf.id); render();
+    };
+  };
+}
+document.getElementById("bMainS").onclick=()=>{ current={type:"main"}; renderMain(); closePanels(); };
+
+document.getElementById("bNewDim").onclick=()=>{ current={type:"newspec"}; closePanels(); render(); };
+/* ---------------- quick pocket create: name + your agent MD. that's it.
+   The pasted MD becomes the brief file the agents read. Quiz stays optional, after. */
+function renderSpec(){
+  view.innerHTML=`<div class="wrap"><div class="vhead"><button class="backbtn" id="bkBtn">‹ Back</button><div class="crumb">new pocket</div><h2>New pocket</h2>
+    <div class="sub">name it, paste your agent's MD or prompt — it becomes the brief file your agents read</div></div>
+    <div class="sect">
+      <div class="qlabel">Name</div><input type="text" id="qn_name" placeholder="e.g. kitchen remodel" style="margin-bottom:18px">
+      <div class="qlabel">Agent brief <span class="note">· MD / prompt, optional</span></div>
+      <textarea id="qn_brief" rows="6" placeholder="# kitchen remodel&#10;&#10;you are the remodel planner. what may enter: ..."></textarea>
+      <div class="err" id="qnErr"></div>
+      <div><button class="primary" id="qnGo" style="padding:14px 28px;font-size:16px">Seal pocket</button></div>
+    </div></div>`;
+  document.getElementById("qnGo").onclick=()=>{
+    const name=document.getElementById("qn_name").value.trim()||"pocket";
+    const brief=document.getElementById("qn_brief").value.trim();
+    const firstLine=(brief.split("\n").map(s=>s.trim()).find(s=>s.length>2)||"").replace(/^#+\s*/,"").slice(0,140);
+    const purpose=firstLine||"general purpose pocket";
+    const r=createDimension(name,purpose,null);
+    if(!r.ok){ document.getElementById("qnErr").textContent="Filter refused the purpose: "+r.reason; return; }
+    if(brief){ r.dim.brief=brief; saveDims();
+      putEntry(r.dim.id,{kind:"brief",text:brief,by:"owner"});
+      log(r.dim.id,"agent brief filed — the MD the agents read","seal"); }
+    else log(r.dim.id,"pocket sealed — no brief yet, quiz is optional","seal");
+    current={type:"dim",id:r.dim.id}; render();
+  };
+  document.getElementById("bkBtn").onclick=()=>{ current=null; render(); };
+}
+/* ---------------- harness quiz: optional, one question at a time ---------------- */
+function quizProgress(dim){ return SPEC_QS.filter(([k])=>dim.spec&&dim.spec[k]).length; }
+function quizRowHtml(dim){
+  const n=quizProgress(dim);
+  if(n>=SPEC_QS.length) return "";
+  return `<div class="grow" id="qzRow"><div><div class="grow-t">Harness quiz</div>`
+    +`<div class="grow-d">Define the agents' world.</div></div>`
+    +`<div class="grow-r" style="flex-direction:column;align-items:flex-end;gap:2px"><span class="qcount">${n}/${SPEC_QS.length}</span><span class="startlink">${n?"Continue":"Start"} →</span></div></div>`;
+}
+function renderQuiz(dimId,qi){
+  const dim=getDim(dimId); if(!dim){ current=null; render(); return; }
+  dim.spec=dim.spec||{};
+  const idx=Math.max(0,Math.min(qi,SPEC_QS.length-1));
+  const [k,q,ph]=SPEC_QS[idx];
+  const n=quizProgress(dim);
+  const dots=SPEC_QS.map(([kk])=>`<span class="dot ${dim.spec[kk]?"on":""}"></span>`).join("");
+  view.innerHTML=`<div class="wrap"><div class="vhead"><button class="backbtn" id="bkBtn">‹ Back</button><div class="crumb">${esc(dim.name)} · harness quiz</div>
+    <div class="sub">question ${idx+1} of ${SPEC_QS.length} · optional</div>
+    <div class="quizq">${idx+1}. ${esc(q)}</div>
+    <div style="margin:14px 0 4px">${dots}</div></div>
+    <div class="sect">
+      <div class="note" style="margin-bottom:8px">answer for the agents, not for yourself</div>
+      <textarea id="qzA" rows="3" placeholder="${esc(ph)}">${esc(dim.spec[k]||"")}</textarea>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        ${idx>0?'<button class="small" id="qzBack">← Back</button>':""}
+        <button class="small" id="qzSkip">Skip</button>
+        <button class="primary" id="qzNext">${idx===SPEC_QS.length-1?"Done":"Save & next →"}</button>
+      </div>
+      <div class="sub" style="margin-top:14px">${n}/${SPEC_QS.length} answered</div>
+    </div></div>`;
+  const save=()=>{ const v=document.getElementById("qzA").value.trim();
+    if(v){ dim.spec[k]=v; saveDims(); } };
+  const go=qq=>{ current={type:"quiz",id:dimId,qi:qq}; render(); };
+  const back=document.getElementById("qzBack");
+  if(back) back.onclick=()=>{ save(); go(idx-1); };
+  document.getElementById("qzSkip").onclick=()=>{ finish(idx+1); };
+  document.getElementById("qzNext").onclick=()=>{ save(); finish(idx+1); };
+  function finish(nq){
+    if(nq>=SPEC_QS.length){ const nn=quizProgress(dim);
+      if(nn>0) log(dim.id,"harness quiz: "+nn+"/"+SPEC_QS.length+" answered","seal");
+      current={type:"dim",id:dimId}; render(); }
+    else go(nq);
+  }
+  setTimeout(()=>{ const t=document.getElementById("qzA"); if(t) t.focus(); },80);
+  document.getElementById("bkBtn").onclick=()=>{ current={type:"dim",id:dimId}; render(); };
+}
+function specHtml(dim){
+  const n=quizProgress(dim);
+  if(!n) return "";
+  const rows=SPEC_QS.map(([k,q])=>dim.spec[k]
+    ? `<div class="it"><span class="k">${esc(q)}</span><br>${esc(dim.spec[k]).replace(/\n/g,"<br>")}</div>`:"").join("");
+  return growRow(dim,"spec","Harness spec",`<span class="qcount">${n}/${SPEC_QS.length}</span>`,`<div class="list">${rows}</div>`);
+}
+/* the agent brief: the owner's MD/prompt, pasted at creation — the file the agents read */
+function mdHtml(src){
+  return esc(src).split("\n").map(line=>{
+    const hm=line.match(/^(#{1,3})\s+(.*)/);
+    if(hm) return `<div class="mdh">${hm[2]}</div>`;
+    let h=line.replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`(.+?)`/g,"<code>$1</code>");
+    if(/^\s*[-*]\s+/.test(line)) return `<div class="mdli">• ${h.replace(/^\s*[-*]\s+/,"")}</div>`;
+    return h.trim()?`<div>${h}</div>`:`<div style="height:8px"></div>`;
+  }).join("");
+}
+function briefMiniHtml(dim){
+  if(!dim.brief) return "";
+  const inner=`<div class="md">${mdHtml(dim.brief)}</div>
+    <div style="margin-top:10px"><button class="small" data-briefdl>download .md</button></div>`;
+  return growRow(dim,"brief","Agent brief",`<span class="gsub">md</span>`,inner);
+}
+
+/* ---------------- shared pieces ---------------- */
+function streamHtml(dim){
+  return entries(dim.id).filter(e=>e.kind==="event").slice(-80).reverse()
+    .map(e=>`<div class="ev ${e.cls||""}"><span class="tm">${esc(e.t)}</span><span class="tx">${esc(e.text)}</span></div>`).join("")
+    || '<span class="note">Nothing yet.</span>';
+}
+/* forced file structure: every pocket is born with these folders.
+   entries auto-file by kind. audit is unfilterable and never lockable. */
+/* The 10 questions that define a harness — answered for the AGENTS, not the user.
+   Fill the form → seal → the pocket is populated with this definition. */
+const SPEC_QS=[
+ ["identity","What are you?","name this harness — e.g. kitchen remodel"],
+ ["purpose","What are you for?","one line — or skip, the agent brief covers this"],
+ ["admission","What may enter?","the bar for entry — what is allowed in"],
+ ["knowledge","What knowledge do you contain?","what the agents may know and use"],
+ ["model","What model do you use?","e.g. local qwen3:4b — recorded as spec for now"],
+ ["tools","What tools may you use?","what the agents are allowed to touch"],
+ ["askFirst","What must you ask before acting?","required clarifications, every time"],
+ ["satisfactory","What counts as satisfactory work?","how good gets judged"],
+ ["onFail","What happens when work fails?","e.g. sent back with reason, rework, attempt +1"],
+ ["egress","What may leave the Pocket?","what is allowed out, and to where"]
+];
+const FOLDERS=[
+  {key:"pending", title:"Pending review",   kinds:[],                       lockable:true},
+  {key:"inbox",   title:"Inbox",            kinds:["input","purpose","dispatch","brief"], lockable:true},
+  {key:"qa",      title:"Questions",        kinds:["question","answer"], lockable:true},
+  {key:"notes",   title:"Notes",            kinds:["note"],               lockable:true},
+  {key:"results", title:"Accepted results", kinds:["result"],             lockable:true},
+  {key:"audit",   title:"Audit",            kinds:["event"],              lockable:false},
+];
+const unlocked=new Set(); // session-only: dim.id+":"+folderKey. never persisted.
+function hashPw(s){ let h1=0xdeadbeef,h2=0x41c6ce57; for(let i=0;i<s.length;i++){ const ch=s.charCodeAt(i); h1=Math.imul(h1^ch,2654435761); h2=Math.imul(h2^ch,1597334677); } h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909); h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909); return (h2>>>0).toString(16)+(h1>>>0).toString(16); }
+function isLocked(dim,key){ return !!(dim.locks&&dim.locks[key]&&!unlocked.has(dim.id+":"+key)); }
+function folderItems(dim,f){
+  const es=entries(dim.id);
+  if(f.key==="pending") return es.filter(e=>e.pending&&e.kind!=="event");
+  return es.filter(e=>!e.pending&&f.kinds.includes(e.kind));
+}
+const LOCK_SVG='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>';
+function folderRow(dim,f){
+  if(!dim.locks) dim.locks={};
+  const items=folderItems(dim,f);
+  const locked=isLocked(dim,f.key);
+  const hasPw=!!dim.locks[f.key];
+  const meta=`<span class="cnt${items.length?" hot":""}">${items.length}</span>${locked?'<span>🔒</span>':""}`;
+  let inner="";
+  if(locked){
+    inner=`<div class="note">🔒 Locked folder</div>
+      <div class="rowline" style="margin-top:8px"><input type="text" class="pw-in" placeholder="password"><button class="small" data-unlock="${f.key}">Unlock</button></div>
+      <div class="err pw-err"></div>
+      <div class="note">prototype lock — hides contents in the app, not real encryption</div>`;
+  }else{
+    const rows=items.slice().reverse().map(e=>{
+      let h=`<div class="it"><span class="k">${esc(e.kind)}${e.by?" · "+esc(e.by):""}${f.key==="pending"?" · proposed":""}</span><br>${esc(e.text).replace(/\n/g,"<br>")}<br><span class="ts">${esc(e.t)}</span>`;
+      if(f.key==="pending") h+=`<br><span class="rowline" style="margin-top:8px"><button class="small primary" data-accept="${e.id}">Accept</button> <button class="small" data-back="${e.id}">Send back</button> <button class="small" data-reject="${e.id}">Reject</button></span><span data-backform="${e.id}" style="display:none"><span class="rowline" style="margin-top:8px"><input type="text" class="back-in" placeholder="what's wrong?"><button class="small primary" data-backgo="${e.id}">Send</button></span></span>`;
+      return h+`</div>`;
+    }).join("");
+    const empty=f.key==="pending"?"Nothing waiting. Agent output lands here for your word."
+      :f.key==="results"?"Nothing accepted yet — agent output waits in Pending review until you accept it.":"—";
+    inner=`<div class="list">${rows||'<span class="note">'+empty+'</span>'}</div>`
+      +(f.lockable?`<div style="margin-top:12px"><button class="lockbtn ${hasPw?"green":"red"}" data-lockbtn="${f.key}" title="${hasPw?"password set — tap to change":"tap to set a password"}">${LOCK_SVG}</button>
+      <span class="pwform" style="display:none"><div class="rowline" style="margin-top:10px"><input type="text" class="pw-in" placeholder="set a password"><button class="small" data-lock="${f.key}">Set</button></div>
+      <div class="note">prototype lock — hides contents in the app, not real encryption</div></span></div>`:"");
+  }
+  return growRow(dim,"f-"+f.key, f.title, meta, inner);
+}
+/* staged prompts: drafted tasks waiting to be dispatched — the missing workflow step */
+function stagedRowHtml(dim){
+  const items=dim.staged||[];
+  const meta=`<span class="cnt${items.length?" hot":""}">${items.length}</span>`;
+  const inner=items.length?items.map(s=>{
+    const a=s.agentId?getAgent(dim,s.agentId):null;
+    const anm=a?a.name:((s.agentName||"new agent")+" · new");
+    return `<div class="it"><span class="k">→ ${esc(anm)} · ${esc(s.t)}</span><br>${esc(s.text).replace(/\n/g,"<br>")}`
+      +`<br><span class="rowline" style="margin-top:8px"><button class="small primary" data-stagego="${s.id}">Dispatch</button> <button class="small" data-stageedit="${s.id}">Edit</button> <button class="small" data-stagedel="${s.id}">Delete</button></span>`
+      +`<span data-stageform="${s.id}" style="display:none"><span class="rowline" style="margin-top:8px"><input type="text" class="stage-in" value="${esc(s.text)}"><button class="small primary" data-stageeditsave="${s.id}">Save</button></span></span></div>`;
+  }).join(""):'<span class="note">No staged prompts — tap + by a pocket, write it, Stage.</span>';
+  return growRow(dim,"staged","Staged",meta,`<div class="list">${inner}</div>`);
+}
+function filterSect(dim){
+  const cfg=fconf(dim);
+  const inner=STAGES.map(s=>{
+    const open=fStageOpen===s.id;
+    let editor="";
+    if(open){
+      if(s.id==="no-vague"||s.id==="no-assumption"){
+        const key=s.id==="no-vague"?"vague":"assume";
+        editor=`<div class="fedit"><div class="fhint">comma-separated words. matched as whole words, case-insensitive.</div><div class="frow2"><input id="fWords" value="${esc(cfg[key])}"><button class="small primary" id="fSave">save</button></div></div>`;
+      }else{
+        const key=s.id==="grounded"?"groundedMin":"taskMin";
+        editor=`<div class="fedit"><div class="fhint">minimum word overlaps needed to pass.</div><div class="frow2"><input id="fNum" type="number" min="1" max="10" value="${cfg[key]}"><button class="small primary" id="fSave">save</button></div></div>`;
+      }
+    }
+    return `<div class="stage" data-fstage="${s.id}"><div class="inf"><div class="n">${esc(s.name)}</div><div class="d">${esc(s.desc)} Tap to edit the rule.</div></div>
+      <button class="small ${dim.filters[s.id]?"on":""}" data-stage="${s.id}">${dim.filters[s.id]?"on":"off"}</button></div>${editor}`;
+  }).join("");
+  return growRow(dim,"filter","Admission filter","",inner);
+}
+function leadSect(dim){
+  const open=sectOpen(dim.id,"lead");
+  const depths=[2,3,4,5].map(d=>`<button class="small ${dim.lead.qgen.depth===d?"sel":""}" data-depth="${d}">${d}</button>`).join("");
+  const inner=`
+      <div class="stage"><div class="inf"><div class="n">Outward questions</div><div class="d">On: the receiver's clarifying round goes to you live as the auditor. Off: the auditor clarifies from the audited brief.</div></div>
+        <button class="small ${dim.lead.qgen.outward?"on":""}" id="qOut">${dim.lead.qgen.outward?"on":"off"}</button></div>
+      <div class="stage"><div class="inf"><div class="n">Inward interrogation</div><div class="d">At the agent — defend the draft before the filter judges.</div></div>
+        <button class="small ${dim.lead.qgen.inward?"on":""}" id="qIn">${dim.lead.qgen.inward?"on":"off"}</button></div>
+      <div class="stage"><div class="inf"><div class="n">Question depth</div><div class="d">Max questions per phase.</div></div>
+        <div class="depthrow">${depths}</div></div>
+      <div style="margin-top:10px"><button class="small primary" id="bSynth">synthesize harness</button></div>`;
+  return growRow(dim,"lead",`Lead <span class="gsub">· ${esc(dim.lead.name)}</span>`,"",inner);
+}
+function wireCommon(dim){
+  view.querySelectorAll("[data-stage]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const s=STAGES.find(x=>x.id===b.dataset.stage);
+    dim.filters[s.id]=!dim.filters[s.id]; saveDims();
+    log(dim.id,"admission filter: "+s.name+" turned "+(dim.filters[s.id]?"on":"off"),"seal"); render();
+  });
+  view.querySelectorAll("[data-fstage]").forEach(r=>r.onclick=e=>{
+    if(e.target.closest("[data-stage]")||e.target.closest(".fedit")) return;
+    fStageOpen=fStageOpen===r.dataset.fstage?null:r.dataset.fstage; render();
+  });
+  const fSave=document.getElementById("fSave");
+  if(fSave) fSave.onclick=()=>{
+    const w=document.getElementById("fWords"), n=document.getElementById("fNum");
+    dim.filterConfig=dim.filterConfig||{};
+    if(w) dim.filterConfig[fStageOpen==="no-vague"?"vague":"assume"]=w.value;
+    if(n) dim.filterConfig[fStageOpen==="grounded"?"groundedMin":"taskMin"]=Math.max(1,Math.min(10,+n.value||2));
+    saveDims(); log(dim.id,"you edited the filter rule — "+(STAGES.find(s=>s.id===fStageOpen)||{}).name,"seal");
+    fStageOpen=null; render();
+  };
+  const filesRow=document.getElementById("filesRow");
+  if(filesRow) filesRow.onclick=()=>{ current={type:"files",id:dim.id}; render(); };
+  const recordsRow=document.getElementById("recordsRow");
+  if(recordsRow) recordsRow.onclick=()=>{ current={type:"records",id:dim.id}; render(); };
+  const mem=document.getElementById("bMem");
+  if(mem) mem.onclick=()=>{ dim.memoryOn=!dim.memoryOn; saveDims(); log(dim.id,"memory turned "+(dim.memoryOn?"on":"off"),"seal"); render(); };
+  const imp=document.getElementById("bImplant");
+  if(imp){
+    const _mf=getFolders().find(f=>f.id===mainFolderSel());
+    const _mn=_mf?_mf.name:mainFolderSel();
+    imp.textContent="implant → "+_mn;
+    imp.onclick=()=>{
+      const main=DB.load("main",[]);
+      const target=mainFolderSel();
+      entries(dim.id).filter(e=>e.kind!=="event"&&!e.pending).forEach(e=>main.push({t:e.t,kind:e.kind,text:e.text,by:e.by||"",source:dim.name,folder:target}));
+      DB.save("main",main); log(dim.id,"implanted into main storage › "+_mn,"seal"); render();
+    };
+  }
+  view.querySelectorAll("[data-lockbtn]").forEach(b=>b.onclick=()=>{
+    const form=b.parentElement.querySelector(".pwform"); if(!form) return;
+    const show=form.style.display==="none";
+    form.style.display=show?"":"none";
+    const wrap=b.closest(".abody");
+    if(wrap&&wrap.classList.contains("open")) wrap.style.maxHeight="none";
+    if(show){ const inp=form.querySelector(".pw-in"); if(inp) setTimeout(()=>inp.focus(),60); }
+  });
+  view.querySelectorAll("[data-briefdl]").forEach(b=>b.onclick=()=>{
+    const blob=new Blob([dim.brief||""],{type:"text/markdown"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download=dim.name.replace(/[^\w\-]+/g,"-").toLowerCase()+".md"; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  });
+  view.querySelectorAll("[data-lock]").forEach(b=>b.onclick=()=>{
+    const inp=b.closest(".sectbody").querySelector(".pw-in");
+    const pw=inp.value; if(!pw) return;
+    if(!dim.locks) dim.locks={};
+    dim.locks[b.dataset.lock]=hashPw(pw); saveDims();
+    log(dim.id,"folder locked: "+b.dataset.lock,"seal"); render();
+  });
+  view.querySelectorAll("[data-unlock]").forEach(b=>b.onclick=()=>{
+    const body=b.closest(".sectbody");
+    const inp=body.querySelector(".pw-in");
+    if(dim.locks&&hashPw(inp.value)===dim.locks[b.dataset.unlock]){
+      unlocked.add(dim.id+":"+b.dataset.unlock);
+      log(dim.id,"folder unlocked: "+b.dataset.unlock,"seal"); render();
+    }else{
+      const e=body.querySelector(".pw-err"); if(e) e.textContent="wrong password";
+    }
+  });
+  const fTitle=k=>{ const f=FOLDERS.find(x=>x.key!=="pending"&&x.kinds.includes(k)); return f?f.title:"folder"; };
+  view.querySelectorAll("[data-accept]").forEach(b=>b.onclick=()=>{
+    const s=entries(dim.id); const e=s.find(x=>x.id===b.dataset.accept);
+    if(e){ e.pending=false; DB.save(dkey(dim.id),s); log(dim.id,"you accepted "+e.kind+" → "+fTitle(e.kind),"seal"); distillLesson(dim,e); render(); }
+  });
+  view.querySelectorAll("[data-reject]").forEach(b=>b.onclick=()=>{
+    const s=entries(dim.id); const i=s.findIndex(x=>x.id===b.dataset.reject);
+    if(i>=0){ const e=s[i]; s.splice(i,1); DB.save(dkey(dim.id),s); log(dim.id,"you rejected "+e.kind+" — discarded","seal"); render(); }
+  });
+  view.querySelectorAll("[data-back]").forEach(b=>b.onclick=()=>{
+    const f=view.querySelector(`[data-backform="${b.dataset.back}"]`);
+    if(f) f.style.display=f.style.display==="none"?"":"none";
+  });
+  view.querySelectorAll("[data-backgo]").forEach(b=>b.onclick=()=>{
+    const form=b.closest("[data-backform]");
+    const reason=(form.querySelector(".back-in").value||"").trim()||"not good enough — try again";
+    sendBack(dim,b.dataset.backgo,reason);
+  });
+  /* staged prompts: dispatch / edit / delete */
+  const getStaged=id=>(dim.staged||[]).find(x=>x.id===id);
+  view.querySelectorAll("[data-stagego]").forEach(b=>b.onclick=()=>{
+    const s=getStaged(b.dataset.stagego); if(!s) return;
+    let aid=s.agentId&&getAgent(dim,s.agentId)?s.agentId:null;
+    if(!aid){
+      const r=createAgent(dim,s.agentName||"agent",s.text);
+      if(!r.ok){ log(dim.id,"cannot dispatch staged prompt — "+r.reason,"fail"); render(); return; }
+      aid=r.agent.id;
+    }
+    dim.staged=(dim.staged||[]).filter(x=>x.id!==s.id); saveDims();
+    log(dim.id,"staged prompt dispatched → "+getAgent(dim,aid).name,"q");
+    current={type:"agent",dimId:dim.id,id:aid,brief:s.text}; render();
+  });
+  view.querySelectorAll("[data-stagedel]").forEach(b=>b.onclick=()=>{
+    dim.staged=(dim.staged||[]).filter(x=>x.id!==b.dataset.stagedel); saveDims();
+    log(dim.id,"staged prompt discarded","q"); render();
+  });
+  view.querySelectorAll("[data-stageedit]").forEach(b=>b.onclick=()=>{
+    const f=view.querySelector(`[data-stageform="${b.dataset.stageedit}"]`);
+    if(f) f.style.display=f.style.display==="none"?"":"none";
+  });
+  view.querySelectorAll("[data-stageeditsave]").forEach(b=>b.onclick=()=>{
+    const s=getStaged(b.dataset.stageeditsave); if(!s) return;
+    const v=b.closest("[data-stageform]").querySelector(".stage-in").value.trim();
+    if(!v) return;
+    s.text=v; saveDims(); log(dim.id,"staged prompt edited","q"); render();
+  });
+}
+
+/* ---------------- pocket view: identity → command → contents ---------------- */
+/* ---------------- files: the pocket's file structure, made tangible ----------------
+   the forced folders, browsable as files. entries are the files; staged prompts
+   live in dim.staged. audit is append-only; everything else is yours to edit. */
+const FILE_FOLDERS=[
+  {id:"pending",name:"Pending review",desc:"Agent proposals awaiting your word — judged here, not edited."},
+  {id:"staged",name:"Staged",desc:"Prompts staged for dispatch."},
+  {id:"inbox",name:"Inbox",desc:"Inputs and the founding purpose."},
+  {id:"questions",name:"Questions",desc:"Question threads."},
+  {id:"notes",name:"Notes",desc:"Notes and distilled lessons."},
+  {id:"results",name:"Accepted results",desc:"Judged and accepted work."},
+  {id:"audit",name:"Audit",desc:"The audit trail — append-only, unfilterable."},
+];
+function folderFiles(dim,fid){
+  const es=entries(dim.id);
+  const wrap=e=>({uid:e.id,kind:e.kind,text:e.text||"",by:e.by||"",t:e.t||""});
+  switch(fid){
+    case "pending": return es.filter(e=>e.pending).map(wrap);
+    case "staged": return (dim.staged||[]).map(s=>({uid:s.id,kind:"staged prompt",text:s.text||"",by:s.agentName||"",t:s.t||""}));
+    case "inbox": return es.filter(e=>(e.kind==="input"||e.kind==="purpose")&&!e.pending).map(wrap);
+    case "questions": return es.filter(e=>e.kind==="question").map(wrap);
+    case "notes": return es.filter(e=>e.kind==="note"&&!e.pending).map(wrap);
+    case "results": return es.filter(e=>e.kind==="result"&&!e.pending).map(wrap);
+    case "audit": return es.filter(e=>e.kind==="event").map(wrap);
+    default: return [];
+  }
+}
+function fileTitle(fl){
+  const first=String(fl.text||"").split("\n")[0].trim();
+  return first?first.slice(0,64):"(empty file)";
+}
+function updateFile(dim,fid,uid,text){
+  if(fid==="staged"){ const s=(dim.staged||[]).find(x=>String(x.id)===String(uid)); if(s){ s.text=text; saveDims(); } return; }
+  const s=entries(dim.id); const e=s.find(x=>String(x.id)===String(uid));
+  if(e){ e.text=text; DB.save(dkey(dim.id),s); }
+}
+function deleteFile(dim,fid,uid){
+  if(fid==="staged"){ dim.staged=(dim.staged||[]).filter(x=>String(x.id)!==String(uid)); saveDims(); return; }
+  DB.save(dkey(dim.id),entries(dim.id).filter(x=>String(x.id)!==String(uid)));
+}
+/* the project dogfoods: this build lives in a pocket. new versions fork a new pocket. */
+function seedProjectPocket(){
+  let d=dims.find(x=>x.name==="Moor Pockets");
+  if(d){ current={type:"dim",id:d.id}; closePanels(); render(); return; }
+  const r=createDimension("Moor Pockets","Build Moor Pockets itself — the pocket harness. Every workflow dogfoods here before it ships.");
+  d=r.dim;
+  const notes=[
+    ["Build log — 2026-10-12",
+     "Shipped this session: prompt staging (Stage + Staged row), FAB menu (New task / New pocket), keyboard avoidance, compounding (lead distills a lesson on every Accept), smarter stub drafts (Attempt/Reasoning/Open questions), draft-filter scope fix, un-hidden Main storage, Settings (export/reset/about), Library grid, outward-off by default, Files browser (editable documents), filter rule editing, model wiring (OpenAI-compatible, key in Settings → Model)."],
+    ["Doctrine",
+     "Agents PROPOSE, owner DISPOSES — no agent writes to any folder; only the owner's tap files things. Staged dispatch: brief → audit → questions → send → clarify → work → proposal → judge. Audit trail is append-only. Folders are forced: Pending review, Staged, Inbox, Questions, Notes, Accepted results, Audit."],
+    ["Open questions",
+     "Real-model behavior at scale (costs, latency, quality of drafts). Which parts of the staged protocol survive contact with a real model. When the harness spec should be edited by the lead vs the owner."]];
+  notes.forEach(([t,x])=>putEntry(d.id,{kind:"note",text:t+"\n"+x,by:"you"}));
+  putEntry(d.id,{kind:"input",text:"Prototype file: your_files/moor-pockets-prototype.html (single file, browser localStorage — no backend yet).",by:"you"});
+  saveDims();
+  log(d.id,"project pocket seeded — this build now dogfoods here","seal");
+  current={type:"dim",id:d.id}; closePanels(); render();
+}
+function forkPocket(dim){
+  const m=dim.name.match(/ v(\d+)$/);
+  const n=m?parseInt(m[1],10)+1:2;
+  const base=m?dim.name.slice(0,-m[0].length):dim.name;
+  const r=createDimension(base+" v"+n,dim.purpose,dim.spec?JSON.parse(JSON.stringify(dim.spec)):null);
+  const nd=r.dim;
+  nd.filterConfig=dim.filterConfig?JSON.parse(JSON.stringify(dim.filterConfig)):null;
+  nd.filters=Object.assign({},dim.filters);
+  nd.lead.qgen=Object.assign({},dim.lead.qgen);
+  entries(dim.id).filter(e=>(e.kind==="note"||e.kind==="input")&&!e.pending).forEach(e=>{
+    putEntry(nd.id,{kind:e.kind,text:e.text,by:e.by});
+  });
+  saveDims();
+  log(nd.id,"forked from "+dim.name+" — new version pocket. agents start fresh; purpose, spec, filter and notes carried over.","seal");
+  return nd;
+}
+/* ---------------- records: every record in the pocket, one page ---------------- */
+function renderRecords(dim){
+  const groups=FILE_FOLDERS.map(f=>({f,files:folderFiles(dim,f.id)})).filter(g=>g.files.length);
+  const total=groups.reduce((n,g)=>n+g.files.length,0);
+  const ex=(t,n)=>esc(String(t||"").length>n?String(t).slice(0,n)+"…":String(t||""));
+  const body=groups.map(g=>`<div class="glabel" style="margin:20px 0 6px">${esc(g.f.name)} · ${g.files.length}</div>`
+    +g.files.slice().reverse().map(fl=>`<div class="frow" data-rec="${g.f.id}:${esc(fl.uid)}"><span>${ex(fileTitle(fl),70)}<br><span class="note">${esc(fl.kind)}${fl.by?" · "+esc(fl.by):""}${fl.t?" · "+esc(fl.t):""}</span></span><span class="cnt">›</span></div>`).join("")
+  ).join("");
+  view.innerHTML=`<div class="wrap"><div class="vhead"><button class="backbtn" id="bkBtn">‹ Back</button>
+    <div class="crumb">${esc(dim.name)} · records</div><h2>Records</h2>
+    <div class="sub">${total} record${total===1?"":"s"} in this pocket — tap any record to open it</div></div>
+    ${body||'<span class="note">No records yet.</span>'}</div>`;
+  document.getElementById("bkBtn").onclick=()=>{ current={type:"dim",id:dim.id}; render(); };
+  view.querySelectorAll("[data-rec]").forEach(el=>el.onclick=()=>{
+    const i=el.dataset.rec.indexOf(":");
+    current={type:"doc",id:dim.id,fid:el.dataset.rec.slice(0,i),fileId:el.dataset.rec.slice(i+1)};
+    render();
+  });
+}
+function renderFiles(dim,src){
+  const rows=FILE_FOLDERS.map(f=>{
+    const n=folderFiles(dim,f.id).length;
+    return `<div class="grow" data-ff="${f.id}"><div class="growhead"><div><div class="gt">${esc(f.name)}</div><div class="gsub">${n} file${n===1?"":"s"}</div></div><span class="chev">›</span></div></div>`;
+  }).join("");
+  const backTo=()=>{ current=src==="main"?{type:"main"}:{type:"dim",id:dim.id}; render(); };
+  view.innerHTML=`<div class="wrap"><button class="backbtn" id="bBack">‹ Back</button>
+    <div class="eyebrow">Moor pocket · files</div><h1>${esc(dim.name)}</h1>
+    <div class="gsub" style="margin:6px 0 16px">7 folders. Everything the pocket keeps, as files.</div>
+    <div class="grows">${rows}</div>
+    ${src!=="main"?`<div style="margin-top:18px"><button class="small" id="forkBtn">Fork pocket — start a new version</button></div>`:""}</div>`;
+  view.querySelector("#bBack").onclick=backTo;
+  view.querySelectorAll("[data-ff]").forEach(r=>r.onclick=()=>{ current={type:"files",id:dim.id,fid:r.dataset.ff,src}; render(); });
+  const fork=document.getElementById("forkBtn");
+  if(fork) fork.onclick=()=>{ const nd=forkPocket(dim); current={type:"dim",id:nd.id}; closePanels(); render(); };
+}
+function renderFolder(dim,fid,src){
+  const f=FILE_FOLDERS.find(x=>x.id===fid)||FILE_FOLDERS[0];
+  const files=folderFiles(dim,f.id);
+  const rows=files.map(fl=>`<div class="grow" data-fdoc="${esc(String(fl.uid))}"><div class="growhead"><div><div class="gt">${esc(fileTitle(fl))}</div><div class="gsub">${esc(fl.kind)}${fl.by?" · "+esc(fl.by):""}${fl.t?" · "+esc(fl.t):""}</div></div><span class="chev">›</span></div></div>`).join("")
+    ||`<div class="gsub">Empty — files land here as the pocket works.</div>`;
+  view.innerHTML=`<div class="wrap"><button class="backbtn" id="bBack">‹ Back</button>
+    <div class="eyebrow">Files · ${esc(f.name)}</div><h1 style="font-size:26px">${esc(f.name)}</h1>
+    <div class="gsub" style="margin:6px 0 16px">${esc(f.desc)}</div>
+    <div class="grows">${rows}</div></div>`;
+  view.querySelector("#bBack").onclick=()=>{ current={type:"files",id:dim.id,src}; render(); };
+  view.querySelectorAll("[data-fdoc]").forEach(r=>r.onclick=()=>{ current={type:"doc",id:dim.id,fid:f.id,fileId:r.dataset.fdoc,src}; render(); });
+}
+function renderDoc(dim,fid,fileId,src){
+  const fl=folderFiles(dim,fid).find(x=>String(x.uid)===String(fileId));
+  if(!fl){ current={type:"files",id:dim.id,fid,src}; render(); return; }
+  const editable=fid!=="audit";
+  const f=FILE_FOLDERS.find(x=>x.id===fid)||FILE_FOLDERS[0];
+  view.innerHTML=`<div class="wrap"><button class="backbtn" id="bBack">‹ Back</button>
+    <div class="eyebrow">${esc(f.name)} · ${esc(fl.kind)}${fl.by?" · "+esc(fl.by):""}</div>
+    ${fid==="audit"?`<div class="gsub" style="margin:6px 0 12px">The audit trail is append-only — it can't be edited or deleted.</div>`:""}
+    ${fid==="pending"?`<div class="gsub" style="margin:6px 0 12px">A proposal awaiting your word — judge it in Pending review.</div>`:""}
+    ${editable?`<textarea id="docText" rows="14">${esc(fl.text)}</textarea>
+    <div class="btnrow"><button class="btn primary" id="docSave">Save</button><button class="btn danger" id="docDel">Delete</button></div>`
+    :`<div class="docro">${esc(fl.text).replace(/\n/g,"<br>")}</div>`}</div>`;
+  view.querySelector("#bBack").onclick=()=>{ current={type:"files",id:dim.id,fid,src}; render(); };
+  if(!editable) return;
+  view.querySelector("#docSave").onclick=()=>{
+    updateFile(dim,fid,fl.uid,view.querySelector("#docText").value);
+    log(dim.id,"you edited a file in "+f.name+" — "+fileTitle({text:view.querySelector("#docText").value}).slice(0,50),"seal");
+    current={type:"files",id:dim.id,fid,src}; render();
+  };
+  const del=view.querySelector("#docDel");
+  del.onclick=()=>{
+    if(del.dataset.armed){ deleteFile(dim,fid,fl.uid); log(dim.id,"you deleted a file from "+f.name,"seal"); current={type:"files",id:dim.id,fid,src}; render(); }
+    else{ del.dataset.armed="1"; del.textContent="Tap again to delete"; setTimeout(()=>{ if(del.isConnected){ delete del.dataset.armed; del.textContent="Delete"; } },3000); }
+  };
+}
+function renderDim(id){
+  const dim=getDim(id); if(!dim){ current=null; render(); return; }
+  if(!dim.locks) dim.locks={};
+  const dpend=entries(dim.id).filter(e=>e.pending).length;
+  const doo=(dim.orders||[]).find(x=>x.stage!=="done");
+  /* command: whatever needs attention now */
+  let cmdHtml="";
+  if(dpend){
+    cmdHtml=`<div class="group cmd"><div class="glabel">Needs your word</div><div class="grows">
+      <div class="grow" id="cmdGo"><div><div class="grow-t">Pending review</div><div class="grow-d">Accept, send back, or reject.</div></div>
+      <div class="grow-r"><span class="cnt hot">${dpend}</span><span class="chev">›</span></div></div></div></div>`;
+  }else if(doo){
+    cmdHtml=`<div class="group cmd"><div class="glabel">In flight</div><div class="grows">
+      <div class="grow" id="cmdGo2"><div><div class="grow-t">Continue dispatch</div><div class="grow-d">Staged at ${esc(doo.stage)}.</div></div>
+      <div class="grow-r"><span class="chev">›</span></div></div></div></div>`;
+  }
+  const frow=k=>folderRow(dim,FOLDERS.find(x=>x.key===k));
+  const harnessRows=quizRowHtml(dim)+specHtml(dim)+briefMiniHtml(dim);
+  const addRow=(dim.agents.length<MAX_AGENTS&&!current.addAgent)
+    ?`<div class="grow" id="addAgRow"><div class="grow-t" style="color:var(--dim)">+ Agent</div><div class="grow-r"><span class="chev">›</span></div></div>`:"";
+  let addHtml="";
+  if(current.addAgent){
+    if(dim.agents.length>=MAX_AGENTS) addHtml=`<div class="panel" style="margin:4px 0 28px"><span class="note">This pocket already has ${MAX_AGENTS} agents.</span></div>`;
+    else addHtml=`<div class="panel" style="margin:4px 0 28px"><div class="grow-t" style="margin-bottom:10px">Send an agent to this harness</div>
+      <div class="rowline"><input type="text" id="naN" placeholder="agent name"><input type="text" id="naT" placeholder="its specific task">
+      <button class="primary" id="naGo">Send</button></div><div class="err" id="naErr"></div></div>`;
+  }
+  view.innerHTML=`<div class="wrap">
+    <div class="phead"><button class="backbtn" id="bkBtn">‹ Back</button>
+      <div class="eyebrow">Moor pocket</div>
+      <div class="pname">${esc(dim.name)}</div>
+      <div class="ppurpose">${esc(dim.purpose)}</div>
+      <div class="pchips"><button class="small ${dim.memoryOn?"on":""}" id="bMem">memory ${dim.memoryOn?"on":"off"}</button>
+      <button class="small" id="bImplant">implant into main storage</button></div></div>
+    ${cmdHtml}
+    ${groupHtml("Harness",harnessRows,"harness")}
+    <div class="group"><div class="glabel">Agents</div><div class="grows">${leadSect(dim)}${filterSect(dim)}${addRow}</div></div>
+    ${addHtml}
+    <div class="group"><div class="glabel">Work</div><div class="grows">${frow("pending")}${stagedRowHtml(dim)}${frow("inbox")}${frow("qa")}</div></div>
+    <div class="group"><div class="glabel">Record</div><div class="grows">
+      <div class="grow" id="filesRow"><div class="growhead"><div><div class="gt">Files</div><div class="gsub">the pocket's file structure, as files</div></div><span class="chev">›</span></div></div>
+      <div class="grow" id="recordsRow"><div class="growhead"><div><div class="gt">Records</div><div class="gsub">everything in this pocket, one page</div></div><span class="chev">›</span></div></div>
+      ${frow("notes")}${frow("results")}${frow("audit")}</div></div>
+  </div>`;
+  document.getElementById("bkBtn").onclick=()=>{ current=null; render(); };
+  const cmdGo=document.getElementById("cmdGo");
+  if(cmdGo) cmdGo.onclick=()=>{
+    const row=view.querySelector('.grow[data-sect="f-pending"]');
+    if(row){ if(!row.classList.contains("open")) row.click();
+      setTimeout(()=>row.scrollIntoView({block:"center",behavior:"smooth"}),80); }
+  };
+  const cmdGo2=document.getElementById("cmdGo2");
+  if(cmdGo2&&doo) cmdGo2.onclick=()=>{ current={type:"agent",dimId:dim.id,id:doo.agentId}; render(); };
+  const qzRow=document.getElementById("qzRow");
+  if(qzRow) qzRow.onclick=()=>{ const qi=SPEC_QS.findIndex(([k])=>!(dim.spec&&dim.spec[k]));
+    current={type:"quiz",id:dim.id,qi:qi<0?0:qi}; render(); };
+  const addAgRow=document.getElementById("addAgRow");
+  if(addAgRow) addAgRow.onclick=()=>{ current.addAgent=true; render(); };
+  view.querySelectorAll(".grow[data-sect]").forEach(h=>h.onclick=()=>{
+    const k=dim.id+":"+h.dataset.sect;
+    const willOpen=!openSect[k];
+    openSect[k]=willOpen;
+    h.classList.toggle("open",willOpen);
+    const wrap=h.nextElementSibling;
+    if(wrap&&wrap.classList.contains("abody")) animateWrap(wrap,willOpen);
+  });
+  const naGo=document.getElementById("naGo");
+  if(naGo) naGo.onclick=()=>{
+    const r=createAgent(dim, document.getElementById("naN").value.trim()||"agent",
+      document.getElementById("naT").value.trim()||"general task");
+    if(!r.ok){ document.getElementById("naErr").textContent=r.reason; return; }
+    current={type:"agent",dimId:dim.id,id:r.agent.id}; render();
+  };
+  const qOut=document.getElementById("qOut");
+  if(qOut) qOut.onclick=()=>{ dim.lead.qgen.outward=!dim.lead.qgen.outward; saveDims(); log(dim.id,"lead: outward "+(dim.lead.qgen.outward?"on":"off"),"seal"); render(); };
+  const qIn=document.getElementById("qIn");
+  if(qIn) qIn.onclick=()=>{ dim.lead.qgen.inward=!dim.lead.qgen.inward; saveDims(); log(dim.id,"lead: inward "+(dim.lead.qgen.inward?"on":"off"),"seal"); render(); };
+  view.querySelectorAll("[data-depth]").forEach(b=>b.onclick=()=>{ dim.lead.qgen.depth=+b.dataset.depth; saveDims(); render(); });
+  const bSynth=document.getElementById("bSynth");
+  if(bSynth) bSynth.onclick=()=>synthesize(dim);
+  wireCommon(dim);
+}
+
+/* ---------------- the staged dispatch panel ---------------- */
+function dispatchHtml(dim,a){
+  const o=openOrder(dim,a.id);
+  const stepper=`<div class="note">staged: draft → audit → respond → questions → send → clarify → judge. skip a stage and you get the SOP.</div><div class="err" id="sopMsg"></div>`;
+  if(!o){
+    const last=lastOrder(dim,a.id);
+    const doneNote=last?`<div class="note">last cycle: ${last.attempts} rework${last.attempts===1?"":"s"} — judged in Pending review.</div>`:"";
+    return `<div class="sect"><h3>Operator dispatch — staged</h3>${stepper}${doneNote}
+      <div class="rowline"><input type="text" id="dBrief" placeholder="brief for ${esc(a.name)}"><button class="primary" id="dAudit">1 · Request audit</button></div></div>`;
+  }
+  if(o.stage==="audited"){
+    const fails=o.verdicts.filter(v=>!v.pass);
+    const vh=o.verdicts.map(v=>`<div class="ev"><span class="vc ${v.pass?"pass":"fail"}">${v.pass?"PASS":"FAIL"}</span><span>${esc(v.name)} — ${esc(v.note)}</span></div>`).join("");
+    const next=fails.length
+      ? (o.needsHuman
+        ? `<div class="rowline"><input type="text" id="dBrief2" value="${esc(o.brief)}"><button class="primary" id="dReviseMan">Revise & re-audit</button></div>
+           <div class="note">the lead couldn't answer this one — it needs your words</div>`
+        : `<div><button class="primary" id="dRevise">2 · ${esc(dim.lead.name)} responds to audit</button></div>
+           <div class="note">the lead revises the brief against the failures, then it's re-audited — held in the temp queue until it passes</div>`)
+      : `<div><button class="primary" id="dPrep">3 · Prepare questions for receiver</button></div>`;
+    return `<div class="sect"><h3>Operator dispatch — staged</h3>${stepper}
+      <div class="note">brief: ${esc(o.brief)}</div><div class="stream">${vh}</div>${next}</div>`;
+  }
+  if(o.stage==="questions"){
+    const qh=o.questions.map((q,i)=>`<div class="it"><span class="k">q${i+1}</span><br>${esc(q)}</div>`).join("");
+    return `<div class="sect"><h3>Operator dispatch — staged</h3>${stepper}
+      <div class="list">${qh||'<span class="note">—</span>'}</div>
+      <div><button class="primary" id="dSend">4 · Send dispatch</button></div></div>`;
+  }
+  return `<div class="sect"><h3>Operator dispatch — staged</h3>${stepper}
+    <div class="note">dispatch sent — the receiver is clarifying with the auditor below. no work starts before that.</div></div>`;
+}
+
+/* ---------------- agent view ---------------- */
+function renderAgent(dimId,aid){
+  const dim=getDim(dimId); if(!dim){ current=null; render(); return; }
+  const a=getAgent(dim,aid); if(!a){ current={type:"dim",id:dimId}; render(); return; }
+  const oo=openOrder(dim,aid);
+  if(oo&&oo.stage==="dispatched"&&!session){
+    const cqs=genOutward(oo.brief+" — "+oo.questions.join(" "),[]).slice(0,Math.max(1,dim.lead.qgen.depth));
+    cqs.forEach(q=>putEntry(dim.id,{kind:"question",text:q,by:"receiver "+a.name+" → auditor"}));
+    session={dimId:dim.id,agentId:a.id,orderId:oo.id,brief:oo.brief,opQuestions:oo.questions,qs:cqs,idx:0,clarifications:[],qg:dim.lead.qgen,retries:0,rejection:null};
+    log(dim.id,"dispatch resumed after reload — receiver clarifying again","q");
+  }
+  let qaHtml="";
+  if(session && session.agentId===aid && session.idx<session.qs.length){
+    const q=session.qs[session.idx];
+    qaHtml=`<div class="qa"><div class="note">SOP — the receiver must ask the auditor before working. Answer as the auditor.</div>
+      <div class="qq">${esc(q)}</div>
+      <input type="text" id="qaIn" placeholder="clarify as the auditor">
+      <div class="rowline"><button class="small primary" id="qaGo">Clarify</button><button class="small" id="qaSkip">Skip</button></div>
+      ${session.rejection?`<div class="rej">Filter refused that: ${esc(session.rejection)} — try again, or skip.</div>`:""}
+      <div class="note">clarifying question ${session.idx+1} of ${session.qs.length} · receiver → auditor</div></div>`;
+  }
+  const others=dims.filter(d=>d.id!==dimId && d.agents.length<MAX_AGENTS).map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("");
+  const myres=entries(dim.id).filter(e=>e.kind==="result"&&e.by===a.name&&!e.pending).slice().reverse()
+    .map(e=>`<div class="it">${esc(e.text).replace(/\n/g,"<br>")}<br><span class="ts">${esc(e.t)}</span></div>`).join("");
+  let anm=null,ago=null;
+  if(session&&session.agentId===aid){ const left=session.qs.length-session.idx;
+    anm=[`Clarify as auditor${left?" ("+left+" left)":""}`,"the receiver must ask before working"];
+    ago=()=>{ const el=document.getElementById("qaIn"); if(el){ el.scrollIntoView({block:"center"}); el.focus(); } }; }
+  else if(!openOrder(dim,aid)){ anm=["Start a dispatch","draft a brief for "+a.name];
+    ago=()=>{ const el=document.getElementById("dBrief"); if(el){ el.scrollIntoView({block:"center"}); el.focus(); } }; }
+  view.innerHTML=`<div class="wrap">
+    <div class="vhead"><button class="backbtn" id="bkBtn">‹ Back</button><div class="crumb">${esc(dim.name)} · agent</div><h2>${esc(a.name)}</h2>
+      <div class="sub">${esc(a.task)}</div>
+      <div style="margin-top:10px">${others?`<select id="mvSel" style="max-width:200px">${others}</select> <button class="small" id="bMove">go to that harness</button>`:'<span class="note">no other harness has room</span>'}</div></div>
+    ${anm?nextMoveHtml(anm[0],anm[1]):""}
+    ${groupHtml("Harness",briefMiniHtml(dim))}
+    ${dispatchHtml(dim,a)}
+    ${qaHtml?`<div class="sect"><h3>Receiver clarifies with the auditor</h3>${qaHtml}</div>`:""}
+    <div class="sect"><h3>Accepted results</h3><div class="list">${myres||'<span class="note">Nothing accepted yet.</span>'}</div></div>
+    <div class="sect"><h3>Events</h3><div class="stream">${streamHtml(dim)}</div></div>
+  </div>`;
+  const nmA=document.getElementById("nmGo"); if(nmA) nmA.onclick=ago;
+  document.getElementById("bkBtn").onclick=()=>{ current={type:"dim",id:dimId}; render(); };
+  view.querySelectorAll(".grow[data-sect]").forEach(h=>h.onclick=()=>{
+    const k=dim.id+":"+h.dataset.sect;
+    const willOpen=!openSect[k];
+    openSect[k]=willOpen;
+    h.classList.toggle("open",willOpen);
+    const wrap=h.nextElementSibling;
+    if(wrap&&wrap.classList.contains("abody")) animateWrap(wrap,willOpen);
+  });
+  const mv=document.getElementById("bMove");
+  if(mv) mv.onclick=()=>{
+    const to=getDim(document.getElementById("mvSel").value);
+    dim.agents=dim.agents.filter(x=>x.id!==aid); to.agents.push(a); saveDims();
+    log(dim.id,"agent "+a.name+" left for the "+to.name+" harness","seal");
+    log(to.id,"agent "+a.name+" arrived from "+dim.name,"seal");
+    current={type:"agent",dimId:to.id,id:aid}; render();
+  };
+  const dAudit=document.getElementById("dAudit");
+  if(dAudit) dAudit.onclick=()=>requestAudit(dim,a);
+  const dRevise=document.getElementById("dRevise");
+  if(dRevise) dRevise.onclick=()=>reviseAudit(dim,a);
+  const dReviseMan=document.getElementById("dReviseMan");
+  if(dReviseMan) dReviseMan.onclick=()=>reviseAuditManual(dim,a);
+  const dPrep=document.getElementById("dPrep");
+  if(dPrep) dPrep.onclick=()=>prepareQuestions(dim,a);
+  const dSend=document.getElementById("dSend");
+  if(dSend) dSend.onclick=()=>sendDispatch(dim,a);
+  /* task submitted from the pocket's white button — prefill the dispatch brief */
+  if(current.brief){ const bi=document.getElementById("dBrief"); if(bi) bi.value=current.brief; current.brief=null; }
+  if(session && session.agentId===aid && session.idx<session.qs.length){
+    const go=()=>answerOutward(document.getElementById("qaIn").value.trim(),false);
+    document.getElementById("qaGo").onclick=go;
+    document.getElementById("qaIn").onkeydown=e=>{ if(e.key==="Enter") go(); };
+    document.getElementById("qaSkip").onclick=()=>answerOutward("",true);
+    setTimeout(()=>{ const i=document.getElementById("qaIn"); if(i) i.focus(); },60);
+  }
+}
+
+/* ---------------- the run ---------------- */
+/* ---------------- staged dispatch protocol ----------------
+   The operator (lead) dispatches to a sub-agent in stages. The receiver
+   must clarify with the auditor before working. Skip a stage and you get
+   the SOP. Sub-agents can only respond to a staged cue. */
+const SOP=[
+ "1 · draft the brief",
+ "2 · request audit — the brief is audited and stored in the temp queue",
+ "3 · respond to the audit — revise until it passes",
+ "4 · prepare questions for the receiver",
+ "5 · send the dispatch cue",
+ "6 · receiver asks the auditor clarifying questions — no work before this",
+ "7 · auditor clarifies",
+ "8 · receiver works and responds to the cue",
+ "9 · operator audits the response, receives it → temp queue",
+ "10 · owner accepts, sends back, or rejects — the cycle repeats until done"
+];
+function sop(dimId,at,extra){
+  const html="SOP — staged protocol · you are at: <b>"+esc(at)+"</b><br>"+SOP.map(s=>esc(s)).join("<br>")+(extra?"<br>"+esc(extra):"");
+  const el=document.getElementById("sopMsg"); if(el) el.innerHTML=html;
+  log(dimId,"SOP issued — out-of-order action refused at stage "+at,"fail");
+}
+function openOrder(dim,aid){ if(!dim.orders) dim.orders=[]; return dim.orders.find(o=>o.agentId===aid&&o.stage!=="done")||null; }
+function lastOrder(dim,aid){ if(!dim.orders||!dim.orders.length) return null; return dim.orders.filter(o=>o.agentId===aid).slice(-1)[0]||null; }
+function auditVerdicts(dim,a,brief){
+  return runFilter(dim,brief,"purpose",{task:a.task,answers:[]}).map(v=>({name:v.stage.name,pass:v.pass,note:v.note}));
+}
+function requestAudit(dim,a){
+  const inp=document.getElementById("dBrief"); const brief=(inp?inp.value:"").trim();
+  if(!brief){ sop(dim.id,"draft","no brief — draft it first."); return; }
+  const verdicts=auditVerdicts(dim,a,brief);
+  verdicts.forEach(v=>putEntry(dim.id,{kind:"event",cls:v.pass?"pass":"fail",
+    text:(v.pass?"PASS":"FAIL")+" · "+v.name+" — "+v.note+" · on dispatch brief for "+a.name}));
+  if(!dim.orders) dim.orders=[];
+  const o={id:uid(),agentId:a.id,brief,stage:"audited",verdicts,questions:[],attempts:0,lastDraft:"",dispatchEntryId:null,created:Date.now()};
+  const pe=putEntry(dim.id,{kind:"dispatch",pending:true,orderId:o.id,
+    text:"dispatch brief for "+a.name+": "+brief+" — audit: "+verdicts.filter(v=>v.pass).length+"/"+verdicts.length+" PASS",
+    by:"operator "+dim.lead.name});
+  o.dispatchEntryId=pe.id;
+  dim.orders.push(o); saveDims();
+  log(dim.id,"CUE audit_request · brief audited, stored in temp queue","q");
+  render();
+}
+/* the lead answers the audit — revises the brief until it passes or gets stuck.
+   the human only touches the brief when the lead demonstrably cannot. */
+async function reviseAudit(dim,a){
+  const o=openOrder(dim,a.id); if(!o||o.stage!=="audited") return;
+  let fails=o.verdicts.filter(v=>!v.pass);
+  if(!fails.length) return;
+  if(modelOn()){ log(dim.id,"lead "+dim.lead.name+" is answering the audit…","q"); render(); }
+  let brief=o.brief, verdicts=o.verdicts, rounds=0;
+  while(rounds<5){
+    let revised=null;
+    if(modelOn()){
+      try{
+        const mc=await modelCall(
+          "You are "+dim.lead.name+", the lead agent of a Moor pocket (a bounded work environment). The pocket's purpose: "+dim.purpose+".",
+          "This dispatch brief failed the admission audit:\n"+fails.map(f=>"- "+f.name+": "+f.note).join("\n")
+          +"\n\nBrief:\n"+brief+"\n\nRewrite the brief so it passes every failed check. Keep the owner's intent. Reply with ONLY the revised brief — no commentary, no quotes around it.");
+        if(mc) revised=mc;
+      }catch(e){ log(dim.id,"model call failed ("+String(e.message||e).slice(0,80)+") — stub revision used","fail"); }
+    }
+    if(!revised) revised=stubRevise(brief,fails);
+    if(revised===brief) break;
+    brief=revised; rounds++;
+    verdicts=auditVerdicts(dim,a,brief);
+    verdicts.forEach(v=>putEntry(dim.id,{kind:"event",cls:v.pass?"pass":"fail",
+      text:(v.pass?"PASS":"FAIL")+" · "+v.name+" — "+v.note+" · lead revision round "+rounds+" for "+a.name}));
+    fails=verdicts.filter(v=>!v.pass);
+    if(!fails.length) break;
+  }
+  o.brief=brief; o.verdicts=verdicts; o.auditRounds=(o.auditRounds||0)+rounds;
+  o.needsHuman=fails.length>0; saveDims();
+  const s=entries(dim.id); const pe=s.find(e=>e.id===o.dispatchEntryId);
+  if(pe){ pe.text="dispatch brief for "+a.name+": "+brief+" — audit: "+verdicts.filter(v=>v.pass).length+"/"+verdicts.length+" PASS"; DB.save(dkey(dim.id),s); }
+  if(fails.length) log(dim.id,"lead "+dim.lead.name+(rounds?" answered the audit ("+rounds+" round"+(rounds===1?"":"s")+") but ":" could not answer the audit — ")+fails.length+" failure"+(fails.length===1?"":"s")+" remain"+(rounds?"":"")+" — needs your words","fail");
+  else log(dim.id,"CUE audit_respond · lead "+dim.lead.name+" answered the audit in "+rounds+" round"+(rounds===1?"":"s")+" — all PASS","pass");
+  render();
+}
+/* fallback: only offered when the lead got stuck — the human edits by hand */
+function reviseAuditManual(dim,a){
+  const o=openOrder(dim,a.id); if(!o||o.stage!=="audited") return;
+  const inp=document.getElementById("dBrief2"); const brief=(inp?inp.value:"").trim();
+  if(!brief){ sop(dim.id,"audited","no brief."); return; }
+  if(brief===o.brief){ sop(dim.id,"audited","the brief is unchanged."); return; }
+  const verdicts=auditVerdicts(dim,a,brief);
+  verdicts.forEach(v=>putEntry(dim.id,{kind:"event",cls:v.pass?"pass":"fail",
+    text:(v.pass?"PASS":"FAIL")+" · "+v.name+" — "+v.note+" · on hand-revised brief for "+a.name}));
+  o.brief=brief; o.verdicts=verdicts; o.needsHuman=false; saveDims();
+  const s=entries(dim.id); const pe=s.find(e=>e.id===o.dispatchEntryId);
+  if(pe){ pe.text="dispatch brief for "+a.name+": "+brief+" — audit: "+verdicts.filter(v=>v.pass).length+"/"+verdicts.length+" PASS"; DB.save(dkey(dim.id),s); }
+  log(dim.id,"you revised the brief by hand — re-audited","q");
+  render();
+}
+function prepareQuestions(dim,a){
+  const o=openOrder(dim,a.id); if(!o){ sop(dim.id,"draft"); return; }
+  if(o.stage!=="audited"){ sop(dim.id,o.stage); return; }
+  if(o.verdicts.some(v=>!v.pass)){ sop(dim.id,"audited","respond to the audit first — it has failures."); return; }
+  o.questions=genOutward(o.brief,[]).slice(0,dim.lead.qgen.depth);
+  o.stage="questions"; saveDims();
+  log(dim.id,"operator prepared "+o.questions.length+" questions for "+a.name,"q");
+  render();
+}
+async function sendDispatch(dim,a){
+  const o=openOrder(dim,a.id); if(!o){ sop(dim.id,"draft"); return; }
+  if(o.stage!=="questions"){ sop(dim.id,o.stage); return; }
+  // the owner's tap accepts the dispatch audit into the Inbox — then the cue fires
+  const s=entries(dim.id); const pe=s.find(e=>e.id===o.dispatchEntryId);
+  if(pe) pe.pending=false;
+  DB.save(dkey(dim.id),s);
+  admit(dim,"input",o.brief,a.name);
+  log(dim.id,"CUE dispatch · operator "+dim.lead.name+" → "+a.name+": "+o.brief,"q");
+  o.stage="dispatched"; saveDims();
+  // SOP: the receiver must ask the auditor clarifying questions before any work
+  const cqs=genOutward(o.brief+" — "+o.questions.join(" "),[]).slice(0,Math.max(1,dim.lead.qgen.depth));
+  cqs.forEach(q=>putEntry(dim.id,{kind:"question",text:q,by:"receiver "+a.name+" → auditor"}));
+  if(dim.lead.qgen.outward){
+    session={dimId:dim.id,agentId:a.id,orderId:o.id,brief:o.brief,opQuestions:o.questions,qs:cqs,idx:0,clarifications:[],qg:dim.lead.qgen,retries:0,rejection:null};
+    render();
+  }else{
+    // outward off — the auditor clarifies from the audited brief. with a model
+    // connected the auditor actually answers; otherwise the round is waived.
+    let clarifications;
+    if(modelOn()){
+      log(dim.id,"auditor is clarifying from the brief…","q"); render();
+      clarifications=[];
+      for(const q of cqs){
+        let a="[auditor — per the audited brief; live clarification waived]";
+        try{
+          const mc=await modelCall(
+            "You are the auditor (admission filter) of a Moor pocket. Answer ONLY from the audited brief below, in one or two sentences. If the brief does not cover the question, say so plainly.",
+            "Audited brief:\n"+o.brief+"\n\nQuestion: "+q);
+          if(mc) a=mc;
+        }catch(e){ log(dim.id,"auditor model call failed — waived","fail"); }
+        clarifications.push({q,a});
+      }
+      log(dim.id,"auditor clarified "+clarifications.length+" question"+(clarifications.length===1?"":"s")+" from the brief","q");
+    }else{
+      clarifications=cqs.map(q=>({q,a:"[auditor — per the audited brief; live clarification waived]"}));
+      log(dim.id,"outward off — auditor clarifies from the brief, no live round","q");
+    }
+    session={dimId:dim.id,agentId:a.id,orderId:o.id,brief:o.brief,opQuestions:o.questions,qs:[],idx:0,clarifications,qg:dim.lead.qgen,retries:0,rejection:null};
+    finishTask();
+  }
+}
+/* compounding: on your accept tap, the lead distills what worked — filed to Notes
+   and folded into the harness spec, so the pocket deepens instead of just piling up. */
+function distillLesson(dim,e){
+  const first=String(e.text||"").split("\n")[0].slice(0,140);
+  if(!first.trim()) return;
+  putEntry(dim.id,{kind:"note",text:"lesson · "+(e.by||"agent")+" — what worked: "+first,by:"lead "+dim.lead.name});
+  dim.spec=dim.spec||{};
+  const key=first.slice(0,40);
+  const cur=dim.spec["satisfactory"]||"";
+  if(key&&!cur.includes(key)){
+    dim.spec["satisfactory"]=(cur?cur+"\n":"")+"What worked before: "+first.slice(0,120);
+    saveDims();
+  }
+  log(dim.id,"lead "+dim.lead.name+" distilled a lesson → Notes + harness spec","q");
+}
+function sendBack(dim,entryId,reason){
+  const s=entries(dim.id); const i=s.findIndex(e=>e.id===entryId); if(i<0) return;
+  const e=s[i]; s.splice(i,1); DB.save(dkey(dim.id),s);
+  const o=dim.orders?dim.orders.find(x=>x.id===e.orderId):null;
+  const attempt=o?(++o.attempts):1; saveDims();
+  const revised=stubRevise(e.text+"\nOwner verdict (attempt "+attempt+"): "+reason,[]);
+  putEntry(dim.id,{kind:e.kind,text:revised,by:e.by,pending:true,orderId:e.orderId});
+  log(dim.id,"judged NOT good — sent back to "+e.by+" (attempt "+attempt+"): "+reason,"fail");
+  log(dim.id,"CUE dispatch · rework → "+e.by,"q");
+  render();
+}
+function answerOutward(text,skipped){
+  const s=session, dim=getDim(s.dimId), agent=getAgent(dim,s.agentId);
+  if(!skipped){
+    const adm=admit(dim,"answer",text,agent.name);
+    if(!adm.ok){
+      s.retries++;
+      if(s.retries<=1){ s.rejection=adm.reason; render(); return; }
+      log(dim.id,"answer refused twice — skipped","fail");
+    } else s.clarifications.push({q:s.qs[s.idx],a:text});
+  } else log(dim.id,"question skipped","q");
+  s.retries=0; s.rejection=null; s.idx++;
+  if(s.idx<s.qs.length){ render(); return; }
+  finishTask();
+}
+async function finishTask(){
+  const s=session;
+  if(!s) return; // no open dispatch cue — a sub-agent cannot respond on its own
+  const dim=getDim(s.dimId), agent=getAgent(dim,s.agentId);
+  const o=dim.orders?dim.orders.find(x=>x.id===s.orderId):null;
+  log(dim.id,"CUE respond · "+agent.name+" answers the dispatch cue");
+  let draft=null;
+  if(modelOn()){
+    log(dim.id,agent.name+" is drafting…","q"); render();
+    try{
+      const mc=await modelCall(
+        "You are "+agent.name+", a worker agent inside a bounded work environment (a Moor pocket). Your task: "+agent.task+". The pocket's purpose: "+dim.purpose+". You answer only from the brief and the auditor's clarifications — never invent specifics.",
+        "Dispatch brief:\n"+s.brief+"\n\nAuditor clarifications:\n"+(s.clarifications||[]).map(c=>"- "+c.q+" → "+c.a).join("\n")
+        +"\n\nOperator questions to address:\n"+(s.opQuestions||[]).map((q,i)=>(i+1)+". "+q).join("\n")
+        +"\n\nWrite your draft in exactly these sections:\nAttempt — ...\nReasoning — ...\nOpen questions — ...");
+      if(mc){ draft=mc; log(dim.id,agent.name+" drafted via the connected model","q"); }
+    }catch(e){ log(dim.id,"model call failed ("+String(e.message||e).slice(0,80)+") — stub draft used","fail"); }
+  }
+  if(!draft) draft=stubBrain(agent.task,s.brief,s.clarifications,s.opQuestions||[]);
+  // the draft is the agent's work on its task — purpose-alignment was already
+  // enforced when the brief was audited, so judge it against the task, not the purpose text.
+  const draftCtx=Object.assign(dimCtx(dim),{task:agent.task});
+  let verdicts=runFilter(dim,draft,"result",draftCtx);
+  if(s.qg.inward){
+    const iq=genInward(draft,verdicts,s.qg.depth);
+    log(dim.id,"lead "+dim.lead.name+" interrogates the draft: "+iq.length+" questions","q");
+    iq.forEach(q=>{
+      const r=admit(dim,"note","interrogation · "+q+" → "+(modelOn()?"[model] recorded for review":"[stub — no model] recorded for review"),agent.name,null,o?{orderId:o.id}:null);
+      if(!r.ok) log(dim.id,"interrogation note refused: "+r.reason,"fail");
+    });
+    if(verdicts.some(v=>!v.pass)){
+      const revised=stubRevise(draft,verdicts);
+      if(revised!==draft){ log(dim.id,agent.name+" revised the draft after interrogation","q"); draft=revised; verdicts=runFilter(dim,draft,"result",draftCtx); }
+    }
+  }
+  verdicts.forEach(v=>putEntry(dim.id,{kind:"event",cls:v.pass?"pass":"fail",
+    text:(v.pass?"PASS":"FAIL")+" · "+v.stage.name+" — "+v.note+" · on draft by "+agent.name}));
+  if(verdicts.length&&verdicts.every(v=>v.pass)){
+    admit(dim,"result",draft,agent.name,draftCtx,o?{orderId:o.id}:null);
+    if(o){ o.lastDraft=draft; o.stage="done"; saveDims(); }
+    log(dim.id,"CUE receive · operator audited the answer → temp queue, waiting for your word","pass");
+  } else {
+    const why=verdicts.filter(v=>!v.pass).map(v=>v.stage.name+": "+v.note).join("; ");
+    log(dim.id,"filter REJECTED the draft by "+agent.name,"fail");
+    admit(dim,"note","Draft rejected ("+why+"). It does not enter the pocket.",agent.name,null,o?{orderId:o.id}:null);
+    if(o){ o.stage="done"; saveDims(); }
+  }
+  if(session&&session.orderId===s.orderId) session=null; render();
+}
+function synthesize(dim){
+  const parts=[];
+  dim.agents.forEach(a=>{
+    const last=entries(dim.id).filter(e=>e.kind==="result"&&e.by===a.name).slice(-1)[0];
+    if(last) parts.push(a.name+": "+last.text.split("\n").slice(-1)[0]);
+  });
+  const draft=parts.length?"Harness synthesis:\n"+parts.map((x,i)=>(i+1)+". "+x).join("\n"):"Harness synthesis: no accepted agent results yet.";
+  log(dim.id,"lead "+dim.lead.name+" drafting synthesis from "+parts.length+" agent results");
+  const verdicts=runFilter(dim,draft,"result");
+  verdicts.forEach(v=>putEntry(dim.id,{kind:"event",cls:v.pass?"pass":"fail",
+    text:(v.pass?"PASS":"FAIL")+" · "+v.stage.name+" — "+v.note+" · on synthesis"}));
+  if(verdicts.length&&verdicts.every(v=>v.pass)){ admit(dim,"result",draft,dim.lead.name); log(dim.id,"synthesis proposed — waiting for your word","pass"); }
+  else log(dim.id,"synthesis REJECTED by the pocket filter","fail");
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
