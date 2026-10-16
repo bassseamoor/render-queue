@@ -1,0 +1,488 @@
+<!doctype html>
+<!-- shelf.html — THE DOCK, slice 1 (seq 868, piece 3): a staged, local
+     proof page. It performs the whole dock against the five staged
+     units beside it in packages/: DISCOVER (cards) -> PULL (fetch the
+     .moorpack) -> VERIFY (in-page, PACKAGE-FORMAT.md §5 words, shown
+     before install) -> INSTALL (into Cache Storage on this device)
+     -> DETACH (the installed copy is served by sw.js from the cache
+     alone: it opens and runs with this page closed and all network
+     blocked). Proof artifact only — not published anywhere. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Dock — Moor Library shelf (staged proof)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: #0b1017; color: #e6edf3; }
+  header, main { max-width: 1060px; margin: 0 auto; padding: 20px; }
+  header { padding-bottom: 0; }
+  h1 { font-size: 26px; margin: 8px 0 4px; }
+  h2 { font-size: 19px; margin: 30px 0 6px; }
+  .sub { color: #9fb0c1; line-height: 1.55; max-width: 72ch; }
+  .flow { color: #7ee2a8; font-family: ui-monospace, monospace; font-size: 13px; letter-spacing: .04em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 14px; }
+  .card { background: #131b26; border: 1px solid #263242; border-radius: 14px; padding: 16px;
+          display: flex; flex-direction: column; gap: 8px; }
+  .card h3 { margin: 0; font-size: 18px; }
+  .purpose { color: #c4d2e0; line-height: 1.45; margin: 0; }
+  .meta { color: #8fa2b5; font-size: 13px; line-height: 1.5; }
+  .conn { background: #0d141d; border: 1px solid #223146; border-radius: 9px; padding: 9px 11px;
+          font-size: 13px; line-height: 1.5; color: #b9c9d9; }
+  .stamp { font-family: ui-monospace, monospace; font-size: 11px; color: #6f8296; word-break: break-all; }
+  .row { display: flex; gap: 9px; margin-top: auto; padding-top: 6px; }
+  button { font: inherit; font-size: 14px; border-radius: 9px; border: 1px solid #33507a;
+           background: #17335c; color: #eaf2fb; padding: 9px 14px; cursor: pointer; }
+  button:hover:not(:disabled) { background: #1d4076; }
+  button:disabled { opacity: .38; cursor: not-allowed; }
+  button.install { background: #14532d; border-color: #1f7a44; }
+  button.install:hover:not(:disabled) { background: #1a6b3a; }
+  .verdict { display: none; border-radius: 9px; padding: 10px 12px; font-size: 13.5px; line-height: 1.5; }
+  .verdict.show { display: block; }
+  .verdict.pass { background: #0f2c1a; border: 1px solid #1f7a44; color: #b9f4cd; }
+  .verdict.fail { background: #38160f; border: 1px solid #a03a24; color: #ffd2c4; }
+  .verdict.busy { background: #13202f; border: 1px solid #33507a; color: #bcd4ee; }
+  .status { font-size: 13px; color: #8fa2b5; min-height: 1.2em; }
+  .shelf-item { display: flex; align-items: center; gap: 14px; background: #131b26;
+                border: 1px solid #263242; border-radius: 12px; padding: 13px 16px; margin-top: 10px; }
+  .shelf-item .grow { flex: 1; }
+  .shelf-item .name { font-weight: 650; }
+  .open { font: inherit; font-size: 14px; border-radius: 9px; border: 1px solid #1f7a44;
+          background: #14532d; color: #eafbf0; padding: 9px 16px; text-decoration: none; }
+  .empty { color: #8fa2b5; }
+  footer { max-width: 1060px; margin: 0 auto; padding: 6px 20px 34px; color: #64788d; font-size: 12.5px; line-height: 1.6; }
+  code { font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <div class="flow">DISCOVER &rarr; PULL &rarr; VERIFY &rarr; INSTALL &rarr; DETACH</div>
+  <h1>The Dock — your Moor Library shelf</h1>
+  <p class="sub">Things here are <strong>detached</strong>: you pull one from the dock,
+  this page checks the maker's stamp <em>before</em> anything is installed, and once a
+  thing is on your shelf it runs on this device — with this page closed and no
+  connection at all. Connectivity is a capability a thing may use, never a
+  condition of its existence.</p>
+  <p class="status" id="swStatus">Getting the shelf ready…</p>
+</header>
+
+<main>
+  <h2>At the dock</h2>
+  <div class="grid" id="dock"></div>
+
+  <h2>Your shelf — on this device</h2>
+  <p class="sub">Installed things live here, in this browser. Open one from here and
+  it runs from your shelf alone — close this page, cut the network, it still runs.</p>
+  <div id="yourshelf"></div>
+</main>
+
+<footer>
+  Staged local proof (THE DOCK, slice 1, seq 868). Nothing here is published.
+  "On this device" means this browser on this machine: clearing this site's
+  browser data clears the shelf. Thumbnails are inside each package and appear
+  on your shelf copies; the dock cards above are text so the list stays cheap.
+</footer>
+
+<script>
+'use strict';
+
+/* Catalogue — generated from the five staged units' card.json +
+   manifest.json (seq 868 pieces 1–2); do not hand-edit the words. */
+var CATALOG = [
+  {
+    "id": "bloodmoon-survivor",
+    "name": "Bloodmoon Survivor",
+    "purpose": "Top-down arena survivor: outlast the bloodmoon horde until dawn.",
+    "maker": "Sebastian Moore",
+    "version": "1.0.0",
+    "thumb": "thumb.png",
+    "entry": "bloodmoon-survivor.html",
+    "kind": "game",
+    "shape": "single-file+contract",
+    "offline": { "detached": true, "externalRefs": 0 },
+    "connection": { "for": [], "wants": "none" },
+    "digest": "c22bc42e21a8ac29fd9b97e4af9c37f6319cb23c386bd67f04745e3993f1b011",
+    "package": "packages/bloodmoon-survivor.moorpack"
+  },
+  {
+    "id": "forge-image",
+    "name": "FORGE",
+    "purpose": "Procedural image generation with layered seeded scenes and PNG export.",
+    "maker": "Sebastian Moore",
+    "version": "1.0.0",
+    "thumb": "thumb.png",
+    "entry": "forge-image-engine.html",
+    "kind": "tool",
+    "shape": "single-file",
+    "offline": { "detached": true, "externalRefs": 0 },
+    "connection": { "for": [], "wants": "none" },
+    "digest": "a6c461db4025de93701eb089b97c3e15cb781930698311f4a8132f35bfc59ae3",
+    "package": "packages/forge-image.moorpack"
+  },
+  {
+    "id": "parallax-engine",
+    "name": "Parallax Engine",
+    "purpose": "Five miniature worlds on drifting parallax planes.",
+    "maker": "Sebastian Moore",
+    "version": "1.0.0",
+    "thumb": "thumb.png",
+    "entry": "parallax-engine.html",
+    "kind": "studio",
+    "shape": "shell-folder",
+    "offline": { "detached": true, "externalRefs": 0 },
+    "connection": { "for": ["rq_token queue-marking (render-queue done-marking)"], "wants": "optional" },
+    "digest": "4b72f97e93a089b2512910262626e6e37c25d0474a4744a7cd5d1c54a007f5a5",
+    "package": "packages/parallax-engine.moorpack"
+  },
+  {
+    "id": "blockcraft",
+    "name": "Blockcraft",
+    "purpose": "Creative voxel sandbox: build in an infinite seeded world that saves as you go.",
+    "maker": "Sebastian Moore",
+    "version": "1.0.0",
+    "thumb": "thumb.png",
+    "entry": "blockcraft.html",
+    "kind": "game",
+    "shape": "single-file+contract",
+    "offline": { "detached": true, "externalRefs": 0 },
+    "connection": { "for": [], "wants": "none" },
+    "digest": "be27d0e01f81102560c774a8742308703b6c871587c948e666a328f4c5c8ec51",
+    "package": "packages/blockcraft.moorpack"
+  },
+  {
+    "id": "wonder-feed",
+    "name": "Wonder Feed",
+    "purpose": "Infinite scroll of live generative wonders you can like, save and steer.",
+    "maker": "Sebastian Moore",
+    "version": "1.0.0",
+    "thumb": "thumb.png",
+    "entry": "wonder-feed.html",
+    "kind": "media",
+    "shape": "single-file+contract",
+    "offline": { "detached": true, "externalRefs": 0 },
+    "connection": { "for": ["shared social layer (seeing other people's wonders, sharing beyond this device) — declared, not built"], "wants": "optional" },
+    "digest": "75f11a5dd91ff2b0545da62ff75f12155a1b1e726a8cf6e75de6142f6f3ffab3",
+    "package": "packages/wonder-feed.moorpack"
+  }
+];
+
+var CACHE_NAME = 'moor-installed-v1';
+var INDEX_KEY = 'moor-shelf-installed-v1';
+var pulled = {};   /* id -> { pack, payload: {path: Uint8Array} } once verified PASS */
+
+/* ---------- plain-words connection status (from the manifest) ---------- */
+function connectionText(unit) {
+  var c = unit.connection || {};
+  var head = 'Detached — runs on its own, offline, after install.';
+  if (c.wants !== 'optional' || !(c.for || []).length) {
+    return head + ' No connection needed, ever.';
+  }
+  return head + (c.for || []).map(function (f) {
+    if (f.indexOf('declared, not built') !== -1) {
+      var what = f.replace(/\s*—\s*declared, not built\s*$/, '');
+      return ' A possible future extra — ' + what + ' — is declared, not built:' +
+             ' it is not in this package and nothing here connects anywhere.';
+    }
+    return ' It can optionally use a connection for: ' + f +
+           '. Without a connection that extra simply does not happen; everything else works.';
+  }).join('');
+}
+
+/* ---------- SHA-256 + canonical JSON (PACKAGE-FORMAT.md §3) ---------- */
+async function sha256hex(bytes) {
+  var h = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(h)).map(function (b) {
+    return b.toString(16).padStart(2, '0');
+  }).join('');
+}
+function canonical(v) {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
+  if (typeof v === 'object') {
+    return '{' + Object.keys(v).sort().map(function (k) {
+      return JSON.stringify(k) + ':' + canonical(v[k]);
+    }).join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
+/* Sorted-keys pretty JSON — used only to write manifest.json back out
+   on install (it mirrors the packager's dump style; manifest.json is
+   not itself a stamped payload file). */
+function stablePretty(v, ind) {
+  ind = ind || '';
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) {
+    if (!v.length) return '[]';
+    return '[\n' + v.map(function (x) {
+      return ind + '  ' + stablePretty(x, ind + '  ');
+    }).join(',\n') + '\n' + ind + ']';
+  }
+  var keys = Object.keys(v).sort();
+  if (!keys.length) return '{}';
+  return '{\n' + keys.map(function (k) {
+    return ind + '  ' + JSON.stringify(k) + ': ' + stablePretty(v[k], ind + '  ');
+  }).join(',\n') + '\n' + ind + '}';
+}
+
+/* ---------- base64 (strict, like the Python verifier's validate=True) ---------- */
+function b64decode(s) {
+  if (typeof s !== 'string' || s.length % 4 !== 0 ||
+      !/^[A-Za-z0-9+/]*={0,2}$/.test(s)) throw new Error('bad base64');
+  var bin = atob(s);
+  var out = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/* ---------- the verifier — PACKAGE-FORMAT.md §5: same checks, same
+   order, same verdict words as files/verify_unit.py ---------- */
+async function verifyPackage(pack) {
+  function fail(msg) { return { pass: false, text: 'FAIL: ' + msg }; }
+  if (!pack || typeof pack !== 'object' || pack.format !== 'moorpack/1' ||
+      !pack.manifest || typeof pack.manifest !== 'object' ||
+      !pack.files || typeof pack.files !== 'object') {
+    return fail('this file is not a Moor package (its format is not moorpack/1)');
+  }
+  var manifest = pack.manifest;
+  var payload = {};
+  var paths = Object.keys(pack.files);
+  for (var i = 0; i < paths.length; i++) {
+    try { payload[paths[i]] = b64decode(pack.files[paths[i]]); }
+    catch (e) {
+      return fail("file '" + paths[i] + "' inside the package is damaged (its stored contents cannot be read)");
+    }
+  }
+  /* 1. Stamp exists. */
+  var integ = manifest.integrity;
+  if (!integ || typeof integ !== 'object') {
+    return fail("this package has no maker's stamp (no integrity section in its manifest), so it cannot be checked");
+  }
+  if (integ.algorithm !== 'sha256' || integ.format !== 'moor-integrity/1' ||
+      !integ.files || typeof integ.files !== 'object' || typeof integ.digest !== 'string') {
+    return fail("the maker's stamp is damaged (its integrity section is incomplete or in a format this checker does not understand)");
+  }
+  /* 2. Provenance + version present. */
+  var missing = [];
+  if (manifest.schema !== 'moor-unit/1') missing.push('schema');
+  ['id', 'name', 'maker', 'version'].forEach(function (f) {
+    if (!String(manifest[f] || '').trim()) missing.push(f);
+  });
+  if (missing.length) {
+    return fail("the maker's information is missing from the manifest: " + missing.join(', '));
+  }
+  var stamped = integ.files;
+  /* 3. Every stamped file present and unchanged. */
+  var stampedPaths = Object.keys(stamped).sort();
+  for (var j = 0; j < stampedPaths.length; j++) {
+    var p = stampedPaths[j];
+    if (!(p in payload)) return fail("file '" + p + "' is missing from the package");
+    var data = payload[p], rec = stamped[p] || {};
+    if (data.length !== rec.size || (await sha256hex(data)) !== rec.sha256) {
+      return fail("file '" + p + "' has changed — its contents do not match the maker's stamp");
+    }
+  }
+  /* 4. No extra files. */
+  var payloadPaths = Object.keys(payload).sort();
+  for (var k = 0; k < payloadPaths.length; k++) {
+    if (!(payloadPaths[k] in stamped)) {
+      return fail("file '" + payloadPaths[k] + "' is in the package but was not in the maker's stamp");
+    }
+  }
+  /* 5. Digest matches. */
+  var fileList = [];
+  for (var m = 0; m < stampedPaths.length; m++) {
+    var q = stampedPaths[m];
+    fileList.push([q, stamped[q].sha256, stamped[q].size]);
+  }
+  var base = {};
+  Object.keys(manifest).forEach(function (key) {
+    if (key !== 'integrity') base[key] = manifest[key];
+  });
+  var digestObj = { format: 'moor-integrity/1' };
+  Object.keys(base).forEach(function (key) { digestObj[key] = base[key]; });
+  digestObj.files = fileList;
+  var digest = await sha256hex(new TextEncoder().encode(canonical(digestObj)));
+  if (digest !== integ.digest) {
+    return fail("the maker's stamp doesn't match — the package details (name, maker, version, or file list) were changed after the maker stamped it");
+  }
+  return {
+    pass: true,
+    text: 'PASS: ' + manifest.name + ' (' + manifest.id + ') version ' + manifest.version +
+          ' by ' + manifest.maker + ' — all ' + stampedPaths.length +
+          " files match the maker's stamp (digest " + integ.digest.slice(0, 16) + '…).',
+    payload: payload
+  };
+}
+
+/* ---------- service worker + install ---------- */
+var swReady = null;
+if ('serviceWorker' in navigator) {
+  swReady = navigator.serviceWorker.register('sw.js')
+    .then(function () { return navigator.serviceWorker.ready; })
+    .then(function () {
+      document.getElementById('swStatus').textContent =
+        'Shelf is ready: things you install stay on this device and open without this page or a connection.';
+    })
+    .catch(function () {
+      document.getElementById('swStatus').textContent =
+        'This browser would not start the shelf keeper (service worker), so installing is unavailable here.';
+      swReady = null;
+    });
+} else {
+  document.getElementById('swStatus').textContent =
+    'This browser has no service workers, so installing is unavailable here.';
+}
+
+function mime(path) {
+  var ext = (path.split('.').pop() || '').toLowerCase();
+  return ({
+    html: 'text/html; charset=utf-8', htm: 'text/html; charset=utf-8',
+    js: 'application/javascript; charset=utf-8', mjs: 'application/javascript; charset=utf-8',
+    css: 'text/css; charset=utf-8', json: 'application/json; charset=utf-8',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon',
+    md: 'text/markdown; charset=utf-8', txt: 'text/plain; charset=utf-8',
+    wasm: 'application/wasm', mp4: 'video/mp4'
+  })[ext] || 'application/octet-stream';
+}
+function installedUrl(id, path) {
+  return new URL('installed/' + id + '/' + path, window.location.href).href;
+}
+function loadIndex() {
+  try { return JSON.parse(localStorage.getItem(INDEX_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function saveIndex(ix) {
+  try { localStorage.setItem(INDEX_KEY, JSON.stringify(ix)); } catch (e) {}
+}
+
+async function installUnit(unit) {
+  var status = document.getElementById('status-' + unit.id);
+  var got = pulled[unit.id];
+  if (!got) return;
+  if (!swReady) { status.textContent = 'Installing is unavailable: the shelf keeper did not start.'; return; }
+  status.textContent = 'Installing onto your shelf…';
+  try {
+    await swReady;
+    var cache = await caches.open(CACHE_NAME);
+    var paths = Object.keys(got.payload);
+    for (var i = 0; i < paths.length; i++) {
+      await cache.put(installedUrl(unit.id, paths[i]),
+        new Response(got.payload[paths[i]], { headers: { 'Content-Type': mime(paths[i]) } }));
+    }
+    var manifestBytes = new TextEncoder().encode(stablePretty(got.pack.manifest) + '\n');
+    await cache.put(installedUrl(unit.id, 'manifest.json'),
+      new Response(manifestBytes, { headers: { 'Content-Type': mime('manifest.json') } }));
+    var ix = loadIndex();
+    ix[unit.id] = { name: unit.name, version: unit.version, entry: unit.entry };
+    saveIndex(ix);
+    status.textContent = 'Installed. It is on your shelf below — it opens from there and no longer needs this page or a connection.';
+    renderShelf();
+  } catch (e) {
+    status.textContent = 'Install failed in this browser: ' + (e && e.message ? e.message : e);
+  }
+}
+
+/* ---------- rendering ---------- */
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+function renderDock() {
+  var dock = document.getElementById('dock');
+  CATALOG.forEach(function (unit) {
+    var card = el('div', 'card');
+    card.appendChild(el('h3', null, unit.name));
+    card.appendChild(el('p', 'purpose', unit.purpose));
+    card.appendChild(el('div', 'meta',
+      'Made by ' + unit.maker + ' · Version ' + unit.version + ' · ' + unit.kind));
+    var conn = el('div', 'conn', connectionText(unit));
+    card.appendChild(conn);
+    card.appendChild(el('div', 'stamp',
+      "Stamped by the maker · digest " + unit.digest.slice(0, 16) + '…'));
+    var verdict = el('div', 'verdict'); verdict.id = 'verdict-' + unit.id;
+    card.appendChild(verdict);
+    var row = el('div', 'row');
+    var pullBtn = el('button', null, 'Pull & check');
+    var installBtn = el('button', 'install', 'Install');
+    installBtn.id = 'install-' + unit.id;
+    installBtn.disabled = true;
+    pullBtn.addEventListener('click', function () { pullAndVerify(unit, pullBtn, installBtn, verdict); });
+    installBtn.addEventListener('click', function () { installUnit(unit); });
+    row.appendChild(pullBtn); row.appendChild(installBtn);
+    card.appendChild(row);
+    var status = el('div', 'status'); status.id = 'status-' + unit.id;
+    card.appendChild(status);
+    dock.appendChild(card);
+  });
+}
+async function pullAndVerify(unit, pullBtn, installBtn, verdict) {
+  installBtn.disabled = true;
+  delete pulled[unit.id];
+  verdict.className = 'verdict show busy';
+  verdict.textContent = 'Pulling ' + unit.package + ' from beside this page, then checking the maker\u2019s stamp…';
+  var text;
+  try {
+    var r = await fetch(unit.package, { cache: 'no-store' });
+    if (!r.ok) throw new Error('http ' + r.status);
+    text = await r.text();
+  } catch (e) {
+    verdict.className = 'verdict show fail';
+    verdict.textContent = "FAIL: '" + unit.package + "' was not found";
+    return;
+  }
+  var pack;
+  try { pack = JSON.parse(text); }
+  catch (e) {
+    verdict.className = 'verdict show fail';
+    verdict.textContent = 'FAIL: this .moorpack file is damaged (it is not readable JSON)';
+    return;
+  }
+  var result = await verifyPackage(pack);
+  verdict.className = 'verdict show ' + (result.pass ? 'pass' : 'fail');
+  verdict.textContent = result.text;
+  if (result.pass) {
+    pulled[unit.id] = { pack: pack, payload: result.payload };
+    installBtn.disabled = false;
+  }
+}
+async function renderShelf() {
+  var host = document.getElementById('yourshelf');
+  host.textContent = '';
+  var ix = loadIndex();
+  var ids = Object.keys(ix);
+  if (!ids.length || !('caches' in window)) {
+    host.appendChild(el('p', 'empty', 'Nothing yet. Pull & check a thing above, then Install it.'));
+    return;
+  }
+  var cache = await caches.open(CACHE_NAME);
+  var shown = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i], info = ix[id];
+    var hit = await cache.match(installedUrl(id, info.entry), { ignoreSearch: true });
+    if (!hit) continue;
+    shown++;
+    var item = el('div', 'shelf-item');
+    var grow = el('div', 'grow');
+    grow.appendChild(el('div', 'name', info.name));
+    grow.appendChild(el('div', 'meta',
+      'Version ' + info.version + ' · on this device · opens with no connection'));
+    item.appendChild(grow);
+    var open = el('a', 'open', 'Open');
+    open.href = installedUrl(id, info.entry);
+    item.appendChild(open);
+    host.appendChild(item);
+  }
+  if (!shown) {
+    host.appendChild(el('p', 'empty', 'Nothing yet. Pull & check a thing above, then Install it.'));
+  }
+}
+renderDock();
+renderShelf();
+</script>
+</body>
+</html>
