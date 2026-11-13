@@ -37,12 +37,13 @@ const ready=()=>{
  function move(selector,target){const el=$(selector);if(!el)return;el.classList.add('su-native');el.hidden=false;target.append(el);return el;}
  function hide(selector){all(selector).forEach(el=>el.classList.add('su-old-chrome'));}
  if(isForest){move('#world',pages.World);move('#camera',pages.Camera);move('#export',pages.Export);hide('body>header,.layout>aside');const sound=$('#soundBtn');if(sound)pages.Camera.prepend(sound);}
- if(isParallax){move('#realmTabs',pages.World);move('#customize',pages.World);move('#library',pages.World);move('#lenses',pages.Camera);move('.journey-bar',pages.Camera);move('#record',pages.Export);hide('.dock,.top-actions,body>header');}
+ if(isParallax){move('#realmTabs',pages.World);move('#customize',pages.World);move('#library',pages.World);move('#lenses',pages.Camera);move('#light',pages.Camera);move('.journey-bar',pages.Camera);move('#record',pages.Export);hide('.dock,.top-actions,body>header');}
  if(isRain){move('#panel-scene',pages.World);move('#panel-glass',pages.Camera);move('#panel-export',pages.Export);move('#dock',pages.Camera);const sound=$('#sound');if(sound)pages.Camera.prepend(sound);hide('#stage>header,#panel');}
  if(isForge){move('#modeswitch',pages.World);move('#viewroot',pages.World);const aspect=$('#aspectbtn');if(aspect)pages.Camera.append(aspect);pages.Export.append(button('Export PNG',()=>{if(window.forgeApp?.exportPNG)window.forgeApp.exportPNG();else{const b=document.getElementById('btnExport')||document.getElementById('eExport');if(b)b.click();}}));hide('#topbar');}
  if(file==='turtle-life-studio.html'){move('#panelL',pages.World);move('#panelR',pages.Camera);move('#reefDock',pages.Camera);hide('#topbar');}
  if(file==='road-atlas.html'||file==='road-atlas-v2.html'){move('#layersPanel',pages.World);move('#analysisPanel',pages.World);const actions=node('div','su-actions');['#randomBtn','#remixBtn','#urbanDesignBtn','#dataBtn','#shareBtn','#btn3d'].forEach(s=>{const b=$(s);if(b){b.classList.add('su-native');actions.append(b);}});if(actions.children.length)pages.World.prepend(actions);actions.addEventListener('click',()=>setTimeout(()=>{const s=A?.getSeed?.();if(s)seedLabel.textContent=s;},80));hide('#topbar');}
- if(file==='aquarium.html')hide('#topbar');
+ if(file==='aquarium.html'){move('#panelL',pages.World);move('#panelR',pages.Camera);hide('#topbar');}
+ if(file==='molten.html'){const help=node('p','su-help','Shape the live scene with the controls below.');pages.World.append(help);}
  if(file==='molten.html')hide('.scene-meta');
  if(sc?.panel){
   const original=sc.panel;original.classList.remove('hidden');pages.World.append(original);original.querySelector('#sc-seedfield')?.setAttribute('aria-label','Scene code');
@@ -55,6 +56,7 @@ const ready=()=>{
   const saveButton=[...footer.querySelectorAll('button')].find(b=>b.textContent==='♡ Save');const originalFav=sc.updateFavBtn.bind(sc);sc.updateFavBtn=function(){originalFav();if(saveButton){const saved=sc.favs.get([]).some(f=>f.seed===A.getSeed());saveButton.textContent=saved?'♥ Saved':'♡ Save';saveButton.setAttribute('aria-pressed',String(saved));}};sc.updateFavBtn();
   const updateSeed=()=>seedLabel.textContent=A?.getSeed?.()||'';updateSeed();new MutationObserver(updateSeed).observe(sc.seedChip,{childList:true,characterData:true,subtree:true});
  }
+ if(!pages.World.children.length)pages.World.append(node('p','su-help','This scene has no editable controls exposed yet. The live renderer remains available.'));
  if(!pages.Camera.children.length)pages.Camera.append(node('p','su-help','Reframe directly in the scene using this studio’s drag and zoom controls.'));
  const full=button('⤢ Full screen',()=>{if(document.fullscreenElement)document.exitFullscreen?.();else document.documentElement.requestFullscreen?.().catch(()=>{});});pages.Camera.append(full,button('Clean view',()=>setClean(true)));
  // Touches on controls must not trigger the legacy document-wide double-tap hide gesture.
