@@ -11,8 +11,8 @@ Every Render Queue scene uses `studio-shell.css` and `studio-shell.js`. The shel
 5. Include the canonical assets before the closing body tag (or use `defer` in the head):
 
 ```html
-<link rel="stylesheet" href="/render-queue/studio-shell.css?v=6">
-<script src="/render-queue/studio-shell.js?v=6"></script>
+<link rel="stylesheet" href="/render-queue/studio-shell.css?v=7">
+<script src="/render-queue/studio-shell.js?v=7"></script>
 ```
 
 For a standalone GitHub Pages repository under the same account, use `https://bassseamoor.github.io/render-queue/` in both asset URLs. The built-in Back button always returns there.
