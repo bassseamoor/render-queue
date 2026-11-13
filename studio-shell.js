@@ -1,68 +1,66 @@
-/* STRATA shell v1 — reuse original controls, handlers, seed stores and encoders. */
+/* Render Queue Studio Standard — mounts each renderer's existing controls in one overlay. */
 (()=>{'use strict';
-const ready=()=>{
- if(new URLSearchParams(location.search).has('render')||document.body.classList.contains('su-enabled'))return;
- const _file0=location.pathname.split('/').pop();
- if(_file0==='road-atlas-v2.html'&&!window.RoadAtlasPipeline)return; /* v2 boots async: wait for studio:ready */
- const body=document.body, $=s=>document.querySelector(s), all=s=>[...document.querySelectorAll(s)];
- if($('.inspector')&&$('.workspace')){body.classList.add('su-strata');return;}
- const sc=window.SeedConsole, A=window.SeedConsoleAdapter;
- const file=location.pathname.split('/').pop();
- const names={'forge-2.html':'FORGE 2.0','forge.html':'FORGE','rain-window-studio.html':'Rain Window','turtle-life-studio.html':'Turtle Life'};
- const name=names[file]||A?.title||document.title.split(/[·—]/)[0].trim();
- const isForest=!!$('.layout>aside'), isParallax=!!$('.dock'), isRain=!!$('#panel-scene'), isForge=!!$('#viewroot');
- 
- body.classList.add('su-enabled');
- function node(tag,cls,text){const el=document.createElement(tag);el.className=cls;if(text)el.textContent=text;return el;}
- function button(text,fn,label){const b=node('button','',text);b.type='button';b.onclick=fn;if(label)b.setAttribute('aria-label',label);return b;}
- const header=node('div','su-header'); const back=node('a','su-back','‹ Studios');back.href='/render-queue/';header.append(back);
- const brand=node('div','su-brand',name), small=node('small','','Scene studio');brand.append(small);header.append(brand,node('span','su-spacer'));
- const panel=node('aside','su-inspector');panel.id='su-inspector';panel.setAttribute('aria-label',name+' studio controls');
- const toggle=button('Studio ≡',()=>open(panel.hidden));toggle.setAttribute('aria-controls',panel.id);
- const clean=button('Clean view',()=>setClean(true));clean.className='su-clean-button';header.append(clean,toggle);
- const heading=node('div','su-heading'), title=node('div');title.append(node('span','su-eyebrow','YOUR WORLD, IN LAYERS'),node('h2','','Make somewhere.'));heading.append(title,button('×',()=>open(false),'Close studio controls'));
- const tabs=node('nav','su-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Studio sections');const scroll=node('div','su-scroll');
- const pages={};for(const key of ['World','Camera','Export']){const p=node('section','su-page');p.id='su-'+key.toLowerCase();p.setAttribute('role','tabpanel');p.setAttribute('aria-labelledby',p.id+'-tab');pages[key]=p;scroll.append(p);const b=button(key,()=>select(key));b.id=p.id+'-tab';b.setAttribute('role','tab');b.setAttribute('aria-controls',p.id);tabs.append(b);}
- panel.append(heading,tabs,scroll,node('div','su-panel-footer','PROCEDURAL · LOCAL · YOURS'));body.append(header,panel);
- const footer=node('div','su-footer'), seedLabel=node('span','su-seed-label','');
- if(sc?.panel){const newBtn=button('New world ↗',()=>sc.doRandom());newBtn.className='su-new';footer.append(newBtn,button('Remix',()=>sc.doRemix()),seedLabel,button('♡ Save',()=>sc.toggleFav(sc.bFav)),button('Capture',()=>{select('Export');open(true);}));}
- else if(isForge){const b=button('New world ↗',()=>window.forgeApp?.newScene());b.className='su-new';footer.append(b,button('Remix',()=>window.forgeApp?.remix()),node('span','su-seed-label','CREATE · EDIT · BUILD'),button('Export PNG',()=>window.forgeApp?.exportPNG()));}else{footer.append(node('span','su-seed-label','SCENE STUDIO'),button('Studio ≡',()=>open(!panel.hidden)));}
- body.append(footer);
- const restore=button('Show studio',()=>setClean(false));restore.className='su-restore';body.append(restore);
- function open(value){panel.hidden=!value;toggle.setAttribute('aria-expanded',String(value));if(value&&body.classList.contains('su-clean'))setClean(false);}
- function select(key){Object.entries(pages).forEach(([k,p])=>p.hidden=k!==key);[...tabs.children].forEach(b=>{b.setAttribute('aria-selected',String(b.textContent===key));b.tabIndex=b.textContent===key?0:-1;});scroll.scrollTop=0;}
- tabs.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const arr=[...tabs.children];let i=arr.indexOf(document.activeElement);i=e.key==='Home'?0:e.key==='End'?2:(i+(e.key==='ArrowRight'?1:2))%3;select(arr[i].textContent);arr[i].focus();});
- function setClean(v){body.classList.toggle('su-clean',v);}
- document.addEventListener('keydown',e=>{if(e.key==='Escape'){setClean(false);open(false);toggle.focus();}});
- function move(selector,target){const el=$(selector);if(!el)return;el.classList.add('su-native');el.hidden=false;target.append(el);return el;}
- function hide(selector){all(selector).forEach(el=>el.classList.add('su-old-chrome'));}
- if(isForest){move('#world',pages.World);move('#camera',pages.Camera);move('#export',pages.Export);hide('body>header,.layout>aside');const sound=$('#soundBtn');if(sound)pages.Camera.prepend(sound);}
- if(isParallax){move('#realmTabs',pages.World);move('#customize',pages.World);move('#library',pages.World);move('#lenses',pages.Camera);move('#light',pages.Camera);move('.journey-bar',pages.Camera);move('#record',pages.Export);hide('.dock,.top-actions,body>header');}
- if(isRain){move('#panel-scene',pages.World);move('#panel-glass',pages.Camera);move('#panel-export',pages.Export);move('#dock',pages.Camera);const sound=$('#sound');if(sound)pages.Camera.prepend(sound);hide('#stage>header,#panel');}
- if(isForge){move('#modeswitch',pages.World);move('#viewroot',pages.World);const aspect=$('#aspectbtn');if(aspect)pages.Camera.append(aspect);pages.Export.append(button('Export PNG',()=>{if(window.forgeApp?.exportPNG)window.forgeApp.exportPNG();else{const b=document.getElementById('btnExport')||document.getElementById('eExport');if(b)b.click();}}));hide('#topbar');}
- if(file==='turtle-life-studio.html'){move('#panelL',pages.World);move('#panelR',pages.Camera);move('#reefDock',pages.Camera);hide('#topbar');}
- if(file==='road-atlas.html'||file==='road-atlas-v2.html'){move('#layersPanel',pages.World);move('#analysisPanel',pages.World);const actions=node('div','su-actions');['#randomBtn','#remixBtn','#urbanDesignBtn','#dataBtn','#shareBtn','#btn3d'].forEach(s=>{const b=$(s);if(b){b.classList.add('su-native');actions.append(b);}});if(actions.children.length)pages.World.prepend(actions);actions.addEventListener('click',()=>setTimeout(()=>{const s=A?.getSeed?.();if(s)seedLabel.textContent=s;},80));hide('#topbar');}
- if(file==='aquarium.html'){move('#panelL',pages.World);move('#panelR',pages.Camera);hide('#topbar');}
- if(file==='molten.html'){const help=node('p','su-help','Shape the live scene with the controls below.');pages.World.append(help);}
- if(file==='molten.html')hide('.scene-meta');
- if(sc?.panel){
-  const original=sc.panel;original.classList.remove('hidden');pages.World.append(original);original.querySelector('#sc-seedfield')?.setAttribute('aria-label','Scene code');
-  const children=[...original.children];let captureTarget=pages.Export;if(pages.Export.children.length){captureTarget=node('details','su-quick-capture');captureTarget.append(node('summary','','Quick capture'));pages.Export.append(captureTarget);}let group='World';for(const child of children){if(child.classList.contains('sc-sec')){const t=child.textContent;if(/Record video/.test(t))group='Export';else if(/Favorites|Recent/.test(t))group='World';}if(group==='Export')captureTarget.append(child);}
-  // Keep seed/history lookups scoped to the original panel; recording references use document ids.
-  const refresh=sc.refreshParams.bind(sc);sc.refreshParams=function(){refresh();all('.sc-param').forEach((wrap,i)=>{const range=wrap.querySelector('input[type=range]'),lab=wrap.querySelector('label');if(range&&lab){range.id='su-param-'+i;lab.htmlFor=range.id;range.setAttribute('aria-label',lab.textContent);}});};sc.refreshParams();
-  sc.togglePanel=()=>open(panel.hidden);sc.togglePanelSection=()=>{select('Export');open(true);};sc.toggleChrome=()=>setClean(!body.classList.contains('su-clean'));
-  // The old recorder resolves elements through this.panel, so include the mounted sections.
-  const originalQuery=original.querySelector.bind(original);original.querySelector=s=>originalQuery(s)||panel.querySelector(s);
-  const saveButton=[...footer.querySelectorAll('button')].find(b=>b.textContent==='♡ Save');const originalFav=sc.updateFavBtn.bind(sc);sc.updateFavBtn=function(){originalFav();if(saveButton){const saved=sc.favs.get([]).some(f=>f.seed===A.getSeed());saveButton.textContent=saved?'♥ Saved':'♡ Save';saveButton.setAttribute('aria-pressed',String(saved));}};sc.updateFavBtn();
-  const updateSeed=()=>seedLabel.textContent=A?.getSeed?.()||'';updateSeed();new MutationObserver(updateSeed).observe(sc.seedChip,{childList:true,characterData:true,subtree:true});
- }
- if(!pages.World.children.length)pages.World.append(node('p','su-help','This scene has no editable controls exposed yet. The live renderer remains available.'));
- if(!pages.Camera.children.length)pages.Camera.append(node('p','su-help','Reframe directly in the scene using this studio’s drag and zoom controls.'));
- const full=button('⤢ Full screen',()=>{if(document.fullscreenElement)document.exitFullscreen?.();else document.documentElement.requestFullscreen?.().catch(()=>{});});pages.Camera.append(full,button('Clean view',()=>setClean(true)));
- // Touches on controls must not trigger the legacy document-wide double-tap hide gesture.
- [header,panel,footer].forEach(el=>el.addEventListener('touchend',e=>e.stopPropagation()));
- hide('#uiToggle');select('World');open(!matchMedia('(max-width:740px)').matches);
-};
-window.addEventListener('studio:ready',ready,{once:true});
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready,{once:true});else ready();
+const QUEUE_URL='https://bassseamoor.github.io/render-queue/';
+const DYNAMIC=new Set(['alien-planet.html','rainforest.html','aquarium.html','molten.html','parallax-engine.html','road-atlas-v2.html']);
+let tries=0;
+const ready=()=>requestAnimationFrame(mount);
+function mount(){
+  if(document.getElementById('rq-studio-shell'))return;
+  const body=document.body,file=location.pathname.split('/').pop()||'';
+  const $=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
+  const sc=window.SeedConsole,A=window.SeedConsoleAdapter;
+  if(DYNAMIC.has(file)&&!sc){if(tries++<80)setTimeout(mount,50);return;}
+  if(!sc&&!$('#scene')&&!$('canvas')&&!$('.workspace')&&!$('.layout'))return;
+  body.classList.add('su-enabled');
+  const make=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls||'';if(text!=null)el.textContent=text;return el;};
+  const button=(text,fn,label)=>{const b=make('button','',text);b.type='button';b.addEventListener('click',fn);if(label)b.setAttribute('aria-label',label);return b;};
+  const shell=make('div','su-shell');shell.id='rq-studio-shell';
+  const name=(A&&A.title)||({ 'canal-metropolis.html':'Canal Metropolis','parallax-engine.html':'Parallax Engine','rain-window-studio.html':'Rain Window','turtle-life-studio.html':'Turtle Life','molten.html':'Molten','aquarium.html':'Aquarium','alien-planet.html':'Alien Planet','rainforest.html':'Rainforest' }[file])||document.title.split(/[—·|-]/)[0].trim()||'Scene Studio';
+  const header=make('header','su-header');
+  const back=make('a','su-back','Back');back.href=QUEUE_URL;back.setAttribute('aria-label','Back to studios');
+  const brand=make('div','su-brand');brand.append(Object.assign(make('strong','',name),{title:name}),make('small','','Live scene studio'));
+  const spacer=make('span','su-spacer');
+  const inspector=make('aside','su-inspector');inspector.id='su-inspector';inspector.setAttribute('aria-label',name+' controls');
+  const heading=make('div','su-heading'),headingText=make('div','');headingText.append(make('div','su-eyebrow','Live controls'),make('h2','','Adjust while watching'));
+  const tabs=make('nav','su-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Studio control sections');
+  const scroll=make('div','su-scroll'),pages={};
+  const close=button('×',()=>open(false),'Close controls');close.className='su-close';heading.append(headingText,close);
+  ['World','Camera','Export'].forEach((key,i)=>{const page=make('section','su-page');page.id='su-'+key.toLowerCase();page.setAttribute('role','tabpanel');pages[key]=page;scroll.append(page);const tab=button(key,()=>select(key));tab.id=page.id+'-tab';tab.setAttribute('role','tab');tab.setAttribute('aria-controls',page.id);tab.dataset.key=key;tabs.append(tab);if(!i)tab.setAttribute('aria-selected','true');});
+  inspector.append(heading,tabs,scroll,make('div','su-panel-footer','RENDER QUEUE · LIVE · LOCAL'));
+  const controls=button('Controls',()=>open(inspector.hidden));controls.className='su-controls-button';controls.setAttribute('aria-controls',inspector.id);controls.setAttribute('aria-expanded','false');
+  const clean=button('Clean',()=>setClean(true),'Hide controls and leave the scene visible');clean.className='su-clean-button';header.append(back,brand,spacer,clean,controls);
+  const footer=make('footer','su-footer'),restore=button('Show controls',()=>setClean(false));restore.className='su-restore';
+  shell.append(header,inspector,footer,restore);body.append(shell);
+  function open(value){inspector.hidden=!value;controls.setAttribute('aria-expanded',String(value));if(value&&body.classList.contains('su-clean'))setClean(false);}
+  function select(key){Object.entries(pages).forEach(([k,page])=>page.hidden=k!==key);[...tabs.children].forEach(tab=>{const active=tab.dataset.key===key;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});scroll.scrollTop=0;}
+  function setClean(value){body.classList.toggle('su-clean',value);if(value)open(false);}
+  tabs.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const list=[...tabs.children],current=list.indexOf(document.activeElement);const index=event.key==='Home'?0:event.key==='End'?list.length-1:(current+(event.key==='ArrowRight'?1:list.length-1))%list.length;list[index].click();list[index].focus();});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'){setClean(false);open(false);controls.focus();}});
+  const move=(selector,target)=>{const el=$(selector);if(!el)return null;el.hidden=false;el.classList.add('su-native');target.append(el);return el;};
+  const hide=selector=>all(selector).forEach(el=>el.classList.add('su-old-chrome'));
+  const isForest=!!$('.layout>aside'),isParallax=!!$('.dock'),isRain=!!$('#panel-scene'),isForge=!!$('#viewroot');
+  if(isForest){move('#world',pages.World);move('#camera',pages.Camera);move('#export',pages.Export);const sound=$('#soundBtn');if(sound)pages.Camera.prepend(sound);hide('body>header,.layout>aside');}
+  if(isParallax){move('#realmTabs',pages.World);move('#customize',pages.World);move('#library',pages.World);move('#lenses',pages.Camera);move('#light',pages.Camera);move('.journey-bar',pages.Camera);move('#record',pages.Export);hide('.dock,.top-actions,body>header');}
+  if(isRain){move('#panel-scene',pages.World);move('#panel-glass',pages.Camera);move('#panel-export',pages.Export);move('#dock',pages.Camera);const sound=$('#sound');if(sound)pages.Camera.prepend(sound);hide('#stage>header,#panel');}
+  if(file==='turtle-life-studio.html'||file==='aquarium.html'){move('#panelL',pages.World);move('#panelR',pages.Camera);move('#reefDock',pages.Camera);hide('#topbar');}
+  if(isForge){move('#modeswitch',pages.World);move('#viewroot',pages.World);move('#aspectbtn',pages.Camera);hide('#topbar');}
+  if(file==='road-atlas.html'||file==='road-atlas-v2.html'){move('#layersPanel',pages.World);move('#analysisPanel',pages.World);const actions=make('div','su-actions');['#randomBtn','#remixBtn','#urbanDesignBtn','#dataBtn','#shareBtn','#btn3d'].forEach(selector=>{const el=$(selector);if(el){el.classList.add('su-native');actions.append(el);}});if(actions.children.length)pages.World.prepend(actions);hide('#topbar');}
+  if(file==='molten.html'){pages.World.append(make('p','su-help','Drag the lamp to orbit it. Use the scene controls below to change the wax, light, and composition.'));hide('.scene-meta');}
+  if(sc&&sc.panel){
+    const original=sc.panel;original.classList.remove('hidden');original.classList.add('su-native');pages.World.append(original);
+    const refresh=typeof sc.refreshParams==='function'?sc.refreshParams.bind(sc):null;
+    if(refresh){sc.refreshParams=function(){refresh();all('.sc-param').forEach((wrap,index)=>{const input=wrap.querySelector('input[type=range]'),label=wrap.querySelector('label');if(input&&label){input.id='su-param-'+index;label.htmlFor=input.id;input.setAttribute('aria-label',label.textContent.trim());}});};sc.refreshParams();}
+    sc.togglePanel=()=>open(inspector.hidden);sc.togglePanelSection=()=>{select('Export');open(true);};sc.toggleChrome=()=>setClean(!body.classList.contains('su-clean'));
+    const seed=make('span','su-seed-label','');const updateSeed=()=>{try{seed.textContent=A&&A.getSeed?A.getSeed():'';}catch(_){seed.textContent='';}};updateSeed();footer.append(seed);
+    const newWorld=button('New world',()=>sc.doRandom&&sc.doRandom());newWorld.className='su-new';const remix=button('Remix',()=>sc.doRemix&&sc.doRemix());const save=button('Save',()=>sc.toggleFav&&sc.toggleFav(sc.bFav));const capture=button('Capture',()=>{select('Export');open(true);});footer.append(newWorld,remix,save,capture);
+    if(sc.seedChip)new MutationObserver(updateSeed).observe(sc.seedChip,{childList:true,characterData:true,subtree:true});
+  }else if(isForge){const newWorld=button('New world',()=>window.forgeApp&&window.forgeApp.newScene&&window.forgeApp.newScene());newWorld.className='su-new';footer.append(newWorld,button('Remix',()=>window.forgeApp&&window.forgeApp.remix&&window.forgeApp.remix()),button('Export PNG',()=>window.forgeApp&&window.forgeApp.exportPNG&&window.forgeApp.exportPNG()));}
+  else footer.append(button('Controls',()=>open(true)));
+  if(!pages.World.children.length)pages.World.append(make('p','su-help','This renderer has no editable world controls exposed yet. Its live scene remains fully interactive.'));
+  if(!pages.Camera.children.length)pages.Camera.append(make('p','su-help','Drag or pinch directly on the live scene to reframe it.'));
+  const fullscreen=button('Full screen',()=>{if(document.fullscreenElement)document.exitFullscreen&&document.exitFullscreen();else document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{});});pages.Camera.append(fullscreen,button('Clean scene',()=>setClean(true)));
+  [header,inspector,footer].forEach(el=>el.addEventListener('touchend',event=>event.stopPropagation(),{passive:true}));
+  hide('#uiToggle');select('World');open(!matchMedia('(max-width:740px)').matches);
+}
+window.addEventListener('studio:ready',ready);if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready,{once:true});else ready();
 })();

@@ -4,3 +4,4 @@ import './ui/seed-console.js';
 import './ui/adapter.js';
 import './export/muxer.js';
 import './export/controller.js';
+window.dispatchEvent(new Event('studio:ready'));
