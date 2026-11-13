@@ -1,15 +1,12 @@
 /* Render Queue Studio Standard — mounts each renderer's existing controls in one overlay. */
 (()=>{'use strict';
 const QUEUE_URL='https://bassseamoor.github.io/render-queue/';
-const DYNAMIC=new Set(['alien-planet.html','rainforest.html','aquarium.html','molten.html','parallax-engine.html','road-atlas-v2.html']);
-let tries=0;
 const ready=()=>requestAnimationFrame(mount);
 function mount(){
   if(document.getElementById('rq-studio-shell'))return;
   const body=document.body,file=location.pathname.split('/').pop()||'';
   const $=s=>document.querySelector(s),all=s=>[...document.querySelectorAll(s)];
   const sc=window.SeedConsole,A=window.SeedConsoleAdapter;
-  if(DYNAMIC.has(file)&&!window.__rqStudioReady){if(tries++<80)setTimeout(mount,50);return;}
   if(!sc&&!$('#scene')&&!$('canvas')&&!$('.workspace')&&!$('.layout'))return;
   body.classList.add('su-enabled');
   const make=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls||'';if(text!=null)el.textContent=text;return el;};
@@ -62,5 +59,5 @@ function mount(){
   [header,inspector,footer].forEach(el=>el.addEventListener('touchend',event=>event.stopPropagation(),{passive:true}));
   hide('#uiToggle');select('World');open(!matchMedia('(max-width:740px)').matches);
 }
-window.addEventListener('studio:ready',()=>{window.__rqStudioReady=true;ready();});if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready,{once:true});else ready();
+window.addEventListener('studio:ready',ready);if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready,{once:true});else ready();
 })();

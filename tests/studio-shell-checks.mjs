@@ -9,8 +9,8 @@ const studios = [
 const failures = [];
 for (const file of studios) {
   const html = readFileSync(resolve(root, file), 'utf8');
-  if (!/studio-shell\.css\?v=4/.test(html)) failures.push(`${file}: missing versioned shell stylesheet`);
-  if (!/studio-shell\.js\?v=4/.test(html)) failures.push(`${file}: missing versioned shell script`);
+  if (!/studio-shell\.css\?v=5/.test(html)) failures.push(`${file}: missing versioned shell stylesheet`);
+  if (!/studio-shell\.js\?v=5/.test(html)) failures.push(`${file}: missing versioned shell script`);
 }
 const shell = readFileSync(resolve(root, 'studio-shell.js'), 'utf8');
 for (const marker of ['QUEUE_URL', 'studio:ready', 'Back to studios', 'Adjust while watching']) {

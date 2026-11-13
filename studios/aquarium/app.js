@@ -1684,23 +1684,6 @@ function updateFood(t, dt) {
   gl.bindBuffer(gl.ARRAY_BUFFER, sys.al); gl.bufferData(gl.ARRAY_BUFFER, sys.a, gl.DYNAMIC_DRAW);
 }
 window.__aqFeed = function () { if (!S.foodSys) return; spawnFeeding(); S.foodT = 80 + S.rng()*80; };
-function updateDust(t) {
-  const dust = S.dust;
-  for (let i = 0; i < dust.n; i++) {
-    const o=i*3;
-    dust.p[o]   += Math.sin(t*0.3+i)*0.0009 + 0.0006;
-    dust.p[o+1] += Math.cos(t*0.22+i*1.7)*0.0007 - 0.0004;
-    if (dust.p[o] > 3.3) dust.p[o] = -3.3;
-    if (dust.p[o+1] < 0) dust.p[o+1] = 3.1;
-    if (dust.p[o+1] > 3.2) dust.p[o+1] = 0.05;
-    const df = Math.min(1, Math.max(0, (dust.p[o+2]+2.6)/4.4));
-    dust.a[i] = dust.a0[i]*(0.30+0.70*(df*df*(3-2*df)));
-    dust.a[i] *= (0.78+0.22*Math.sin(t*1.9+i*2.39));  /* faint drifting shimmer */
-  }
-  gl.bindBuffer(gl.ARRAY_BUFFER, dust.b); gl.bufferData(gl.ARRAY_BUFFER, dust.p, gl.DYNAMIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, dust.sz); gl.bufferData(gl.ARRAY_BUFFER, dust.s, gl.DYNAMIC_DRAW);
-  gl.bindBuffer(gl.ARRAY_BUFFER, dust.al); gl.bufferData(gl.ARRAY_BUFFER, dust.a, gl.DYNAMIC_DRAW);
-}
 /* water chemistry: pH, temperature, turbidity, oxygen, nitrogen cycle, filter.
    Rates are per sim-second with equilibria (nothing runs away over an 8-hour
    render). Maintenance objects are functional: the filter drives the biofilter
