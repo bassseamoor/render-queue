@@ -25,8 +25,10 @@ function mount(){
   ['World','Camera','Export'].forEach((key,i)=>{const page=make('section','su-page');page.id='su-'+key.toLowerCase();page.setAttribute('role','tabpanel');pages[key]=page;scroll.append(page);const tab=button(key,()=>select(key));tab.id=page.id+'-tab';tab.setAttribute('role','tab');tab.setAttribute('aria-controls',page.id);tab.dataset.key=key;tabs.append(tab);if(!i)tab.setAttribute('aria-selected','true');});
   inspector.append(heading,tabs,scroll,make('div','su-panel-footer','RENDER QUEUE · LIVE · LOCAL'));
   const controls=button('Controls',()=>open(inspector.hidden));controls.className='su-controls-button';controls.setAttribute('aria-controls',inspector.id);controls.setAttribute('aria-expanded','false');
-  const clean=button('Clean',()=>setClean(true),'Hide controls and leave the scene visible');clean.className='su-clean-button';header.append(back,brand,spacer,clean,controls);
+  const clean=button('Clean',()=>setClean(true),'Hide controls and leave the scene visible');clean.className='su-clean-button';header.append(back);
   const footer=make('footer','su-footer'),restore=button('Show controls',()=>setClean(false));restore.className='su-restore';
+  const dock=(label,key)=>button(label,()=>{select(key);open(true);});
+  footer.append(dock('World','World'),dock('View','Camera'),dock('Export','Export'));
   shell.append(header,inspector,footer,restore);body.append(shell);
   function open(value){inspector.hidden=!value;controls.setAttribute('aria-expanded',String(value));if(value&&body.classList.contains('su-clean'))setClean(false);}
   function select(key){Object.entries(pages).forEach(([k,page])=>page.hidden=k!==key);[...tabs.children].forEach(tab=>{const active=tab.dataset.key===key;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});scroll.scrollTop=0;}
@@ -52,12 +54,12 @@ function mount(){
     const newWorld=button('New world',()=>sc.doRandom&&sc.doRandom());newWorld.className='su-new';const remix=button('Remix',()=>sc.doRemix&&sc.doRemix());const save=button('Save',()=>sc.toggleFav&&sc.toggleFav(sc.bFav));const capture=button('Capture',()=>{select('Export');open(true);});footer.append(newWorld,remix,save,capture);
     if(sc.seedChip)new MutationObserver(updateSeed).observe(sc.seedChip,{childList:true,characterData:true,subtree:true});
   }else if(isForge){const newWorld=button('New world',()=>window.forgeApp&&window.forgeApp.newScene&&window.forgeApp.newScene());newWorld.className='su-new';footer.append(newWorld,button('Remix',()=>window.forgeApp&&window.forgeApp.remix&&window.forgeApp.remix()),button('Export PNG',()=>window.forgeApp&&window.forgeApp.exportPNG&&window.forgeApp.exportPNG()));}
-  else footer.append(button('Controls',()=>open(true)));
+  else footer.append(button('Clean',()=>setClean(true)));
   if(!pages.World.children.length)pages.World.append(make('p','su-help','This renderer has no editable world controls exposed yet. Its live scene remains fully interactive.'));
   if(!pages.Camera.children.length)pages.Camera.append(make('p','su-help','Drag or pinch directly on the live scene to reframe it.'));
   const fullscreen=button('Full screen',()=>{if(document.fullscreenElement)document.exitFullscreen&&document.exitFullscreen();else document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(()=>{});});pages.Camera.append(fullscreen,button('Clean scene',()=>setClean(true)));
   [header,inspector,footer].forEach(el=>el.addEventListener('touchend',event=>event.stopPropagation(),{passive:true}));
-  hide('#uiToggle');select('World');open(!matchMedia('(max-width:740px)').matches);
+  hide('#uiToggle');select('World');open(false);
 }
 window.addEventListener('studio:ready',ready);if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready,{once:true});else ready();
 })();
